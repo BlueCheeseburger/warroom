@@ -7,3 +7,5 @@ dist-electron/
 *.local
 .env
 secure_*.json
+index.cjs
+CLAUDE.md
