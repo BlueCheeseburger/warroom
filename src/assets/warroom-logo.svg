@@ -1,0 +1,90 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Per-stripe gradient: cyan tip → blue → purple → light-violet tip. -->
+    <linearGradient id="stripeGrad" x1="0" y1="1" x2="1" y2="0"
+                    gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#88CCFF"/>
+      <stop offset="12%"  stop-color="#3388FF"/>
+      <stop offset="35%"  stop-color="#4466EE"/>
+      <stop offset="50%"  stop-color="#7744DD"/>
+      <stop offset="65%"  stop-color="#AA44DD"/>
+      <stop offset="88%"  stop-color="#CC66FF"/>
+      <stop offset="100%" stop-color="#DDAAFF"/>
+    </linearGradient>
+
+    <!-- Background: visible gradient lit from the upper area, fading to
+         near-black at the corners. -->
+    <radialGradient id="bg" cx="50%" cy="22%" r="95%" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#43464C"/>
+      <stop offset="48%"  stop-color="#24262B"/>
+      <stop offset="100%" stop-color="#121317"/>
+    </radialGradient>
+
+    <!-- Thin brushed-silver rim: bright at the top fading to dark at the bottom,
+         matching the macOS dark-appearance icon bevel. -->
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#D2D7DE"/>
+      <stop offset="12%"  stop-color="#A6ACB5"/>
+      <stop offset="50%"  stop-color="#62666D"/>
+      <stop offset="100%" stop-color="#393C42"/>
+    </linearGradient>
+
+    <clipPath id="clip">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+
+    <filter id="neon" x="-45%" y="-45%" width="190%" height="190%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="bigBloom"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4"  result="tightGlow"/>
+      <feMerge>
+        <feMergeNode in="bigBloom"/>
+        <feMergeNode in="tightGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="4" seed="12" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 0.5
+                0 0 0 0 0.6
+                0 0 0 0 1
+                0 0 0 0.14 0" result="coloredNoise"/>
+      <feComposite operator="in" in="coloredNoise" in2="SourceGraphic" result="clippedNoise"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="clippedNoise"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#clip)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+
+    <!--
+      Bold compact three-stripe mark (the "#3" design), scaled to 0.84 about
+      the canvas center for the right amount of Apple-style padding.
+      Base stripe centers x: 182 / 256 / 330, vertical center y=256.
+    -->
+    <g transform="translate(256 256) scale(0.84) translate(-256 -256)">
+      <!-- Neon glow -->
+      <g stroke="url(#stripeGrad)" stroke-width="48" stroke-linecap="round" fill="none"
+         filter="url(#neon)">
+        <line x1="144" y1="316" x2="220" y2="196"/>
+        <line x1="218" y1="316" x2="294" y2="196"/>
+        <line x1="292" y1="316" x2="368" y2="196"/>
+      </g>
+
+      <!-- Grain texture -->
+      <g stroke="url(#stripeGrad)" stroke-width="48" stroke-linecap="round" fill="none"
+         filter="url(#grain)">
+        <line x1="144" y1="316" x2="220" y2="196"/>
+        <line x1="218" y1="316" x2="294" y2="196"/>
+        <line x1="292" y1="316" x2="368" y2="196"/>
+      </g>
+    </g>
+
+    <!-- Thin silver edge rim (outer half clipped by the squircle → crisp inner line). -->
+    <rect width="512" height="512" rx="112" fill="none" stroke="url(#rim)" stroke-width="7"/>
+  </g>
+</svg>

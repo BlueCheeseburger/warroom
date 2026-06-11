@@ -1,0 +1,326 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* ── Theme tokens ─────────────────────────────────────────────────────────── */
+
+:root {
+  /* Color channel triples for Tailwind opacity modifiers */
+  --ink-rgb:    28 28 30;
+  --panel-rgb:  250 250 249;
+  --line-rgb:   229 229 227;
+  --warn-rgb:   201 122 10;
+  --danger-rgb: 179 38 30;
+
+  /* Surface backgrounds */
+  --bg-main:     #f0f0f2;
+  --bg-sidebar:  #e4e4e6;
+  --bg-titlebar: #e8e8ea;
+  --bg-card:     #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-btn:      #ffffff;
+  --bg-btn-hover:   #f7f7f9;
+  --bg-btn-active:  #efefef;
+  --bg-input:    #ffffff;
+
+  /* Borders */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-med:    rgba(0, 0, 0, 0.14);
+  --border-strong: rgba(0, 0, 0, 0.20);
+  --border-side:   rgba(0, 0, 0, 0.10);
+
+  /* Shadows */
+  --shadow-card:     0 1px 4px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-btn:      0 1px 3px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+  --shadow-btn-hover:0 2px 6px rgba(0,0,0,0.10);
+  --shadow-focus:    0 0 0 3px rgba(0,119,237,0.15);
+
+  /* Navigation */
+  --nav-active-bg:     #ffffff;
+  --nav-active-color:  #1c1c1e;
+  --nav-active-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  --nav-hover-bg:      rgba(0, 0, 0, 0.05);
+  --nav-inactive-color:rgba(60, 60, 67, 0.6);
+  --nav-section-color: rgba(60, 60, 67, 0.4);
+
+  /* Misc */
+  --mode-toggle-bg:   rgba(0,0,0,0.08);
+  --titlebar-label:   rgba(60,60,67,0.5);
+  --label-color:      rgba(60,60,67,0.5);
+  --placeholder:      rgba(60,60,67,0.35);
+  --divider:          rgba(0,0,0,0.08);
+  --scrollbar-thumb:  rgba(0,0,0,0.14);
+  --scrollbar-thin:   rgba(0,0,0,0.12);
+
+  /* Selected item in nav trees (bg-ink text-white analog) */
+  --item-selected-bg:   #1c1c1e;
+  --item-selected-text: #ffffff;
+
+  /* Settings active */
+  --settings-active-bg: rgba(0,0,0,0.06);
+}
+
+html.dark {
+  --ink-rgb:    240 240 242;
+  --panel-rgb:  37 37 39;
+  --line-rgb:   58 58 60;
+  --warn-rgb:   201 122 10;
+  --danger-rgb: 179 38 30;
+
+  --bg-main:     #1c1c1e;
+  --bg-sidebar:  #111113;
+  --bg-titlebar: #0d0d0f;
+  --bg-card:     #2c2c2e;
+  --bg-elevated: #363638;
+  --bg-btn:      #3a3a3c;
+  --bg-btn-hover:   #444446;
+  --bg-btn-active:  #2c2c2e;
+  --bg-input:    #2c2c2e;
+
+  --border-subtle: rgba(255,255,255,0.07);
+  --border-med:    rgba(255,255,255,0.11);
+  --border-strong: rgba(255,255,255,0.18);
+  --border-side:   rgba(255,255,255,0.07);
+
+  --shadow-card:     0 1px 4px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(255,255,255,0.04);
+  --shadow-elevated: 0 4px 24px rgba(0,0,0,0.50), 0 1px 4px rgba(0,0,0,0.20);
+  --shadow-btn:      0 1px 3px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  --shadow-btn-hover:0 2px 6px rgba(0,0,0,0.45);
+  --shadow-focus:    0 0 0 3px rgba(0,119,237,0.25);
+
+  --nav-active-bg:     #3a3a3c;
+  --nav-active-color:  #f0f0f2;
+  --nav-active-shadow: 0 1px 4px rgba(0,0,0,0.40);
+  --nav-hover-bg:      rgba(255,255,255,0.06);
+  --nav-inactive-color:rgba(235,235,245,0.50);
+  --nav-section-color: rgba(235,235,245,0.35);
+
+  --mode-toggle-bg:   rgba(255,255,255,0.10);
+  --titlebar-label:   rgba(235,235,245,0.40);
+  --label-color:      rgba(235,235,245,0.45);
+  --placeholder:      rgba(235,235,245,0.30);
+  --divider:          rgba(255,255,255,0.07);
+  --scrollbar-thumb:  rgba(255,255,255,0.14);
+  --scrollbar-thin:   rgba(255,255,255,0.10);
+
+  --item-selected-bg:   #f0f0f2;
+  --item-selected-text: #1c1c1e;
+
+  --settings-active-bg: rgba(255,255,255,0.07);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+html, body, #root {
+  height: 100%;
+  background: var(--bg-main);
+  margin: 0;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: rgb(var(--ink-rgb));
+}
+
+/* ── Titlebar drag region ────────────────────────────────────────────────── */
+.titlebar { -webkit-app-region: drag; }
+.titlebar button, .titlebar input, .titlebar a, .titlebar select { -webkit-app-region: no-drag; }
+
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+
+.glass-dark {
+  background: var(--bg-sidebar);
+}
+
+.glass-main {
+  background: var(--bg-main);
+}
+
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.glass-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-side);
+  border-radius: 14px;
+  box-shadow: var(--shadow-elevated);
+}
+
+.glass-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-med);
+  border-radius: 10px;
+}
+.glass-input:focus {
+  border-color: #0077ed;
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn {
+  @apply inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium transition rounded-lg;
+  background: var(--bg-btn);
+  border: 1px solid var(--border-med);
+  color: rgb(var(--ink-rgb));
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+}
+/* Icon-only square buttons — zero out the default padding so the SVG fills the button */
+.btn-icon {
+  padding: 0 !important;
+}
+.btn:hover {
+  background: var(--bg-btn-hover);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-btn-hover);
+}
+.btn:active {
+  transform: scale(0.97);
+  background: var(--bg-btn-active);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold transition rounded-lg;
+  background: var(--item-selected-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--item-selected-text);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+  cursor: pointer;
+}
+.btn-primary:hover {
+  opacity: 0.88;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+}
+.btn-primary:active {
+  transform: scale(0.97);
+  opacity: 0.76;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-blue {
+  @apply inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold transition rounded-lg;
+  background: #0077ed;
+  border: 1px solid rgba(0,0,0,0.1);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0,119,237,0.35);
+  cursor: pointer;
+}
+.btn-blue:hover {
+  background: #0066cc;
+  box-shadow: 0 4px 12px rgba(0,119,237,0.45);
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+
+.input {
+  @apply px-3 py-1.5 text-sm outline-none rounded-lg;
+  background: var(--bg-input);
+  border: 1px solid var(--border-med);
+  color: rgb(var(--ink-rgb));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.06);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus {
+  border-color: #0077ed;
+  box-shadow: var(--shadow-focus), inset 0 1px 2px rgba(0,0,0,0.04);
+}
+.input::placeholder {
+  color: var(--placeholder);
+}
+
+/* ── Typography tokens ───────────────────────────────────────────────────── */
+
+.label {
+  @apply text-[10px] uppercase tracking-wider font-semibold;
+  color: var(--label-color);
+}
+.divider { border-top: 1px solid var(--divider); }
+
+/* ── Selected item (nav trees, etc.) ────────────────────────────────────── */
+
+.item-selected {
+  background: var(--item-selected-bg);
+  color: var(--item-selected-text);
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thin); border-radius: 2px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Side badges (Aff / Neg) — distinct from win/loss colours ───────────── */
+
+.badge-aff {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+html.dark .badge-aff {
+  background: rgba(29, 78, 216, 0.25);
+  color: #93c5fd;
+}
+
+.badge-neg {
+  background: #e2e8f0;
+  color: #475569;
+}
+html.dark .badge-neg {
+  background: rgba(71, 85, 105, 0.35);
+  color: #94a3b8;
+}
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
+
+.glass-border { border: 1px solid var(--border-subtle); }
+
+/* ── Loading animations ──────────────────────────────────────────────────── */
+
+@keyframes dot-wave {
+  0%, 60%, 100% { transform: translateY(0);    opacity: 0.3; }
+  30%            { transform: translateY(-5px); opacity: 1;   }
+}
+
+@keyframes shimmer-text {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.7;  }
+}
+
+/* ── docx-preview renderer ───────────────────────────────────────────────── */
+
+.docx-viewer-wrap {
+  min-height: 100%;
+  background: #e8e8ea;
+  padding: 24px 32px;
+}
+html.dark .docx-viewer-wrap {
+  background: #2a2a2c;
+}
+
+html.dark .docx-viewer-wrap * {
+  color: #e8e8ea !important;
+  border-color: rgba(240, 240, 242, 0.7) !important;
+}

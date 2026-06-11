@@ -1,0 +1,183 @@
+==============================================================
+  HOW TO WRITE SKILLS FOR WARROOM AI
+  Skills let you give Warroom AI custom knowledge it can call on demand.
+==============================================================
+
+WHAT IS A SKILL?
+----------------
+A skill is a plain Markdown (.md) file that lives in this folder
+(userData/warroom/skills/). When you ask Warroom AI something it
+needs extra knowledge for — debate formats, app features, card
+cutting rules, your team's conventions, etc. — it can call
+get_skill("skill_name") to load and read the file.
+
+Skills are NOT injected into every conversation. They're lazy-loaded:
+Warroom AI fetches them only when it decides it needs them, keeping your
+baseline token usage low.
+
+
+WHERE TO PUT SKILLS
+-------------------
+Drop any .md file into this folder:
+
+  userData/warroom/skills/
+
+On macOS:  ~/Library/Application Support/Warroom/warroom/skills/
+On Windows: %APPDATA%\Warroom\warroom\skills\
+
+User-added skills here override built-in defaults with the same name.
+Built-in default skills ship with the app (you can read them in the
+app's resources folder but shouldn't edit them there — edit or replace
+them here instead).
+
+
+NAMING RULES
+------------
+- Filename = skill name Warroom AI will use to call it
+- Use lowercase_with_underscores.md  (e.g. my_team_conventions.md)
+- No spaces in filenames
+- Warroom AI calls it as: get_skill("my_team_conventions")
+- Keep names short and descriptive
+
+
+FILE FORMAT
+-----------
+Plain Markdown (.md). No special header required. Just write clearly.
+
+Recommended structure:
+
+  # Skill Title
+
+  ## Overview
+  One paragraph explaining what this skill covers.
+
+  ## Section 1
+  ...
+
+  ## Section 2
+  ...
+
+Use headers (##, ###) to organize sections. Warroom AI reads the whole
+file so structure helps it find the right information quickly.
+
+
+WHAT MAKES A GOOD SKILL?
+------------------------
+1. SPECIFIC — cover one topic well, not everything vaguely
+2. DENSE — pack in the real detail. Warroom AI is smart; give it
+   the actual facts, rules, and examples, not summaries.
+3. ACTIONABLE — include examples, formats, templates where
+   relevant (e.g. card_cutting.md has an example card)
+4. SCOPED — if it's getting long (>2000 words), consider
+   splitting it into two separate skills
+5. AUTHORITATIVE — write as the definitive reference on the
+   topic. Warroom AI will trust this over its training data.
+
+
+EXAMPLES OF USEFUL CUSTOM SKILLS
+---------------------------------
+my_team_conventions.md
+  - How your team abbreviates arguments on flows
+  - Your team's preferred card tag style
+  - Which arguments your team runs this season
+
+our_aff_case.md
+  - Full text of your current 1AC
+  - Block explanations and strategy notes
+  - Common neg args you face and how to answer them
+
+tournament_prep_camp_2025.md
+  - Notes from summer camp
+  - New arguments you learned
+  - Evidence files to remember
+
+judge_notes.md
+  - Paradigm notes for judges you've hit repeatedly
+  - Voting tendencies, preferred argument styles
+  - What they hate
+
+regional_circuit_norms.md
+  - How your regional circuit differs from nat circuit
+  - Common arguments run locally
+  - Judge pool tendencies
+
+
+EXAMPLE SKILL FILE
+------------------
+Save this as: my_team_conventions.md
+
+----
+# My Team Debate Conventions
+
+## Flowing Shorthand
+- DA = Disadvantage
+- CP = Counterplan
+- K = Kritik / Critique
+- T = Topicality
+- UQ = Uniqueness
+- L = Link
+- IL = Internal Link
+- I = Impact
+- ALT = Alternative (for Ks)
+- PERM = Permutation
+- 2AC = Second Affirmative Constructive answer
+- Ext = Extend
+
+## Tag Style
+We write tags as strong declarative claims, not descriptions.
+Good: "Russian aggression collapses extended deterrence"
+Bad: "Card about Russia and deterrence"
+
+## Evidence Standards
+- Prefer peer-reviewed or government sources
+- Flag cards older than 4 years (automatically done in app)
+- Always include full URL in cite
+
+## Our Current Aff Strategy
+We run the [TOPIC] affirmative. Against framework heavy negs
+we go for the case turn + impact turn. Against policy negs
+we concede some uniqueness and win on link turn + impact calc.
+----
+
+
+HOW GEMINI DECIDES TO CALL A SKILL
+------------------------------------
+Warroom AI is instructed to call get_skill() before answering questions
+that overlap with available skills. You can also prompt it directly:
+
+  "Use the card_cutting skill to format this"
+  "Check your ld_debate skill for the speech order"
+  "Load my_team_conventions before answering"
+
+For Warroom AI to know your custom skill exists, just tell it the name:
+  "I have a skill called judge_notes — use it"
+
+Or just ask your question naturally. Warroom AI will call whichever
+relevant skill it decides it needs.
+
+
+BUILT-IN DEFAULT SKILLS
+------------------------
+These ship with the app and can be overridden by placing a file
+with the same name in your skills folder:
+
+  cx_debate.md         Policy/CX debate format, args, judging
+  pf_debate.md         Public Forum format, crossfire, weighing
+  ld_debate.md         Lincoln-Douglas format, framework, circuit
+  card_cutting.md      Verbatim card cutting format and workflow
+  user_manual.md       Warroom app user guide
+  documentation.md     Full technical documentation of the app
+
+
+TIPS
+----
+- Keep skills focused. A 500-word skill on one topic beats a
+  3000-word skill that covers five topics loosely.
+- Update skills as the season progresses — swap in new aff cases,
+  update judge notes after tournaments, etc.
+- Skills are just text files. Edit them in any text editor.
+- If a skill isn't being called when you expect: tell Warroom AI
+  explicitly ("use my [skill_name] skill for this")
+
+
+==============================================================

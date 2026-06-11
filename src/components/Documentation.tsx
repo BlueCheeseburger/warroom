@@ -1,0 +1,840 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useApp } from '../store/appStore';
+
+// ─── Section helpers ──────────────────────────────────────────────────────────
+
+function H2({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-base font-semibold text-ink mb-3 mt-8 first:mt-0 flex items-center gap-2">
+      {children}
+    </h2>
+  );
+}
+
+function H3({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-semibold text-ink mb-1.5 mt-4">{children}</h3>;
+}
+
+function P({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-ink/70 leading-relaxed mb-2">{children}</p>;
+}
+
+function UL({ children }: { children: React.ReactNode }) {
+  return <ul className="space-y-1 mb-3 pl-4">{children}</ul>;
+}
+
+function LI({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="text-sm text-ink/70 leading-relaxed list-disc list-outside">
+      {children}
+    </li>
+  );
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <code
+      className="px-1 py-0.5 rounded text-xs font-mono"
+      style={{ background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))' }}
+    >
+      {children}
+    </code>
+  );
+}
+
+function Badge({ children, color = 'blue' }: { children: React.ReactNode; color?: string }) {
+  const colors: Record<string, string> = {
+    blue: '#3b82f6',
+    purple: '#8b5cf6',
+    amber: '#f59e0b',
+    emerald: '#10b981',
+    rose: '#f43f5e',
+  };
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+      style={{ background: colors[color] + '22', color: colors[color] }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="rounded-xl p-4 mb-4"
+      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── TOC ──────────────────────────────────────────────────────────────────────
+
+const TOC_SECTIONS = [
+  { id: 'overview',    label: 'Overview' },
+  { id: 'stack',       label: 'Tech stack' },
+  { id: 'data-model',  label: 'Data model' },
+  { id: 'navigation',  label: 'Navigation & modes' },
+  { id: 'cases',       label: 'Cases & blocks' },
+  { id: 'library',     label: 'Card library' },
+  { id: 'opponents',   label: 'Opponents' },
+  { id: 'tournaments', label: 'Tournaments & rounds' },
+  { id: 'monitor',     label: 'Tabroom live monitor' },
+  { id: 'background',  label: 'Background notifications' },
+  { id: 'flows',       label: 'Flows' },
+  { id: 'speech-doc',  label: 'Speech doc viewer' },
+  { id: 'find-cards',  label: 'FindCards (Logos)' },
+  { id: 'open-ev',     label: 'Open Evidence' },
+  { id: 'agent',       label: 'Warroom Agent (AI)' },
+  { id: 'chat',        label: 'Team chat' },
+  { id: 'gdrive',      label: 'Google Drive' },
+  { id: 'settings',    label: 'Settings' },
+  { id: 'storage',     label: 'Storage & security' },
+  { id: 'architecture', label: 'Architecture' },
+  { id: 'topics',      label: 'NSDA Topics' },
+  { id: 'ai-guide',    label: 'AI help guide' },
+];
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function Documentation() {
+  const { setView } = useApp();
+  const [activeSection, setActiveSection] = useState('overview');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id.replace('doc-', ''));
+          }
+        }
+      },
+      { root: container, rootMargin: '0px 0px -70% 0px', threshold: 0 }
+    );
+    TOC_SECTIONS.forEach(({ id }) => {
+      const el = container.querySelector(`#doc-${id}`);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  function scrollTo(id: string) {
+    setActiveSection(id);
+    document.getElementById(`doc-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  const activeSectionLabel = TOC_SECTIONS.find((s) => s.id === activeSection)?.label ?? '';
+
+  return (
+    <div className="flex h-full min-h-0" style={{ background: 'var(--bg-main)' }}>
+      {/* Sidebar TOC */}
+      <div
+        className="w-44 shrink-0 flex flex-col py-6 px-3 overflow-y-auto scroll-thin"
+        style={{ borderRight: '1px solid var(--border-side)' }}
+      >
+        <button
+          className="flex items-center gap-1.5 text-xs mb-5 font-medium"
+          style={{ color: 'var(--nav-inactive-color)', background: 'none', border: 'none', cursor: 'pointer' }}
+          onClick={() => setView({ kind: 'settings' })}
+        >
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 15L7 10L12 5" />
+          </svg>
+          Settings
+        </button>
+        <div className="label mb-2" style={{ fontSize: 9 }}>Contents</div>
+        <nav className="space-y-0.5">
+          {TOC_SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => scrollTo(s.id)}
+              className="w-full text-left px-2 py-1 rounded-lg text-xs transition"
+              style={{
+                background: activeSection === s.id ? 'var(--item-selected-bg)' : 'transparent',
+                color: activeSection === s.id ? 'var(--item-selected-text)' : 'var(--nav-inactive-color)',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: activeSection === s.id ? 600 : 400,
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Main content */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-8 max-w-3xl">
+        <div className="label mb-1">Warroom</div>
+        <h1 className="text-xl font-bold text-ink mb-0.5">Project Documentation</h1>
+        <p className="text-sm font-medium mb-1" style={{ color: '#4285F4' }}>
+          {activeSectionLabel}
+        </p>
+        <p className="text-xs mb-8" style={{ color: 'var(--nav-inactive-color)' }}>
+          Last updated: May 2026
+        </p>
+
+        {/* ── Overview ──────────────────────────────────────────────── */}
+        <section id="doc-overview">
+          <H2>Overview</H2>
+          <P>
+            Warroom is a cross-platform desktop application built for competitive debaters.
+            It is primarily designed for policy debate but also supports Public Forum (PF) and Lincoln-Douglas (LD).
+            It centralises everything a debate team needs during prep and at tournament: case management,
+            evidence cards, opponent scouting, round tracking, live tournament monitoring, team chat,
+            and an AI assistant powered by Gemini.
+          </P>
+          <P>
+            It runs as a native Electron app on macOS and Windows. All core data is stored locally
+            (no account required to use prep features); collaborative features (chat, sharing) use
+            Supabase for real-time sync.
+          </P>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Badge color="blue">Electron</Badge>
+            <Badge color="purple">React + TypeScript</Badge>
+            <Badge color="amber">Gemini AI</Badge>
+            <Badge color="emerald">Supabase</Badge>
+          </div>
+        </section>
+
+        {/* ── Tech stack ────────────────────────────────────────────── */}
+        <section id="doc-stack">
+          <H2>Tech stack</H2>
+          <Card>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div><span className="font-medium text-ink">Runtime</span><span className="ml-2 text-ink/60">Electron 42</span></div>
+              <div><span className="font-medium text-ink">UI framework</span><span className="ml-2 text-ink/60">React 18 + TypeScript</span></div>
+              <div><span className="font-medium text-ink">Bundler</span><span className="ml-2 text-ink/60">Vite via electron-vite</span></div>
+              <div><span className="font-medium text-ink">Styling</span><span className="ml-2 text-ink/60">Tailwind CSS + CSS variables</span></div>
+              <div><span className="font-medium text-ink">State</span><span className="ml-2 text-ink/60">Zustand</span></div>
+              <div><span className="font-medium text-ink">Backend/Chat</span><span className="ml-2 text-ink/60">Supabase (Postgres + realtime)</span></div>
+              <div><span className="font-medium text-ink">AI</span><span className="ml-2 text-ink/60">Google Gemini API</span></div>
+              <div><span className="font-medium text-ink">Docx parsing</span><span className="ml-2 text-ink/60">mammoth + docx-preview</span></div>
+              <div><span className="font-medium text-ink">Spreadsheets</span><span className="ml-2 text-ink/60">xlsx (SheetJS)</span></div>
+              <div><span className="font-medium text-ink">PDF parsing</span><span className="ml-2 text-ink/60">pdf-parse</span></div>
+              <div><span className="font-medium text-ink">Fuzzy search</span><span className="ml-2 text-ink/60">Fuse.js</span></div>
+              <div><span className="font-medium text-ink">HTML parsing</span><span className="ml-2 text-ink/60">cheerio</span></div>
+            </div>
+          </Card>
+          <H3>Process architecture</H3>
+          <P>
+            The app follows Electron's two-process model. <Code>electron/main.ts</Code> is the main
+            process — it handles file I/O, secure storage, all network requests to external APIs
+            (Tabroom, OpenCaselist, Debate Land, Gemini, Google Drive), and the Tabroom monitor
+            background worker. <Code>electron/preload.ts</Code> exposes a <Code>window.warroom</Code>{' '}
+            IPC bridge to the renderer. The renderer (<Code>src/</Code>) is a React SPA that never
+            makes direct network calls.
+          </P>
+        </section>
+
+        {/* ── Data model ────────────────────────────────────────────── */}
+        <section id="doc-data-model">
+          <H2>Data model</H2>
+          <P>
+            All local data lives in a single <Code>DB</Code> object (defined in <Code>src/types.ts</Code>)
+            persisted as <Code>userData/warroom/db.json</Code>.
+          </P>
+          <Card>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="font-semibold text-ink">Case</span>
+                <span className="ml-2 text-ink/60">id · name · side (aff|neg) · blocks[] · shared?</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Block</span>
+                <span className="ml-2 text-ink/60">id · caseId · title · type · cards[] · createdAt · updatedAt</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Card</span>
+                <span className="ml-2 text-ink/60">id · blockId · tag · cite · body · year · flagged · createdAt</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Opponent</span>
+                <span className="ml-2 text-ink/60">id · teamName · school · teamId · caselist · notes · disclosures · roundsAgainst[] · stats · tabroom_entry_id</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Tournament</span>
+                <span className="ml-2 text-ink/60">id · name · date · start · end · location · event_type · rounds[] · tabroom_id · tabroom_event_id · tabroomEntryCode</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Round</span>
+                <span className="ml-2 text-ink/60">id · tournamentId · number · side · opponentId · room · time · result · notes · judgeNotes · argsRead[] · argsWorked[] · argsFailed[] · judgeName · judgeParadigm · autoFilled · isBye</span>
+              </div>
+            </div>
+          </Card>
+          <P>
+            Relationships use string ID references (e.g. <Code>Block.cards</Code> is an array of
+            Card IDs). The DB root also stores <Code>manualWins</Code> and <Code>manualLosses</Code>{' '}
+            for adjusting the W/L record beyond round-derived totals.
+          </P>
+        </section>
+
+        {/* ── Navigation ────────────────────────────────────────────── */}
+        <section id="doc-navigation">
+          <H2>Navigation & modes</H2>
+          <P>
+            Navigation is view-stack-free: one active <Code>View</Code> at a time, stored in Zustand.
+            The sidebar provides top-level navigation; views are rendered by a <Code>Router</Code>{' '}
+            function in <Code>App.tsx</Code>. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews)
+            are always mounted but hidden so they don't reload on navigation.
+          </P>
+          <H3>Views</H3>
+          <UL>
+            <LI><Code>home</Code> — Dashboard with stats, live/upcoming tournament card, recent cases</LI>
+            <LI><Code>case</Code> — Individual case editor with all blocks</LI>
+            <LI><Code>block</Code> — Single block with its evidence cards</LI>
+            <LI><Code>library</Code> — Full card library across all cases/blocks</LI>
+            <LI><Code>speech-doc</Code> — In-app .docx viewer (also used as speech doc editor)</LI>
+            <LI><Code>tournaments</Code> — Tournament list</LI>
+            <LI><Code>tournament</Code> — Tournament detail with round list</LI>
+            <LI><Code>round</Code> — Mission Brief (pre-round prep screen)</LI>
+            <LI><Code>opponents</Code> — Opponent search & list</LI>
+            <LI><Code>opponent</Code> — Opponent profile with disclosures, stats, AI scout report</LI>
+            <LI><Code>settings</Code> — App settings (supports <Code>scrollTo</Code> param)</LI>
+            <LI><Code>flow</Code> — Spreadsheet flow viewer/editor</LI>
+            <LI><Code>logos</Code> — FindCards Logos webview (persistent)</LI>
+            <LI><Code>open-ev</Code> — Open Evidence webview (persistent)</LI>
+            <LI><Code>gdrive</Code> — Google Drive file browser</LI>
+            <LI><Code>docs</Code> — This documentation page</LI>
+          </UL>
+          <H3>App modes</H3>
+          <P>
+            Two modes toggled in the sidebar: <strong>Prep</strong> (default, for case building and
+            scouting) and <strong>Round</strong> (tournament day, streamlined view focused on current
+            round). The mode is persisted per session.
+          </P>
+        </section>
+
+        {/* ── Cases & Blocks ─────────────────────────────────────────── */}
+        <section id="doc-cases">
+          <H2>Cases & blocks</H2>
+          <P>
+            Cases are the top-level unit of prep — an aff or neg position. Each case contains
+            <strong> blocks</strong> (e.g. "T-Topicality", "Heg DA", "2AC vs DA"). Blocks hold
+            individual evidence <strong>cards</strong> (tag + cite + body text + year).
+          </P>
+          <H3>Card extraction</H3>
+          <P>
+            Cards can be imported from a <Code>.docx</Code> file via AI extraction. The main process
+            parses the file with mammoth, then sends the text to Gemini (using the
+            <Code>extractCards</Code> IPC handler) which returns structured{' '}
+            <Code>{'{ tag, cite, body, year }'}</Code> objects. The cards are created in the selected
+            block.
+          </P>
+          <H3>Block suggestions</H3>
+          <P>
+            On the Mission Brief (round view), Warroom can suggest which blocks to read against an
+            opponent's positions using <Code>suggestBlocks</Code> — Gemini compares the opponent's
+            disclosed arguments against your block list and returns a ranked selection.
+          </P>
+        </section>
+
+        {/* ── Library ────────────────────────────────────────────────── */}
+        <section id="doc-library">
+          <H2>Card library</H2>
+          <P>
+            The Library view aggregates all cards across every case and block. Cards can be searched,
+            filtered by block/case, and flagged. Flagged cards are highlighted for quick reference.
+            Cards can be exported or shared as attachments in team chat.
+          </P>
+        </section>
+
+        {/* ── Opponents ─────────────────────────────────────────────── */}
+        <section id="doc-opponents">
+          <H2>Opponents</H2>
+          <P>
+            Opponent profiles store scouting data for teams you might face. Each opponent tracks:
+          </P>
+          <UL>
+            <LI>Team name, school, notes</LI>
+            <LI>
+              <strong>OpenCaselist disclosures</strong> — pulled via the OC API: rounds disclosed,
+              aff position name, neg position names, raw round data, raw cite text
+            </LI>
+            <LI>
+              <strong>AI Scout report</strong> — Gemini synthesises the OC data into a readable
+              aff/neg summary with citations (stored as <Code>disclosures.aiScout</Code>)
+            </LI>
+            <LI>
+              <strong>Debate Land stats</strong> — career OTR, peak rank, avg speaks, win%, bids,
+              total record (via <Code>window.warroom.dl</Code> IPC)
+            </LI>
+            <LI>Rounds against this opponent (linked by round ID)</LI>
+          </UL>
+          <H3>Opponent search</H3>
+          <P>
+            Opponents can be looked up by team name via OpenCaselist full-text search and/or
+            Debate Land search. The app de-duplicates across local DB and search results.
+          </P>
+        </section>
+
+        {/* ── Tournaments & Rounds ───────────────────────────────────── */}
+        <section id="doc-tournaments">
+          <H2>Tournaments & rounds</H2>
+          <H3>Tournaments</H3>
+          <P>
+            Tournaments store name, dates (start/end), location, event type, and an optional
+            Tabroom tournament ID + event ID for monitor integration. An entry code
+            (e.g. <Code>Emery BL</Code>) is also stored and used by the live monitor.
+          </P>
+          <H3>Rounds</H3>
+          <P>
+            Each round within a tournament records: round number, side (aff/neg), opponent,
+            room, time, result (win/loss/pending), judge name + paradigm text, and notes.
+            Three argument tracking lists are available: <Code>argsRead</Code>, <Code>argsWorked</Code>,
+            <Code>argsFailed</Code>. Rounds created by the Tabroom monitor are flagged{' '}
+            <Code>autoFilled: true</Code>.
+          </P>
+          <H3>Mission Brief</H3>
+          <P>
+            The round view (<Code>MissionBrief</Code>) is the pre-round prep screen. It shows:
+            opponent info and disclosures, judge paradigm, AI-suggested blocks, and a notes editor.
+            It can be accessed by clicking a round in the tournament view.
+          </P>
+        </section>
+
+        {/* ── Tabroom Monitor ────────────────────────────────────────── */}
+        <section id="doc-monitor">
+          <H2>Tabroom live monitor</H2>
+          <P>
+            The Tabroom monitor polls Tabroom's public API in the background for new pairings
+            at an active tournament. When a new round is posted it:
+          </P>
+          <UL>
+            <LI>Fires an OS-level notification</LI>
+            <LI>Scrapes the judge's paradigm from Tabroom</LI>
+            <LI>Pulls opponent disclosures from OpenCaselist</LI>
+            <LI>Fetches opponent stats from Debate Land</LI>
+            <LI>Auto-creates the round entry in your tournament (marked <Code>autoFilled</Code>)</LI>
+            <LI>Navigates directly to the new round's Mission Brief</LI>
+          </UL>
+          <P>
+            To start: open a tournament → click <strong>Start Monitor</strong> → enter your entry
+            code (the team code used on Tabroom, e.g. <Code>Emery BL</Code>). No Tabroom login
+            required — uses the public pairing API. Requires OpenCaselist credentials (set in
+            Settings) for disclosure fetching.
+          </P>
+          <P>
+            The monitor runs in the main process (<Code>electron/main.ts</Code>) as a persistent
+            background loop. Events are sent to the renderer via IPC using{' '}
+            <Code>window.warroom.tabroom.monitor.onNewRound</Code> etc.
+          </P>
+        </section>
+
+        {/* ── Background notifications (daemon) ──────────────────────── */}
+        <section id="doc-background">
+          <H2>Background notifications</H2>
+          <P>
+            Warroom's five watchers — followed-judge paradigm updates, opponent disclosure
+            updates, the live Tabroom round monitor, the Tabroom inbox (ballot results), and the
+            NSDA topic scraper — keep notifying you <strong>even when the app is closed</strong>.
+            This is handled by a headless background daemon: the same app binary relaunched with a{' '}
+            <Code>--daemon</Code> flag (so it can decrypt your stored Tabroom / OpenCaselist
+            credentials), managed by a <Code>launchd</Code> LaunchAgent on macOS and a Task
+            Scheduler task (<Code>WarroomDaemon</Code>) on Windows.
+          </P>
+          <P>
+            The daemon is <strong>hybrid</strong>: while a tournament monitor is active it stays
+            resident and polls every ~60s for fast round/result alerts; otherwise it is woken on an
+            interval (~10&nbsp;min) to run the judge, opponent, and topic checks, then exits. It is
+            installed automatically on first launch (packaged macOS &amp; Windows builds) with a
+            one-time heads-up notification; the Windows uninstaller removes the scheduled task.
+          </P>
+          <P>
+            The daemon and the open app <strong>never double-notify</strong>: the GUI writes a
+            heartbeat (<Code>runtime/heartbeat.json</Code>) every 20s, and the daemon defers all
+            work whenever the app is alive — it only takes over when the app is closed. Periodic
+            checks are cadence-gated via <Code>runtime/daemon-runs.json</Code>, and the live
+            monitor config + seen-round dedup state are shared through{' '}
+            <Code>runtime/monitors.json</Code> so handoffs never re-fire old alerts.
+          </P>
+          <P>
+            Clicking a daemon notification deep-links back into the app (launching it if needed) via
+            the <Code>warroom://</Code> URL scheme — e.g. <Code>warroom://open/judge/&lt;id&gt;</Code>,{' '}
+            <Code>warroom://open/opponent/&lt;id&gt;</Code>,{' '}
+            <Code>warroom://open/tournament/&lt;id&gt;?round=&lt;n&gt;</Code>, and{' '}
+            <Code>warroom://topics/&lt;pf|ld&gt;</Code>.
+          </P>
+        </section>
+
+        {/* ── Flows ─────────────────────────────────────────────────── */}
+        <section id="doc-flows">
+          <H2>Flows</H2>
+          <P>
+            Flows are <Code>.xlsx</Code> spreadsheets opened in-app using SheetJS. They appear in
+            the sidebar under a "Flows" section. Opening a <Code>.xlsx</Code> file from Finder/Explorer
+            registers it in the flows index and opens the flow view automatically. Flows can be
+            shared via team chat with view or edit permissions.
+          </P>
+          <P>
+            Each flow has an ID, name, and debate event type. The flows index is persisted separately
+            from the main DB in <Code>flows_index.json</Code>.
+          </P>
+        </section>
+
+        {/* ── Speech Doc ─────────────────────────────────────────────── */}
+        <section id="doc-speech-doc">
+          <H2>Speech doc viewer</H2>
+          <P>
+            The <Code>SpeechDocViewer</Code> renders <Code>.docx</Code> files in-app using{' '}
+            <Code>docx-preview</Code>. It is always mounted (hidden when inactive) so it preserves
+            state across navigation. Recent docs are tracked in <Code>localStorage</Code> under{' '}
+            <Code>warroom-speech-doc-recents</Code>.
+          </P>
+          <P>
+            Opening a <Code>.docx</Code> from Finder triggers the <Code>onFileOpen</Code> IPC event
+            and navigates to the speech-doc view. Speech docs can also be attached to chat messages
+            and shared with teammates.
+          </P>
+        </section>
+
+        {/* ── FindCards ─────────────────────────────────────────────── */}
+        <section id="doc-find-cards">
+          <H2>FindCards (Logos)</H2>
+          <P>
+            <Code>FindCards</Code> is a persistent Electron <Code>&lt;webview&gt;</Code> pointing
+            at Logos evidence search. The view is always mounted off-screen; navigating to{' '}
+            <Code>logos</Code> makes it visible. The Warroom Agent can also trigger Logos searches
+            programmatically via the agent search registry without disturbing the user-visible view
+            (using a second hidden webview in <Code>AgentSearchViews</Code>).
+          </P>
+        </section>
+
+        {/* ── Open Ev ────────────────────────────────────────────────── */}
+        <section id="doc-open-ev">
+          <H2>Open Evidence</H2>
+          <P>
+            Similar to FindCards — a persistent webview pointing at Open Evidence (openev.net). The
+            Agent can search Open Evidence via a dedicated hidden webview without affecting what the
+            user sees. Files from Open Evidence can be downloaded and saved locally via the{' '}
+            <Code>opencaselist.fetchFileToTemp</Code> IPC bridge.
+          </P>
+        </section>
+
+        {/* ── Warroom Agent ──────────────────────────────────────────── */}
+        <section id="doc-agent">
+          <H2>Warroom Agent (AI)</H2>
+          <P>
+            The Warroom Agent is a Gemini-powered AI assistant that lives in a resizable right-side
+            panel (<Code>GeminiPanel</Code>). It supports multi-turn conversation and tool calls.
+          </P>
+          <H3>Model selection</H3>
+          <UL>
+            <LI><strong>Gemini 2.5 Flash Lite</strong> — cheapest, fastest; auto-enables token saving</LI>
+            <LI><strong>Gemini 2.5 Flash</strong> — default; best balance of cost and quality</LI>
+            <LI><strong>Gemini 3.5 Flash</strong> — highest quality; best for complex analysis</LI>
+          </UL>
+          <P>
+            Agentic tasks (tool calls, sub-agent searches) always use Gemini 2.5 Flash regardless
+            of the model selection above.
+          </P>
+          <H3>@mentions / attachments</H3>
+          <P>
+            Type <Code>@</Code> in the chat input to attach context from your local data:
+          </P>
+          <UL>
+            <LI><Code>@case</Code> — attach a full case</LI>
+            <LI><Code>@block</Code> — attach a block's cards</LI>
+            <LI><Code>@flow</Code> — attach a flow spreadsheet</LI>
+            <LI><Code>@opponent</Code> — attach opponent profile / disclosures</LI>
+            <LI><Code>@member</Code> — mention a team member</LI>
+            <LI><Code>@image</Code> — paste an image from clipboard</LI>
+            <LI><Code>@speechdoc</Code> — attach a speech doc</LI>
+          </UL>
+          <H3>Token saving</H3>
+          <P>
+            When attaching a speech doc, "token saving" mode sends only underlined text, citations,
+            and headings (not small body text) to reduce token usage. Auto-enabled for Flash Lite.
+            Can be toggled globally in Settings or per-conversation.
+          </P>
+          <H3>Agent tool calls</H3>
+          <P>
+            The agent can call three tools during a conversation:
+          </P>
+          <UL>
+            <LI><Code>search_logos</Code> — searches the Logos debate evidence database via a hidden webview in <Code>AgentSearchViews</Code></LI>
+            <LI><Code>search_openevidence</Code> — searches the Open Evidence Project via a second hidden webview in <Code>AgentSearchViews</Code></LI>
+            <LI><Code>save_card_to_library</Code> — saves a card with full verbatim body text to the <Code>__agent_inbox__</Code> block inside the <Code>__agent__</Code> case ("Agent Saves"). Cards saved this way appear in the normal card library.</LI>
+          </UL>
+          <P>
+            The agent runs a minimum of 3 searches per evidence request using varied query terms. Saved cards always use the complete verbatim card body — never a summary. The save handler validates the body is non-empty before writing to the DB.
+          </P>
+          <H3>Chat sessions</H3>
+          <P>
+            Each conversation has an auto-generated title (generated by Gemini after the first
+            exchange). Sessions are stored locally. The active session ID is tracked in Zustand
+            as <Code>geminiActiveId</Code>.
+          </P>
+        </section>
+
+        {/* ── Team Chat ──────────────────────────────────────────────── */}
+        <section id="doc-chat">
+          <H2>Team chat</H2>
+          <P>
+            Team chat uses Supabase for real-time messaging. It appears in a resizable panel
+            on the right side (separate from the Gemini panel). Features:
+          </P>
+          <UL>
+            <LI>Team creation with invite codes; members can join/leave; owner can kick members</LI>
+            <LI>Channel messages and direct messages (DMs) between team members</LI>
+            <LI>Message editing and deletion</LI>
+            <LI>Attachments: cases, blocks, flows, opponents, images, speech docs — shared with edit or view permissions</LI>
+            <LI>Round references in messages (link to a specific round)</LI>
+            <LI>Unread count badge on the chat icon in the sidebar</LI>
+            <LI>User lookup by email via <Code>lookupUserByEmail</Code></LI>
+          </UL>
+          <H3>Auth</H3>
+          <P>
+            Chat uses Supabase auth (email + password). Credentials are stored encrypted on device
+            via <Code>safeStorage</Code>. Sign-in state is cached in <Code>localStorage</Code>.
+          </P>
+          <H3>Chat width</H3>
+          <P>
+            The chat panel is resizable (260–600 px, default 320 px). Width is persisted in
+            <Code>localStorage</Code> as <Code>warroom-chat-width</Code>.
+          </P>
+        </section>
+
+        {/* ── Google Drive ──────────────────────────────────────────── */}
+        <section id="doc-gdrive">
+          <H2>Google Drive integration</H2>
+          <P>
+            Google Drive lets you browse your Drive files in-app and open Word docs or
+            spreadsheets directly. Setup requires creating a Desktop OAuth app credential in Google
+            Cloud Console.
+          </P>
+          <H3>Setup flow</H3>
+          <UL>
+            <LI>Enter OAuth Client ID and Client Secret in Settings → Google Drive</LI>
+            <LI>Click "Connect Drive" — the app opens a browser OAuth flow</LI>
+            <LI>After authorization, tokens are stored encrypted via <Code>safeStorage</Code></LI>
+          </UL>
+          <H3>Capabilities</H3>
+          <UL>
+            <LI>List and paginate Drive files</LI>
+            <LI>Search files by name</LI>
+            <LI>Fetch a file's content (base64) for in-app rendering</LI>
+            <LI>Upload a local spreadsheet as a Google Sheet</LI>
+            <LI>Open <Code>.docx</Code> files in the Speech Doc Viewer</LI>
+            <LI>Open <Code>.xlsx</Code> files in the Flow viewer</LI>
+          </UL>
+        </section>
+
+        {/* ── Settings ──────────────────────────────────────────────── */}
+        <section id="doc-settings">
+          <H2>Settings</H2>
+          <Card>
+            <div className="space-y-2.5 text-sm">
+              <div>
+                <span className="font-semibold text-ink">Debate event</span>
+                <span className="ml-2 text-ink/60">HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD)</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Gemini API key</span>
+                <span className="ml-2 text-ink/60">Stored encrypted. Powers card extraction, block suggestions, and the AI assistant.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Gemini model</span>
+                <span className="ml-2 text-ink/60">Flash Lite / Flash (default) / 3.5 Flash</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Token saving default</span>
+                <span className="ml-2 text-ink/60">Auto-strips small body text from speech doc attachments to the Agent.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">OpenCaselist login</span>
+                <span className="ml-2 text-ink/60">Same as Tabroom.com credentials. Required for opponent scouting and Open Ev.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Google Drive</span>
+                <span className="ml-2 text-ink/60">OAuth Client ID + Secret. Requires Desktop app type in Google Cloud.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Chat</span>
+                <span className="ml-2 text-ink/60">Shows current user; sign-out button.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Sharing default</span>
+                <span className="ml-2 text-ink/60">Can edit (default) or Can view — applied when sharing via chat.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Setup wizard</span>
+                <span className="ml-2 text-ink/60">Re-runs the onboarding flow.</span>
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        {/* ── Storage & security ─────────────────────────────────────── */}
+        <section id="doc-storage">
+          <H2>Storage & security</H2>
+          <H3>Local data</H3>
+          <UL>
+            <LI><Code>userData/warroom/db.json</Code> — main database (cases, blocks, cards, opponents, tournaments, rounds)</LI>
+            <LI><Code>userData/warroom/flows_index.json</Code> — list of open flows with metadata</LI>
+            <LI><Code>userData/warroom/app_settings.json</Code> — debate event, Gemini model, token saving</LI>
+            <LI><Code>userData/warroom/secure_*.json</Code> — encrypted secrets (Gemini key, OC credentials, GDrive tokens, chat credentials)</LI>
+          </UL>
+          <H3>Secure storage</H3>
+          <P>
+            Sensitive values (API keys, passwords, OAuth tokens) are encrypted with Electron's{' '}
+            <Code>safeStorage</Code> (OS keychain-backed AES encryption). In dev mode, base64 fallback
+            is used since the safeStorage key changes on each rebuild.
+          </P>
+          <H3>Encrypted chat</H3>
+          <P>
+            All team-chat and DM content is end-to-end encrypted before it leaves your computer.
+            Message text and every shared attachment (cases, blocks, flows, opponents, tournaments,
+            speech docs) are encrypted client-side with <Code>AES-256-GCM</Code>; the cloud database
+            only ever stores ciphertext. Each team has one symmetric key, derived from the team's
+            invite code via <Code>PBKDF2</Code> (200k iterations, salted with the team id). Because
+            every member already knows the invite code, everyone derives the identical key with no
+            key exchange — and the key itself is never transmitted or stored on any server. Sender
+            name, timestamps, and attachment labels stay readable for display; only the actual
+            content is encrypted. Warroom AI does not read team-chat history, so no plaintext is
+            ever sent to the AI provider.
+          </P>
+          <H3>Path safety</H3>
+          <P>
+            IPC handlers that read arbitrary file paths maintain a <Code>trustedPaths</Code> set —
+            only paths originating from a file dialog or internally-generated temp files are accepted.
+            This prevents a compromised renderer from reading arbitrary disk paths.
+          </P>
+          <H3>File writes</H3>
+          <P>
+            JSON writes use a write-then-rename pattern (<Code>db.json.tmp</Code> → <Code>db.json</Code>)
+            to prevent data loss on crash.
+          </P>
+        </section>
+
+        {/* ── Architecture ───────────────────────────────────────────── */}
+        <section id="doc-architecture">
+          <H2>Architecture</H2>
+          <H3>IPC bridge (<Code>window.warroom</Code>)</H3>
+          <P>
+            The preload script exposes a typed <Code>window.warroom</Code> namespace with these
+            sub-namespaces:
+          </P>
+          <UL>
+            <LI><Code>storage</Code> — read/write JSON files in userData</LI>
+            <LI><Code>secure</Code> — get/set encrypted values</LI>
+            <LI><Code>dialog</Code> — open file dialog, save buffer to disk</LI>
+            <LI><Code>ai</Code> — extractCards, suggestBlocks, teamSummary, parseRoundEmail</LI>
+            <LI><Code>clipboard</Code> — readImage (for pasting screenshots into Agent)</LI>
+            <LI><Code>opencaselist</Code> — login, search, rounds, cites, file fetch/save</LI>
+            <LI><Code>shell</Code> — openPath, openBuffer (open files in external app)</LI>
+            <LI><Code>fs</Code> — readFileBytes, writeTempFile (for trusted file operations)</LI>
+            <LI><Code>dl</Code> — searchTeam, getTeamStats (Debate Land)</LI>
+            <LI><Code>tabroom</Code> — getTournament, getEntries, getPairings, fetchTournament, monitor.*</LI>
+            <LI><Code>chat</Code> — all Supabase chat + Gemini AI operations</LI>
+            <LI><Code>gdrive</Code> — status, connect, disconnect, listFiles, searchFiles, fetchFile, uploadAsSheets</LI>
+            <LI><Code>platform</Code> — <Code>'darwin'</Code> or <Code>'win32'</Code></LI>
+            <LI><Code>onFileOpen</Code> — subscribe to file-open events from the OS</LI>
+          </UL>
+          <H3>Zustand store (<Code>src/store/appStore.ts</Code>)</H3>
+          <P>
+            Single global store (<Code>useApp</Code>) holds: DB state, current view, mode, theme,
+            event type, flows index, chat state (user, team, members, unread count), Gemini panel
+            state, onboarding state, and the agent search function registry.
+          </P>
+          <H3>Persistent webviews</H3>
+          <P>
+            Three Electron <Code>&lt;webview&gt;</Code> elements are always mounted to avoid reloads:
+            <Code>FindCards</Code> (Logos), <Code>OpenEvView</Code> (openev.net), and two agent
+            search webviews in <Code>AgentSearchViews</Code>. They use CSS <Code>display: none</Code>{' '}
+            (not React unmounting) to hide/show.
+          </P>
+          <H3>Tabroom monitor flow</H3>
+          <P>
+            Main process polls Tabroom every ~30s. On a new pairing, it fires parallel requests for
+            judge paradigm (Tabroom scrape), OC disclosures (OC API), and DL stats. Results are
+            bundled into a <Code>TabroomRoundBrief</Code> and sent to the renderer via IPC.{' '}
+            <Code>App.tsx</Code> handles the event: deduplicates, upserts the opponent, creates the
+            round, and navigates.
+          </P>
+        </section>
+
+        <section id="doc-topics">
+          <H2>NSDA Topics</H2>
+          <P>
+            Warroom monitors <strong>speechanddebate.org/topics/</strong> for the latest Policy, Public Forum, and Lincoln-Douglas resolutions.
+          </P>
+          <H3>Topic monitor</H3>
+          <UL>
+            <LI>On every app launch, Warroom checks whether a new topic has dropped and updates stored data.</LI>
+            <LI>PF and LD topics drop on known dates (Aug 1, Oct 1, Dec 1, etc.) at 9:00am CT. The app polls aggressively only on release days — up to every 2 minutes in the 30-minute window after release time.</LI>
+            <LI>When a new topic is detected, a <strong>desktop notification</strong> fires immediately. Clicking it opens the Topics screen.</LI>
+            <LI>A vivid <strong>in-app banner</strong> appears at the top of the window (amber for PF, red for LD) with a pulsing indicator and the full resolution text. It persists until dismissed.</LI>
+          </UL>
+          <H3>Topic brief</H3>
+          <UL>
+            <LI>When a new topic drops, a Gemini-generated brief is automatically requested. It covers: resolution breakdown, Aff/Neg arguments, frameworks, core clash, research priorities, and pitfalls.</LI>
+            <LI>The brief can be regenerated at any time from the Topics screen.</LI>
+            <LI>Requires a Gemini API key in Settings → API Keys.</LI>
+          </UL>
+          <H3>Policy topic context</H3>
+          <P>
+            The current Policy topic is injected into every Warroom Agent conversation as system context, so the agent always knows what resolution is being debated without you needing to state it.
+          </P>
+        </section>
+
+        {/* ── AI Help Guide ───────────────────────────────────────────── */}
+        <section id="doc-ai-guide">
+          <H2>AI help guide</H2>
+          <P>
+            The Warroom AI (star icon in the title bar) can answer any "how do I…" or "where is…"
+            question about the app, search for evidence on Logos and Open Evidence, cut cards from
+            articles or URLs, look up judges and tournaments on Tabroom, and more. Just ask in plain
+            English.
+          </P>
+          <P>
+            The full user manual — including every feature, keyboard shortcut, and step-by-step
+            workflow — is maintained as a plain-text file you can read directly:
+          </P>
+          <Card>
+            <div className="flex items-start gap-3">
+              <span className="text-lg">📖</span>
+              <div>
+                <div className="text-sm font-semibold text-ink mb-0.5">Full User Manual</div>
+                <Code>electron/skills/user_manual.md</Code>
+                <div className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                  This file is also the knowledge source the AI loads when you ask it how to use the app.
+                  It is kept in sync with every new feature added to Warroom.
+                </div>
+              </div>
+            </div>
+          </Card>
+          <H3>Custom skills</H3>
+          <P>
+            The AI's knowledge is built from skill files — plain Markdown files in{' '}
+            <Code>electron/skills/</Code>. You can add your own skills (team conventions, case notes,
+            judge paradigms, etc.) by dropping a <Code>.md</Code> file into{' '}
+            <Code>userData/warroom/skills/</Code>. Read the tutorial:
+          </P>
+          <Card>
+            <div className="flex items-start gap-3">
+              <span className="text-lg">✏️</span>
+              <div>
+                <div className="text-sm font-semibold text-ink mb-0.5">How to Write Skills</div>
+                <Code>electron/skills/HOW_TO_WRITE_SKILLS.txt</Code>
+                <div className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                  Explains the skill file format, naming conventions, what makes a good skill, and includes
+                  a full example. Skills are lazy-loaded — only fetched when the AI needs them.
+                </div>
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        <div className="h-16" />
+      </div>
+    </div>
+  );
+}
