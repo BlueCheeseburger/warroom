@@ -1255,7 +1255,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
     let data = item.data;
     if (item.type === 'flow') {
-      try { data = await window.warroom?.storage.read(`flow_${item.id}`); } catch {}
+      try { data = await window.warroom?.storage.read(`flow_data_${item.id}`); } catch {}
     } else if (item.type === 'speechdoc' && item.data?.filePath) {
       try {
         const res = await (window.warroom as any)?.speechdoc?.extract(item.data.filePath);
@@ -1902,8 +1902,17 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
           } else if (name === 'edit_flow_cell') {
             const q = String(args.flow ?? '').trim();
-            const stepId = crypto.randomUUID();
-            steps = [...steps, { id: stepId, tool: 'edit_flow_cell', label: `Editing flow "${q}"`, status: 'running' }];
+            // Reuse an existing step for this flow if one was already created (parallel batch)
+            const existingFlowStep = steps.find((s) => s.tool === 'edit_flow_cell' && (s as any)._flowQ === q);
+            let stepId: string;
+            if (existingFlowStep) {
+              stepId = existingFlowStep.id;
+              const cur = (existingFlowStep as any)._cellCount ?? 1;
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Editing "${q}" — ${cur + 1} cells`, status: 'running', _cellCount: cur + 1 } as any : s);
+            } else {
+              stepId = crypto.randomUUID();
+              steps = [...steps, { id: stepId, tool: 'edit_flow_cell', label: `Editing "${q}"`, status: 'running', _flowQ: q, _cellCount: 1 } as any];
+            }
             syncSteps(steps);
             try {
               const meta = fuzzyFind(flowsIndex, q, (x) => x.name) ?? flowsIndex.find((x) => x.id === q);
@@ -1959,11 +1968,12 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               // Tell an open FlowView to reload so the edit shows live.
               window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId: meta.id } }));
 
-              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Edited "${meta.name}" — ${cols[colIdx]} row ${rowNum}`, status: 'done' } : s);
+              const cellCount = (steps.find((s) => s.id === stepId) as any)?._cellCount ?? 1;
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Edited "${meta.name}" (${cellCount} cell${cellCount !== 1 ? 's' : ''})`, status: 'done' } as any : s);
               syncSteps(steps);
               return { name, functionResult: `Set ${cols[colIdx]} (column ${colIdx + 1}), row ${rowNum} on sheet "${sheet.name}" of flow "${meta.name}" to: "${String(args.value ?? '')}".` };
             } catch (e: any) {
-              steps = steps.map((s) => s.id === stepId ? { ...s, label: 'Flow edit failed', status: 'error' } : s);
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Flow edit failed — ${e.message.slice(0, 60)}`, status: 'error' } : s);
               syncSteps(steps);
               return { name, functionResult: `Could not edit flow cell: ${e.message}` };
             }
