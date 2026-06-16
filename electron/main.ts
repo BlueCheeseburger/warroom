@@ -3769,6 +3769,19 @@ The user may also have custom skills — call them if referenced by name.
 - **save_tournament_to_app** — save a Tabroom tournament to the user's app.
 - **search_judge** — look up a judge on Tabroom and return their paradigm.
 - **write_skill** — create or update a custom skill file. Use when the user wants to save notes, strategy, or reference material as a reusable skill. Call get_skill("skill_builder") first for guidance on format and naming.
+- **navigate_app** — open any view in the app for the user (home, library, tournaments, opponents, settings, topics, docs, logos, open-ev, gdrive, or a specific case/block/opponent/tournament/flow by name). Use whenever the user asks you to take them somewhere or open something.
+- **list_flows** — list the user's flow sheets. Call before reading/editing a flow.
+- **read_flow** — read a flow's sheets, columns, and filled cells. ALWAYS call before edit_flow_cell so you target the right cell.
+- **edit_flow_cell** — set one cell in a flow sheet (by flow name, column header, and 1-based row). Use to fill in arguments/responses on the user's flow. The edit shows live if the flow is open.
+
+## Editing flows
+Vocabulary: a "flow" is what the user calls a "sheet" or "flow sheet". Its sections are called "sheets" or "tabs" (e.g. "Off 1", "On Case"). Columns are debate speeches (e.g. "1AC", "2NR"). The user may say "edit my sheet", "add to my tabs", or "edit across tabs" — this always means edit_flow_cell, never write_skill.
+
+When the user asks you to add or change something on a flow:
+1. If a flow was attached (@mention), its sheets, columns, and filled cells are already in context — skip list_flows and read_flow. Use edit_flow_cell directly, targeting each sheet by name.
+2. If no flow is attached, call list_flows to find the exact name, then read_flow to see the structure.
+3. Call edit_flow_cell for each cell — one call per cell. Each distinct argument gets its own row. Keep text concise: flows are shorthand, not paragraphs.
+4. To fill content across multiple sheets/tabs, call edit_flow_cell once per cell per sheet. Never use write_skill for flow content.
 
 The user's saved tournaments and rounds are in the system context — use them directly for schedule/record questions without a tool call.
 
@@ -3914,6 +3927,50 @@ const AGENT_TOOLS = [{
           description: { type: 'STRING', description: 'One sentence describing what this skill contains. Shown to the user.' },
         },
         required: ['skill_name', 'content', 'description'],
+      },
+    },
+    {
+      name: 'navigate_app',
+      description: "Open a view in the Warroom app for the user. Use when the user asks you to take them to, open, show, or go to any part of the app. For top-level destinations no target is needed. For a specific case/block/opponent/tournament/flow, pass target_name and it will be resolved by name.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          destination: {
+            type: 'STRING',
+            description: "Where to go. Top-level: 'home', 'library' (all cases/cards), 'tournaments', 'opponents', 'settings', 'topics', 'docs', 'logos', 'open-ev', 'gdrive', 'speech-doc'. Entity views (require target_name): 'case', 'block', 'opponent', 'tournament', 'flow'.",
+          },
+          target_name: { type: 'STRING', description: "Name of the specific case, block, opponent, tournament, or flow to open (only for entity destinations). Matched case-insensitively." },
+        },
+        required: ['destination'],
+      },
+    },
+    {
+      name: 'list_flows',
+      description: "List all of the user's flow sheets (name, debate event, id). Call this before read_flow or edit_flow_cell so you know which flows exist and their exact names.",
+      parameters: { type: 'OBJECT', properties: {}, required: [] },
+    },
+    {
+      name: 'read_flow',
+      description: "Read the full contents of a flow sheet — its sheets, column headers, and every filled-in cell. Call this before editing so you know the structure (column names, which rows/sheets have content) and don't overwrite the wrong cell.",
+      parameters: {
+        type: 'OBJECT',
+        properties: { flow: { type: 'STRING', description: 'Flow name (or id) to read. Matched case-insensitively.' } },
+        required: ['flow'],
+      },
+    },
+    {
+      name: 'edit_flow_cell',
+      description: "Set the value of a single cell in a flow sheet. Use to fill in arguments, responses, or notes on the user's flow. Call read_flow first to learn the column names and current contents. Columns are debate speeches (e.g. '1AC', '2NR' for policy; 'Pro Case', 'Con Rebuttal' for PF). The edit appears live if the flow is open.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          flow:   { type: 'STRING', description: 'Flow name (or id). Matched case-insensitively.' },
+          sheet:  { type: 'STRING', description: "Optional. Sheet name (e.g. 'Off 1') or 1-based sheet number. Defaults to the first sheet." },
+          column: { type: 'STRING', description: "Column header name (e.g. '2NR', 'Pro Case') or 1-based column number." },
+          row:    { type: 'NUMBER', description: 'Row number, 1-based (1 is the top row).' },
+          value:  { type: 'STRING', description: 'Text to put in the cell. Overwrites any existing content in that cell.' },
+        },
+        required: ['flow', 'column', 'row', 'value'],
       },
     },
   ],

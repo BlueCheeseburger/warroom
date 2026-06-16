@@ -3,6 +3,48 @@ import { useApp } from '../store/appStore';
 import MentionPicker from './MentionPicker';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { linkifyText } from '../lib/linkify';
+import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS, makeDefaultData } from './FlowView';
+import type { View } from '../store/appStore';
+
+// ─── App navigation map (for the navigate_app agent tool) ─────────────────────
+// Top-level destinations that need no target entity.
+const NAV_TOP_LEVEL: Record<string, View> = {
+  home: { kind: 'home' },
+  library: { kind: 'library' },
+  cases: { kind: 'library' },
+  tournaments: { kind: 'tournaments' },
+  opponents: { kind: 'opponents' },
+  settings: { kind: 'settings' },
+  topics: { kind: 'topics' },
+  docs: { kind: 'docs' },
+  documentation: { kind: 'docs' },
+  logos: { kind: 'logos' },
+  'find-cards': { kind: 'logos' },
+  'open-ev': { kind: 'open-ev' },
+  'open-evidence': { kind: 'open-ev' },
+  'google-scholar': { kind: 'google-scholar' },
+  gdrive: { kind: 'gdrive' },
+  'google-drive': { kind: 'gdrive' },
+  'speech-doc': { kind: 'speech-doc' },
+};
+
+// Resolve a flow's column headers from its stored data.
+function flowColumns(data: any): string[] {
+  if (data?.customColumns?.length) return data.customColumns;
+  if ((data?.event ?? 'policy') === 'pf')
+    return data?.pfOrder === 'con-first' ? PF_CON_FIRST_COLS : PF_PRO_FIRST_COLS;
+  return POLICY_COLS;
+}
+
+// Exact → contains → reverse-contains match. Returns first hit or undefined.
+function fuzzyFind<T>(items: T[], query: string, nameOf: (t: T) => string): T | undefined {
+  const q = (query ?? '').trim().toLowerCase();
+  if (!q) return undefined;
+  const named = items.map((i) => [i, (nameOf(i) ?? '').toLowerCase()] as const);
+  return (named.find(([, n]) => n === q)
+       ?? named.find(([, n]) => n.includes(q))
+       ?? named.find(([, n]) => n && q.includes(n)))?.[0];
+}
 
 // ─── Gemini logo ──────────────────────────────────────────────────────────────
 
@@ -195,7 +237,23 @@ function serializeAttachment(att: any): string {
     ).join('\n');
     return `[Block: ${b?.title ?? att.name}${idTag}]\n${cardTexts || '  (no cards)'}`;
   }
-  if (att.type === 'flow') return `[Flow: ${att.name}${idTag}]`;
+  if (att.type === 'flow') {
+    const d = att.data;
+    if (!d?.sheets?.length) return `[Flow: ${att.name}${idTag}] (no sheets loaded — use read_flow to inspect)`;
+    const sheetSummaries = d.sheets.map((sh: any, si: number) => {
+      const cols: string[] = sh.columns ?? [];
+      const cells: Record<string, string> = sh.cells ?? {};
+      const colHeaders = cols.length ? cols.join(' | ') : '(no columns)';
+      const filledRows: string[] = [];
+      Object.entries(cells).forEach(([key, val]) => {
+        if (!val) return;
+        const [r, c] = key.split('-').map(Number);
+        filledRows.push(`    row ${r + 1}, col "${cols[c] ?? c + 1}": ${String(val).slice(0, 200)}`);
+      });
+      return `  Sheet ${si + 1} "${sh.name ?? `Sheet ${si + 1}`}" — columns: ${colHeaders}\n${filledRows.join('\n') || '    (empty)'}`;
+    }).join('\n');
+    return `[Flow: ${att.name}${idTag}] (editable via edit_flow_cell — use sheet name to target tabs)\n${sheetSummaries}`;
+  }
   if (att.type === 'opponent') {
     const o = att.data?.opponent ?? att.data;
     return `[Opponent: ${o?.teamName ?? att.name} (${o?.school ?? ''})${idTag}] Notes: ${o?.notes ?? '(none)'}`;
@@ -394,7 +452,11 @@ type ToolName =
   | 'get_tournament_details'
   | 'save_tournament_to_app'
   | 'search_judge'
-  | 'write_skill';
+  | 'write_skill'
+  | 'navigate_app'
+  | 'list_flows'
+  | 'read_flow'
+  | 'edit_flow_cell';
 
 interface ToolStep {
   id: string;
@@ -435,12 +497,26 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
     </svg>
   );
 
-  const saveTools  = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
-  const skillTools = new Set<ToolName>(['get_skill', 'read_attachment']);
+  const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
+  const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
+  // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
-  const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool));
+  const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
   const skillSteps  = steps.filter((s) => skillTools.has(s.tool));
+  const actionSteps = steps.filter((s) => actionTools.has(s.tool));
+
+  const actionIcon = (tool: ToolName, color = 'currentColor', animate = false) => {
+    const common = { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+      style: animate ? { animation: 'skill-pulse 1.4s ease-in-out infinite' } : undefined };
+    if (tool === 'navigate_app') {
+      // compass
+      return (<svg {...common}><circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" /></svg>);
+    }
+    // grid / table — flow ops
+    return (<svg {...common}><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /></svg>);
+  };
 
   const bookIcon = (color = 'currentColor', animate = false) => (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
@@ -471,6 +547,25 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
             </span>
             <span style={{
               color: step.status === 'running' ? '#4285F4' : 'var(--nav-inactive-color)',
+              opacity: step.status === 'error' ? 0.7 : 1,
+            }}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+
+        {/* ── App action steps (navigation / flow editing) — compass/grid, no cancel ── */}
+        {actionSteps.map((step) => (
+          <div key={step.id} className="flex items-center gap-2 text-xs pl-0.5 py-0.5">
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, flexShrink: 0 }}>
+              {step.status === 'running'
+                ? actionIcon(step.tool, '#8b5cf6', true)
+                : step.status === 'error'
+                  ? xIcon()
+                  : actionIcon(step.tool, '#8b5cf6')}
+            </span>
+            <span style={{
+              color: step.status === 'running' ? '#8b5cf6' : 'var(--nav-inactive-color)',
               opacity: step.status === 'error' ? 0.7 : 1,
             }}>
               {step.label}
@@ -550,6 +645,16 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
           ))}
         </div>
       )}
+      {/* App action steps (navigation / flow editing) — inline lines */}
+      {actionSteps.map((step) => (
+        <div key={step.id} className="flex items-center gap-1.5 py-0.5" style={{
+          color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
+          opacity: step.status === 'error' ? 0.7 : 1,
+        }}>
+          {step.status === 'error' ? xIcon() : actionIcon(step.tool, '#8b5cf6')}
+          <span>{step.label}</span>
+        </div>
+      ))}
       {/* Search steps — collapsible pill */}
       {searchSteps.length > 0 && (
         <>
@@ -1039,7 +1144,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   initialHistory: GeminiMsg[];
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
 }) {
-  const { update, agentSearchFns, db, setView } = useApp();
+  const { update, agentSearchFns, db, setView, flowsIndex } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
   const [composerText, setComposerText] = useState('');
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
@@ -1690,6 +1795,170 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               return { name, functionResult: `Error: ${e.message}` };
             }
 
+          } else if (name === 'navigate_app') {
+            const dest = String(args.destination ?? '').trim().toLowerCase();
+            const target = String(args.target_name ?? '').trim();
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'navigate_app', label: `Navigating to ${dest}${target ? ` "${target}"` : ''}…`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              let view: View | null = null;
+              let resolved = dest;
+              if (dest === 'case') {
+                const c: any = fuzzyFind(Object.values(db.cases ?? {}), target, (x: any) => x.name);
+                if (!c) throw new Error(`No case named "${target}" found.`);
+                view = { kind: 'case', caseId: c.id }; resolved = `case "${c.name}"`;
+              } else if (dest === 'block') {
+                const b: any = fuzzyFind(Object.values(db.blocks ?? {}), target, (x: any) => x.title);
+                if (!b) throw new Error(`No block named "${target}" found.`);
+                view = { kind: 'block', blockId: b.id }; resolved = `block "${b.title}"`;
+              } else if (dest === 'opponent') {
+                const o: any = fuzzyFind(Object.values(db.opponents ?? {}), target, (x: any) => x.teamName);
+                if (!o) throw new Error(`No opponent named "${target}" found.`);
+                view = { kind: 'opponent', opponentId: o.id }; resolved = `opponent "${o.teamName}"`;
+              } else if (dest === 'tournament') {
+                const t: any = fuzzyFind(Object.values(db.tournaments ?? {}), target, (x: any) => x.name);
+                if (!t) throw new Error(`No tournament named "${target}" found.`);
+                view = { kind: 'tournament', tournamentId: t.id }; resolved = `tournament "${t.name}"`;
+              } else if (dest === 'flow' || dest === 'flows') {
+                if (target) {
+                  const f = fuzzyFind(flowsIndex, target, (x) => x.name) ?? flowsIndex.find((x) => x.id === target);
+                  if (!f) throw new Error(`No flow named "${target}" found.`);
+                  view = { kind: 'flow', flowId: f.id }; resolved = `flow "${f.name}"`;
+                } else if (flowsIndex.length > 0) {
+                  view = { kind: 'flow', flowId: flowsIndex[0].id }; resolved = `flow "${flowsIndex[0].name}"`;
+                } else {
+                  view = { kind: 'flow' }; resolved = 'Flows (none exist yet)';
+                }
+              } else if (NAV_TOP_LEVEL[dest]) {
+                view = NAV_TOP_LEVEL[dest];
+              } else {
+                throw new Error(`Unknown destination "${dest}". Valid: home, library, tournaments, opponents, settings, topics, docs, logos, open-ev, gdrive, speech-doc, or case/block/opponent/tournament/flow with a target_name.`);
+              }
+              setView(view);
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Opened ${resolved}`, status: 'done' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Navigated to ${resolved}.` };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Navigation failed`, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Could not navigate: ${e.message}` };
+            }
+
+          } else if (name === 'list_flows') {
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'list_flows', label: 'Listing flows', status: 'running' }];
+            syncSteps(steps);
+            steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
+            syncSteps(steps);
+            if (flowsIndex.length === 0) return { name, functionResult: 'There are no flows yet. The user can create one from the Flows section in the sidebar.' };
+            const list = flowsIndex.map((f) => `- "${f.name}" (${f.event}, id:${f.id})`).join('\n');
+            return { name, functionResult: `The user has ${flowsIndex.length} flow(s):\n${list}` };
+
+          } else if (name === 'read_flow') {
+            const q = String(args.flow ?? '').trim();
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'read_flow', label: `Reading flow "${q}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              const meta = fuzzyFind(flowsIndex, q, (x) => x.name) ?? flowsIndex.find((x) => x.id === q);
+              if (!meta) throw new Error(`No flow named "${q}" found. Use list_flows to see available flows.`);
+              const data: any = await window.warroom.storage.read(`flow_data_${meta.id}`);
+              const cols = flowColumns(data);
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Read flow "${meta.name}"`, status: 'done' } : s);
+              syncSteps(steps);
+              if (!data?.sheets?.length) {
+                return { name, functionResult: `Flow "${meta.name}" (${meta.event}) is empty. Columns: ${cols.join(' | ')}. Sheets: (none created yet — editing a cell will create the default layout).` };
+              }
+              const out: string[] = [`Flow "${meta.name}" (${meta.event}). Columns: ${cols.map((c, i) => `${i + 1}.${c}`).join('  ')}`];
+              data.sheets.forEach((sh: any, si: number) => {
+                const cells = sh.cells ?? {};
+                const rowsWithContent: string[] = [];
+                for (let r = 0; r < NUM_ROWS; r++) {
+                  const parts: string[] = [];
+                  cols.forEach((c, ci) => {
+                    const v = cells[`${r}-${ci}`];
+                    if (v && String(v).trim()) parts.push(`${c}: ${v}`);
+                  });
+                  if (parts.length) rowsWithContent.push(`  Row ${r + 1} — ${parts.join(' | ')}`);
+                }
+                out.push(`\nSheet ${si + 1}: "${sh.name}"${rowsWithContent.length ? '\n' + rowsWithContent.join('\n') : ' (empty)'}`);
+              });
+              return { name, functionResult: out.join('\n') };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: 'Read flow failed', status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Could not read flow: ${e.message}` };
+            }
+
+          } else if (name === 'edit_flow_cell') {
+            const q = String(args.flow ?? '').trim();
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'edit_flow_cell', label: `Editing flow "${q}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              const meta = fuzzyFind(flowsIndex, q, (x) => x.name) ?? flowsIndex.find((x) => x.id === q);
+              if (!meta) throw new Error(`No flow named "${q}" found. Use list_flows first.`);
+
+              // Load stored data, or build the default layout if the flow was never opened.
+              let data: any = await window.warroom.storage.read(`flow_data_${meta.id}`);
+              if (!data?.sheets?.length) {
+                const ev: 'policy' | 'pf' = meta.event === 'pf' ? 'pf' : 'policy';
+                data = makeDefaultData(ev, 'stock-issues', 'pro-first');
+              }
+              const cols = flowColumns(data);
+
+              // Resolve sheet: by 1-based index or by name; default first sheet.
+              let sheetIdx = 0;
+              if (args.sheet != null && String(args.sheet).trim() !== '') {
+                const sArg = String(args.sheet).trim();
+                const asNum = Number(sArg);
+                if (Number.isInteger(asNum) && asNum >= 1 && asNum <= data.sheets.length) {
+                  sheetIdx = asNum - 1;
+                } else {
+                  const lc = sArg.toLowerCase();
+                  let found = data.sheets.findIndex((sh: any) => (sh.name ?? '').toLowerCase() === lc);
+                  if (found < 0) found = data.sheets.findIndex((sh: any) => (sh.name ?? '').toLowerCase().includes(lc));
+                  if (found < 0) throw new Error(`No sheet "${sArg}" in flow "${meta.name}". Sheets: ${data.sheets.map((sh: any) => sh.name).join(', ')}.`);
+                  sheetIdx = found;
+                }
+              }
+
+              // Resolve column: by 1-based index or by header name.
+              let colIdx = -1;
+              const colArg = String(args.column ?? '').trim();
+              const colNum = Number(colArg);
+              if (Number.isInteger(colNum) && colNum >= 1 && colNum <= cols.length) {
+                colIdx = colNum - 1;
+              } else {
+                colIdx = cols.findIndex((c) => c.toLowerCase() === colArg.toLowerCase());
+                if (colIdx < 0) colIdx = cols.findIndex((c) => c.toLowerCase().includes(colArg.toLowerCase()));
+              }
+              if (colIdx < 0) throw new Error(`No column "${colArg}" in flow "${meta.name}". Columns: ${cols.join(', ')}.`);
+
+              // Resolve row: 1-based.
+              const rowNum = Math.floor(Number(args.row));
+              if (!Number.isInteger(rowNum) || rowNum < 1 || rowNum > NUM_ROWS) {
+                throw new Error(`Row must be between 1 and ${NUM_ROWS}.`);
+              }
+              const rowIdx = rowNum - 1;
+
+              const sheet = data.sheets[sheetIdx];
+              sheet.cells = { ...(sheet.cells ?? {}), [`${rowIdx}-${colIdx}`]: String(args.value ?? '') };
+
+              await window.warroom.storage.write(`flow_data_${meta.id}`, data);
+              // Tell an open FlowView to reload so the edit shows live.
+              window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId: meta.id } }));
+
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Edited "${meta.name}" — ${cols[colIdx]} row ${rowNum}`, status: 'done' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Set ${cols[colIdx]} (column ${colIdx + 1}), row ${rowNum} on sheet "${sheet.name}" of flow "${meta.name}" to: "${String(args.value ?? '')}".` };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: 'Flow edit failed', status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Could not edit flow cell: ${e.message}` };
+            }
+
           } else {
             return { name, functionResult: `Unknown tool: ${name}` };
           }
@@ -1822,6 +2091,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 { icon: '🏆', label: 'Save tournament [name] to my app' },
                 { icon: '📋', label: 'Summarize my @case' },
                 { icon: '⚔️', label: 'What blocks should I read against [position]?' },
+                { icon: '📊', label: 'Add [argument] to my flow' },
                 { icon: '📖', label: 'Save [topic] as a skill' },
                 { icon: '❓', label: 'How do I [feature]?' },
               ].map(({ icon, label }) => (
