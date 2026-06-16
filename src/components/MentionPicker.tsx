@@ -133,7 +133,21 @@ export default function MentionPicker({ query, onSelect, onClose }: Props) {
     [teamMembers, currentUser?.id, q]
   );
 
-  const all = [...speechDocs, ...cases, ...blocks, ...flows, ...opponents, ...tournaments, ...members];
+  const judges = useMemo(() =>
+    Object.values(db.judges ?? {})
+      .filter((j) => !q || j.name.toLowerCase().includes(q) || j.institution.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map((j) => ({
+        type: 'judge' as const,
+        id: j.id,
+        name: j.name,
+        sub: `Judge · ${j.institution}`,
+        data: { judge: j },
+      })),
+    [db.judges, q]
+  );
+
+  const all = [...speechDocs, ...cases, ...blocks, ...flows, ...opponents, ...tournaments, ...members, ...judges];
   if (all.length === 0) return null;
 
   return (
@@ -176,6 +190,11 @@ export default function MentionPicker({ query, onSelect, onClose }: Props) {
           {tournaments.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
+      {judges.length > 0 && (
+        <Section label="Judges">
+          {judges.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+        </Section>
+      )}
     </div>
   );
 }
@@ -192,7 +211,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 const TYPE_ICONS: Record<string, string> = {
-  case: '📁', block: '📄', flow: '⬜', opponent: '🥊', member: '👤', speechdoc: '📝', tournament: '🏆',
+  case: '📁', block: '📄', flow: '⬜', opponent: '🥊', member: '👤', speechdoc: '📝', tournament: '🏆', judge: '👨‍⚖️',
 };
 
 function Item({ item, onSelect }: { item: any; onSelect: (i: PendingMention) => void }) {

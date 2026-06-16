@@ -3818,6 +3818,7 @@ Examples:
 - \`@[Spending DA](warroom:block:def456)\` → opens that block
 - \`@[Harvard Team](warroom:opponent:xyz789)\` → opens that opponent profile
 - \`@[Round 3 Flow](warroom:flow:uvw012)\` → opens that flow
+- \`@[Jane Smith](warroom:judge:pqr345)\` → opens that judge's profile
 
 **Only link to items you received a warroom_id for in this conversation.** Never invent IDs.
 Use links naturally inline — e.g. "Your @[2AC](warroom:case:abc123) has three blocks that cover this argument."`;

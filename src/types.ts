@@ -468,7 +468,7 @@ export interface ChatMessage {
 
 // Item queued for attachment when user picks a mention
 export interface PendingMention {
-  type: 'case' | 'block' | 'flow' | 'opponent' | 'member' | 'image' | 'speech-doc' | 'speechdoc';
+  type: 'case' | 'block' | 'flow' | 'opponent' | 'member' | 'image' | 'speech-doc' | 'speechdoc' | 'judge';
   id: string;
   name: string;
   data: any;

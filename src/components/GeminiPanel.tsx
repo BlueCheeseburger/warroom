@@ -208,7 +208,7 @@ function ContextArc({ tokens }: { tokens: number }) {
 // ─── Type icons ───────────────────────────────────────────────────────────────
 
 const TYPE_ICONS: Record<string, string> = {
-  case: '📁', block: '⬜', flow: '📋', opponent: '🔍', member: '👤', image: '🖼', speechdoc: '📝',
+  case: '📁', block: '⬜', flow: '📋', opponent: '🔍', member: '👤', image: '🖼', speechdoc: '📝', judge: '👨‍⚖️',
 };
 
 // ─── Attachment serializer for Gemini context ─────────────────────────────────
@@ -257,6 +257,14 @@ function serializeAttachment(att: any): string {
   if (att.type === 'opponent') {
     const o = att.data?.opponent ?? att.data;
     return `[Opponent: ${o?.teamName ?? att.name} (${o?.school ?? ''})${idTag}] Notes: ${o?.notes ?? '(none)'}`;
+  }
+  if (att.type === 'judge') {
+    const j = att.data?.judge ?? att.data;
+    const paradigmSnippet = j?.paradigm ? j.paradigm.slice(0, 1500) : '(not fetched — use search_judge to load paradigm)';
+    const record = (j?.record ?? []).slice(0, 5).map((r: any) =>
+      `  ${r.tournament} ${r.round}: ${r.aff} v ${r.neg} → ${r.vote} (${r.result})`
+    ).join('\n');
+    return `[Judge: ${j?.name ?? att.name} (${j?.institution ?? ''})${idTag}]\nParadigm: ${paradigmSnippet}\nNotes: ${j?.notes || '(none)'}\nRecent rounds:\n${record || '  (none saved)'}`;
   }
   if (att.type === 'member') {
     return `[Teammate: ${att.name}]`;
@@ -371,6 +379,7 @@ function WarroomLinkChip({ label, type, id, onNav }: {
     type === 'block'    ? { kind: 'block',    blockId: id }      :
     type === 'opponent' ? { kind: 'opponent', opponentId: id }   :
     type === 'flow'     ? { kind: 'flow',     flowId: id }       :
+    type === 'judge'    ? { kind: 'judge',    judgeId: id }      :
     null;
   const icon = TYPE_ICONS[type] ?? '📎';
   return (
@@ -2225,6 +2234,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                     att.type === 'block'     ? { kind: 'block', blockId: att.id } :
                     att.type === 'opponent'  ? { kind: 'opponent', opponentId: att.id } :
                     att.type === 'flow'      ? { kind: 'flow', flowId: att.id } :
+                    att.type === 'judge'     ? { kind: 'judge', judgeId: att.id } :
                     att.type === 'speechdoc' && att.data?.filePath ? { kind: 'speech-doc', docPath: att.data.filePath } :
                     null;
                   return (
