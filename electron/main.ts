@@ -2169,7 +2169,7 @@ ipcMain.handle('skills:read', async (_e, name: string) => {
 ipcMain.handle('skills:write', async (_e, name: string, content: string) => {
   const safeName = (name ?? '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 80);
   if (!safeName) return { ok: false, error: 'Skill name is required.' };
-  const BUILTIN = new Set(['cx_debate','pf_debate','ld_debate','card_cutting','user_manual','documentation','skill_builder']);
+  const BUILTIN = new Set(['cx_debate','pf_debate','ld_debate','card_cutting','user_manual','documentation','skill_builder','flowing']);
   if (BUILTIN.has(safeName)) return { ok: false, error: `"${safeName}" is a built-in skill and cannot be overwritten. Choose a different name.` };
   try {
     await ensureUserSkillsDir();
@@ -3821,6 +3821,7 @@ Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in
 - **pf_debate** — PF format, speech order, crossfire, weighing, lay judging
 - **ld_debate** — LD format, value/criterion framework, speech order, nat circuit vs traditional
 - **card_cutting** — Verbatim card format: exact cite rules, tag format, body underlines, full example
+- **flowing** — How to flow a document into a flow sheet: column/sheet mapping, shorthand conventions, step-by-step workflow. Call whenever the user asks you to "flow" a document or case.
 - **user_manual** — Complete Warroom app user guide
 - **documentation** — Full technical documentation of the Warroom app
 The user may also have custom skills — call them if referenced by name.
@@ -3851,12 +3852,6 @@ When the user asks you to add or change something on a flow:
 3. Call edit_flow_cell for each cell — one call per cell. Each distinct argument gets its own row. Keep text concise: flows are shorthand, not paragraphs.
 4. To fill content across multiple sheets/tabs, call edit_flow_cell once per cell per sheet. Never use write_skill for flow content.
 
-## Flowing a document — NEVER ask for mapping instructions
-When the user says "flow [document] into [flow]" or "add this to my flow", **do it immediately** without asking which column, row, or section. Use your judgment:
-- Read the document (via read_speech_doc or from attached context) and the flow structure (via read_flow or attached flow context).
-- Map content to columns based on document structure and debate convention. An affirmative case → 1AC column. A negative block → the appropriate neg speech column. If the flow has an "On Case" or "Inherency" sheet, use the sheet whose name best matches the content.
-- Put each distinct argument, contention, or section on its own row, starting at row 1. Keep cell text to 1–3 words of shorthand (e.g. "Inherency — status quo fails", "Adv 1: Harms", "Solvency — plan solves").
-- **Never ask the user which row or column** — infer it and execute. If something is ambiguous, make a reasonable choice and tell the user what you did after.
 
 The user's saved tournaments and rounds are in the system context — use them directly for schedule/record questions without a tool call.
 
