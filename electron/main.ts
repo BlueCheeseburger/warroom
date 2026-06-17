@@ -512,7 +512,7 @@ async function getGeminiModelId(): Promise<string> {
 const MODEL_TIER_IDS = {
   gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.5-flash' },
   openai:    { lite: 'gpt-4.1-nano',          balanced: 'gpt-4.1-mini',      best: 'gpt-4.1' },
-  anthropic: { lite: 'claude-3-5-haiku-20241022', balanced: 'claude-sonnet-4-6', best: 'claude-opus-4-8' },
+  anthropic: { lite: 'claude-3-5-haiku-20241022', balanced: 'claude-3-5-sonnet-20241022', best: 'claude-sonnet-4-6' },
 } as const;
 
 type Provider = 'gemini' | 'openai' | 'anthropic';
@@ -531,7 +531,7 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   }
   // anthropic
   if (modelKey === 'claude-3-5-haiku-20241022') return 'lite';
-  if (modelKey === 'claude-opus-4-8')           return 'best';
+  if (modelKey === 'claude-sonnet-4-6')         return 'best';
   return 'balanced';
 }
 
@@ -550,7 +550,7 @@ async function getProviderForTask(
   const userModelKey: string =
     provider === 'gemini'    ? (s?.geminiModel    ?? 'flash')
   : provider === 'openai'    ? (s?.openaiModel    ?? 'gpt-4.1-mini')
-  :                             (s?.anthropicModel ?? 'claude-sonnet-4-6');
+  :                             (s?.anthropicModel ?? 'claude-3-5-sonnet-20241022');
 
   const userTier = resolveUserTier(provider, userModelKey);
 
@@ -1597,9 +1597,10 @@ Be direct, tactical, and brief. No fluff.`;
 // Generate targeted cross-examination questions (with model answers) for a speech
 // doc, grounded in the skill for whichever event the user is running.
 ipcMain.handle('ai:crossExQuestions', async (_e, {
-  docText, event, count, basedOn,
+  highlightedText, fullText, event, count, basedOn,
 }: {
-  docText: string;
+  highlightedText: string;
+  fullText: string;
   event: 'policy' | 'pf' | 'ld';
   count?: number;
   basedOn?: string;
@@ -1607,32 +1608,39 @@ ipcMain.handle('ai:crossExQuestions', async (_e, {
   try {
     const n = Math.min(Math.max(count ?? 4, 1), 6);
 
-    // Feed the agent the skill for the user's event so the questions use the
-    // right vocabulary, structure, and strategic framing.
     const skillName = event === 'pf' ? 'pf_debate' : event === 'ld' ? 'ld_debate' : 'cx_debate';
     const skill = (await readSkill(skillName)) ?? '';
     const eventLabel = event === 'pf' ? 'Public Forum' : event === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
 
-    const doc = (docText ?? '').slice(0, 60000);
-    if (!doc.trim()) throw new Error('The document has no readable text to question.');
+    const highlighted = (highlightedText ?? '').slice(0, 40000);
+    const full = (fullText ?? '').slice(0, 60000);
+    if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
     const basedOnSection = basedOn
-      ? `\n\nGenerate ${n} NEW questions in the same spirit as this one — same line of attack, probing the same vulnerability from fresh angles. Do NOT repeat it verbatim.\nSEED QUESTION:\n${basedOn.slice(0, 1000)}`
-      : `\n\nGenerate the ${n} most useful cross-examination questions a debater could ask the author of this document in cross-ex.`;
+      ? `\nGenerate ${n} NEW questions in the same spirit as this one — same line of attack, fresh angles. Do NOT repeat it.\nSEED: ${basedOn.slice(0, 500)}`
+      : `\nGenerate the ${n} most useful cross-examination questions targeting the HIGHLIGHTED TEXT.`;
 
-    const prompt = `You are an elite ${eventLabel} debate coach drilling a student for cross-examination.
+    const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
 
-${skill ? `Use this event guide for vocabulary, argument structure, and strategy:\n${skill.slice(0, 12000)}\n\n---\n\n` : ''}Here is the speech document (your student's opponent will have read this; your student is the one asking questions in cross-ex):
+${skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : ''}HIGHLIGHTED TEXT (tags, cites, and underlined/highlighted card text — this is what the opponent actually reads):
+${highlighted}
 
-${doc}
+FULL CARD TEXT (the un-highlighted "small text" surrounding the highlighted portions):
+${full}
 
 ---
+
+RULES:
+1. Questions must target claims made in the HIGHLIGHTED TEXT only. The highlighted text is what the opponent reads and defends.
+2. ONE EXCEPTION: if the un-highlighted small text DIRECTLY CONTRADICTS a claim in the highlighted text within the SAME card, you may ask about that contradiction. This is the only reason to reference small text.
+3. Each question must be 1-3 sentences MAX. Be direct. No preamble, no "Can you explain…" — ask the pointed question.
+4. Each answer must be 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
+5. Do NOT use markdown emphasis (no **, no *, no __). Use plain text only. You may use single quotes around key phrases.
+6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, contradictions with small text, non-unique impacts, or overclaims.
 ${basedOnSection}
 
-Each question must be POINTED and STRATEGIC — expose a missing warrant, a weak internal link, an unqualified author, a contradiction, a non-unique impact, or an overclaim. Avoid generic questions ("what is your first contention?"). For each, write a strong model ANSWER the opponent would likely give, plus how the questioner should follow up — fold that into the answer so the student knows where the exchange leads.
-
-Return ONLY a JSON array of exactly ${n} objects, no markdown, no preamble. Each object:
-{"question": "the cross-ex question", "answer": "the likely answer + strategic follow-up the questioner should press"}`;
+Return ONLY a JSON array of exactly ${n} objects, no markdown fences, no preamble:
+[{"question": "short pointed question", "answer": "short answer + one-line follow-up"}]`;
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -3842,6 +3850,13 @@ When the user asks you to add or change something on a flow:
 2. If no flow is attached, call list_flows to find the exact name, then read_flow to see the structure.
 3. Call edit_flow_cell for each cell — one call per cell. Each distinct argument gets its own row. Keep text concise: flows are shorthand, not paragraphs.
 4. To fill content across multiple sheets/tabs, call edit_flow_cell once per cell per sheet. Never use write_skill for flow content.
+
+## Flowing a document — NEVER ask for mapping instructions
+When the user says "flow [document] into [flow]" or "add this to my flow", **do it immediately** without asking which column, row, or section. Use your judgment:
+- Read the document (via read_speech_doc or from attached context) and the flow structure (via read_flow or attached flow context).
+- Map content to columns based on document structure and debate convention. An affirmative case → 1AC column. A negative block → the appropriate neg speech column. If the flow has an "On Case" or "Inherency" sheet, use the sheet whose name best matches the content.
+- Put each distinct argument, contention, or section on its own row, starting at row 1. Keep cell text to 1–3 words of shorthand (e.g. "Inherency — status quo fails", "Adv 1: Harms", "Solvency — plan solves").
+- **Never ask the user which row or column** — infer it and execute. If something is ambiguous, make a reasonable choice and tell the user what you did after.
 
 The user's saved tournaments and rounds are in the system context — use them directly for schedule/record questions without a tool call.
 
