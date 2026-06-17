@@ -1125,7 +1125,7 @@ function MicIcon({ size = 14 }: { size?: number }) {
 
 // ─── Build tournament/round context string for system prompt injection ───────────
 
-function buildAppIndex(db: any, flowsIndex: any[], teamMembers: any[]): string {
+function buildAppIndex(db: any, flowsIndex: any[]): string {
   const sections: string[] = [];
 
   // Cases
@@ -1182,12 +1182,6 @@ function buildAppIndex(db: any, flowsIndex: any[], teamMembers: any[]): string {
     sections.push(tLines.join('\n'));
   }
 
-  // Team members
-  if (teamMembers.length > 0) {
-    sections.push('[TEAM MEMBERS]\n' +
-      teamMembers.map((m: any) => `  member:"${m.display_name}" role:${m.role ?? '?'} | warroom_id:member:${m.user_id}`).join('\n'));
-  }
-
   if (sections.length === 0) return '';
   return '[APP INDEX — the user may refer to any item below by name. Match case-insensitively and use the warroom_id to link back with @[Name](warroom:type:id).]\n\n' + sections.join('\n\n');
 }
@@ -1197,7 +1191,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   initialHistory: GeminiMsg[];
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
 }) {
-  const { update, agentSearchFns, db, setView, flowsIndex, teamMembers } = useApp();
+  const { update, agentSearchFns, db, setView, flowsIndex } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
   const [composerText, setComposerText] = useState('');
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
@@ -1477,7 +1471,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     setComposerText(''); setPendingMentions([]);
 
     // Build full app index (injected into system_instruction via IPC)
-    const userContext = buildAppIndex(db, flowsIndex, teamMembers);
+    const userContext = buildAppIndex(db, flowsIndex);
 
     // Build agent messages: history as plain text, current message with full parts
     let agentMsgs: any[] = [
