@@ -807,10 +807,10 @@ function geminiHttpError(status: number, body: string): Error {
   let detail = '';
   try { detail = JSON.parse(body)?.error?.message ?? ''; } catch { /* not JSON */ }
   if (detail) return new Error(detail);
-  if (status === 429) return new Error('Gemini rate limit reached — wait a moment and try again.');
-  if (status === 503) return new Error('Gemini is busy right now — try again in a moment.');
-  if (status === 403 || status === 400) return new Error(`Gemini rejected the request (HTTP ${status}) — check your API key in Settings.`);
-  return new Error(`Gemini request failed (HTTP ${status}) — try again shortly.`);
+  if (status === 429) return new Error('Warroom AI rate limit reached — wait a moment and try again.');
+  if (status === 503) return new Error('Warroom AI is overloaded right now. Try again in a few seconds.');
+  if (status === 403 || status === 400) return new Error(`Warroom AI rejected the request (HTTP ${status}) — check your API key in Settings.`);
+  return new Error(`Warroom AI request failed (HTTP ${status}) — try again shortly.`);
 }
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
@@ -1496,7 +1496,7 @@ ipcMain.handle('ai:parseRoundEmail', async (_e, { filePath, imageBase64, mimeTyp
       // Gemini failed (rate limit, quota, network) — surface a clear message
       const isOverloaded = /503|overload|unavailable|demand/i.test(String(geminiErr.message));
       if (isOverloaded) {
-        return { ok: false, error: 'Gemini AI is currently overloaded. Please try again in a moment.' };
+        return { ok: false, error: 'Warroom AI is overloaded right now. Try again in a few seconds.' };
       }
       const isNoKey = /NO_KEY|401|403|api.key/i.test(String(geminiErr.message));
       if (isNoKey) {

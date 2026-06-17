@@ -326,7 +326,7 @@ function PFLDTab({
             <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
               <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="10 18" strokeLinecap="round" />
             </svg>
-            <span className="text-sm">Generating topic brief with Gemini…</span>
+            <span className="text-sm">Generating topic brief with Warroom AI…</span>
           </div>
         ) : data.brief ? (
           <div className="prose prose-sm max-w-none text-sm leading-relaxed topic-brief-content">
@@ -335,7 +335,7 @@ function PFLDTab({
         ) : hasApiKey ? (
           <div className="space-y-3">
             <p className="text-sm" style={{ color: 'var(--placeholder)' }}>
-              No brief yet. Generate a comprehensive analysis of this topic with Gemini.
+              No brief yet. Generate a comprehensive analysis of this topic with Warroom AI.
             </p>
             <button
               onClick={() => onGenerateBrief(eventType)}
@@ -346,7 +346,7 @@ function PFLDTab({
           </div>
         ) : (
           <p className="text-sm" style={{ color: 'var(--placeholder)' }}>
-            Add your Gemini API key in Settings to generate topic briefs.
+            Add your API key in Settings to generate topic briefs.
           </p>
         )}
       </div>

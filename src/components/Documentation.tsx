@@ -189,7 +189,7 @@ export default function Documentation() {
             It is primarily designed for policy debate but also supports Public Forum (PF) and Lincoln-Douglas (LD).
             It centralises everything a debate team needs during prep and at tournament: case management,
             evidence cards, opponent scouting, round tracking, live tournament monitoring, team chat,
-            and an AI assistant powered by Gemini.
+            and an AI assistant (Warroom AI).
           </P>
           <P>
             It runs as a native Electron app on macOS and Windows. All core data is stored locally
@@ -199,7 +199,7 @@ export default function Documentation() {
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge color="blue">Electron</Badge>
             <Badge color="purple">React + TypeScript</Badge>
-            <Badge color="amber">Gemini AI</Badge>
+            <Badge color="amber">Warroom AI</Badge>
             <Badge color="emerald">Supabase</Badge>
           </div>
         </section>
@@ -323,7 +323,7 @@ export default function Documentation() {
           <H3>Card extraction</H3>
           <P>
             Cards can be imported from a <Code>.docx</Code> file via AI extraction. The main process
-            parses the file with mammoth, then sends the text to Gemini (using the
+            parses the file with mammoth, then sends the text to Warroom AI (using the
             <Code>extractCards</Code> IPC handler) which returns structured{' '}
             <Code>{'{ tag, cite, body, year }'}</Code> objects. The cards are created in the selected
             block.
@@ -331,7 +331,7 @@ export default function Documentation() {
           <H3>Block suggestions</H3>
           <P>
             On the Mission Brief (round view), Warroom can suggest which blocks to read against an
-            opponent's positions using <Code>suggestBlocks</Code> — Gemini compares the opponent's
+            opponent's positions using <Code>suggestBlocks</Code> — Warroom AI compares the opponent's
             disclosed arguments against your block list and returns a ranked selection.
           </P>
         </section>
@@ -359,7 +359,7 @@ export default function Documentation() {
               aff position name, neg position names, raw round data, raw cite text
             </LI>
             <LI>
-              <strong>AI Scout report</strong> — Gemini synthesises the OC data into a readable
+              <strong>AI Scout report</strong> — Warroom AI synthesises the OC data into a readable
               aff/neg summary with citations (stored as <Code>disclosures.aiScout</Code>)
             </LI>
             <LI>
@@ -522,7 +522,7 @@ export default function Documentation() {
         <section id="doc-agent">
           <H2>Warroom Agent (AI)</H2>
           <P>
-            The Warroom Agent is a Gemini-powered AI assistant that lives in a resizable right-side
+            The Warroom Agent is an AI assistant (Warroom AI) that lives in a resizable right-side
             panel (<Code>GeminiPanel</Code>). It supports multi-turn conversation and tool calls.
           </P>
           <H3>Model selection</H3>
@@ -532,7 +532,7 @@ export default function Documentation() {
             <LI><strong>Gemini 3.5 Flash</strong> — highest quality; best for complex analysis</LI>
           </UL>
           <P>
-            Agentic tasks (tool calls, sub-agent searches) always use Gemini 2.5 Flash regardless
+            Agentic tasks (tool calls, sub-agent searches) always use the Flash model regardless
             of the model selection above.
           </P>
           <H3>@mentions / attachments</H3>
@@ -556,19 +556,24 @@ export default function Documentation() {
           </P>
           <H3>Agent tool calls</H3>
           <P>
-            The agent can call three tools during a conversation:
+            The agent can call these tools during a conversation:
           </P>
           <UL>
             <LI><Code>search_logos</Code> — searches the Logos debate evidence database via a hidden webview in <Code>AgentSearchViews</Code></LI>
             <LI><Code>search_openevidence</Code> — searches the Open Evidence Project via a second hidden webview in <Code>AgentSearchViews</Code></LI>
             <LI><Code>save_card_to_library</Code> — saves a card with full verbatim body text to the <Code>__agent_inbox__</Code> block inside the <Code>__agent__</Code> case ("Agent Saves"). Cards saved this way appear in the normal card library.</LI>
+            <LI><Code>fetch_article</Code> — fetches/extracts text from a URL for cutting cards from web sources</LI>
+            <LI><Code>get_skill</Code> / <Code>write_skill</Code> — load or save a skill <Code>.md</Code> file</LI>
+            <LI><Code>search_tabroom_tournament</Code> · <Code>get_tournament_details</Code> · <Code>save_tournament_to_app</Code> · <Code>search_judge</Code> — Tabroom lookups</LI>
+            <LI><Code>navigate_app</Code> — opens any view for the user (top-level, or a case/block/opponent/tournament/flow resolved by name)</LI>
+            <LI><Code>list_flows</Code> / <Code>read_flow</Code> / <Code>edit_flow_cell</Code> — list flows, read a flow's columns + cells, and write individual cells. Edits write to <Code>flow_data_&lt;id&gt;</Code> and fire a <Code>warroom-flow-updated</Code> event so an open flow reloads live.</LI>
           </UL>
           <P>
             The agent runs a minimum of 3 searches per evidence request using varied query terms. Saved cards always use the complete verbatim card body — never a summary. The save handler validates the body is non-empty before writing to the DB.
           </P>
           <H3>Chat sessions</H3>
           <P>
-            Each conversation has an auto-generated title (generated by Gemini after the first
+            Each conversation has an auto-generated title (generated by Warroom AI after the first
             exchange). Sessions are stored locally. The active session ID is tracked in Zustand
             as <Code>geminiActiveId</Code>.
           </P>
@@ -579,7 +584,7 @@ export default function Documentation() {
           <H2>Team chat</H2>
           <P>
             Team chat uses Supabase for real-time messaging. It appears in a resizable panel
-            on the right side (separate from the Gemini panel). Features:
+            on the right side (separate from the Warroom AI panel). Features:
           </P>
           <UL>
             <LI>Team creation with invite codes; members can join/leave; owner can kick members</LI>
@@ -638,7 +643,7 @@ export default function Documentation() {
               </div>
               <div>
                 <span className="font-semibold text-ink">Gemini API key</span>
-                <span className="ml-2 text-ink/60">Stored encrypted. Powers card extraction, block suggestions, and the AI assistant.</span>
+                <span className="ml-2 text-ink/60">Stored encrypted. Powers card extraction, block suggestions, and Warroom AI.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Gemini model</span>
@@ -679,8 +684,8 @@ export default function Documentation() {
           <UL>
             <LI><Code>userData/warroom/db.json</Code> — main database (cases, blocks, cards, opponents, tournaments, rounds)</LI>
             <LI><Code>userData/warroom/flows_index.json</Code> — list of open flows with metadata</LI>
-            <LI><Code>userData/warroom/app_settings.json</Code> — debate event, Gemini model, token saving</LI>
-            <LI><Code>userData/warroom/secure_*.json</Code> — encrypted secrets (Gemini key, OC credentials, GDrive tokens, chat credentials)</LI>
+            <LI><Code>userData/warroom/app_settings.json</Code> — debate event, AI model, token saving</LI>
+            <LI><Code>userData/warroom/secure_*.json</Code> — encrypted secrets (API key, OC credentials, GDrive tokens, chat credentials)</LI>
           </UL>
           <H3>Secure storage</H3>
           <P>
@@ -733,7 +738,7 @@ export default function Documentation() {
             <LI><Code>fs</Code> — readFileBytes, writeTempFile (for trusted file operations)</LI>
             <LI><Code>dl</Code> — searchTeam, getTeamStats (Debate Land)</LI>
             <LI><Code>tabroom</Code> — getTournament, getEntries, getPairings, fetchTournament, monitor.*</LI>
-            <LI><Code>chat</Code> — all Supabase chat + Gemini AI operations</LI>
+            <LI><Code>chat</Code> — all Supabase chat + Warroom AI operations</LI>
             <LI><Code>gdrive</Code> — status, connect, disconnect, listFiles, searchFiles, fetchFile, uploadAsSheets</LI>
             <LI><Code>platform</Code> — <Code>'darwin'</Code> or <Code>'win32'</Code></LI>
             <LI><Code>onFileOpen</Code> — subscribe to file-open events from the OS</LI>
@@ -741,7 +746,7 @@ export default function Documentation() {
           <H3>Zustand store (<Code>src/store/appStore.ts</Code>)</H3>
           <P>
             Single global store (<Code>useApp</Code>) holds: DB state, current view, mode, theme,
-            event type, flows index, chat state (user, team, members, unread count), Gemini panel
+            event type, flows index, chat state (user, team, members, unread count), Warroom AI panel
             state, onboarding state, and the agent search function registry.
           </P>
           <H3>Persistent webviews</H3>
@@ -775,9 +780,9 @@ export default function Documentation() {
           </UL>
           <H3>Topic brief</H3>
           <UL>
-            <LI>When a new topic drops, a Gemini-generated brief is automatically requested. It covers: resolution breakdown, Aff/Neg arguments, frameworks, core clash, research priorities, and pitfalls.</LI>
+            <LI>When a new topic drops, a Warroom AI brief is automatically generated. It covers: resolution breakdown, Aff/Neg arguments, frameworks, core clash, research priorities, and pitfalls.</LI>
             <LI>The brief can be regenerated at any time from the Topics screen.</LI>
-            <LI>Requires a Gemini API key in Settings → API Keys.</LI>
+            <LI>Requires an API key in Settings → API Keys.</LI>
           </UL>
           <H3>Policy topic context</H3>
           <P>

@@ -1616,7 +1616,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               const body = (args.body ?? '').trim();
               const cite = (args.cite ?? '').trim();
               const tag  = (args.tag  ?? 'Untitled Card').trim();
-              if (!body) throw new Error('Card body is empty — Gemini sent a summary instead of the full text');
+              if (!body) throw new Error('Card body is empty — Warroom AI sent a summary instead of the full text');
               await update((db) => {
                 const existingCase = db.cases[AGENT_CASE_ID];
                 const agentCase = existingCase

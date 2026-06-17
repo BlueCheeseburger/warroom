@@ -721,7 +721,7 @@ function GeminiHomeCard() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <GeminiIcon size={14} />
-          <span className="label">Gemini</span>
+          <span className="label">Warroom AI</span>
         </div>
         <button className="btn text-[11px]" onClick={openNew}>+ New chat</button>
       </div>

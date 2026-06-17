@@ -842,7 +842,7 @@ function ImportFromEmailModal({ tournamentId, onDone }: { tournamentId: string; 
             style={{ background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.5)', color: 'var(--ink)' }}
           >
             <span style={{ fontSize: 15, lineHeight: 1 }}>⚠️</span>
-            <span><strong>OCR failed</strong> — Gemini AI was used as a fallback to read this image. Double-check all fields below before adding the round.</span>
+            <span><strong>OCR failed</strong> — Warroom AI was used as a fallback to read this image. Double-check all fields below before adding the round.</span>
           </div>
         )}
         {parsed && (
