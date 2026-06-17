@@ -8,8 +8,8 @@ import type { View } from '../store/appStore';
 
 // ─── Model lists (kept in sync with Settings.tsx) ─────────────────────────────
 const GEMINI_MODEL_OPTIONS = [
-  { value: 'flash-lite', label: 'Flash Lite' },
-  { value: 'flash',      label: 'Flash' },
+  { value: 'flash-lite', label: '2.5 Flash Lite' },
+  { value: 'flash',      label: '2.5 Flash' },
   { value: 'flash-35',   label: '3.5 Flash' },
 ];
 const OPENAI_MODEL_OPTIONS = [
