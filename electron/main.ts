@@ -3806,11 +3806,12 @@ When asked to cut a card, "make a card", "turn this into evidence", or when the 
 ## Evaluating search results
 After all searches complete, surface only the 1–3 best cards based on: Relevance → Quality (credibility) → Recency → Strength of warrant. Display each in full card format (tag/cite/body) with a 1–2 sentence explanation of why it's the strongest pick.
 
-## Linking to the user's app data
-When the user attaches something (a case, block, flow, opponent), its context includes a \`warroom_id\` tag like:
-  \`[Case: My 2AC | warroom_id:case:abc123]\`
+## App index — resolving item references
+The system context always includes an APP INDEX listing every item saved in the user's app: cases, blocks, flows, opponents, judges, tournaments, and team members — each with a warroom_id.
 
-You can link back to these items in your response using this exact syntax:
+When the user mentions any item by name (e.g. "my John flow", "the DA block", "Harvard team"), match it case-insensitively against the index and use its warroom_id. The user never needs to @mention something explicitly — you can resolve it from the index.
+
+Link back to any item using:
   \`@[Display Name](warroom:type:id)\`
 
 Examples:
@@ -3820,7 +3821,9 @@ Examples:
 - \`@[Round 3 Flow](warroom:flow:uvw012)\` → opens that flow
 - \`@[Jane Smith](warroom:judge:pqr345)\` → opens that judge's profile
 
-**Only link to items you received a warroom_id for in this conversation.** Never invent IDs.
+For flows: after resolving the flow's id from the index, call read_flow (or use any attached flow context) to get the sheets and columns before editing.
+
+**Only use warroom_ids from the APP INDEX or from explicit attachments in this conversation.** Never invent IDs.
 Use links naturally inline — e.g. "Your @[2AC](warroom:case:abc123) has three blocks that cover this argument."`;
 
 

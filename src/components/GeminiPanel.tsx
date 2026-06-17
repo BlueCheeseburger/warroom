@@ -1125,27 +1125,71 @@ function MicIcon({ size = 14 }: { size?: number }) {
 
 // ─── Build tournament/round context string for system prompt injection ───────────
 
-function buildTournamentContext(db: any): string {
-  const tournaments = Object.values(db.tournaments ?? {}) as any[];
-  if (tournaments.length === 0) return '';
-  const lines: string[] = ['[User\'s saved tournaments & rounds — use these to answer scheduling/record questions]'];
-  for (const t of tournaments) {
-    const roundIds: string[] = t.rounds ?? [];
-    const rounds = roundIds.map((id: string) => db.rounds?.[id]).filter(Boolean) as any[];
-    const wins   = rounds.filter((r) => r.result === 'win').length;
-    const losses = rounds.filter((r) => r.result === 'loss').length;
-    const loc    = t.location ? ` | ${t.location}` : '';
-    const tbId   = t.tabroom_id ? ` | Tabroom ID: ${t.tabroom_id}` : '';
-    lines.push(`\nTournament: ${t.name} (${t.event_type ?? 'policy'}${loc}${tbId}) | ${t.start ?? t.date ?? '?'} | Record: ${wins}W-${losses}L`);
-    for (const r of rounds) {
-      const opp    = r.opponentId ? (db.opponents?.[r.opponentId]?.teamName ?? r.opponentName ?? 'TBD') : (r.opponentName ?? 'TBD');
-      const judge  = r.judgeName ? ` | Judge: ${r.judgeName}` : '';
-      const room   = r.room ? ` | Room: ${r.room}` : '';
-      const result = r.result ?? 'pending';
-      lines.push(`  R${r.number}: ${(r.side ?? '?').toUpperCase()} vs ${opp} | ${result}${judge}${room}${r.isBye ? ' (BYE)' : ''}`);
-    }
+function buildAppIndex(db: any, flowsIndex: any[], teamMembers: any[]): string {
+  const sections: string[] = [];
+
+  // Cases
+  const cases = Object.values(db.cases ?? {}) as any[];
+  if (cases.length > 0) {
+    sections.push('[CASES — reference by name; use warroom_id to link back]\n' +
+      cases.map((c: any) => `  case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} blocks:${(c.blocks ?? []).length} | warroom_id:case:${c.id}`).join('\n'));
   }
-  return lines.join('\n');
+
+  // Blocks
+  const blocks = Object.values(db.blocks ?? {}) as any[];
+  if (blocks.length > 0) {
+    sections.push('[BLOCKS]\n' +
+      blocks.map((b: any) => `  block:"${b.title}" type:${b.type ?? '?'} cards:${(b.cards ?? []).length} | warroom_id:block:${b.id}`).join('\n'));
+  }
+
+  // Flows
+  if (flowsIndex.length > 0) {
+    sections.push('[FLOWS — editable via edit_flow_cell]\n' +
+      flowsIndex.map((f: any) => `  flow:"${f.name}" event:${f.event} | warroom_id:flow:${f.id}`).join('\n'));
+  }
+
+  // Opponents
+  const opponents = Object.values(db.opponents ?? {}) as any[];
+  if (opponents.length > 0) {
+    sections.push('[OPPONENTS]\n' +
+      opponents.map((o: any) => `  opponent:"${o.teamName}" school:${o.school ?? '?'} | warroom_id:opponent:${o.id}`).join('\n'));
+  }
+
+  // Judges
+  const judges = Object.values(db.judges ?? {}) as any[];
+  if (judges.length > 0) {
+    sections.push('[JUDGES]\n' +
+      judges.map((j: any) => `  judge:"${j.name}" institution:${j.institution ?? '?'} | warroom_id:judge:${j.id}`).join('\n'));
+  }
+
+  // Tournaments + rounds
+  const tournaments = Object.values(db.tournaments ?? {}) as any[];
+  if (tournaments.length > 0) {
+    const tLines: string[] = ['[TOURNAMENTS & ROUNDS]'];
+    for (const t of tournaments) {
+      const roundIds: string[] = t.rounds ?? [];
+      const rounds = roundIds.map((id: string) => db.rounds?.[id]).filter(Boolean) as any[];
+      const wins   = rounds.filter((r: any) => r.result === 'win').length;
+      const losses = rounds.filter((r: any) => r.result === 'loss').length;
+      const loc    = t.location ? ` | ${t.location}` : '';
+      tLines.push(`  tournament:"${t.name}" event:${t.event_type ?? 'policy'}${loc} | ${t.start ?? t.date ?? '?'} | ${wins}W-${losses}L | warroom_id:tournament:${t.id}`);
+      for (const r of rounds) {
+        const opp    = r.opponentId ? (db.opponents?.[r.opponentId]?.teamName ?? r.opponentName ?? 'TBD') : (r.opponentName ?? 'TBD');
+        const judge  = r.judgeName ? ` judge:${r.judgeName}` : '';
+        tLines.push(`    R${r.number}: ${(r.side ?? '?').toUpperCase()} vs ${opp} | ${r.result ?? 'pending'}${judge}${r.isBye ? ' (BYE)' : ''}`);
+      }
+    }
+    sections.push(tLines.join('\n'));
+  }
+
+  // Team members
+  if (teamMembers.length > 0) {
+    sections.push('[TEAM MEMBERS]\n' +
+      teamMembers.map((m: any) => `  member:"${m.display_name}" role:${m.role ?? '?'} | warroom_id:member:${m.user_id}`).join('\n'));
+  }
+
+  if (sections.length === 0) return '';
+  return '[APP INDEX — the user may refer to any item below by name. Match case-insensitively and use the warroom_id to link back with @[Name](warroom:type:id).]\n\n' + sections.join('\n\n');
 }
 
 function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
@@ -1153,7 +1197,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   initialHistory: GeminiMsg[];
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
 }) {
-  const { update, agentSearchFns, db, setView, flowsIndex } = useApp();
+  const { update, agentSearchFns, db, setView, flowsIndex, teamMembers } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
   const [composerText, setComposerText] = useState('');
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
@@ -1432,8 +1476,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     });
     setComposerText(''); setPendingMentions([]);
 
-    // Build tournament/round context (injected into system_instruction via IPC)
-    const userContext = buildTournamentContext(db);
+    // Build full app index (injected into system_instruction via IPC)
+    const userContext = buildAppIndex(db, flowsIndex, teamMembers);
 
     // Build agent messages: history as plain text, current message with full parts
     let agentMsgs: any[] = [
