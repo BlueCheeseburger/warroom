@@ -8,19 +8,19 @@ import type { View } from '../store/appStore';
 
 // ─── Model lists (kept in sync with Settings.tsx) ─────────────────────────────
 const GEMINI_MODEL_OPTIONS = [
-  { value: 'flash-lite', label: 'Gemini 2.5 Flash Lite', short: 'Flash Lite' },
-  { value: 'flash',      label: 'Gemini 2.5 Flash',      short: 'Flash' },
-  { value: 'flash-35',   label: 'Gemini 3.5 Flash',      short: '3.5 Flash' },
+  { value: 'flash-lite', label: 'Flash Lite' },
+  { value: 'flash',      label: 'Flash' },
+  { value: 'flash-35',   label: '3.5 Flash' },
 ];
 const OPENAI_MODEL_OPTIONS = [
-  { value: 'gpt-4.1-nano', label: 'GPT-4.1 nano', short: '4.1 nano' },
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini', short: '4.1 mini' },
-  { value: 'gpt-4.1',      label: 'GPT-4.1',      short: '4.1' },
+  { value: 'gpt-4.1-nano', label: '4.1 nano' },
+  { value: 'gpt-4.1-mini', label: '4.1 mini' },
+  { value: 'gpt-4.1',      label: '4.1' },
 ];
 const ANTHROPIC_MODEL_OPTIONS = [
-  { value: 'claude-3-5-haiku-20241022', label: 'Claude Haiku 3.5',  short: 'Haiku 3.5' },
-  { value: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6' },
-  { value: 'claude-opus-4-8',           label: 'Claude Opus 4.8',   short: 'Opus 4.8' },
+  { value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' },
+  { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6' },
+  { value: 'claude-opus-4-8',           label: 'Opus 4.8' },
 ];
 function modelOptionsFor(provider: 'gemini' | 'openai' | 'anthropic') {
   return provider === 'openai' ? OPENAI_MODEL_OPTIONS
@@ -941,63 +941,18 @@ export default function GeminiPanel() {
   const [activeId, setActiveId] = useState<string>(() => loadConversations()[0]?.id ?? '');
   const [showList, setShowList] = useState(false);
   const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
-  const [geminiModel, setGeminiModelOuter] = useState('flash');
-  const [openaiModel, setOpenaiModelOuter] = useState('gpt-4.1-mini');
-  const [anthropicModel, setAnthropicModelOuter] = useState('claude-sonnet-4-6');
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const modelPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     window.warroom?.storage.read('app_settings').then((s: any) => {
       if (s?.apiProvider) setApiProvider(s.apiProvider);
-      if (s?.geminiModel) setGeminiModelOuter(s.geminiModel);
-      if (s?.openaiModel) setOpenaiModelOuter(s.openaiModel);
-      if (s?.anthropicModel) setAnthropicModelOuter(s.anthropicModel);
     }).catch(() => {});
     function onSettingsChange(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (detail?.apiProvider !== undefined) setApiProvider(detail.apiProvider);
-      if (detail?.geminiModel !== undefined) setGeminiModelOuter(detail.geminiModel);
-      if (detail?.openaiModel !== undefined) setOpenaiModelOuter(detail.openaiModel);
-      if (detail?.anthropicModel !== undefined) setAnthropicModelOuter(detail.anthropicModel);
     }
     window.addEventListener('warroom-settings-change', onSettingsChange);
     return () => window.removeEventListener('warroom-settings-change', onSettingsChange);
   }, []);
-
-  useEffect(() => {
-    if (!showModelPicker) return;
-    function onMouseDown(e: MouseEvent) {
-      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
-        setShowModelPicker(false);
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [showModelPicker]);
-
-  async function saveModel(value: string) {
-    setShowModelPicker(false);
-    const s = await window.warroom?.storage.read('app_settings').catch(() => ({})) ?? {};
-    if (apiProvider === 'gemini') {
-      setGeminiModelOuter(value);
-      const isLite = value === 'flash-lite';
-      await window.warroom?.storage.write('app_settings', { ...s, geminiModel: value, tokenSavingDefault: isLite });
-      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { geminiModel: value, tokenSavingDefault: isLite } }));
-    } else if (apiProvider === 'openai') {
-      setOpenaiModelOuter(value);
-      await window.warroom?.storage.write('app_settings', { ...s, openaiModel: value });
-      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { openaiModel: value } }));
-    } else {
-      setAnthropicModelOuter(value);
-      await window.warroom?.storage.write('app_settings', { ...s, anthropicModel: value });
-      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { anthropicModel: value } }));
-    }
-  }
-
-  const activeModel = apiProvider === 'gemini' ? geminiModel : apiProvider === 'openai' ? openaiModel : anthropicModel;
-  const modelOpts = modelOptionsFor(apiProvider);
-  const activeModelShort = modelOpts.find((o) => o.value === activeModel)?.short ?? activeModel;
 
   const active = conversations.find((c) => c.id === activeId) ?? conversations[0];
 
@@ -1071,50 +1026,7 @@ export default function GeminiPanel() {
         <PanelBtn title="Chat history" onClick={() => setShowList((v) => !v)} active={showList}>
           <ListIcon />
         </PanelBtn>
-        {/* Model picker */}
-        <div className="relative shrink-0" ref={modelPickerRef}>
-          <button
-            onClick={() => setShowModelPicker((v) => !v)}
-            title="Switch model"
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition"
-            style={{
-              background: showModelPicker ? 'var(--nav-active-bg)' : 'transparent',
-              color: 'var(--nav-inactive-color)',
-              border: '1px solid var(--border-side)',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = showModelPicker ? 'var(--nav-active-bg)' : 'transparent'; }}
-          >
-            <AIProviderIcon provider={apiProvider} size={11} />
-            <span>{activeModelShort}</span>
-            <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-          {showModelPicker && (
-            <div
-              className="absolute top-full left-0 mt-1 rounded-md shadow-lg z-50 py-1 min-w-[160px]"
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}
-            >
-              {modelOpts.map((o) => (
-                <button
-                  key={o.value}
-                  onClick={() => saveModel(o.value)}
-                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition"
-                  style={{
-                    background: activeModel === o.value ? 'var(--nav-active-bg)' : 'transparent',
-                    color: activeModel === o.value ? 'var(--ink)' : 'var(--nav-inactive-color)',
-                    fontWeight: activeModel === o.value ? 600 : 400,
-                  }}
-                  onMouseEnter={(e) => { if (activeModel !== o.value) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                  onMouseLeave={(e) => { if (activeModel !== o.value) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >
-                  {activeModel === o.value && <span style={{ color: 'var(--accent)' }}>✓</span>}
-                  {activeModel !== o.value && <span style={{ width: 10 }} />}
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <AIProviderIcon provider={apiProvider} size={13} />
         <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--ink)' }}>
           {active.title}
         </span>
@@ -1317,7 +1229,11 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [tokenSaving, setTokenSaving] = useState(false);
   const [geminiModel, setGeminiModel] = useState('flash');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
+  const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
   const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [dictationStatus, setDictationStatus] = useState<'idle' | 'transcribing'>('idle');
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -1338,6 +1254,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
         setTokenSaving(s?.geminiModel === 'flash-lite');
       }
       if (s?.geminiModel) setGeminiModel(s.geminiModel);
+      if (s?.openaiModel) setOpenaiModel(s.openaiModel);
+      if (s?.anthropicModel) setAnthropicModel(s.anthropicModel);
       if (s?.apiProvider) setApiProvider(s.apiProvider);
     }).catch(() => {});
 
@@ -1345,11 +1263,48 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       const detail = (e as CustomEvent).detail;
       if (detail?.tokenSavingDefault !== undefined) setTokenSaving(!!detail.tokenSavingDefault);
       if (detail?.geminiModel !== undefined) setGeminiModel(detail.geminiModel);
+      if (detail?.openaiModel !== undefined) setOpenaiModel(detail.openaiModel);
+      if (detail?.anthropicModel !== undefined) setAnthropicModel(detail.anthropicModel);
       if (detail?.apiProvider !== undefined) setApiProvider(detail.apiProvider);
     }
     window.addEventListener('warroom-settings-change', onSettingsChange);
     return () => window.removeEventListener('warroom-settings-change', onSettingsChange);
   }, []);
+
+  useEffect(() => {
+    if (!showModelPicker) return;
+    function onMouseDown(e: MouseEvent) {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [showModelPicker]);
+
+  async function saveModel(value: string) {
+    setShowModelPicker(false);
+    const s = await window.warroom?.storage.read('app_settings').catch(() => ({})) ?? {};
+    if (apiProvider === 'gemini') {
+      setGeminiModel(value);
+      const isLite = value === 'flash-lite';
+      setTokenSaving(isLite);
+      await window.warroom?.storage.write('app_settings', { ...s, geminiModel: value, tokenSavingDefault: isLite });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { geminiModel: value, tokenSavingDefault: isLite } }));
+    } else if (apiProvider === 'openai') {
+      setOpenaiModel(value);
+      await window.warroom?.storage.write('app_settings', { ...s, openaiModel: value });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { openaiModel: value } }));
+    } else {
+      setAnthropicModel(value);
+      await window.warroom?.storage.write('app_settings', { ...s, anthropicModel: value });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { anthropicModel: value } }));
+    }
+  }
+
+  const activeModel = apiProvider === 'gemini' ? geminiModel : apiProvider === 'openai' ? openaiModel : anthropicModel;
+  const modelOpts = modelOptionsFor(apiProvider);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -2601,9 +2556,52 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           >
             <MicIcon size={14} />
           </button>
+          {/* Model picker */}
+          <div className="relative ml-auto mr-1" ref={modelPickerRef}>
+            <button
+              onClick={() => setShowModelPicker((v) => !v)}
+              title="Switch model"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition"
+              style={{
+                color: 'var(--nav-inactive-color)',
+                border: '1px solid var(--border-side)',
+                background: showModelPicker ? 'var(--nav-hover-bg)' : 'transparent',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = showModelPicker ? 'var(--nav-hover-bg)' : 'transparent'; }}
+            >
+              <AIProviderIcon provider={apiProvider} size={10} />
+              <span>{modelOpts.find((o) => o.value === activeModel)?.label ?? activeModel}</span>
+              <svg width="7" height="7" viewBox="0 0 8 8" fill="none"><path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            {showModelPicker && (
+              <div
+                className="absolute bottom-full left-0 mb-1 rounded-md shadow-lg z-50 py-1"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', minWidth: 130 }}
+              >
+                {modelOpts.map((o) => (
+                  <button
+                    key={o.value}
+                    onClick={() => saveModel(o.value)}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition whitespace-nowrap"
+                    style={{
+                      background: activeModel === o.value ? 'var(--nav-active-bg)' : 'transparent',
+                      color: activeModel === o.value ? 'var(--ink)' : 'var(--nav-inactive-color)',
+                      fontWeight: activeModel === o.value ? 600 : 400,
+                    }}
+                    onMouseEnter={(e) => { if (activeModel !== o.value) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                    onMouseLeave={(e) => { if (activeModel !== o.value) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    {activeModel === o.value ? <span style={{ color: 'var(--accent)' }}>✓</span> : <span style={{ width: 10, display: 'inline-block' }} />}
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Send button with gradient */}
           <button
-            className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg font-medium transition"
+            className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg font-medium transition"
             style={{
               background: streaming ? 'var(--bg-card)' : 'linear-gradient(135deg,#4285F4,#9168c0)',
               color: streaming ? 'var(--nav-inactive-color)' : '#fff',
