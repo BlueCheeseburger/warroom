@@ -493,6 +493,23 @@ export default function Documentation() {
             and navigates to the speech-doc view. Speech docs can also be attached to chat messages
             and shared with teammates.
           </P>
+          <P>
+            The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
+            structure and highlighted / underlined runs) and <strong>Cross-Ex Practice</strong>.
+          </P>
+          <H3>Cross-Ex Practice</H3>
+          <P>
+            The <strong>Cross-Ex Practice</strong> button opens a right-hand panel where Warroom AI
+            generates targeted cross-examination questions for the open document — each paired with a
+            model answer that stays hidden behind a <strong>Show answer</strong> dropdown until you
+            reveal it. Warroom AI is automatically fed the skill for whichever event you're doing
+            (Policy, LD, or PF) so the questions use the right vocabulary and strategy.
+          </P>
+          <P>
+            Each question pill also has a <strong>3 more like this</strong> button that generates
+            three fresh questions probing the same weakness and inserts them inline below. Use the
+            footer button to generate or regenerate the full set.
+          </P>
         </section>
 
         {/* ── FindCards ─────────────────────────────────────────────── */}

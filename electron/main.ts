@@ -1593,6 +1593,65 @@ Be direct, tactical, and brief. No fluff.`;
   }
 });
 
+// ─── Cross-ex practice questions ──────────────────────────────────────────────
+// Generate targeted cross-examination questions (with model answers) for a speech
+// doc, grounded in the skill for whichever event the user is running.
+ipcMain.handle('ai:crossExQuestions', async (_e, {
+  docText, event, count, basedOn,
+}: {
+  docText: string;
+  event: 'policy' | 'pf' | 'ld';
+  count?: number;
+  basedOn?: string;
+}) => {
+  try {
+    const n = Math.min(Math.max(count ?? 4, 1), 6);
+
+    // Feed the agent the skill for the user's event so the questions use the
+    // right vocabulary, structure, and strategic framing.
+    const skillName = event === 'pf' ? 'pf_debate' : event === 'ld' ? 'ld_debate' : 'cx_debate';
+    const skill = (await readSkill(skillName)) ?? '';
+    const eventLabel = event === 'pf' ? 'Public Forum' : event === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
+
+    const doc = (docText ?? '').slice(0, 60000);
+    if (!doc.trim()) throw new Error('The document has no readable text to question.');
+
+    const basedOnSection = basedOn
+      ? `\n\nGenerate ${n} NEW questions in the same spirit as this one — same line of attack, probing the same vulnerability from fresh angles. Do NOT repeat it verbatim.\nSEED QUESTION:\n${basedOn.slice(0, 1000)}`
+      : `\n\nGenerate the ${n} most useful cross-examination questions a debater could ask the author of this document in cross-ex.`;
+
+    const prompt = `You are an elite ${eventLabel} debate coach drilling a student for cross-examination.
+
+${skill ? `Use this event guide for vocabulary, argument structure, and strategy:\n${skill.slice(0, 12000)}\n\n---\n\n` : ''}Here is the speech document (your student's opponent will have read this; your student is the one asking questions in cross-ex):
+
+${doc}
+
+---
+${basedOnSection}
+
+Each question must be POINTED and STRATEGIC — expose a missing warrant, a weak internal link, an unqualified author, a contradiction, a non-unique impact, or an overclaim. Avoid generic questions ("what is your first contention?"). For each, write a strong model ANSWER the opponent would likely give, plus how the questioner should follow up — fold that into the answer so the student knows where the exchange leads.
+
+Return ONLY a JSON array of exactly ${n} objects, no markdown, no preamble. Each object:
+{"question": "the cross-ex question", "answer": "the likely answer + strategic follow-up the questioner should press"}`;
+
+    const raw = await callAI(prompt, 'balanced');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
+    const questions = parsed
+      .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
+      .slice(0, n)
+      .map((q) => ({ question: String(q.question), answer: String(q.answer) }));
+    if (questions.length === 0) throw new Error('No questions returned — try again.');
+    return { ok: true, questions };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to generate questions');
+    return { ok: false, error: msg };
+  }
+});
+
 // OpenCaselist — return { ok, data, error } so renderer can inspect without IPC error serialization issues
 ipcMain.handle('opencaselist:login', async (_e, username: string, password: string) => {
   try { await ocLogin(username, password); return { ok: true }; }

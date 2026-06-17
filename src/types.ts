@@ -262,6 +262,16 @@ declare global {
           error?: string;
           usedFallback?: boolean;
         }>;
+        crossExQuestions: (params: {
+          docText: string;
+          event: 'policy' | 'pf' | 'ld';
+          count?: number;
+          basedOn?: string;
+        }) => Promise<{
+          ok: boolean;
+          questions?: { question: string; answer: string }[];
+          error?: string;
+        }>;
       };
       clipboard: {
         readImage: () => Promise<{ ok: boolean; base64?: string; mimeType?: string; error?: string }>;

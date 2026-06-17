@@ -171,6 +171,18 @@ The `SpeechDocViewer` renders `.docx` files in-app using `docx-preview`. It is a
 
 Opening a `.docx` from Finder triggers the `onFileOpen` IPC event and navigates to the speech-doc view. Speech docs can also be attached to chat messages and shared with teammates.
 
+The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs) and **Cross-Ex Practice** (see below).
+
+### Cross-Ex Practice
+
+A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that uses Warroom AI to generate targeted cross-examination questions for the open document, each paired with a model answer. The document's visible text is sent to the `ai:crossExQuestions` IPC handler, which loads the skill for the user's current event (`cx_debate` for Policy, `ld_debate` for LD, `pf_debate` for PF) so questions use the right vocabulary and strategy. The model returns a JSON array of `{ question, answer }` objects.
+
+Each question renders as a pill with:
+- A **Show answer** disclosure that reveals the model answer (and the strategic follow-up the questioner should press) — hidden by default.
+- A **3 more like this** button that calls `ai:crossExQuestions` again with the question as a `basedOn` seed, generating three fresh questions probing the same vulnerability and inserting them inline below.
+
+The panel's **Generate / Regenerate** action lives in the footer. Generation uses the `balanced` model tier.
+
 ---
 
 ## FindCards (Logos)
@@ -220,6 +232,10 @@ Warroom AI can call the following tools during a conversation:
 - `get_tournament_details` — fetches full info for a Tabroom tournament by numeric ID
 - `save_tournament_to_app` — saves a Tabroom tournament to the user's tournament list
 - `search_judge` — looks up a judge on Tabroom by name and returns their paradigm
+- `write_skill` — creates/updates a custom skill .md file in the user's skills folder
+- `navigate_app` — opens any view for the user (top-level views, or a case/block/opponent/tournament/flow resolved by name)
+- `list_flows` / `read_flow` — list flow sheets and read a flow's columns + filled cells
+- `edit_flow_cell` — writes a single cell in a flow sheet (by flow name, column header, 1-based row). Writes to `flow_data_<id>` storage and dispatches a `warroom-flow-updated` event so an open FlowView reloads live.
 
 The agent runs 3–5 searches per evidence request in parallel. Saved cards always use the complete verbatim card body — never a summary. The save handler validates the body is non-empty before writing to the DB.
 

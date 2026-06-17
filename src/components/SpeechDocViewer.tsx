@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { renderAsync } from 'docx-preview';
-import { LoadingPanel } from './Spinner';
+import { LoadingPanel, Spinner } from './Spinner';
 import { useApp } from '../store/appStore';
+import type { DebateEvent } from '../store/appStore';
 import SharePanel from './SharePanel';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
@@ -75,6 +76,49 @@ function IcoShare() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
       <path d="M12 10a2 2 0 0 0-1.6.8L5.9 8.4A2 2 0 0 0 6 8a2 2 0 0 0-.1-.4l4.5-2.3A2 2 0 1 0 9.9 3.4L5.4 5.7A2 2 0 1 0 5.4 10.3l4.5 2.3A2 2 0 1 0 12 10z"/>
+    </svg>
+  );
+}
+
+// Cross-ex: two opposing speech bubbles with a question mark — "the questioning exchange"
+function IcoCrossEx({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h7a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 11 10H6l-2.5 2V10A1.5 1.5 0 0 1 2.5 8.5z" opacity={active ? 1 : 0.85}/>
+      <path d="M8.2 14.5h7.3a1.5 1.5 0 0 0 1.5-1.5v-2a1.5 1.5 0 0 0-1.5-1.5h-1" opacity={active ? 0.9 : 0.5}/>
+      <path d="M6 6.4a1.1 1.1 0 1 1 1.6 1c-.4.25-.6.5-.6 1" />
+      <circle cx="7" cy="8.7" r="0.35" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+// Sparkle — "generate with Warroom AI"
+function IcoSparkle({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 1l1.3 3.7L13 6l-3.7 1.3L8 11 6.7 7.3 3 6l3.7-1.3z"/>
+      <path d="M13 10l.6 1.6L15 12l-1.4.4L13 14l-.6-1.6L11 12l1.4-.4z" opacity="0.7"/>
+    </svg>
+  );
+}
+
+// "Generate 3 more like this" — a plus over stacked cards
+function IcoMore() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4.5" width="8" height="9.5" rx="1.4"/>
+      <path d="M5 2.5h6.5A1.5 1.5 0 0 1 13 4v7" opacity="0.55"/>
+      <path d="M6 8.2h2.2M7.1 7.1v2.2"/>
+    </svg>
+  );
+}
+
+// Chevron for the show-answers disclosure
+function IcoChevron({ open }: { open: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+      style={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+      <path d="M2.5 4.5l3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -347,11 +391,210 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
   );
 }
 
+// ── Cross-ex practice panel ─────────────────────────────────────────────────
+
+interface CxQuestion { id: string; question: string; answer: string }
+
+const eventLabel = (e: DebateEvent) =>
+  e === 'pf' ? 'Public Forum' : e === 'ld' ? 'Lincoln-Douglas' : 'Policy';
+
+function CrossExPill({ q, event, onInsertMore }: {
+  q: CxQuestion;
+  event: DebateEvent;
+  onInsertMore: (after: CxQuestion, generated: CxQuestion[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreErr, setMoreErr] = useState('');
+
+  async function genMore() {
+    setMoreLoading(true);
+    setMoreErr('');
+    try {
+      // We re-question the same line of attack; the seed carries the doc context.
+      const res = await window.warroom.ai.crossExQuestions({
+        docText: q.question + '\n\nLikely answer:\n' + q.answer,
+        event: event as 'policy' | 'pf' | 'ld',
+        count: 3,
+        basedOn: q.question,
+      });
+      if (!res.ok || !res.questions) throw new Error(res.error ?? 'Failed');
+      onInsertMore(q, res.questions.map((x, i) => ({
+        id: `${q.id}-m${Date.now()}-${i}`,
+        question: x.question,
+        answer: x.answer,
+      })));
+    } catch (e: any) {
+      setMoreErr(e?.message ?? 'Could not generate more');
+    } finally {
+      setMoreLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="rounded-xl p-3 transition"
+      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+    >
+      <div className="text-[13px] leading-snug font-medium" style={{ color: 'rgb(var(--ink-rgb))' }}>
+        {q.question}
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-2.5">
+        {/* Show answers disclosure */}
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition"
+          style={{ background: open ? 'var(--nav-active-bg)' : 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)' }}
+          onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+          onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          <IcoChevron open={open} />
+          {open ? 'Hide answer' : 'Show answer'}
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Generate 3 more like this */}
+        <button
+          onClick={genMore}
+          disabled={moreLoading}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition"
+          style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: moreLoading ? 'default' : 'pointer', opacity: moreLoading ? 0.6 : 1 }}
+          onMouseEnter={e => { if (!moreLoading) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          title="Generate 3 more questions like this one"
+        >
+          {moreLoading ? <Spinner className="w-3 h-3" /> : <IcoMore />}
+          {moreLoading ? 'Generating…' : '3 more like this'}
+        </button>
+      </div>
+
+      {open && (
+        <div
+          className="mt-2.5 pt-2.5 text-[12px] leading-relaxed whitespace-pre-wrap"
+          style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.82, borderTop: '1px solid var(--border-subtle)' }}
+        >
+          {q.answer}
+        </div>
+      )}
+
+      {moreErr && (
+        <div className="mt-2 text-[11px]" style={{ color: 'rgb(var(--danger-rgb))' }}>{moreErr}</div>
+      )}
+    </div>
+  );
+}
+
+function CrossExPanel({ event, getDocText, onClose }: {
+  event: DebateEvent;
+  getDocText: () => string;
+  onClose: () => void;
+}) {
+  const [questions, setQuestions] = useState<CxQuestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [started, setStarted] = useState(false);
+
+  async function generate() {
+    const docText = getDocText().trim();
+    if (!docText) { setError('No readable text in this document yet.'); return; }
+    setLoading(true);
+    setError('');
+    setStarted(true);
+    try {
+      const res = await window.warroom.ai.crossExQuestions({
+        docText,
+        event: event as 'policy' | 'pf' | 'ld',
+        count: 4,
+      });
+      if (!res.ok || !res.questions) throw new Error(res.error ?? 'Failed to generate');
+      setQuestions(res.questions.map((x, i) => ({
+        id: `q${Date.now()}-${i}`,
+        question: x.question,
+        answer: x.answer,
+      })));
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to generate questions');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function insertMore(after: CxQuestion, generated: CxQuestion[]) {
+    setQuestions(prev => {
+      const idx = prev.findIndex(q => q.id === after.id);
+      if (idx === -1) return [...prev, ...generated];
+      return [...prev.slice(0, idx + 1), ...generated, ...prev.slice(idx + 1)];
+    });
+  }
+
+  return (
+    <div
+      className="flex flex-col h-full shrink-0"
+      style={{ width: '360px', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-main)' }}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3.5 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoCrossEx active /></span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Cross-Ex Practice</div>
+          <div className="text-[10.5px]" style={{ color: 'var(--nav-inactive-color)' }}>{eventLabel(event)} · Warroom AI</div>
+        </div>
+        <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} />
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto scroll-thin px-3.5 py-3 space-y-2.5">
+        {!started && !loading && (
+          <div className="flex flex-col items-center text-center gap-3 mt-6 px-2">
+            <span style={{ color: 'var(--nav-inactive-color)' }}><IcoCrossEx /></span>
+            <div className="text-[12.5px] leading-relaxed" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.7 }}>
+              Generate targeted cross-examination questions for this document, with model answers you can reveal when you're ready.
+            </div>
+          </div>
+        )}
+
+        {loading && questions.length === 0 && (
+          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
+            <Spinner className="w-5 h-5" />
+            <div className="text-[12px]">Reading the doc & writing questions…</div>
+          </div>
+        )}
+
+        {error && (
+          <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
+            {error}
+          </div>
+        )}
+
+        {questions.map(q => (
+          <CrossExPill key={q.id} q={q} event={event} onInsertMore={insertMore} />
+        ))}
+      </div>
+
+      {/* Footer action */}
+      <div className="px-3.5 py-2.5 shrink-0" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+          style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.65 : 1 }}
+        >
+          {loading ? <Spinner className="w-3.5 h-3.5" /> : <IcoSparkle />}
+          {loading ? 'Generating…' : started ? 'Regenerate questions' : 'Generate questions'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function SpeechDocViewer() {
-  const { setBusy, view, setView } = useApp();
+  const { setBusy, view, setView, event } = useApp();
   const [step, setStep] = useState<Step>('idle');
+  const [cxOpen, setCxOpen] = useState(false);
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState('');
   const [fileName, setFileName] = useState('');
@@ -562,6 +805,24 @@ export default function SpeechDocViewer() {
           onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
         />
         <div className="flex-1" />
+        <div className="relative" onMouseEnter={() => {}}>
+          <button
+            onClick={() => setCxOpen(v => !v)}
+            className="flex items-center gap-1.5 h-9 px-2.5 rounded-lg transition text-[12px] font-medium"
+            style={{
+              background: cxOpen ? 'var(--nav-active-bg)' : 'transparent',
+              boxShadow: cxOpen ? 'var(--nav-active-shadow)' : 'none',
+              border: 'none', cursor: 'pointer',
+              color: cxOpen ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+            }}
+            onMouseEnter={e => { if (!cxOpen) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+            onMouseLeave={e => { if (!cxOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            title="Practice cross-examination on this doc"
+          >
+            <IcoCrossEx active={cxOpen} />
+            Cross-Ex Practice
+          </button>
+        </div>
         <IconBtn
           icon={<IcoShare />}
           label="Share / Open"
@@ -586,13 +847,22 @@ export default function SpeechDocViewer() {
         />
       )}
 
-      {/* Document */}
-      <div className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap">
-        {step === 'loading' && <LoadingPanel message="Loading document…" />}
-        <div
-          ref={containerRef}
-          style={{ display: step === 'viewing' ? undefined : 'none' }}
-        />
+      {/* Document + cross-ex side panel */}
+      <div className="flex-1 flex min-h-0">
+        <div className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0">
+          {step === 'loading' && <LoadingPanel message="Loading document…" />}
+          <div
+            ref={containerRef}
+            style={{ display: step === 'viewing' ? undefined : 'none' }}
+          />
+        </div>
+        {cxOpen && step === 'viewing' && (
+          <CrossExPanel
+            event={event}
+            getDocText={() => containerRef.current?.textContent ?? ''}
+            onClose={() => setCxOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

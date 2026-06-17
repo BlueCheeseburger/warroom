@@ -95,6 +95,8 @@ Opens .docx files in-app.
 - **Open**: drag .docx onto app, or File → Open
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
+- **Focus mode** (toolbar): hides body text, showing only card tags, cites, and highlighted/underlined text
+- **Cross-Ex Practice** (toolbar): opens a side panel where Warroom AI writes targeted cross-examination questions for the open doc. Each question hides its model answer behind a **Show answer** dropdown, and a **3 more like this** button generates three more questions of the same kind. Warroom AI is automatically given the guide for your event (Policy / LD / PF) so the questions fit your format. Tap **Generate questions** (or **Regenerate**) at the bottom of the panel.
 
 ---
 
@@ -117,6 +119,8 @@ Star icon in the title bar.
 - **Evidence search**: AI searches Logos/Open Evidence automatically when asked. Spinner shows per-search. Hover over a running search + click ✕ to exclude it.
 - **Saved cards**: go to Cases → Agent Saves → Agent Inbox
 - **Voice input**: microphone button in the composer
+- **Navigation**: ask the AI to take you anywhere — "open my Spending DA case", "go to settings", "show my tournaments". It opens the view for you.
+- **Flow editing**: ask the AI to fill in or edit a flow — "add the perm to my Round 3 flow under 2AC", "put 'extend impact' in 2NR row 4". It can read your flow's columns/rows and write to specific cells. If the flow is open, edits appear live.
 
 ---
 

@@ -8,6 +8,7 @@
  * Tools mirror the in-app Warroom Agent:
  *   get_warroom_context   — topic, event, tournament/round history (same as system prompt)
  *   get_skill             — load a skill .md file by name
+ *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice)
  *   search_library        — fuzzy search saved cards
  *   get_cases / get_blocks / get_cards — browse the card library
  *   get_opponents         — saved opponent scouting notes
@@ -233,6 +234,41 @@ async function tbFetchParadigm(personId) {
   return null;
 }
 
+// ─── Flow helpers (mirror of src/components/FlowView.tsx) ───────────────────────
+const POLICY_COLS = ['1AC', '1NC', '2AC', '2NC/1NR', '1AR', '2NR', '2AR'];
+const PF_PRO_FIRST_COLS = ['Pro Case', 'Con Case', 'Con Rebuttal', 'Pro Rebuttal', 'Pro Summary', 'Con Summary', 'Pro FF', 'Con FF'];
+const PF_CON_FIRST_COLS = ['Con Case', 'Pro Case', 'Pro Rebuttal', 'Con Rebuttal', 'Con Summary', 'Pro Summary', 'Con FF', 'Pro FF'];
+const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
+const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
+const FLOW_NUM_ROWS = 60;
+
+function flowColumns(data) {
+  if (data?.customColumns?.length) return data.customColumns;
+  if ((data?.event ?? 'policy') === 'pf')
+    return data?.pfOrder === 'con-first' ? PF_CON_FIRST_COLS : PF_PRO_FIRST_COLS;
+  return POLICY_COLS;
+}
+
+function makeDefaultFlowData(event) {
+  const ev = event === 'pf' ? 'pf' : 'policy';
+  const names = ev === 'pf' ? SHEETS_PF : SHEETS_STOCK_ISSUES;
+  const cols = ev === 'pf' ? PF_PRO_FIRST_COLS : POLICY_COLS;
+  return {
+    event: ev, variant: 'stock-issues', pfOrder: 'pro-first',
+    sheets: names.map((name) => ({ id: crypto.randomUUID(), name, cells: {} })),
+    columnWidths: cols.map(() => 185), customColumns: null, fontSize: 13, zoom: 100,
+  };
+}
+
+function findFlowMeta(index, query) {
+  const q = (query ?? '').trim().toLowerCase();
+  if (!q || !Array.isArray(index)) return null;
+  return index.find((f) => (f.name ?? '').toLowerCase() === q)
+      ?? index.find((f) => (f.name ?? '').toLowerCase().includes(q))
+      ?? index.find((f) => f.id === query)
+      ?? null;
+}
+
 // ─── MCP Server ───────────────────────────────────────────────────────────────
 
 const server = new McpServer({
@@ -275,6 +311,57 @@ Built-in skills: cx_debate, pf_debate, ld_debate, card_cutting, user_manual, doc
       };
     }
     return { content: [{ type: 'text', text: content }] };
+  }
+);
+
+// ── cross_ex_questions ──────────────────────────────────────────────────────────
+// Mirrors the in-app "Cross-Ex Practice" panel in the speech doc viewer: given a
+// document's text, produce targeted cross-examination questions grounded in the
+// skill for the user's event. The server has no LLM, so it returns the event skill
+// + the doc + a generation brief for the calling model to write the questions from.
+server.tool(
+  'cross_ex_questions',
+  `Prepare targeted cross-examination questions (with model answers) for a speech document, the same way the in-app Cross-Ex Practice panel does.
+Pass the document text. Returns the guide for the user's event plus a brief telling you to write pointed CX questions, each with a model answer the questioner should keep hidden until ready.
+Use 'based_on' to generate more questions like a specific one.`,
+  {
+    doc_text: z.string().describe('The speech document text to question'),
+    event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
+    count: z.number().optional().describe('How many questions to write (default 4, max 6)'),
+    based_on: z.string().optional().describe('Generate new questions in the same spirit as this seed question'),
+  },
+  async ({ doc_text, event, count = 4, based_on }) => {
+    const text = (doc_text ?? '').trim();
+    if (!text) return { content: [{ type: 'text', text: 'No document text provided.' }] };
+
+    // Resolve the event → skill, falling back to the user's saved setting.
+    let ev = event;
+    if (!ev) {
+      const settings = await readJson('app_settings');
+      const topics = settings?.debateEvent ? (EVENT_MAP[settings.debateEvent]?.topics ?? []) : [];
+      ev = topics.includes('pf') ? 'pf' : topics.includes('ld') ? 'ld' : 'policy';
+    }
+    const skillName = ev === 'pf' ? 'pf_debate' : ev === 'ld' ? 'ld_debate' : 'cx_debate';
+    const eventLabel = ev === 'pf' ? 'Public Forum' : ev === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
+    const skill = (await readSkill(skillName)) ?? '';
+    const n = Math.min(Math.max(count, 1), 6);
+
+    const brief = based_on
+      ? `Write ${n} NEW cross-ex questions in the same spirit as this seed — same line of attack, fresh angles on the same vulnerability. Do not repeat it.\nSEED: ${based_on}`
+      : `Write the ${n} most useful cross-examination questions a ${eventLabel} debater could ask the author of the document below.`;
+
+    const out = [
+      `# Cross-Ex Practice — ${eventLabel}`,
+      ``,
+      `${brief}`,
+      ``,
+      `Each question must be POINTED and STRATEGIC — expose a missing warrant, weak internal link, unqualified author, contradiction, non-unique impact, or overclaim. Avoid generic questions. For each, also give a strong model ANSWER the opponent would likely give plus the follow-up the questioner should press. Present each answer so it can be revealed after the question (it is hidden by default in the app).`,
+      ``,
+      skill ? `## Event guide (${skillName})\n${skill.slice(0, 12000)}\n` : '',
+      `## Document\n${text.slice(0, 60000)}`,
+    ].filter(Boolean).join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
   }
 );
 
@@ -538,6 +625,108 @@ server.tool(
         text: `Paradigm for ${judge.name}${judge.institution ? ` (${judge.institution})` : ''}:\n\n${paradigm}`,
       }],
     };
+  }
+);
+
+// ── list_flows ──────────────────────────────────────────────────────────────────
+server.tool(
+  'list_flows',
+  "List all of the user's flow sheets (name, debate event, id). Call before read_flow or edit_flow_cell.",
+  {},
+  async () => {
+    const index = await readJson('flows_index');
+    if (!Array.isArray(index) || index.length === 0) return { content: [{ type: 'text', text: 'No flows exist yet.' }] };
+    const text = index.map(f => `- "${f.name}" (${f.event}, id:${f.id})`).join('\n');
+    return { content: [{ type: 'text', text: `${index.length} flow(s):\n${text}` }] };
+  }
+);
+
+// ── read_flow ───────────────────────────────────────────────────────────────────
+server.tool(
+  'read_flow',
+  "Read a flow's sheets, column headers, and every filled-in cell. Call before edit_flow_cell so you target the right cell.",
+  { flow: z.string().describe('Flow name or id (case-insensitive)') },
+  async ({ flow }) => {
+    const index = await readJson('flows_index');
+    const meta = findFlowMeta(index, flow);
+    if (!meta) return { content: [{ type: 'text', text: `No flow named "${flow}" found. Use list_flows.` }] };
+    const data = await readJson(`flow_data_${meta.id}`);
+    const cols = flowColumns(data);
+    if (!data?.sheets?.length) {
+      return { content: [{ type: 'text', text: `Flow "${meta.name}" (${meta.event}) is empty. Columns: ${cols.join(' | ')}.` }] };
+    }
+    const out = [`Flow "${meta.name}" (${meta.event}). Columns: ${cols.map((c, i) => `${i + 1}.${c}`).join('  ')}`];
+    data.sheets.forEach((sh, si) => {
+      const cells = sh.cells ?? {};
+      const rows = [];
+      for (let r = 0; r < FLOW_NUM_ROWS; r++) {
+        const parts = [];
+        cols.forEach((c, ci) => { const v = cells[`${r}-${ci}`]; if (v && String(v).trim()) parts.push(`${c}: ${v}`); });
+        if (parts.length) rows.push(`  Row ${r + 1} — ${parts.join(' | ')}`);
+      }
+      out.push(`\nSheet ${si + 1}: "${sh.name}"${rows.length ? '\n' + rows.join('\n') : ' (empty)'}`);
+    });
+    return { content: [{ type: 'text', text: out.join('\n') }] };
+  }
+);
+
+// ── edit_flow_cell ──────────────────────────────────────────────────────────────
+server.tool(
+  'edit_flow_cell',
+  "Set the value of a single cell in a flow sheet. Call read_flow first to learn column names and current contents. Columns are debate speeches (e.g. '1AC', '2NR'). Row is 1-based.",
+  {
+    flow:   z.string().describe('Flow name or id (case-insensitive)'),
+    sheet:  z.string().optional().describe("Sheet name or 1-based number. Defaults to the first sheet."),
+    column: z.string().describe("Column header name (e.g. '2NR') or 1-based column number."),
+    row:    z.number().int().describe('Row number, 1-based.'),
+    value:  z.string().describe('Text to put in the cell (overwrites existing content).'),
+  },
+  async ({ flow, sheet, column, row, value }) => {
+    const index = await readJson('flows_index');
+    const meta = findFlowMeta(index, flow);
+    if (!meta) return { content: [{ type: 'text', text: `No flow named "${flow}" found. Use list_flows.` }] };
+
+    let data = await readJson(`flow_data_${meta.id}`);
+    if (!data?.sheets?.length) data = makeDefaultFlowData(meta.event);
+    const cols = flowColumns(data);
+
+    // Resolve sheet
+    let sheetIdx = 0;
+    if (sheet != null && String(sheet).trim() !== '') {
+      const sArg = String(sheet).trim();
+      const asNum = Number(sArg);
+      if (Number.isInteger(asNum) && asNum >= 1 && asNum <= data.sheets.length) {
+        sheetIdx = asNum - 1;
+      } else {
+        const lc = sArg.toLowerCase();
+        let found = data.sheets.findIndex(sh => (sh.name ?? '').toLowerCase() === lc);
+        if (found < 0) found = data.sheets.findIndex(sh => (sh.name ?? '').toLowerCase().includes(lc));
+        if (found < 0) return { content: [{ type: 'text', text: `No sheet "${sArg}". Sheets: ${data.sheets.map(s => s.name).join(', ')}.` }] };
+        sheetIdx = found;
+      }
+    }
+
+    // Resolve column
+    let colIdx = -1;
+    const colArg = String(column).trim();
+    const colNum = Number(colArg);
+    if (Number.isInteger(colNum) && colNum >= 1 && colNum <= cols.length) colIdx = colNum - 1;
+    else {
+      colIdx = cols.findIndex(c => c.toLowerCase() === colArg.toLowerCase());
+      if (colIdx < 0) colIdx = cols.findIndex(c => c.toLowerCase().includes(colArg.toLowerCase()));
+    }
+    if (colIdx < 0) return { content: [{ type: 'text', text: `No column "${colArg}". Columns: ${cols.join(', ')}.` }] };
+
+    if (!Number.isInteger(row) || row < 1 || row > FLOW_NUM_ROWS) {
+      return { content: [{ type: 'text', text: `Row must be between 1 and ${FLOW_NUM_ROWS}.` }] };
+    }
+    const rowIdx = row - 1;
+
+    const sh = data.sheets[sheetIdx];
+    sh.cells = { ...(sh.cells ?? {}), [`${rowIdx}-${colIdx}`]: String(value ?? '') };
+    await writeJson(`flow_data_${meta.id}`, data);
+
+    return { content: [{ type: 'text', text: `Set ${cols[colIdx]} (column ${colIdx + 1}), row ${row} on sheet "${sh.name}" of flow "${meta.name}" to: "${value}".` }] };
   }
 );
 
