@@ -465,7 +465,8 @@ type ToolName =
   | 'navigate_app'
   | 'list_flows'
   | 'read_flow'
-  | 'edit_flow_cell';
+  | 'edit_flow_cell'
+  | 'read_speech_doc';
 
 interface ToolStep {
   id: string;
@@ -509,7 +510,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
   const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
   const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
   // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
-  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell']);
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
   const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
@@ -1936,6 +1937,36 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               steps = steps.map((s) => s.id === stepId ? { ...s, label: 'Read flow failed', status: 'error' } : s);
               syncSteps(steps);
               return { name, functionResult: `Could not read flow: ${e.message}` };
+            }
+
+          } else if (name === 'read_speech_doc') {
+            const query = String(args.name ?? '').trim().toLowerCase().replace(/\.docx$/i, '');
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'read_speech_doc', label: `Reading "${args.name}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              const raw = localStorage.getItem('warroom-speech-doc-recents');
+              const recents: { path: string; name: string }[] = raw ? JSON.parse(raw) : [];
+              const match = recents.find((r) =>
+                r.name.toLowerCase().replace(/\.docx$/i, '').includes(query) ||
+                query.includes(r.name.toLowerCase().replace(/\.docx$/i, ''))
+              );
+              if (!match) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, label: `"${args.name}" not found in recent docs`, status: 'error' } : s);
+                syncSteps(steps);
+                return { name, functionResult: `No recent speech doc matching "${args.name}" found. The file must be opened in the Speech Doc viewer at least once before it can be read. Recent docs available: ${recents.map((r) => r.name).join(', ') || '(none)'}` };
+              }
+              const res = await (window.warroom as any)?.speechdoc?.extract(match.path);
+              if (!res?.ok) throw new Error(res?.error ?? 'Extraction failed');
+              const text = (tokenSaving && res.data?.tokenSaving) ? res.data.tokenSaving : res.data?.full;
+              if (!text?.trim()) throw new Error('File appears to be empty or could not be parsed');
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Read "${match.name}"`, status: 'done' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `[Speech Doc: ${match.name}]\n${text}` };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Failed to read "${args.name}"`, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Could not read speech doc: ${e.message}` };
             }
 
           } else if (name === 'edit_flow_cell') {

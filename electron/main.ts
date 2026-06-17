@@ -3764,6 +3764,7 @@ The user may also have custom skills — call them if referenced by name.
 - **search_openevidence** — Open Evidence Project (released packets, full cases). ONLY when user asks for open evidence or full cases.
 - **save_card_to_library** — save a card to the user's library.
 - **fetch_article** — fetch the text of a URL (for cutting cards from links or reading a source).
+- **read_speech_doc** — read a local .docx file by name. Use whenever the user mentions a .docx filename (e.g. "flow AFF_Domain_Awareness.docx") even without @mentioning it. Call before flowing or cutting cards from a local file.
 - **search_tabroom_tournament** — search Tabroom for tournaments by name.
 - **get_tournament_details** — fetch Tabroom tournament info by numeric ID.
 - **save_tournament_to_app** — save a Tabroom tournament to the user's app.
@@ -3975,6 +3976,17 @@ const AGENT_TOOLS = [{
           value:  { type: 'STRING', description: 'Text to put in the cell. Overwrites any existing content in that cell.' },
         },
         required: ['flow', 'column', 'row', 'value'],
+      },
+    },
+    {
+      name: 'read_speech_doc',
+      description: "Read the text of a local .docx speech doc by filename. Use whenever the user references a .docx file they want to flow, extract cards from, or analyze — even if they didn't @mention it. The file must have been opened in the Speech Doc viewer at least once.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING', description: 'Filename of the speech doc (e.g. "AFF_Domain_Awareness.docx"). Matched case-insensitively against recent docs.' },
+        },
+        required: ['name'],
       },
     },
   ],
