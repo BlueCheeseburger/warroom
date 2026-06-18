@@ -222,8 +222,8 @@ const CARD_BASE: React.CSSProperties = {
  */
 function onCardEnter(e: React.MouseEvent<HTMLElement>, ring = 'var(--accent)') {
   const el = e.currentTarget as HTMLElement;
-  el.style.transform = 'translateY(-3px) scale(1.012)';
-  el.style.boxShadow = `0 0 0 2px ${ring}, 0 16px 34px -8px rgba(0,0,0,0.26)`;
+  el.style.transform = 'translateY(-1px)';
+  el.style.boxShadow = `0 0 0 1px ${ring}, 0 6px 16px -8px rgba(0,0,0,0.18)`;
   el.style.borderColor = ring;
   el.style.zIndex = '1';
 }
