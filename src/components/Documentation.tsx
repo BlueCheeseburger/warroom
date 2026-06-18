@@ -465,6 +465,27 @@ export default function Documentation() {
         </section>
 
         {/* ── Flows ─────────────────────────────────────────────────── */}
+        <section id="doc-speech-timer">
+          <H2>Speech Timer</H2>
+          <P>
+            A built-in countdown timer lives in the title bar at the top of the app — always visible
+            without navigating anywhere. Click the speech-type dropdown (e.g. "Constructive",
+            "Cross-Ex") to select which speech to time, then click the time display to start or
+            pause the countdown. A reset button sits next to the timer.
+          </P>
+          <P>
+            For Policy, a small <Code>HS</Code> / <Code>CLG</Code> pill to the left of the
+            dropdown switches between high school and college speech lengths. Speech times auto-match
+            the active debate event (Policy, PF, or LD). The display turns amber in the last 30
+            seconds and red when time expires; it then counts up as overtime.
+          </P>
+          <P>
+            Warroom AI can fully control the timer — start, pause, reset, select a speech type, or
+            switch HS/CLG — by asking in plain language (e.g. "start the timer", "set it to 1AR",
+            "switch to college times", "how much time is left?").
+          </P>
+        </section>
+
         <section id="doc-flows">
           <H2>Flows</H2>
           <P>

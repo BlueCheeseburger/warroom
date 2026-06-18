@@ -3811,9 +3811,10 @@ const AGENT_SYSTEM = `You are Warroom Agent, an agentic AI for competitive debat
 ## ANTI-HALLUCINATION RULES — READ FIRST
 These rules exist because debate formats, app features, and rules are specific. Guessing causes real harm.
 1. **ALWAYS call get_skill BEFORE answering ANY question about debate format, rules, speech times, argument types, strategy, or judging norms** — even if confident. Call first, then answer from what it returns. Never answer from memory.
-2. **ALWAYS call get_skill("user_manual") BEFORE answering ANY question about how to use Warroom, where a feature is, or how something in the app works.** Never guess at navigation, settings, or app behavior.
+2. **ALWAYS call get_skill("user_manual") BEFORE answering ANY question about how to use Warroom, where a feature is, or whether the app has a feature.** Never guess at navigation, settings, or app behavior. "Does Warroom have X?" is a feature question — load the manual first.
 3. If the skill doesn't cover it, say so — do not invent an answer.
 4. **If the user's message starts with /skill_name (e.g. "/cx_debate what is a DA?"), immediately call get_skill(skill_name) as your very first action, then answer using what the skill returns.** The slash prefix is a direct invocation — treat it as a hard override to load that skill first, no exceptions.
+5. **NEVER respond with only "Done." or a single word to a question.** Questions require real answers. If someone asks whether Warroom has a feature, check the manual and tell them. "Done." is only valid as a confirmation after completing an action the user explicitly asked for.
 
 ## Skills System
 Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in skills:
@@ -3833,6 +3834,7 @@ The user may also have custom skills — call them if referenced by name.
 - **save_card_to_library** — save a card to the user's library.
 - **fetch_article** — fetch the text of a URL (for cutting cards from links or reading a source).
 - **read_speech_doc** — read a local .docx file by name. Use whenever the user mentions a .docx filename (e.g. "flow AFF_Domain_Awareness.docx") even without @mentioning it. Call before flowing or cutting cards from a local file.
+- **control_timer** — control the speech timer in the title bar: start, pause, reset, select a speech type (e.g. "Constructive", "1AR", "Crossfire"), switch HS/CLG level, or read current status. Use for ANY request involving the speech timer.
 - **search_tabroom_tournament** — search Tabroom for tournaments by name.
 - **get_tournament_details** — fetch Tabroom tournament info by numeric ID.
 - **save_tournament_to_app** — save a Tabroom tournament to the user's app.
@@ -4059,6 +4061,28 @@ const AGENT_TOOLS = [{
           name: { type: 'STRING', description: 'Filename of the speech doc (e.g. "AFF_Domain_Awareness.docx"). Matched case-insensitively against recent docs.' },
         },
         required: ['name'],
+      },
+    },
+    {
+      name: 'control_timer',
+      description: "Control the speech timer in the Warroom title bar. Use for any request to start, pause, stop, reset, or select a speech type on the timer. Also call with action='status' to read the current timer state before reporting it.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          action: {
+            type: 'STRING',
+            description: "What to do: 'start' (begin countdown), 'pause' (stop countdown), 'reset' (stop and restore full time), 'select' (pick a speech type — requires speech param), 'level' (switch HS/CLG for policy — requires level param), 'status' (read current state without changing it).",
+          },
+          speech: {
+            type: 'STRING',
+            description: "Speech type name to select. Examples: 'Constructive', 'Cross-Ex', 'Rebuttal', '1AC', '2NC', '1AR', 'Crossfire', 'Summary', 'Final Focus', 'AC', 'NC', 'NR'. Matched case-insensitively.",
+          },
+          level: {
+            type: 'STRING',
+            description: "Policy level: 'hs' (high school) or 'clg' (college/NDT/CEDA). Only applies when event is policy.",
+          },
+        },
+        required: ['action'],
       },
     },
   ],

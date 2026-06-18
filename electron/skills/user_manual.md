@@ -81,6 +81,48 @@ How it works:
 
 ---
 
+## Speech Timer
+Built into the title bar at the top of the app — always visible, no need to navigate anywhere.
+
+- **Select speech type**: click the speech label dropdown (e.g. "Constructive", "Cross-Ex") to pick which speech to time
+- **Start / pause**: click the time display to start or pause the countdown
+- **Reset**: click the reset button next to the timer
+- **HS / CLG toggle** (policy only): a small "HS" or "CLG" pill left of the dropdown switches between high school and college speech times
+- Times auto-match your debate event (policy, PF, or LD)
+
+Speech times by event:
+
+| Event | Speech | Time |
+|---|---|---|
+| Policy HS | Constructive | 8:00 |
+| Policy HS | Cross-Ex | 3:00 |
+| Policy HS | Rebuttal | 5:00 |
+| Policy CLG | Constructive | 9:00 |
+| Policy CLG | Cross-Ex | 3:00 |
+| Policy CLG | Rebuttal | 6:00 |
+| PF | Constructive | 4:00 |
+| PF | Crossfire | 3:00 |
+| PF | Rebuttal | 4:00 |
+| PF | Summary | 3:00 |
+| PF | Grand CX | 3:00 |
+| PF | Final Focus | 2:00 |
+| LD | AC | 6:00 |
+| LD | CX | 3:00 |
+| LD | NC | 7:00 |
+| LD | 1AR | 4:00 |
+| LD | NR | 6:00 |
+| LD | 2AR | 3:00 |
+
+The timer turns amber in the last 30 seconds and red when time is up (overtime counts up).
+
+**Warroom AI can control the timer** using the `control_timer` tool. Say things like:
+- "Start the timer" / "Pause" / "Reset the timer"
+- "Set the timer to 1AR" / "Switch to Crossfire"
+- "Switch to college times" (policy only)
+- "What's the timer at?" / "How much time is left?"
+
+---
+
 ## Flows
 .xlsx spreadsheets opened in-app.
 

@@ -121,6 +121,46 @@ function SpeechTimer() {
     setLevel(next);
   }
 
+  // Expose state for agent reads and listen for agent control events
+  useEffect(() => {
+    (window as any).__warroomTimerState = {
+      speech: slot.label,
+      timeLeft: timeLeft ?? slot.secs,
+      running,
+      event,
+      level,
+      slots: slots.map((s) => s.label),
+    };
+  });
+
+  useEffect(() => {
+    function handleControl(e: Event) {
+      const { action, speech, level: lvl } = (e as CustomEvent).detail ?? {};
+      if (action === 'start') {
+        if (display === 0) setTimeLeft(null);
+        setRunning(true);
+      } else if (action === 'pause') {
+        setRunning(false);
+      } else if (action === 'toggle') {
+        if (display === 0) { setTimeLeft(null); setRunning(true); }
+        else setRunning((v) => !v);
+      } else if (action === 'reset') {
+        setRunning(false);
+        setTimeLeft(null);
+      } else if (action === 'select' && speech) {
+        const needle = String(speech).toLowerCase();
+        const idx = slots.findIndex((s) => s.label.toLowerCase().includes(needle) || needle.includes(s.label.toLowerCase()));
+        if (idx >= 0) selectSlot(idx);
+      } else if (action === 'level' && (lvl === 'hs' || lvl === 'clg')) {
+        localStorage.setItem(TIMER_LEVEL_KEY, lvl);
+        setLevel(lvl);
+      }
+    }
+    window.addEventListener('warroom-timer-control', handleControl);
+    return () => window.removeEventListener('warroom-timer-control', handleControl);
+  }, [slots, display]);
+
+
   const overtime = display === 0;
   const urgent = display <= 30 && display > 0;
   const timeColor = overtime

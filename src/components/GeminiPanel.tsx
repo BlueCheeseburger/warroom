@@ -488,7 +488,8 @@ type ToolName =
   | 'list_flows'
   | 'read_flow'
   | 'edit_flow_cell'
-  | 'read_speech_doc';
+  | 'read_speech_doc'
+  | 'control_timer';
 
 interface ToolStep {
   id: string;
@@ -532,7 +533,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
   const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
   const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
   // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
-  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc']);
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
   const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
@@ -2035,6 +2036,34 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               return { name, functionResult: `Could not read speech doc: ${e.message}` };
             }
 
+          } else if (name === 'control_timer') {
+            const action = String(args.action ?? '').trim();
+            const stepId = crypto.randomUUID();
+            const actionLabels: Record<string, string> = {
+              start: 'Starting timer', pause: 'Pausing timer', reset: 'Resetting timer',
+              toggle: 'Toggling timer', select: `Selecting "${args.speech}"`,
+              level: `Switching to ${args.level?.toUpperCase()}`, status: 'Checking timer',
+            };
+            steps = [...steps, { id: stepId, tool: 'control_timer', label: actionLabels[action] ?? 'Timer control', status: 'running' }];
+            syncSteps(steps);
+            const state: any = (window as any).__warroomTimerState ?? {};
+            if (action !== 'status') {
+              window.dispatchEvent(new CustomEvent('warroom-timer-control', { detail: { action, speech: args.speech, level: args.level } }));
+            }
+            await new Promise((r) => setTimeout(r, 60)); // let React re-render and update state
+            const fresh: any = (window as any).__warroomTimerState ?? state;
+            const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+            const desc = `Speech: ${fresh.speech ?? state.speech} | Time: ${fmt(fresh.timeLeft ?? state.timeLeft ?? 0)} | Running: ${fresh.running ? 'yes' : 'no'} | Event: ${fresh.event ?? ''} ${fresh.level ? `(${fresh.level.toUpperCase()})` : ''}`.trim();
+            const doneLabel: Record<string, string> = {
+              start: `Timer started — ${fresh.speech}`, pause: 'Timer paused',
+              reset: `Timer reset — ${fresh.speech}`, toggle: fresh.running ? `Timer started — ${fresh.speech}` : 'Timer paused',
+              select: `Selected "${fresh.speech}"`, level: `Switched to ${fresh.level?.toUpperCase()}`,
+              status: `Timer status read`,
+            };
+            steps = steps.map((s) => s.id === stepId ? { ...s, label: doneLabel[action] ?? 'Done', status: 'done' } : s);
+            syncSteps(steps);
+            return { name, functionResult: desc };
+
           } else if (name === 'edit_flow_cell') {
             const q = String(args.flow ?? '').trim();
             // Reuse an existing step for this flow if one was already created (parallel batch)
@@ -2246,7 +2275,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 { icon: '📋', label: 'Summarize my @case' },
                 { icon: '⚔️', label: 'What blocks should I read against [position]?' },
                 { icon: '📊', label: 'Add [argument] to my flow' },
-                { icon: '📖', label: 'Save [topic] as a skill' },
+                { icon: '⏱️', label: 'Start the timer for [speech]' },
                 { icon: '❓', label: 'How do I [feature]?' },
               ].map(({ icon, label }) => (
                 <button
