@@ -211,22 +211,28 @@ function StatusBar({ wins, losses, pending, tournament, isLive }: {
 
 /** Base style for cards that lift on hover */
 const CARD_BASE: React.CSSProperties = {
-  transition: 'transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease',
+  transition: 'transform .15s cubic-bezier(.4,0,.2,1), box-shadow .15s ease, border-color .14s ease, background .14s ease',
   willChange: 'transform',
 };
 
-/** Lift + shadow — used on cases, opponents, tournaments, quick-actions */
-function onCardEnter(e: React.MouseEvent<HTMLElement>, lift = 2) {
+/**
+ * Accent-ring lift on hover — matches the Claude Design spec:
+ * a 2px accent ring + deep drop shadow + a subtle rise & scale.
+ * Pass a `ring` colour to override the accent (e.g. the live-tournament green).
+ */
+function onCardEnter(e: React.MouseEvent<HTMLElement>, ring = 'var(--accent)') {
   const el = e.currentTarget as HTMLElement;
-  el.style.transform = `translateY(-${lift}px)`;
-  el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.13)';
-  el.style.borderColor = 'var(--border-med)';
+  el.style.transform = 'translateY(-3px) scale(1.012)';
+  el.style.boxShadow = `0 0 0 2px ${ring}, 0 16px 34px -8px rgba(0,0,0,0.26)`;
+  el.style.borderColor = ring;
+  el.style.zIndex = '1';
 }
-function onCardLeave(e: React.MouseEvent<HTMLElement>, liveBorder?: string) {
+function onCardLeave(e: React.MouseEvent<HTMLElement>, restBorder?: string) {
   const el = e.currentTarget as HTMLElement;
   el.style.transform = '';
   el.style.boxShadow = '';
-  el.style.borderColor = liveBorder ?? 'var(--border-subtle)';
+  el.style.borderColor = restBorder ?? 'var(--border-subtle)';
+  el.style.zIndex = '';
 }
 
 /** Blue glow — used on Gemini chat rows (no lift) */
@@ -354,7 +360,7 @@ function BigStat({ label, value, sub, accent }: { label: string; value: number; 
     <div
       className={`glass-card rounded-xl px-4 py-3.5 ${ACCENT_BG[accent]}`}
       style={{ border: '1px solid var(--border-subtle)', ...CARD_BASE }}
-      onMouseEnter={(e) => onCardEnter(e, 1)}
+      onMouseEnter={(e) => onCardEnter(e)}
       onMouseLeave={(e) => onCardLeave(e)}
     >
       <div className="label mb-1">{label}</div>
@@ -469,7 +475,7 @@ function CasesPanel() {
                 }}
                 className="text-left rounded-lg px-3 py-2.5 group"
                 style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
-                onMouseEnter={(e) => onCardEnter(e, 2)}
+                onMouseEnter={(e) => onCardEnter(e)}
                 onMouseLeave={(e) => onCardLeave(e)}
               >
                 <div className="flex items-center gap-1.5 mb-1">
@@ -551,7 +557,7 @@ function TournamentsPanel() {
               onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
               className="w-full text-left flex items-center justify-between rounded-lg px-3 py-2.5 transition"
               style={{ background: 'var(--bg-main)', border: `1px solid ${status === 'live' ? '#16a34a55' : 'var(--border-subtle)'}`, ...CARD_BASE }}
-              onMouseEnter={(e) => { onCardEnter(e, 1); if (status === 'live') e.currentTarget.style.borderColor = '#16a34a99'; }}
+              onMouseEnter={(e) => onCardEnter(e, status === 'live' ? 'var(--pos)' : 'var(--accent)')}
               onMouseLeave={(e) => onCardLeave(e, status === 'live' ? '#16a34a55' : undefined)}
             >
               <div className="min-w-0">
@@ -731,7 +737,7 @@ function GeminiHomeCard() {
           onClick={openNew}
           className="w-full rounded-lg px-3 py-3 text-left flex items-center gap-2"
           style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
-          onMouseEnter={(e) => onCardEnter(e, 1)}
+          onMouseEnter={(e) => onCardEnter(e)}
           onMouseLeave={(e) => onCardLeave(e)}
         >
           <GeminiIcon size={13} />
@@ -933,7 +939,7 @@ function QuickActions() {
             onClick={a.onClick}
             className="flex flex-col items-start rounded-lg px-3 py-2.5 text-left"
             style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
-            onMouseEnter={(e) => onCardEnter(e, 2)}
+            onMouseEnter={(e) => onCardEnter(e)}
             onMouseLeave={(e) => onCardLeave(e)}
           >
             <span className="text-base mb-1">{a.icon}</span>
@@ -1010,7 +1016,7 @@ function OpponentsPanel() {
               }}
               className="text-left flex items-center justify-between rounded-lg px-3 py-2"
               style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
-              onMouseEnter={(e) => onCardEnter(e, 1)}
+              onMouseEnter={(e) => onCardEnter(e)}
               onMouseLeave={(e) => onCardLeave(e)}
             >
               <div className="min-w-0">

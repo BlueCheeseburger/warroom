@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 
+type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
-  value: Direction; label: string; blurb: string;
-  preview: { bg: string; card: string; accent: string; ink: string; line: string };
+  value: Direction; label: string; blurb: string; light: Palette; dark: Palette;
 }[] = [
   { value: 'calm', label: 'Calm Native', blurb: 'Cool & modern',
-    preview: { bg: '#edeff3', card: '#ffffff', accent: '#4b53c4', ink: '#1b1d24', line: 'rgba(30,40,70,0.12)' } },
+    light: { bg: '#edeff3', card: '#ffffff', accent: '#4b53c4', ink: '#1b1d24', line: 'rgba(30,40,70,0.12)' },
+    dark:  { bg: '#1a1c21', card: '#25272e', accent: '#7c82ee', ink: '#eef0f6', line: 'rgba(180,195,235,0.18)' } },
   { value: 'paper', label: 'Warm Paper', blurb: 'Editorial serif',
-    preview: { bg: '#f5f1e8', card: '#fbf9f3', accent: '#b4532a', ink: '#2b2722', line: 'rgba(60,45,25,0.16)' } },
+    light: { bg: '#f5f1e8', card: '#fbf9f3', accent: '#b4532a', ink: '#2b2722', line: 'rgba(60,45,25,0.16)' },
+    dark:  { bg: '#24201a', card: '#2c2820', accent: '#e08a5a', ink: '#efe7d6', line: 'rgba(239,231,214,0.2)' } },
   { value: 'editorial', label: 'Sharp Editorial', blurb: 'High contrast',
-    preview: { bg: '#fafafa', card: '#ffffff', accent: '#155fff', ink: '#111113', line: 'rgba(17,17,19,0.14)' } },
+    light: { bg: '#fafafa', card: '#ffffff', accent: '#155fff', ink: '#111113', line: 'rgba(17,17,19,0.14)' },
+    dark:  { bg: '#0e0e10', card: '#1a1a1d', accent: '#4d8bff', ink: '#fafafa', line: 'rgba(250,250,250,0.2)' } },
 ];
 
 const MODE_OPTIONS: { value: Theme; label: string }[] = [
@@ -175,6 +178,19 @@ function GDriveSettings() {
 export default function Settings() {
   const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Whether the app is *effectively* dark right now, so the theme previews
+  // reflect the live mode (system follows the OS preference).
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handle = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handle);
+    return () => mq.removeEventListener('change', handle);
+  }, []);
+  const isDark = theme === 'dark' || (theme === 'system' && systemDark);
 
   useEffect(() => {
     if (view.kind === 'settings' && (view as any).scrollTo) {
@@ -370,23 +386,24 @@ export default function Settings() {
           <div className="grid grid-cols-3 gap-2">
             {THEME_OPTIONS.map((o) => {
               const active = direction === o.value;
+              const p = isDark ? o.dark : o.light;
               return (
                 <button
                   key={o.value}
                   onClick={() => setDirection(o.value)}
                   className="text-left rounded-xl p-3 transition border"
                   style={{
-                    background: o.preview.bg,
-                    borderColor: active ? o.preview.accent : 'var(--border-med)',
-                    boxShadow: active ? `0 0 0 2px ${o.preview.accent}` : 'none',
+                    background: p.bg,
+                    borderColor: active ? p.accent : 'var(--border-med)',
+                    boxShadow: active ? `0 0 0 2px ${p.accent}` : 'none',
                   }}
                 >
                   <div className="flex items-center gap-1.5 mb-2.5">
-                    <span className="w-3 h-3 rounded-full" style={{ background: o.preview.accent }} />
-                    <span className="w-3 h-3 rounded-full" style={{ background: o.preview.card, border: `1px solid ${o.preview.line}` }} />
+                    <span className="w-3 h-3 rounded-full" style={{ background: p.accent }} />
+                    <span className="w-3 h-3 rounded-full" style={{ background: p.card, border: `1px solid ${p.line}` }} />
                   </div>
-                  <div className="text-xs font-semibold" style={{ color: o.preview.ink }}>{o.label}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: o.preview.ink, opacity: 0.55 }}>{o.blurb}</div>
+                  <div className="text-xs font-semibold" style={{ color: p.ink }}>{o.label}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: p.ink, opacity: 0.55 }}>{o.blurb}</div>
                 </button>
               );
             })}
