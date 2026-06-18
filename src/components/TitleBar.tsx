@@ -143,7 +143,8 @@ function SpeechTimer() {
           style={{
             background: 'var(--mode-toggle-bg)',
             color: 'var(--titlebar-label)',
-            border: 'none', cursor: 'pointer', ...nd,
+            border: 'none', cursor: 'pointer',
+            minWidth: 34, textAlign: 'center', ...nd,
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--titlebar-label)'; }}
@@ -161,7 +162,7 @@ function SpeechTimer() {
             background: dropdownOpen ? 'var(--nav-hover-bg)' : 'transparent',
             color: 'var(--titlebar-label)',
             fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            border: 'none', cursor: 'pointer', ...nd,
+            border: 'none', cursor: 'pointer', minWidth: 90, ...nd,
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
           onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}

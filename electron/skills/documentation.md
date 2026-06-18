@@ -181,7 +181,7 @@ Each question renders as a pill with:
 - A **Show answer** disclosure that reveals the model answer (and the strategic follow-up the questioner should press) — hidden by default.
 - A **3 more like this** button that calls `ai:crossExQuestions` again with the question as a `basedOn` seed, generating three fresh questions probing the same vulnerability and inserting them inline below.
 
-The panel's **Generate / Regenerate** action lives in the footer. Generation uses the `balanced` model tier.
+The panel's **Generate / Regenerate** action lives in the footer. Generation uses the `balanced` model tier. Questions (including any "3 more like this" inserts) are persisted per-document in `localStorage` under `warroom-cx-questions-<path>`, so they survive closing/reopening the panel, reloading the doc, and app restarts — they are only cleared when the user regenerates.
 
 ---
 

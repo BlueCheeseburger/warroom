@@ -510,6 +510,10 @@ export default function Documentation() {
             three fresh questions probing the same weakness and inserts them inline below. Use the
             footer button to generate or regenerate the full set.
           </P>
+          <P>
+            Your questions are saved per-document, so they stay put when you close and reopen the
+            panel, reload the doc, or restart the app — they only clear when you regenerate.
+          </P>
         </section>
 
         {/* ── FindCards ─────────────────────────────────────────────── */}

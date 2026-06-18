@@ -244,7 +244,7 @@ async function readJson(name: string) {
 
 async function writeJson(name: string, data: unknown) {
   await ensureDir();
-  const p = safePath(name), tmp = p + '.tmp';
+  const p = safePath(name), tmp = `${p}.${Date.now()}${Math.floor(Math.random() * 1e6)}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
   await fs.rename(tmp, p);
 }
@@ -3863,6 +3863,9 @@ Example for "find cards on military presence in Alaska":
 - search_logos("US military force posture Arctic")
 - search_logos("Alaska defense spending readiness")
 - search_logos("INDOPACOM Alaska forward deployment")
+
+## Flowing a document — MANDATORY
+When the user asks you to "flow" a document, case, or block into a flow sheet (or says "add this to my flow", "put this on the flow", "flow my case", etc.): **call get_skill("flowing") as your very first action**, then follow it exactly. Never ask the user which column, row, or sheet to use — the skill tells you how to infer all of that. Execute immediately after reading the skill.
 
 ## Cutting cards
 When asked to cut a card, "make a card", "turn this into evidence", or when the user pastes article text or gives a URL with intent to get evidence: call get_skill("card_cutting") first, then follow it exactly. If given a URL, call fetch_article before cutting.

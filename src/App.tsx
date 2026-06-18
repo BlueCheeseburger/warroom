@@ -49,7 +49,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding } = useApp();
+  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -411,6 +411,11 @@ export default function App() {
       root.classList.toggle('dark', theme === 'dark');
     }
   }, [theme]);
+
+  // Apply the visual direction (Calm / Paper / Editorial) on <html>.
+  useEffect(() => {
+    document.documentElement.dataset.direction = direction;
+  }, [direction]);
 
   function onResizeStart(e: React.MouseEvent) {
     resizing.current = true;

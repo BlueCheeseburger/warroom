@@ -4,6 +4,8 @@ import { loadDB, saveDB } from '../utils/storage';
 
 export type Mode = 'prep' | 'round';
 export type Theme = 'system' | 'light' | 'dark';
+/** Visual direction (look & feel) — independent of light/dark mode. */
+export type Direction = 'calm' | 'paper' | 'editorial';
 export type DebateEvent = 'policy' | 'pf' | 'ld';
 /** 'hover' = red only on hover (subtle); 'always' = red border always, deeper on hover */
 export type DangerHighlight = 'hover' | 'always';
@@ -51,6 +53,7 @@ interface AppState {
   mode: Mode;
   view: View;
   theme: Theme;
+  direction: Direction;
   dangerHighlight: DangerHighlight;
   setDangerHighlight: (d: DangerHighlight) => void;
   event: DebateEvent;
@@ -73,6 +76,7 @@ interface AppState {
   goForward: () => void;
   setTheme: (t: Theme) => void;
   cycleTheme: () => void;
+  setDirection: (d: Direction) => void;
   setEvent: (e: DebateEvent) => void;
   setFlowsIndex: (idx: FlowMeta[]) => void;
   init: () => Promise<void>;
@@ -104,6 +108,7 @@ export const useApp = create<AppState>((set, get) => ({
   navHistory: [{ kind: 'home' }],
   navHistoryIndex: 0,
   theme: (localStorage.getItem('warroom-theme') as Theme | null) ?? 'system',
+  direction: (localStorage.getItem('warroom-direction') as Direction | null) ?? 'calm',
   dangerHighlight: (localStorage.getItem('warroom-danger-highlight') as DangerHighlight | null) ?? 'always',
   setDangerHighlight: (d) => { localStorage.setItem('warroom-danger-highlight', d); set({ dangerHighlight: d }); },
   event: (localStorage.getItem('warroom-event') as DebateEvent | null) ?? 'policy',
@@ -155,6 +160,10 @@ export const useApp = create<AppState>((set, get) => ({
     const t = next[get().theme];
     localStorage.setItem('warroom-theme', t);
     set({ theme: t });
+  },
+  setDirection: (d) => {
+    localStorage.setItem('warroom-direction', d);
+    set({ direction: d });
   },
   init: async () => {
     try {

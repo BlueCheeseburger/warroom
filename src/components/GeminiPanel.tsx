@@ -2005,17 +2005,18 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'read_speech_doc') {
-            const query = String(args.name ?? '').trim().toLowerCase().replace(/\.docx$/i, '');
+            const normDocQuery = (s: string) => s.trim().toLowerCase().replace(/\.docx$/i, '').replace(/[_\s]+/g, ' ');
+            const query = normDocQuery(String(args.name ?? ''));
             const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'read_speech_doc', label: `Reading "${args.name}"`, status: 'running' }];
             syncSteps(steps);
             try {
               const raw = localStorage.getItem('warroom-speech-doc-recents');
               const recents: { path: string; name: string }[] = raw ? JSON.parse(raw) : [];
-              const match = recents.find((r) =>
-                r.name.toLowerCase().replace(/\.docx$/i, '').includes(query) ||
-                query.includes(r.name.toLowerCase().replace(/\.docx$/i, ''))
-              );
+              const match = recents.find((r) => {
+                const n = normDocQuery(r.name);
+                return n.includes(query) || query.includes(n);
+              });
               if (!match) {
                 steps = steps.map((s) => s.id === stepId ? { ...s, label: `"${args.name}" not found in recent docs`, status: 'error' } : s);
                 syncSteps(steps);

@@ -395,12 +395,48 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
 
 interface CxQuestion { id: string; question: string; answer: string }
 
+// Cross-ex questions are persisted per-document so they survive closing/reopening
+// the panel, navigating away, reloading the doc, and app restarts. They are only
+// cleared when the user regenerates them.
+const cxStorageKey = (path: string) => `warroom-cx-questions-${path}`;
+function loadCxQuestions(path: string): CxQuestion[] {
+  if (!path) return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(cxStorageKey(path)) ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+function saveCxQuestions(path: string, qs: CxQuestion[]) {
+  if (!path) return;
+  try {
+    if (qs.length === 0) localStorage.removeItem(cxStorageKey(path));
+    else localStorage.setItem(cxStorageKey(path), JSON.stringify(qs));
+  } catch {}
+}
+
 const eventLabel = (e: DebateEvent) =>
   e === 'pf' ? 'Public Forum' : e === 'ld' ? 'Lincoln-Douglas' : 'Policy';
 
-function CrossExPill({ q, event, onInsertMore }: {
+// Render text with basic bold, italic, underline (no markdown — AI uses single quotes)
+function CxText({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
+  // Split on 'single-quoted phrases' and render them slightly emphasized
+  const parts = text.split(/('(?:[^']+)')/g);
+  return (
+    <span className={className} style={style}>
+      {parts.map((p, i) =>
+        /^'.*'$/.test(p)
+          ? <strong key={i} style={{ fontWeight: 600 }}>{p.slice(1, -1)}</strong>
+          : p
+      )}
+    </span>
+  );
+}
+
+function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
   q: CxQuestion;
   event: DebateEvent;
+  highlightedText: string;
+  fullText: string;
   onInsertMore: (after: CxQuestion, generated: CxQuestion[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -411,9 +447,9 @@ function CrossExPill({ q, event, onInsertMore }: {
     setMoreLoading(true);
     setMoreErr('');
     try {
-      // We re-question the same line of attack; the seed carries the doc context.
       const res = await window.warroom.ai.crossExQuestions({
-        docText: q.question + '\n\nLikely answer:\n' + q.answer,
+        highlightedText,
+        fullText,
         event: event as 'policy' | 'pf' | 'ld',
         count: 3,
         basedOn: q.question,
@@ -486,15 +522,20 @@ function CrossExPill({ q, event, onInsertMore }: {
   );
 }
 
-function CrossExPanel({ event, getDocText, onClose }: {
+function CrossExPanel({ event, getDocText, onClose, docKey }: {
   event: DebateEvent;
   getDocText: () => string;
   onClose: () => void;
+  docKey: string;
 }) {
-  const [questions, setQuestions] = useState<CxQuestion[]>([]);
+  // Restore any previously generated questions for this document.
+  const [questions, setQuestions] = useState<CxQuestion[]>(() => loadCxQuestions(docKey));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(() => loadCxQuestions(docKey).length > 0);
+
+  // Persist on every change so questions survive panel close / doc reload / restart.
+  useEffect(() => { saveCxQuestions(docKey, questions); }, [docKey, questions]);
 
   async function generate() {
     const docText = getDocText().trim();
@@ -858,6 +899,8 @@ export default function SpeechDocViewer() {
         </div>
         {cxOpen && step === 'viewing' && (
           <CrossExPanel
+            key={filePath}
+            docKey={filePath}
             event={event}
             getDocText={() => containerRef.current?.textContent ?? ''}
             onClose={() => setCxOpen(false)}

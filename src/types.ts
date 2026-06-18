@@ -263,7 +263,8 @@ declare global {
           usedFallback?: boolean;
         }>;
         crossExQuestions: (params: {
-          docText: string;
+          highlightedText: string;
+          fullText: string;
           event: 'policy' | 'pf' | 'ld';
           count?: number;
           basedOn?: string;

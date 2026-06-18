@@ -5,9 +5,9 @@ import SharePanel from './SharePanel';
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
-const POLICY_COLS = ['1AC', '1NC', '2AC', '2NC/1NR', '1AR', '2NR', '2AR'];
-const PF_PRO_FIRST_COLS = ['Pro Case', 'Con Case', 'Con Rebuttal', 'Pro Rebuttal', 'Pro Summary', 'Con Summary', 'Pro FF', 'Con FF'];
-const PF_CON_FIRST_COLS = ['Con Case', 'Pro Case', 'Pro Rebuttal', 'Con Rebuttal', 'Con Summary', 'Pro Summary', 'Con FF', 'Pro FF'];
+export const POLICY_COLS = ['1AC', '1NC', '2AC', '2NC/1NR', '1AR', '2NR', '2AR'];
+export const PF_PRO_FIRST_COLS = ['Pro Case', 'Con Case', 'Con Rebuttal', 'Pro Rebuttal', 'Pro Summary', 'Con Summary', 'Pro FF', 'Con FF'];
+export const PF_CON_FIRST_COLS = ['Con Case', 'Pro Case', 'Pro Rebuttal', 'Con Rebuttal', 'Con Summary', 'Pro Summary', 'Con FF', 'Pro FF'];
 
 // Blue = aff/pro, green = neg/con
 const POLICY_BLUE = new Set([0, 2, 4, 6]);
@@ -20,7 +20,7 @@ const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2',
 const SHEETS_ADVANTAGE = ['Adv 1', 'Adv 2', 'Adv 3', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
 const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
 
-const NUM_ROWS = 60;
+export const NUM_ROWS = 60;
 const DEFAULT_COL_WIDTH = 185;
 const DEFAULT_FONT_SIZE = 13;
 
@@ -53,7 +53,7 @@ function makeSheets(event: 'policy' | 'pf', variant: PolicyVariant): SheetData[]
   return names.map((name) => ({ id: crypto.randomUUID(), name, cells: {} }));
 }
 
-function makeDefaultData(event: 'policy' | 'pf', variant: PolicyVariant, pfOrder: PFOrder): StoredFlowData {
+export function makeDefaultData(event: 'policy' | 'pf', variant: PolicyVariant, pfOrder: PFOrder): StoredFlowData {
   const cols = event === 'policy' ? POLICY_COLS : (pfOrder === 'pro-first' ? PF_PRO_FIRST_COLS : PF_CON_FIRST_COLS);
   return {
     event, variant, pfOrder,
@@ -97,6 +97,8 @@ export default function FlowView() {
   // ── Core state ────────────────────────────────────────────────────────────
 
   const [loaded, setLoaded] = useState(false);
+  // Bumped to force a full reload from storage (e.g. after Warroom AI edits a cell)
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [sheets, setSheets] = useState<SheetData[]>([]);
   const [activeSheetIdx, setActiveSheetIdx] = useState(0);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
@@ -205,7 +207,22 @@ export default function FlowView() {
       setActiveSheetIdx(0);
       setLoaded(true);
     });
-  }, [flowId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flowId, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Live reload when Warroom AI (or another writer) edits this flow ─────────
+  useEffect(() => {
+    if (!flowId) return;
+    function onExternalEdit(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.flowId !== flowId) return;
+      // Drop any pending local save so it can't clobber the freshly-written data,
+      // then force a clean reload from storage (re-mounts cells via reloadNonce).
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      setReloadNonce((n) => n + 1);
+    }
+    window.addEventListener('warroom-flow-updated', onExternalEdit as EventListener);
+    return () => window.removeEventListener('warroom-flow-updated', onExternalEdit as EventListener);
+  }, [flowId]);
 
   // ── Persist ───────────────────────────────────────────────────────────────
 
@@ -782,7 +799,7 @@ export default function FlowView() {
                     onMouseLeave={() => setHoveredCell(null)}
                   >
                     <textarea
-                      key={`${activeSheet?.id ?? 'sheet'}-${cellKey}`}
+                      key={`${activeSheet?.id ?? 'sheet'}-${cellKey}-${reloadNonce}`}
                       ref={(el) => { cellEls.current[cellKey] = el; }}
                       defaultValue={cellsRef.current[cellKey] ?? ''}
                       rows={1}
@@ -964,12 +981,18 @@ function SheetTab({
           {name}
         </button>
       )}
-      {onDelete && (hovered || active) && !renaming && (
+      {onDelete && !renaming && (
         <button
-          className="shrink-0 mr-1.5 w-4 h-4 flex items-center justify-center rounded text-xs opacity-50 hover:opacity-100 transition"
-          style={{ color: 'var(--nav-inactive-color)' }}
+          className="shrink-0 mr-1.5 w-4 h-4 flex items-center justify-center rounded text-xs transition"
+          style={{
+            color: 'var(--nav-inactive-color)',
+            opacity: (hovered || active) ? 0.5 : 0,
+            pointerEvents: (hovered || active) ? 'auto' : 'none',
+          }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = (hovered || active) ? '0.5' : '0')}
           title="Delete sheet"
         >×</button>
       )}

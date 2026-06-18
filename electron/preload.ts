@@ -23,7 +23,7 @@ const api = {
     parseRoundEmail: (params: { filePath?: string; imageBase64?: string; mimeType?: string }) =>
       ipcRenderer.invoke('ai:parseRoundEmail', params),
     missionBrief: (params: any) => ipcRenderer.invoke('ai:missionBrief', params),
-    crossExQuestions: (params: { docText: string; event: 'policy' | 'pf' | 'ld'; count?: number; basedOn?: string }) =>
+    crossExQuestions: (params: { highlightedText: string; fullText: string; event: 'policy' | 'pf' | 'ld'; count?: number; basedOn?: string }) =>
       ipcRenderer.invoke('ai:crossExQuestions', params),
   },
   clipboard: {

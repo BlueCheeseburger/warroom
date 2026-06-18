@@ -1,6 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useApp, mapSettingsEvent } from '../store/appStore';
+import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
 import { signOut } from '../lib/supabase';
+
+const THEME_OPTIONS: {
+  value: Direction; label: string; blurb: string;
+  preview: { bg: string; card: string; accent: string; ink: string; line: string };
+}[] = [
+  { value: 'calm', label: 'Calm Native', blurb: 'Cool & modern',
+    preview: { bg: '#edeff3', card: '#ffffff', accent: '#4b53c4', ink: '#1b1d24', line: 'rgba(30,40,70,0.12)' } },
+  { value: 'paper', label: 'Warm Paper', blurb: 'Editorial serif',
+    preview: { bg: '#f5f1e8', card: '#fbf9f3', accent: '#b4532a', ink: '#2b2722', line: 'rgba(60,45,25,0.16)' } },
+  { value: 'editorial', label: 'Sharp Editorial', blurb: 'High contrast',
+    preview: { bg: '#fafafa', card: '#ffffff', accent: '#155fff', ink: '#111113', line: 'rgba(17,17,19,0.14)' } },
+];
+
+const MODE_OPTIONS: { value: Theme; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light',  label: 'Light' },
+  { value: 'dark',   label: 'Dark' },
+];
 
 const EVENT_OPTIONS = [
   { value: 'hspolicy', label: 'HS Policy' },
@@ -57,14 +75,14 @@ const ANTHROPIC_MODEL_OPTIONS = [
     default: false,
   },
   {
-    value: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
+    value: 'claude-3-5-sonnet-20241022',
+    label: 'Claude Sonnet 3.5',
     tooltip: 'Best balance of speed, quality, and cost. Recommended for most users.',
     default: true,
   },
   {
-    value: 'claude-opus-4-8',
-    label: 'Claude Opus 4.8',
+    value: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
     tooltip: 'Most powerful Claude model. Best for deep argument analysis and complex research.',
     default: false,
   },
@@ -155,7 +173,7 @@ function GDriveSettings() {
 }
 
 export default function Settings() {
-  const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view } = useApp();
+  const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
@@ -174,7 +192,7 @@ export default function Settings() {
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
-  const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
+  const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
   const [anthropicModelSaved, setAnthropicModelSaved] = useState(false);
   const [ocUser, setOcUser] = useState('');
   const [ocPass, setOcPass] = useState('');
@@ -341,6 +359,59 @@ export default function Settings() {
     <div className="p-8 max-w-xl">
       <div className="label mb-1">Settings</div>
       <h1 className="text-lg font-semibold mb-6 text-ink">App settings</h1>
+
+      {/* Appearance */}
+      <div className="glass-card rounded-sm p-4 space-y-4 mb-4">
+        <div>
+          <div className="label mb-1">Theme</div>
+          <p className="text-xs mb-3 text-ink/50">
+            Sets the overall look — colors, typography, and shape.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {THEME_OPTIONS.map((o) => {
+              const active = direction === o.value;
+              return (
+                <button
+                  key={o.value}
+                  onClick={() => setDirection(o.value)}
+                  className="text-left rounded-xl p-3 transition border"
+                  style={{
+                    background: o.preview.bg,
+                    borderColor: active ? o.preview.accent : 'var(--border-med)',
+                    boxShadow: active ? `0 0 0 2px ${o.preview.accent}` : 'none',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 mb-2.5">
+                    <span className="w-3 h-3 rounded-full" style={{ background: o.preview.accent }} />
+                    <span className="w-3 h-3 rounded-full" style={{ background: o.preview.card, border: `1px solid ${o.preview.line}` }} />
+                  </div>
+                  <div className="text-xs font-semibold" style={{ color: o.preview.ink }}>{o.label}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: o.preview.ink, opacity: 0.55 }}>{o.blurb}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <div className="label mb-2">Mode</div>
+          <div className="inline-flex rounded-lg p-0.5" style={{ background: 'var(--mode-toggle-bg)' }}>
+            {MODE_OPTIONS.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setTheme(m.value)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold transition"
+                style={{
+                  background: theme === m.value ? 'var(--bg-card)' : 'transparent',
+                  color: theme === m.value ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  boxShadow: theme === m.value ? 'var(--nav-active-shadow)' : 'none',
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Event */}
       <div className="glass-card rounded-sm p-4 space-y-3 mb-4">
