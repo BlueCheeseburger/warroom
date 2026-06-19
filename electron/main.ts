@@ -28,10 +28,12 @@ app.setName('Warroom');
 // AUMID for toast notifications (incl. daemon alerts) to display. No-op on macOS.
 app.setAppUserModelId('com.warroom.app');
 
-// Resolve icon path for both dev and production
+// Resolve icon path for both dev and production. Windows uses a dedicated
+// flatter, squarer, full-bleed .ico (resources/icon-win.svg); macOS keeps the PNG.
+const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
 const iconPath = isDev
-  ? join(app.getAppPath(), 'resources/icon.png')
-  : join(process.resourcesPath, 'icon.png');
+  ? join(app.getAppPath(), 'resources', iconFile)
+  : join(process.resourcesPath, iconFile);
 
 // macOS: set the dock icon (BrowserWindow's `icon` option is ignored on macOS).
 // Guard the load: a missing/unreadable icon must never crash app startup.
@@ -1110,6 +1112,20 @@ app.on('web-contents-created', (_event, contents) => {
 
 ipcMain.handle('storage:read', async (_e, name: string) => readJson(name));
 ipcMain.handle('storage:write', async (_e, name: string, data: unknown) => { await writeJson(name, data); return true; });
+
+// Windows: live-update the caption-button overlay so it follows the app theme.
+// No-op on macOS (traffic lights aren't a recolorable overlay).
+ipcMain.handle('window:setTitleBarOverlay', (event, opts: { color: string; symbolColor: string }) => {
+  if (process.platform === 'darwin') return false;
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (w && typeof (w as any).setTitleBarOverlay === 'function') {
+    try {
+      (w as any).setTitleBarOverlay({ color: opts.color, symbolColor: opts.symbolColor, height: 36 });
+      return true;
+    } catch { return false; }
+  }
+  return false;
+});
 
 ipcMain.handle('secure:set', async (_e, key: string, value: string) => {
   await setSecure(key, value);

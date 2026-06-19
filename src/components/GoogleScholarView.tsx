@@ -90,7 +90,7 @@ export default function GoogleScholarView() {
           <webview
             ref={webviewRef as any}
             src="https://scholar.google.com"
-            allowpopups="true"
+            allowpopups={true}
             className="w-full h-full"
             style={{ display: 'flex' }}
           />

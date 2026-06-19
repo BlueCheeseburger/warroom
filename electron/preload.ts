@@ -253,6 +253,8 @@ const api = {
       ipcRenderer.invoke('notes:upsert', p),
   },
   platform: process.platform,
+  setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
+    ipcRenderer.invoke('window:setTitleBarOverlay', opts),
   onScoutingOpen: (cb: (data: { kind: 'judge' | 'opponent'; id: string }) => void) => {
     const handler = (_e: any, data: any) => cb(data);
     ipcRenderer.on('scouting:openJudge',    (_e: any, id: string) => cb({ kind: 'judge',    id }));

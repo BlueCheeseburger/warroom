@@ -412,6 +412,7 @@ declare global {
         upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) => Promise<{ ok: boolean; error?: string }>;
       };
       platform: string;
+      setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => Promise<boolean>;
       onFileOpen: (cb: (filePath: string) => void) => () => void;
     };
   }

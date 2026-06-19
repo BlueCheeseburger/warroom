@@ -9,19 +9,6 @@ import { isOpenCaselistUrl } from './OpenEvView';
 // always mounted but positioned off-screen so they have a real viewport and
 // execute JS correctly.
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        src?: string;
-        allowpopups?: string;
-        style?: React.CSSProperties;
-        className?: string;
-      };
-    }
-  }
-}
-
 // The same React-friendly search injection used by the user-facing views
 function buildSearchInject(query: string): string {
   return `
@@ -235,13 +222,13 @@ export default function AgentSearchViews() {
       <webview
         ref={logosRef as any}
         src="https://logos-debate.netlify.app/"
-        allowpopups="true"
+        allowpopups={true}
         style={{ width: 1280, height: 800, display: 'flex' }}
       />
       <webview
         ref={openevRef as any}
         src="https://opencaselist.com/openev"
-        allowpopups="true"
+        allowpopups={true}
         style={{ width: 1280, height: 800, display: 'flex' }}
       />
     </div>

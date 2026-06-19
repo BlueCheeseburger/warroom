@@ -365,6 +365,7 @@ export default function TitleBar() {
   const canGoBack = navHistoryIndex > 0;
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
+  const isWin = window.warroom?.platform === 'win32';
 
   return (
     <div
@@ -373,6 +374,13 @@ export default function TitleBar() {
         background: 'var(--bg-titlebar)',
         borderBottom: '1px solid var(--border-side)',
         paddingLeft: isMac ? 80 : 12,
+        // Windows draws the min/max/close caption buttons over the top-right
+        // (~140px). Reserve that width so the timer, AI, and chat controls
+        // aren't hidden underneath them. Prefer the exact Window Controls
+        // Overlay width when available, but never reserve less than 140px.
+        paddingRight: isWin
+          ? 'max(140px, calc(100vw - env(titlebar-area-width, 100vw)))'
+          : undefined,
       }}
     >
       {/* Left: wordmark + nav arrows */}

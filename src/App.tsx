@@ -417,6 +417,37 @@ export default function App() {
     document.documentElement.dataset.direction = direction;
   }, [direction]);
 
+  // Windows: keep the native caption-button overlay in sync with the current
+  // theme by reading the live titlebar background and pushing it to main.
+  useEffect(() => {
+    if (window.warroom?.platform !== 'win32') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    let raf = 0;
+    const sync = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const cs = getComputedStyle(document.documentElement);
+        let color = cs.getPropertyValue('--bg-titlebar').trim();
+        if (!color) return;
+        if (color.startsWith('rgb')) {
+          const m = color.match(/\d+/g);
+          if (m) color = '#' + m.slice(0, 3).map((x) => (+x).toString(16).padStart(2, '0')).join('');
+        }
+        let h = color.replace('#', '');
+        if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+        const n = parseInt(h, 16);
+        const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+        window.warroom?.setTitleBarOverlay?.({
+          color: '#' + h,
+          symbolColor: lum < 128 ? '#e8e8ea' : '#33363e',
+        });
+      });
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => { cancelAnimationFrame(raf); mq.removeEventListener('change', sync); };
+  }, [theme, direction]);
+
   function onResizeStart(e: React.MouseEvent) {
     resizing.current = true;
     startX.current = e.clientX;
