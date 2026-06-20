@@ -175,13 +175,21 @@ The toolbar also includes **Focus mode** (hides body text, showing only card str
 
 ### Cross-Ex Practice
 
-A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that uses Warroom AI to generate targeted cross-examination questions for the open document, each paired with a model answer. The document's visible text is sent to the `ai:crossExQuestions` IPC handler, which loads the skill for the user's current event (`cx_debate` for Policy, `ld_debate` for LD, `pf_debate` for PF) so questions use the right vocabulary and strategy. The model returns a JSON array of `{ question, answer }` objects.
+A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that uses Warroom AI to generate targeted cross-examination questions for the open document, each paired with a model answer. The document is run through the same `speechdoc:extract` used by token-saving, giving the AI the **highlighted/underlined text** (what the opponent actually reads) separately from the **full small text**. The `ai:crossExQuestions` handler loads the skill for the user's current event (`cx_debate` for Policy, `ld_debate` for LD, `pf_debate` for PF) so questions use the right vocabulary and strategy.
+
+Question rules enforced by the prompt: questions target highlighted text only (the one exception being un-highlighted small text that directly and completely contradicts highlighted text in the same card); questions are 1-3 sentences and answers 2-4 sentences; no markdown emphasis (key phrases use 'single quotes', rendered bold by `CxText`).
+
+**Aff/Neg sections.** The handler asks the model to decide whether the doc is Aff, Neg, or both — using speech labels (1AC/2AC/1AR/2AR = aff; 1NC/2NC/1NR/2NR = neg) and argument type — and returns `{ groups: [{ side, questions }] }`. Question counts are weighted by how much highlighted content each side has (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg). The panel renders an Aff / Neg header per group when both sides are present.
 
 Each question renders as a pill with:
-- A **Show answer** disclosure that reveals the model answer (and the strategic follow-up the questioner should press) — hidden by default.
-- A **3 more like this** button that calls `ai:crossExQuestions` again with the question as a `basedOn` seed, generating three fresh questions probing the same vulnerability and inserting them inline below.
+- A **Show answer** disclosure that reveals the model answer (and the strategic follow-up) — hidden by default.
+- A **3 more like this** button that calls `ai:crossExQuestions` again with the question as a `basedOn` seed (scoped to that side), inserting three fresh questions inline below.
 
-The panel's **Generate / Regenerate** action lives in the footer. Generation uses the `balanced` model tier. Questions (including any "3 more like this" inserts) are persisted per-document in `localStorage` under `warroom-cx-questions-<path>`, so they survive closing/reopening the panel, reloading the doc, and app restarts — they are only cleared when the user regenerates.
+**Short-doc warning.** After extraction the panel checks word counts and warns if there's very little highlighted text (under ~120 words) or the doc is short overall (under ~400 words), explaining you'll get few/shallow questions.
+
+**Harder questions (trap drill).** A second footer button opens an interactive trap drill. `ai:crossExTraps` (balanced tier) generates 3 traps — each a setup question that baits a wrong answer, with a gotcha follow-up, ideal answer, and lesson. The user types an answer; `ai:crossExGradeTrap` (lite / flash-lite tier, to keep per-answer grading cheap) returns a verdict (`avoided` / `fell` / `partial`) plus tailored feedback — confirming how they avoided the trap, or springing the gotcha and giving the fix.
+
+The panel's **Generate / Regenerate** action and the **Harder** button live in the footer. Generation uses the `balanced` model tier. Grouped questions (including any "3 more like this" inserts) are persisted per-document in `localStorage` under `warroom-cx-questions-<path>`, so they survive closing/reopening the panel, reloading the doc, and app restarts — they are only cleared when the user regenerates. Traps are ephemeral (regenerated each time the drill opens).
 
 ---
 

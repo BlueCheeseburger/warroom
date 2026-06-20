@@ -8,7 +8,8 @@
  * Tools mirror the in-app Warroom Agent:
  *   get_warroom_context   — topic, event, tournament/round history (same as system prompt)
  *   get_skill             — load a skill .md file by name
- *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice)
+ *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
+ *   cross_ex_trap_drill   — prep a cross-ex trap drill (mirrors in-app "Harder questions")
  *   search_library        — fuzzy search saved cards
  *   get_cases / get_blocks / get_cards — browse the card library
  *   get_opponents         — saved opponent scouting notes
@@ -359,10 +360,10 @@ Use 'based_on' to generate more questions like a specific one.`,
 
     const brief = based_on
       ? `Write ${n} NEW cross-ex questions in the same spirit as this seed — same line of attack, fresh angles. Do not repeat it.\nSEED: ${based_on}`
-      : `Write the ${n} most useful cross-examination questions targeting the HIGHLIGHTED TEXT below.`;
+      : `Decide whether this doc contains AFF content, NEG content, or BOTH, then write 3-6 cross-ex questions TOTAL distributed across the sides present, in proportion to each side's highlighted content (a side with far less content gets 0-1 questions).`;
 
     const fullSection = full_text?.trim()
-      ? `## Full card text (un-highlighted body — only reference if it DIRECTLY CONTRADICTS the highlighted text in the same card)\n${(full_text ?? '').slice(0, 60000)}\n`
+      ? `## Full card text (un-highlighted body — only reference if it DIRECTLY and COMPLETELY CONTRADICTS the highlighted text in the same card)\n${(full_text ?? '').slice(0, 60000)}\n`
       : '';
 
     const out = [
@@ -372,14 +373,61 @@ Use 'based_on' to generate more questions like a specific one.`,
       ``,
       `RULES:`,
       `1. Questions must target claims in the HIGHLIGHTED TEXT only.`,
-      `2. ONE EXCEPTION: if un-highlighted small text DIRECTLY CONTRADICTS highlighted text in the SAME card, you may question that contradiction.`,
+      `2. ONE EXCEPTION: if un-highlighted small text DIRECTLY and COMPLETELY CONTRADICTS highlighted text in the SAME card, you may question that contradiction.`,
       `3. Each question: 1-3 sentences MAX. Each answer: 2-4 sentences MAX.`,
       `4. No markdown emphasis (no **, *, __). Plain text only. Use single quotes around key phrases.`,
       `5. Be strategic — missing warrants, weak links, unqualified authors, contradictions, non-unique impacts, overclaims.`,
       ``,
+      `## Telling Aff from Neg`,
+      `- AFF speeches: 1AC, 2AC, 1AR, 2AR. NEG speeches: 1NC, 2NC, 1NR, 2NR.`,
+      `- Aff content = plan/advocacy, advantages, solvency, case. Neg content = disads (DAs), counterplans (CPs), kritiks (Ks), topicality (T), and "AT:"/"A2:" answer blocks.`,
+      `- Weight question counts by HIGHLIGHTED content per side, not small text. Group your output under Aff / Neg headers when both are present.`,
+      ``,
       skill ? `## Event guide (${skillName})\n${skill.slice(0, 8000)}\n` : '',
       `## Highlighted text (tags, cites, underlined/highlighted runs)\n${text.slice(0, 40000)}\n`,
       fullSection,
+    ].filter(Boolean).join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
+  }
+);
+
+// ── cross_ex_trap_drill ─────────────────────────────────────────────────────────
+// Mirrors the in-app "Harder questions" trap drill: produce setup questions that
+// bait a wrong answer and spring a gotcha follow-up, for the calling model to run.
+server.tool(
+  'cross_ex_trap_drill',
+  `Prepare a cross-ex TRAP DRILL for a speech document, like the in-app "Harder questions" feature.
+Returns the event guide + doc + a brief telling you to write trap questions: a setup that looks innocent, the tempting wrong answer that springs it, the gotcha follow-up, the ideal trap-avoiding answer, and the lesson. Run the drill by asking the student the setup, then grading their typed answer.`,
+  {
+    highlighted_text: z.string().describe('Highlighted/underlined text from the speech document'),
+    full_text: z.string().optional().describe('Full document text including un-highlighted body'),
+    event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
+  },
+  async ({ highlighted_text, full_text, event }) => {
+    const text = (highlighted_text ?? '').trim();
+    if (!text) return { content: [{ type: 'text', text: 'No highlighted text provided.' }] };
+
+    let ev = event;
+    if (!ev) {
+      const settings = await readJson('app_settings');
+      const topics = settings?.debateEvent ? (EVENT_MAP[settings.debateEvent]?.topics ?? []) : [];
+      ev = topics.includes('pf') ? 'pf' : topics.includes('ld') ? 'ld' : 'policy';
+    }
+    const skillName = ev === 'pf' ? 'pf_debate' : ev === 'ld' ? 'ld_debate' : 'cx_debate';
+    const eventLabel = ev === 'pf' ? 'Public Forum' : ev === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
+    const skill = (await readSkill(skillName)) ?? '';
+
+    const out = [
+      `# Cross-Ex Trap Drill — ${eventLabel}`,
+      ``,
+      `Design 3 cross-ex TRAPS from the highlighted text. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.`,
+      `For each trap give: the setup question, the tempting WRONG answer that springs it, the gotcha follow-up that exploits the wrong answer, the disciplined ideal answer that avoids the trap, and a one-sentence lesson.`,
+      `Run the drill one trap at a time: ask the setup, let the student answer, then tell them whether they avoided the trap or fell for it (spring the gotcha), what went wrong, and how to fix it. Keep questions 1-3 sentences and answers/feedback short. No markdown emphasis.`,
+      ``,
+      skill ? `## Event guide (${skillName})\n${skill.slice(0, 8000)}\n` : '',
+      `## Highlighted text\n${text.slice(0, 40000)}\n`,
+      full_text?.trim() ? `## Full card text\n${(full_text ?? '').slice(0, 60000)}\n` : '',
     ].filter(Boolean).join('\n');
 
     return { content: [{ type: 'text', text: out }] };

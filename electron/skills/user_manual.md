@@ -138,7 +138,11 @@ Opens .docx files in-app.
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
 - **Focus mode** (toolbar): hides body text, showing only card tags, cites, and highlighted/underlined text
-- **Cross-Ex Practice** (toolbar): opens a side panel where Warroom AI writes targeted cross-examination questions for the open doc. Each question hides its model answer behind a **Show answer** dropdown, and a **3 more like this** button generates three more questions of the same kind. Warroom AI is automatically given the guide for your event (Policy / LD / PF) so the questions fit your format. Tap **Generate questions** (or **Regenerate**) at the bottom of the panel. Your questions are saved per doc — they stay even if you close the panel or reopen the file, and only clear when you regenerate.
+- **Cross-Ex Practice** (toolbar): opens a side panel where Warroom AI writes targeted cross-examination questions for the open doc, drawn from your **highlighted** text. Each question hides its model answer behind a **Show answer** dropdown, and a **3 more like this** button generates three more of the same kind. Warroom AI is automatically given the guide for your event (Policy / LD / PF).
+  - **Aff/Neg split**: if a doc has both aff and neg, the questions are grouped under Aff and Neg headers, with more questions for whichever side has more content.
+  - **Short-doc warning**: if the doc has little highlighted text or is very short, you'll see a notice that you may get few or shallow questions.
+  - **Harder** button: runs a trap drill — Warroom AI asks a setup question, you type your answer, and it tells you whether you avoided the trap or fell for it, with the fix. Three traps per drill.
+  - Tap **Generate** (or **Regenerate**) at the bottom. Your questions are saved per doc — they stay even if you close the panel or reopen the file, and only clear when you regenerate.
 
 ---
 

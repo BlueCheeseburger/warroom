@@ -23,8 +23,12 @@ const api = {
     parseRoundEmail: (params: { filePath?: string; imageBase64?: string; mimeType?: string }) =>
       ipcRenderer.invoke('ai:parseRoundEmail', params),
     missionBrief: (params: any) => ipcRenderer.invoke('ai:missionBrief', params),
-    crossExQuestions: (params: { highlightedText: string; fullText: string; event: 'policy' | 'pf' | 'ld'; count?: number; basedOn?: string }) =>
+    crossExQuestions: (params: { highlightedText: string; fullText: string; event: 'policy' | 'pf' | 'ld'; basedOn?: string; side?: string }) =>
       ipcRenderer.invoke('ai:crossExQuestions', params),
+    crossExTraps: (params: { highlightedText: string; fullText: string; event: 'policy' | 'pf' | 'ld' }) =>
+      ipcRenderer.invoke('ai:crossExTraps', params),
+    crossExGradeTrap: (params: { setup: string; idealAnswer: string; trapAnswer: string; gotcha: string; lesson: string; userAnswer: string; event: 'policy' | 'pf' | 'ld' }) =>
+      ipcRenderer.invoke('ai:crossExGradeTrap', params),
   },
   clipboard: {
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),

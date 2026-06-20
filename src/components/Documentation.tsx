@@ -521,15 +521,25 @@ export default function Documentation() {
           <H3>Cross-Ex Practice</H3>
           <P>
             The <strong>Cross-Ex Practice</strong> button opens a right-hand panel where Warroom AI
-            generates targeted cross-examination questions for the open document — each paired with a
+            generates targeted cross-examination questions for the open document — built from your{' '}
+            <strong>highlighted</strong> text (what the opponent actually reads) — each paired with a
             model answer that stays hidden behind a <strong>Show answer</strong> dropdown until you
             reveal it. Warroom AI is automatically fed the skill for whichever event you're doing
             (Policy, LD, or PF) so the questions use the right vocabulary and strategy.
           </P>
           <P>
-            Each question pill also has a <strong>3 more like this</strong> button that generates
-            three fresh questions probing the same weakness and inserts them inline below. Use the
-            footer button to generate or regenerate the full set.
+            If a document contains both <strong>aff and neg</strong> content, questions are split into{' '}
+            <strong>Aff</strong> and <strong>Neg</strong> sections, with more questions for whichever
+            side has more highlighted content. If the doc has very little highlighted text or is very
+            short, a warning explains you may get few or shallow questions.
+          </P>
+          <P>
+            Each question pill has a <strong>3 more like this</strong> button that generates three
+            fresh questions probing the same weakness and inserts them inline below. The footer{' '}
+            <strong>Generate / Regenerate</strong> button rebuilds the set, and the{' '}
+            <strong>Harder</strong> button runs a <strong>trap drill</strong>: Warroom AI asks a
+            setup question, you type your answer, and it grades whether you avoided the trap or fell
+            for it (springing the gotcha and giving the fix). Grading uses a fast, cheap model.
           </P>
           <P>
             Your questions are saved per-document, so they stay put when you close and reopen the

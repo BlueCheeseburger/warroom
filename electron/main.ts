@@ -1611,66 +1611,252 @@ Be direct, tactical, and brief. No fluff.`;
 // ─── Cross-ex practice questions ──────────────────────────────────────────────
 // Generate targeted cross-examination questions (with model answers) for a speech
 // doc, grounded in the skill for whichever event the user is running.
+
+function cxEventBits(event: 'policy' | 'pf' | 'ld') {
+  const skillName = event === 'pf' ? 'pf_debate' : event === 'ld' ? 'ld_debate' : 'cx_debate';
+  const eventLabel = event === 'pf' ? 'Public Forum' : event === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
+  return { skillName, eventLabel };
+}
+
+// Shared guidance block injected into every cross-ex prompt.
+const CX_SHARED_RULES = `RULES:
+1. Questions must target claims made in the HIGHLIGHTED TEXT only — that is what the opponent reads aloud and must defend.
+2. ONE EXCEPTION: if the un-highlighted small text DIRECTLY and COMPLETELY CONTRADICTS a claim in the highlighted text WITHIN THE SAME CARD, you may ask about that contradiction. That is the ONLY reason to ever reference small text.
+3. Each question: 1-3 sentences MAX. Be direct and pointed. No preamble, no "Can you explain…".
+4. Each answer: 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
+5. Do NOT use markdown emphasis (no **, *, or __). Plain text only. You may wrap key phrases in 'single quotes'.
+6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, in-card contradictions, non-unique impacts, or overclaims.`;
+
+// How to tell aff content from neg content inside a doc that may contain both.
+const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
+- Speech labels: AFF speeches are 1AC, 2AC, 1AR, 2AR. NEG speeches are 1NC, 2NC, 1NR, 2NR. If a section is headed by one of these, it belongs to that side.
+- Argument type: Aff content = the plan/advocacy, advantages, solvency, and case extensions. Neg content = disadvantages (DAs), counterplans (CPs), kritiks (Ks), topicality (T), and case-defense / "AT:" / "A2:" answer blocks.
+- Tags, pocket headings, and file names often name the side directly.
+- Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
+- These are questions an opponent would ask YOU in cross-ex about the cards on that side.`;
+
+function cxParseQuestions(raw: string): { question: string; answer: string }[] {
+  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+  const parsed = JSON.parse(cleaned);
+  if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
+  return parsed
+    .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
+    .map((q) => ({ question: String(q.question), answer: String(q.answer) }));
+}
+
 ipcMain.handle('ai:crossExQuestions', async (_e, {
-  highlightedText, fullText, event, count, basedOn,
+  highlightedText, fullText, event, basedOn, side,
 }: {
   highlightedText: string;
   fullText: string;
   event: 'policy' | 'pf' | 'ld';
-  count?: number;
   basedOn?: string;
+  side?: string;
 }) => {
   try {
-    const n = Math.min(Math.max(count ?? 4, 1), 6);
-
-    const skillName = event === 'pf' ? 'pf_debate' : event === 'ld' ? 'ld_debate' : 'cx_debate';
+    const { skillName, eventLabel } = cxEventBits(event);
     const skill = (await readSkill(skillName)) ?? '';
-    const eventLabel = event === 'pf' ? 'Public Forum' : event === 'ld' ? 'Lincoln-Douglas' : 'Policy (CX)';
 
     const highlighted = (highlightedText ?? '').slice(0, 40000);
     const full = (fullText ?? '').slice(0, 60000);
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
-    const basedOnSection = basedOn
-      ? `\nGenerate ${n} NEW questions in the same spirit as this one — same line of attack, fresh angles. Do NOT repeat it.\nSEED: ${basedOn.slice(0, 500)}`
-      : `\nGenerate the ${n} most useful cross-examination questions targeting the HIGHLIGHTED TEXT.`;
-
-    const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
-
-${skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : ''}HIGHLIGHTED TEXT (tags, cites, and underlined/highlighted card text — this is what the opponent actually reads):
+    const skillBlock = skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : '';
+    const docBlock = `HIGHLIGHTED TEXT (tags, cites, and underlined/highlighted card text — what the opponent reads):
 ${highlighted}
 
-FULL CARD TEXT (the un-highlighted "small text" surrounding the highlighted portions):
+FULL CARD TEXT (the un-highlighted "small text" around the highlighted portions):
+${full}`;
+
+    // ── "3 more like this" path — flat array, scoped to a single side ──────────
+    if (basedOn) {
+      const sideLine = side && side !== 'General'
+        ? `These are questions about the ${side} content in the document.`
+        : '';
+      const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
+
+${skillBlock}${docBlock}
+
+---
+
+${CX_SHARED_RULES}
+
+${sideLine}
+Generate 3 NEW questions in the same spirit as this seed — same line of attack, fresh angles. Do NOT repeat it.
+SEED: ${basedOn.slice(0, 500)}
+
+Return ONLY a JSON array of exactly 3 objects, no markdown fences, no preamble:
+[{"question": "short pointed question", "answer": "short answer + one-line follow-up"}]`;
+      const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
+      if (questions.length === 0) throw new Error('No questions returned — try again.');
+      return { ok: true, questions };
+    }
+
+    // ── Initial generation — detect side(s) and return grouped questions ──────
+    const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
+
+${skillBlock}${docBlock}
+
+---
+
+${CX_SHARED_RULES}
+
+${CX_SIDE_GUIDANCE}
+
+TASK:
+- First decide whether this document contains AFF content, NEG content, or BOTH.
+- Generate between 3 and 6 questions TOTAL, distributed across the sides present in proportion to each side's highlighted content.
+- If only one side is present, return a single group for that side ("Aff", "Neg", or "General" if genuinely undeterminable).
+- Do not duplicate or overlap questions across sides.
+
+Return ONLY this JSON (no markdown fences, no preamble):
+{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "..."}]}]}`;
+
+    const raw = await callAI(prompt, 'balanced');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    let groups: { side: string; questions: { question: string; answer: string }[] }[] = [];
+    if (parsed && Array.isArray(parsed.groups)) {
+      groups = parsed.groups
+        .map((g: any) => ({
+          side: ['Aff', 'Neg', 'General'].includes(g?.side) ? g.side : 'General',
+          questions: Array.isArray(g?.questions)
+            ? g.questions
+                .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
+                .map((q: any) => ({ question: String(q.question), answer: String(q.answer) }))
+            : [],
+        }))
+        .filter((g: any) => g.questions.length > 0);
+    } else if (Array.isArray(parsed)) {
+      // Fallback: model returned a flat array — treat as one undifferentiated group.
+      const qs = parsed
+        .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
+        .map((q: any) => ({ question: String(q.question), answer: String(q.answer) }));
+      if (qs.length) groups = [{ side: 'General', questions: qs }];
+    }
+
+    if (groups.length === 0) throw new Error('No questions returned — try again.');
+    return { ok: true, groups };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to generate questions');
+    return { ok: false, error: msg };
+  }
+});
+
+// ─── Cross-ex trap drill ──────────────────────────────────────────────────────
+// Generate a few "trap" questions that bait a common wrong answer, then grade the
+// user's typed answer with a cheap (lite) call so practice stays fast/affordable.
+ipcMain.handle('ai:crossExTraps', async (_e, {
+  highlightedText, fullText, event,
+}: {
+  highlightedText: string;
+  fullText: string;
+  event: 'policy' | 'pf' | 'ld';
+}) => {
+  try {
+    const { skillName, eventLabel } = cxEventBits(event);
+    const skill = (await readSkill(skillName)) ?? '';
+    const highlighted = (highlightedText ?? '').slice(0, 40000);
+    const full = (fullText ?? '').slice(0, 60000);
+    if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
+
+    const prompt = `You are an elite ${eventLabel} debate coach running a cross-ex TRAP DRILL with a student.
+
+${skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : ''}HIGHLIGHTED TEXT (what the opponent reads):
+${highlighted}
+
+FULL CARD TEXT (small text):
 ${full}
 
 ---
 
-RULES:
-1. Questions must target claims made in the HIGHLIGHTED TEXT only. The highlighted text is what the opponent reads and defends.
-2. ONE EXCEPTION: if the un-highlighted small text DIRECTLY CONTRADICTS a claim in the highlighted text within the SAME card, you may ask about that contradiction. This is the only reason to reference small text.
-3. Each question must be 1-3 sentences MAX. Be direct. No preamble, no "Can you explain…" — ask the pointed question.
-4. Each answer must be 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
-5. Do NOT use markdown emphasis (no **, no *, no __). Use plain text only. You may use single quotes around key phrases.
-6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, contradictions with small text, non-unique impacts, or overclaims.
-${basedOnSection}
+Design 3 cross-ex TRAPS. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.
 
-Return ONLY a JSON array of exactly ${n} objects, no markdown fences, no preamble:
-[{"question": "short pointed question", "answer": "short answer + one-line follow-up"}]`;
+For each trap provide:
+- "setup": the opening question you ask the student (1-2 sentences).
+- "trapAnswer": the tempting WRONG answer most students give that springs the trap (1 sentence).
+- "gotcha": the follow-up that exploits the wrong answer — the moment they realize they're cornered (1-2 sentences).
+- "idealAnswer": the disciplined answer that avoids the trap entirely (1-2 sentences).
+- "lesson": one sentence on the principle (what to watch for / how to avoid it).
+
+${CX_SHARED_RULES}
+
+Return ONLY this JSON, no markdown fences, no preamble:
+[{"setup": "...", "trapAnswer": "...", "gotcha": "...", "idealAnswer": "...", "lesson": "..."}]`;
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
-    const questions = parsed
-      .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-      .slice(0, n)
-      .map((q) => ({ question: String(q.question), answer: String(q.answer) }));
-    if (questions.length === 0) throw new Error('No questions returned — try again.');
-    return { ok: true, questions };
+    const traps = parsed
+      .filter((t) => t && typeof t.setup === 'string' && typeof t.gotcha === 'string')
+      .slice(0, 3)
+      .map((t) => ({
+        setup: String(t.setup),
+        trapAnswer: String(t.trapAnswer ?? ''),
+        gotcha: String(t.gotcha),
+        idealAnswer: String(t.idealAnswer ?? ''),
+        lesson: String(t.lesson ?? ''),
+      }));
+    if (traps.length === 0) throw new Error('No traps returned — try again.');
+    return { ok: true, traps };
   } catch (e: any) {
     const msg = e?.message === 'NO_KEY'
       ? 'No AI API key configured — add one in Settings.'
-      : (e?.message ?? 'Failed to generate questions');
+      : (e?.message ?? 'Failed to generate traps');
+    return { ok: false, error: msg };
+  }
+});
+
+ipcMain.handle('ai:crossExGradeTrap', async (_e, {
+  setup, idealAnswer, trapAnswer, gotcha, lesson, userAnswer, event,
+}: {
+  setup: string; idealAnswer: string; trapAnswer: string; gotcha: string; lesson: string;
+  userAnswer: string; event: 'policy' | 'pf' | 'ld';
+}) => {
+  try {
+    const { eventLabel } = cxEventBits(event);
+    if (!(userAnswer ?? '').trim()) throw new Error('Type an answer first.');
+
+    const prompt = `You are an elite ${eventLabel} debate coach grading a student's answer in a cross-ex trap drill.
+
+THE TRAP:
+- Setup question asked: ${setup}
+- The wrong answer that springs the trap: ${trapAnswer}
+- The gotcha follow-up if they fall for it: ${gotcha}
+- The ideal trap-avoiding answer: ${idealAnswer}
+- Lesson: ${lesson}
+
+THE STUDENT ANSWERED:
+"${(userAnswer ?? '').slice(0, 1500)}"
+
+Decide a verdict:
+- "avoided" — the student sidestepped the trap (answer is disciplined, close to the ideal).
+- "fell" — the student walked into the trap (answer resembles the wrong answer / opens the gotcha).
+- "partial" — partially safe but sloppy / leaves an opening.
+
+Then write 2-3 sentences of feedback:
+- If avoided: confirm they got it right and name exactly HOW they avoided the trap.
+- If fell or partial: spring the gotcha, explain what went wrong, and give the concrete fix.
+
+Do NOT use markdown emphasis. Plain text. You may use 'single quotes'.
+
+Return ONLY this JSON, no fences, no preamble:
+{"verdict": "avoided" | "fell" | "partial", "feedback": "..."}`;
+
+    const raw = await callAI(prompt, 'lite');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    const parsed = JSON.parse(cleaned);
+    const verdict = ['avoided', 'fell', 'partial'].includes(parsed?.verdict) ? parsed.verdict : 'partial';
+    const feedback = typeof parsed?.feedback === 'string' ? parsed.feedback : 'Could not grade that answer — try rephrasing.';
+    return { ok: true, verdict, feedback };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to grade answer');
     return { ok: false, error: msg };
   }
 });
@@ -3846,6 +4032,7 @@ Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in
 - **search_openevidence** — Open Evidence Project (released packets, full cases). ONLY when user asks for open evidence or full cases.
 - **save_card_to_library** — save a card to the user's library.
 - **fetch_article** — fetch the text of a URL (for cutting cards from links or reading a source).
+- **get_case_synopses** — load block titles and card taglines for one or all cases (no body text). Only needed when the user has more than 8 cases — otherwise synopses are already in context. Pass a name to filter to one case, or omit to get all.
 - **read_speech_doc** — read a local .docx file by name. Use whenever the user mentions a .docx filename (e.g. "flow AFF_Domain_Awareness.docx") even without @mentioning it. Call before flowing or cutting cards from a local file.
 - **control_timer** — control the speech timer in the title bar: start, pause, reset, select a speech type (e.g. "Constructive", "1AR", "Crossfire"), switch HS/CLG level, or read current status. Use for ANY request involving the speech timer.
 - **search_tabroom_tournament** — search Tabroom for tournaments by name.
@@ -3898,6 +4085,8 @@ After all searches complete, surface only the 1–3 best cards based on: Relevan
 The system context always includes an APP INDEX listing every item saved in the user's app: cases, blocks, flows, opponents, judges, tournaments, and team members — each with a warroom_id.
 
 When the user mentions any item by name (e.g. "my John flow", "the DA block", "Harvard team"), match it case-insensitively against the index and use its warroom_id. The user never needs to @mention something explicitly — you can resolve it from the index.
+
+**Cases:** If the user has 8 or fewer cases, each case's full synopsis (block titles + card taglines, no body or cite) is already in context — use it directly. If they have more than 8 cases, the index only lists names; call get_case_synopses to load block structure and taglines for any case. Cases sometimes contain both AFF and NEG sections — these are usually labeled within the block titles (e.g. "2AC Extensions", "NEG — Politics DA").
 
 Link back to any item using:
   \`@[Display Name](warroom:type:id)\`
@@ -4063,6 +4252,17 @@ const AGENT_TOOLS = [{
           value:  { type: 'STRING', description: 'Text to put in the cell. Overwrites any existing content in that cell.' },
         },
         required: ['flow', 'column', 'row', 'value'],
+      },
+    },
+    {
+      name: 'get_case_synopses',
+      description: "Load the block titles and card taglines (no body, no cite) for one or all of the user's saved cases. Only call this when the APP INDEX says synopses are not auto-loaded (more than 8 cases). Returns block structure and argument fingerprint so you can understand what a case argues without reading the full text.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING', description: 'Optional. Case name to filter to a single case. Omit to load synopses for all cases.' },
+        },
+        required: [],
       },
     },
     {

@@ -266,11 +266,31 @@ declare global {
           highlightedText: string;
           fullText: string;
           event: 'policy' | 'pf' | 'ld';
-          count?: number;
           basedOn?: string;
+          side?: string;
         }) => Promise<{
           ok: boolean;
+          // Initial generation returns grouped questions; "3 more like this" returns a flat array.
+          groups?: { side: 'Aff' | 'Neg' | 'General'; questions: { question: string; answer: string }[] }[];
           questions?: { question: string; answer: string }[];
+          error?: string;
+        }>;
+        crossExTraps: (params: {
+          highlightedText: string;
+          fullText: string;
+          event: 'policy' | 'pf' | 'ld';
+        }) => Promise<{
+          ok: boolean;
+          traps?: { setup: string; trapAnswer: string; gotcha: string; idealAnswer: string; lesson: string }[];
+          error?: string;
+        }>;
+        crossExGradeTrap: (params: {
+          setup: string; idealAnswer: string; trapAnswer: string; gotcha: string; lesson: string;
+          userAnswer: string; event: 'policy' | 'pf' | 'ld';
+        }) => Promise<{
+          ok: boolean;
+          verdict?: 'avoided' | 'fell' | 'partial';
+          feedback?: string;
           error?: string;
         }>;
       };

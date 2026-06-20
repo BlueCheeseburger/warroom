@@ -123,6 +123,37 @@ function IcoChevron({ open }: { open: boolean }) {
   );
 }
 
+// Trap drill — a target/crosshair with a fang, for the "harder questions" gauntlet
+function IcoTrap({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="5.5"/>
+      <circle cx="8" cy="8" r="2.2"/>
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2"/>
+    </svg>
+  );
+}
+
+// Warning triangle for the short-doc notice
+function IcoWarn({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2L1.5 13.5h13L8 2z"/>
+      <path d="M8 6.5v3.2"/>
+      <circle cx="8" cy="11.6" r="0.5" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+// Back arrow for leaving the trap drill
+function IcoBack({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 3.5L5 8l4.5 4.5"/>
+    </svg>
+  );
+}
+
 // ── Dark-mode viewer fixes (viewer-side only, never touches the file) ──────
 
 function parseRgb(str: string): { r: number; g: number; b: number } | null {
@@ -202,7 +233,9 @@ function applyDarkModeViewerFixes(container: HTMLElement) {
 function removeDarkModeViewerFixes(container: HTMLElement) {
   // Restore all elements that had their highlight/border colors overridden
   container.querySelectorAll<HTMLElement>('[data-orig-bg]').forEach(el => {
-    el.style.removeProperty('background-color');
+    // Restore the original inline highlight color rather than removing the property —
+    // removing it would strip the color docx-preview set, breaking re-entry into dark mode.
+    el.style.setProperty('background-color', el.dataset.origBg!);
     delete el.dataset.origBg;
   });
   container.querySelectorAll<HTMLElement>('[data-orig-border-color]').forEach(el => {
@@ -285,9 +318,20 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const [tip, setTip]   = useState(false);
+  const [tipPos, setTipPos] = useState<{ top: number; left: number } | null>(null);
   const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null);
   const wrapRef    = useRef<HTMLDivElement>(null);
+  const toggleRef  = useRef<HTMLButtonElement>(null);
   const chevronRef = useRef<HTMLButtonElement>(null);
+
+  // Position the tooltip with fixed coords so it escapes the toolbar's clipping.
+  function showTip() {
+    if (toggleRef.current) {
+      const r = toggleRef.current.getBoundingClientRect();
+      setTipPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+    }
+    setTip(true);
+  }
 
   // Position dropdown using fixed coords so it escapes any overflow:hidden parent
   function openDropdown() {
@@ -315,8 +359,9 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
     <div ref={wrapRef} style={{ display: 'flex', alignItems: 'center', gap: '1px' }}>
       {/* ── Main toggle ── */}
       <div style={{ position: 'relative' }}
-        onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+        onMouseEnter={showTip} onMouseLeave={() => setTip(false)}>
         <button
+          ref={toggleRef}
           onClick={onToggle}
           style={{ ...btnBase, width: '34px', height: '34px', color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)', background: active ? 'var(--nav-active-bg)' : 'transparent', boxShadow: active ? 'var(--nav-active-shadow)' : 'none' }}
           onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'var(--nav-hover-bg)'; }}
@@ -325,13 +370,13 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
           <IcoFocus active={active} />
         </button>
 
-        {/* Tooltip */}
-        {tip && (
+        {/* Tooltip — fixed position so it isn't clipped by the toolbar */}
+        {tip && tipPos && (
           <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+            position: 'fixed', top: tipPos.top, left: tipPos.left, transform: 'translateX(-50%)',
             background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))',
             border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)',
-            borderRadius: '8px', padding: '6px 10px', zIndex: 100,
+            borderRadius: '8px', padding: '6px 10px', zIndex: 9999,
             pointerEvents: 'none', whiteSpace: 'nowrap', fontSize: '11px', fontWeight: 500, lineHeight: '1.5',
           }}>
             <div style={{ fontWeight: 600, marginBottom: '2px' }}>Focus mode</div>
@@ -394,35 +439,45 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
 // ── Cross-ex practice panel ─────────────────────────────────────────────────
 
 interface CxQuestion { id: string; question: string; answer: string }
+type CxSide = 'Aff' | 'Neg' | 'General';
+interface CxGroup { side: CxSide; questions: CxQuestion[] }
 
 // Cross-ex questions are persisted per-document so they survive closing/reopening
 // the panel, navigating away, reloading the doc, and app restarts. They are only
 // cleared when the user regenerates them.
 const cxStorageKey = (path: string) => `warroom-cx-questions-${path}`;
-function loadCxQuestions(path: string): CxQuestion[] {
+function loadCxGroups(path: string): CxGroup[] {
   if (!path) return [];
   try {
     const v = JSON.parse(localStorage.getItem(cxStorageKey(path)) ?? '[]');
-    return Array.isArray(v) ? v : [];
+    if (!Array.isArray(v) || v.length === 0) return [];
+    // Migration: old format was a flat array of {id, question, answer}.
+    if (v[0] && typeof v[0] === 'object' && 'question' in v[0] && !('questions' in v[0])) {
+      return [{ side: 'General', questions: v as CxQuestion[] }];
+    }
+    return (v as any[])
+      .filter((g) => g && Array.isArray(g.questions) && g.questions.length > 0)
+      .map((g) => ({ side: (['Aff', 'Neg', 'General'].includes(g.side) ? g.side : 'General') as CxSide, questions: g.questions }));
   } catch { return []; }
 }
-function saveCxQuestions(path: string, qs: CxQuestion[]) {
+function saveCxGroups(path: string, groups: CxGroup[]) {
   if (!path) return;
   try {
-    if (qs.length === 0) localStorage.removeItem(cxStorageKey(path));
-    else localStorage.setItem(cxStorageKey(path), JSON.stringify(qs));
+    if (groups.length === 0) localStorage.removeItem(cxStorageKey(path));
+    else localStorage.setItem(cxStorageKey(path), JSON.stringify(groups));
   } catch {}
 }
 
 const eventLabel = (e: DebateEvent) =>
   e === 'pf' ? 'Public Forum' : e === 'ld' ? 'Lincoln-Douglas' : 'Policy';
 
-// Render text with basic bold, italic, underline (no markdown — AI uses single quotes)
+// Render AI text with light emphasis. The AI is told to use plain text with
+// 'single quotes' for key phrases (no markdown), which we bold here. preserves
+// newlines so multi-sentence answers/feedback keep their line breaks.
 function CxText({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
-  // Split on 'single-quoted phrases' and render them slightly emphasized
   const parts = text.split(/('(?:[^']+)')/g);
   return (
-    <span className={className} style={style}>
+    <span className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
       {parts.map((p, i) =>
         /^'.*'$/.test(p)
           ? <strong key={i} style={{ fontWeight: 600 }}>{p.slice(1, -1)}</strong>
@@ -432,9 +487,10 @@ function CxText({ text, className, style }: { text: string; className?: string; 
   );
 }
 
-function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
+function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore }: {
   q: CxQuestion;
   event: DebateEvent;
+  side: CxSide;
   highlightedText: string;
   fullText: string;
   onInsertMore: (after: CxQuestion, generated: CxQuestion[]) => void;
@@ -451,8 +507,8 @@ function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
         highlightedText,
         fullText,
         event: event as 'policy' | 'pf' | 'ld',
-        count: 3,
         basedOn: q.question,
+        side,
       });
       if (!res.ok || !res.questions) throw new Error(res.error ?? 'Failed');
       onInsertMore(q, res.questions.map((x, i) => ({
@@ -520,29 +576,225 @@ function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
   );
 }
 
+const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+// Warn when a doc is too thin to yield good cross-ex questions. Questions are built
+// only from highlighted (read) text, so we check that first, then overall length.
+function cxShortDocWarning(highlighted: string, full: string): string {
+  const h = wordCount(highlighted);
+  const f = wordCount(full);
+  if (h < 120) {
+    return `Very little highlighted text (~${h} words). Cross-ex questions are built only from highlighted/underlined text, so you'll likely get few or shallow questions. Highlight the cards you plan to read for better results.`;
+  }
+  if (f < 400) {
+    const pages = Math.max(1, Math.round(f / 500));
+    return `Short document (~${f} words, roughly ${pages} page${pages > 1 ? 's' : ''}). With limited content, expect only a handful of questions and less strategic depth.`;
+  }
+  return '';
+}
+
+interface CxTrap { setup: string; trapAnswer: string; gotcha: string; idealAnswer: string; lesson: string }
+interface CxTrapResult { verdict: 'avoided' | 'fell' | 'partial'; feedback: string }
+
+// ── Trap drill — interactive "harder questions" gauntlet ────────────────────
+function TrapDrill({ event, highlighted, full, onExit }: {
+  event: DebateEvent;
+  highlighted: string;
+  full: string;
+  onExit: () => void;
+}) {
+  const [traps, setTraps] = useState<CxTrap[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [idx, setIdx] = useState(0);
+  const [answer, setAnswer] = useState('');
+  const [grading, setGrading] = useState(false);
+  const [result, setResult] = useState<CxTrapResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await window.warroom.ai.crossExTraps({
+          highlightedText: highlighted, fullText: full, event: event as 'policy' | 'pf' | 'ld',
+        });
+        if (cancelled) return;
+        if (!res.ok || !res.traps?.length) throw new Error(res.error ?? 'No traps generated');
+        setTraps(res.traps);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? 'Failed to load traps');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [event, highlighted, full]);
+
+  const trap = traps[idx];
+
+  async function grade() {
+    if (!trap || !answer.trim()) return;
+    setGrading(true);
+    try {
+      const res = await window.warroom.ai.crossExGradeTrap({
+        setup: trap.setup, idealAnswer: trap.idealAnswer, trapAnswer: trap.trapAnswer,
+        gotcha: trap.gotcha, lesson: trap.lesson, userAnswer: answer,
+        event: event as 'policy' | 'pf' | 'ld',
+      });
+      if (!res.ok) throw new Error(res.error ?? 'Failed to grade');
+      setResult({ verdict: res.verdict ?? 'partial', feedback: res.feedback ?? '' });
+    } catch (e: any) {
+      setResult({ verdict: 'partial', feedback: e?.message ?? 'Could not grade that answer.' });
+    } finally {
+      setGrading(false);
+    }
+  }
+
+  function next() {
+    setResult(null);
+    setAnswer('');
+    setIdx(i => i + 1);
+  }
+
+  const verdictColor = (v: CxTrapResult['verdict']) =>
+    v === 'avoided' ? '34 197 94' : v === 'fell' ? 'var(--danger-rgb)' : '217 164 6';
+  const avoided = result?.verdict === 'avoided';
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Sub-header */}
+      <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <IconBtn icon={<IcoBack />} label="Back to questions" onClick={onExit} tooltipAlign="left" />
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoTrap /></span>
+          <span className="text-[12.5px] font-semibold truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Trap Drill</span>
+        </div>
+        {traps.length > 0 && (
+          <span className="text-[11px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>Trap {Math.min(idx + 1, traps.length)} of {traps.length}</span>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto scroll-thin px-3.5 py-3">
+        {loading && (
+          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
+            <Spinner className="w-5 h-5" />
+            <div className="text-[12px]">Setting traps…</div>
+          </div>
+        )}
+
+        {error && (
+          <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && idx >= traps.length && traps.length > 0 && (
+          <div className="flex flex-col items-center text-center gap-3 mt-8 px-2">
+            <span style={{ color: '#22c55e' }}><IcoTrap size={22} /></span>
+            <div className="text-[13px] font-semibold" style={{ color: 'rgb(var(--ink-rgb))' }}>Drill complete</div>
+            <div className="text-[12px]" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.65 }}>You worked through all {traps.length} traps. Run it again for a fresh set.</div>
+          </div>
+        )}
+
+        {!loading && !error && trap && idx < traps.length && (
+          <div className="space-y-3">
+            <div className="rounded-xl p-3" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--nav-inactive-color)' }}>Setup question</div>
+              <CxText text={trap.setup} className="text-[13px] leading-snug font-medium block" style={{ color: 'rgb(var(--ink-rgb))' }} />
+            </div>
+
+            <textarea
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              disabled={!!result || grading}
+              placeholder="Type how you'd answer in cross-ex…"
+              rows={4}
+              className="w-full rounded-lg px-3 py-2 text-[12.5px] resize-none scroll-thin"
+              style={{ background: 'var(--bg-input)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)', outline: 'none', opacity: result ? 0.7 : 1 }}
+            />
+
+            {!result && (
+              <button
+                onClick={grade}
+                disabled={grading || !answer.trim()}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+                style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: grading || !answer.trim() ? 'default' : 'pointer', opacity: grading || !answer.trim() ? 0.55 : 1 }}
+              >
+                {grading ? <Spinner className="w-3.5 h-3.5" /> : <IcoTrap />}
+                {grading ? 'Checking…' : 'Check my answer'}
+              </button>
+            )}
+
+            {result && (
+              <div className="space-y-2.5">
+                <div className="rounded-xl p-3" style={{ background: `rgba(${verdictColor(result.verdict)}, 0.1)`, border: `1px solid rgba(${verdictColor(result.verdict)}, 0.3)` }}>
+                  <div className="text-[12px] font-bold mb-1" style={{ color: `rgb(${verdictColor(result.verdict)})` }}>
+                    {avoided ? '✓ You avoided the trap' : result.verdict === 'partial' ? '~ Partially safe' : '✗ Gotcha — you fell for it'}
+                  </div>
+                  <CxText text={result.feedback} className="text-[12px] leading-relaxed block" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }} />
+                </div>
+
+                {trap.idealAnswer && (
+                  <div className="rounded-xl p-3" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                    <div className="text-[10.5px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Ideal answer</div>
+                    <CxText text={trap.idealAnswer} className="text-[12px] leading-relaxed block" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }} />
+                  </div>
+                )}
+
+                <button
+                  onClick={next}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+                  style={{ background: 'transparent', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)', cursor: 'pointer' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                >
+                  {idx + 1 < traps.length ? 'Next trap' : 'Finish drill'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CrossExPanel({ event, onClose, docKey }: {
   event: DebateEvent;
   onClose: () => void;
   docKey: string;
 }) {
-  const [questions, setQuestions] = useState<CxQuestion[]>(() => loadCxQuestions(docKey));
+  const [groups, setGroups] = useState<CxGroup[]>(() => loadCxGroups(docKey));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [started, setStarted] = useState(() => loadCxQuestions(docKey).length > 0);
+  const [warning, setWarning] = useState('');
+  const [started, setStarted] = useState(() => loadCxGroups(docKey).length > 0);
+  const [trapMode, setTrapMode] = useState(false);
 
-  // Cache extracted doc text so we don't re-extract every time
-  const extractedRef = useRef<{ highlighted: string; full: string } | null>(null);
+  // Extracted doc text, kept in state so child pills / the trap drill re-render once
+  // it's available — including for questions restored from localStorage.
+  const [extracted, setExtracted] = useState<{ highlighted: string; full: string } | null>(null);
+  const extractInFlight = useRef<Promise<{ highlighted: string; full: string }> | null>(null);
 
-  useEffect(() => { saveCxQuestions(docKey, questions); }, [docKey, questions]);
+  useEffect(() => { saveCxGroups(docKey, groups); }, [docKey, groups]);
 
   async function getExtracted(): Promise<{ highlighted: string; full: string }> {
-    if (extractedRef.current) return extractedRef.current;
-    const res = await (window.warroom as any).speechdoc.extract(docKey);
-    if (!res?.ok || !res.data) throw new Error('Could not extract document text.');
-    const out = { highlighted: res.data.tokenSaving ?? '', full: res.data.full ?? '' };
-    extractedRef.current = out;
-    return out;
+    if (extracted) return extracted;
+    if (extractInFlight.current) return extractInFlight.current;
+    extractInFlight.current = (async () => {
+      const res = await (window.warroom as any).speechdoc.extract(docKey);
+      if (!res?.ok || !res.data) throw new Error('Could not extract document text.');
+      const out = { highlighted: res.data.tokenSaving ?? '', full: res.data.full ?? '' };
+      setExtracted(out);
+      setWarning(cxShortDocWarning(out.highlighted, out.full));
+      return out;
+    })();
+    try { return await extractInFlight.current; }
+    finally { extractInFlight.current = null; }
   }
+
+  // Pre-extract on mount so restored questions can use "3 more like this"/traps.
+  useEffect(() => { getExtracted().catch(() => {}); }, [docKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate() {
     setLoading(true);
@@ -551,17 +803,21 @@ function CrossExPanel({ event, onClose, docKey }: {
     try {
       const { highlighted, full } = await getExtracted();
       if (!highlighted.trim()) throw new Error('No highlighted text found in this document.');
+      setWarning(cxShortDocWarning(highlighted, full));
       const res = await window.warroom.ai.crossExQuestions({
         highlightedText: highlighted,
         fullText: full,
         event: event as 'policy' | 'pf' | 'ld',
-        count: 4,
       });
-      if (!res.ok || !res.questions) throw new Error(res.error ?? 'Failed to generate');
-      setQuestions(res.questions.map((x, i) => ({
-        id: `q${Date.now()}-${i}`,
-        question: x.question,
-        answer: x.answer,
+      if (!res.ok || !res.groups) throw new Error(res.error ?? 'Failed to generate');
+      const stamp = Date.now();
+      setGroups(res.groups.map((g, gi) => ({
+        side: g.side,
+        questions: g.questions.map((x, i) => ({
+          id: `q${stamp}-${gi}-${i}`,
+          question: x.question,
+          answer: x.answer,
+        })),
       })));
     } catch (e: any) {
       setError(e?.message ?? 'Failed to generate questions');
@@ -570,16 +826,31 @@ function CrossExPanel({ event, onClose, docKey }: {
     }
   }
 
+  // Insert "3 more like this" results after the seed question, within its own group.
   function insertMore(after: CxQuestion, generated: CxQuestion[]) {
-    setQuestions(prev => {
-      const idx = prev.findIndex(q => q.id === after.id);
-      if (idx === -1) return [...prev, ...generated];
-      return [...prev.slice(0, idx + 1), ...generated, ...prev.slice(idx + 1)];
-    });
+    setGroups(prev => prev.map(g => {
+      const idx = g.questions.findIndex(q => q.id === after.id);
+      if (idx === -1) return g;
+      return { ...g, questions: [...g.questions.slice(0, idx + 1), ...generated, ...g.questions.slice(idx + 1)] };
+    }));
   }
 
-  const highlighted = extractedRef.current?.highlighted ?? '';
-  const full = extractedRef.current?.full ?? '';
+  async function openTrapDrill() {
+    setError('');
+    try {
+      const ex = await getExtracted(); // ensure extraction is ready before entering the drill
+      if (!ex.highlighted.trim()) throw new Error('No highlighted text found in this document.');
+      setTrapMode(true);
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not start trap drill');
+    }
+  }
+
+  const highlighted = extracted?.highlighted ?? '';
+  const full = extracted?.full ?? '';
+  const totalQuestions = groups.reduce((n, g) => n + g.questions.length, 0);
+  // Only label sections when there's a real Aff/Neg split to show.
+  const showSideHeaders = groups.length > 1 || (groups[0] && groups[0].side !== 'General');
 
   return (
     <div
@@ -596,47 +867,88 @@ function CrossExPanel({ event, onClose, docKey }: {
         <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} />
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto scroll-thin px-3.5 py-3 space-y-2.5">
-        {!started && !loading && (
-          <div className="flex flex-col items-center text-center gap-3 mt-6 px-2">
-            <span style={{ color: 'var(--nav-inactive-color)' }}><IcoCrossEx /></span>
-            <div className="text-[12.5px] leading-relaxed" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.7 }}>
-              Generate targeted cross-examination questions for this document, with model answers you can reveal when you're ready.
-            </div>
+      {trapMode ? (
+        <TrapDrill event={event} highlighted={highlighted} full={full} onExit={() => setTrapMode(false)} />
+      ) : (
+        <>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto scroll-thin px-3.5 py-3 space-y-2.5">
+            {!started && !loading && (
+              <div className="flex flex-col items-center text-center gap-3 mt-6 px-2">
+                <span style={{ color: 'var(--nav-inactive-color)' }}><IcoCrossEx /></span>
+                <div className="text-[12.5px] leading-relaxed" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.7 }}>
+                  Generate targeted cross-examination questions for this document, with model answers you can reveal when you're ready.
+                </div>
+              </div>
+            )}
+
+            {loading && totalQuestions === 0 && (
+              <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
+                <Spinner className="w-5 h-5" />
+                <div className="text-[12px]">Reading the doc & writing questions…</div>
+              </div>
+            )}
+
+            {error && (
+              <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
+                {error}
+              </div>
+            )}
+
+            {warning && totalQuestions > 0 && (
+              <div className="text-[11.5px] leading-relaxed rounded-lg p-2.5 flex gap-2" style={{ color: 'rgb(217 164 6)', background: 'rgba(217, 164, 6, 0.1)', border: '1px solid rgba(217, 164, 6, 0.3)' }}>
+                <span className="shrink-0 mt-0.5"><IcoWarn /></span>
+                <span>{warning}</span>
+              </div>
+            )}
+
+            {groups.map((g, gi) => (
+              <div key={gi} className="space-y-2.5">
+                {showSideHeaders && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md"
+                      style={{
+                        color: g.side === 'Aff' ? 'rgb(59 130 246)' : g.side === 'Neg' ? 'rgb(239 68 68)' : 'var(--nav-inactive-color)',
+                        background: g.side === 'Aff' ? 'rgba(59,130,246,0.12)' : g.side === 'Neg' ? 'rgba(239,68,68,0.12)' : 'var(--nav-hover-bg)',
+                      }}>
+                      {g.side === 'General' ? 'Questions' : g.side}
+                    </span>
+                    <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+                  </div>
+                )}
+                {g.questions.map(q => (
+                  <CrossExPill key={q.id} q={q} event={event} side={g.side} highlightedText={highlighted} fullText={full} onInsertMore={insertMore} />
+                ))}
+              </div>
+            ))}
           </div>
-        )}
 
-        {loading && questions.length === 0 && (
-          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
-            <Spinner className="w-5 h-5" />
-            <div className="text-[12px]">Reading the doc & writing questions…</div>
+          {/* Footer actions */}
+          <div className="px-3.5 py-2.5 shrink-0 flex gap-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+            <button
+              onClick={generate}
+              disabled={loading}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+              style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.65 : 1 }}
+            >
+              {loading ? <Spinner className="w-3.5 h-3.5" /> : <IcoSparkle />}
+              {loading ? 'Generating…' : started ? 'Regenerate' : 'Generate'}
+            </button>
+            <button
+              onClick={openTrapDrill}
+              disabled={loading}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-semibold transition"
+              style={{ background: 'transparent', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.55 : 1 }}
+              onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              title="Harder questions — a timed-style trap drill where you type answers and get graded"
+            >
+              <IcoTrap />
+              Harder
+            </button>
           </div>
-        )}
-
-        {error && (
-          <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
-            {error}
-          </div>
-        )}
-
-        {questions.map(q => (
-          <CrossExPill key={q.id} q={q} event={event} highlightedText={highlighted} fullText={full} onInsertMore={insertMore} />
-        ))}
-      </div>
-
-      {/* Footer action */}
-      <div className="px-3.5 py-2.5 shrink-0" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-        <button
-          onClick={generate}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
-          style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.65 : 1 }}
-        >
-          {loading ? <Spinner className="w-3.5 h-3.5" /> : <IcoSparkle />}
-          {loading ? 'Generating…' : started ? 'Regenerate questions' : 'Generate questions'}
-        </button>
-      </div>
+        </>
+      )}
     </div>
   );
 }
@@ -880,7 +1192,6 @@ export default function SpeechDocViewer() {
           label="Share / Open"
           onClick={() => setShareOpen(true)}
         />
-        <IconBtn icon={<IcoClose />} label="Close" onClick={reset} danger />
       </div>
 
       {/* Share panel */}
