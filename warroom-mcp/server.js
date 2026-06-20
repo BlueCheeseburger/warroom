@@ -25,20 +25,30 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { promises as fs } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { homedir, platform } from 'os';
 import { z } from 'zod';
 
 // ─── Paths ─────────────────────────────────────────────────────────────────────
 // DATA_DIR  — where Warroom stores db.json, topics.json, app_settings, etc.
 // SKILLS_DIR — where the bundled skill .md files live
 
-const DATA_DIR = process.env.WARROOM_DATA_DIR
-  ?? join(homedir(), 'Library', 'Application Support', 'warroom', 'warroom');
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Dev: skills live in the source tree. Prod: they'd be in the skills subdir of userData.
+function defaultDataDir() {
+  switch (platform()) {
+    case 'darwin': return join(homedir(), 'Library', 'Application Support', 'warroom', 'warroom');
+    case 'win32':  return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'warroom', 'warroom');
+    default:       return join(homedir(), '.config', 'warroom', 'warroom');
+  }
+}
+
+const DATA_DIR = process.env.WARROOM_DATA_DIR ?? defaultDataDir();
+
+// Skills live at ../electron/skills/ relative to this file — works wherever the repo is cloned
 const SKILLS_DIR = process.env.WARROOM_SKILLS_DIR
-  ?? join(homedir(), 'Downloads', 'warroom', 'electron', 'skills');
+  ?? join(__dirname, '..', 'electron', 'skills');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -325,14 +335,15 @@ server.tool(
 Pass the document text. Returns the guide for the user's event plus a brief telling you to write pointed CX questions, each with a model answer the questioner should keep hidden until ready.
 Use 'based_on' to generate more questions like a specific one.`,
   {
-    doc_text: z.string().describe('The speech document text to question'),
+    highlighted_text: z.string().describe('Highlighted/underlined text from the speech document (tags, cites, emphasized runs)'),
+    full_text: z.string().optional().describe('Full document text including un-highlighted body — only used to detect contradictions'),
     event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
     count: z.number().optional().describe('How many questions to write (default 4, max 6)'),
     based_on: z.string().optional().describe('Generate new questions in the same spirit as this seed question'),
   },
-  async ({ doc_text, event, count = 4, based_on }) => {
-    const text = (doc_text ?? '').trim();
-    if (!text) return { content: [{ type: 'text', text: 'No document text provided.' }] };
+  async ({ highlighted_text, full_text, event, count = 4, based_on }) => {
+    const text = (highlighted_text ?? '').trim();
+    if (!text) return { content: [{ type: 'text', text: 'No highlighted text provided.' }] };
 
     // Resolve the event → skill, falling back to the user's saved setting.
     let ev = event;
@@ -347,18 +358,28 @@ Use 'based_on' to generate more questions like a specific one.`,
     const n = Math.min(Math.max(count, 1), 6);
 
     const brief = based_on
-      ? `Write ${n} NEW cross-ex questions in the same spirit as this seed — same line of attack, fresh angles on the same vulnerability. Do not repeat it.\nSEED: ${based_on}`
-      : `Write the ${n} most useful cross-examination questions a ${eventLabel} debater could ask the author of the document below.`;
+      ? `Write ${n} NEW cross-ex questions in the same spirit as this seed — same line of attack, fresh angles. Do not repeat it.\nSEED: ${based_on}`
+      : `Write the ${n} most useful cross-examination questions targeting the HIGHLIGHTED TEXT below.`;
+
+    const fullSection = full_text?.trim()
+      ? `## Full card text (un-highlighted body — only reference if it DIRECTLY CONTRADICTS the highlighted text in the same card)\n${(full_text ?? '').slice(0, 60000)}\n`
+      : '';
 
     const out = [
       `# Cross-Ex Practice — ${eventLabel}`,
       ``,
       `${brief}`,
       ``,
-      `Each question must be POINTED and STRATEGIC — expose a missing warrant, weak internal link, unqualified author, contradiction, non-unique impact, or overclaim. Avoid generic questions. For each, also give a strong model ANSWER the opponent would likely give plus the follow-up the questioner should press. Present each answer so it can be revealed after the question (it is hidden by default in the app).`,
+      `RULES:`,
+      `1. Questions must target claims in the HIGHLIGHTED TEXT only.`,
+      `2. ONE EXCEPTION: if un-highlighted small text DIRECTLY CONTRADICTS highlighted text in the SAME card, you may question that contradiction.`,
+      `3. Each question: 1-3 sentences MAX. Each answer: 2-4 sentences MAX.`,
+      `4. No markdown emphasis (no **, *, __). Plain text only. Use single quotes around key phrases.`,
+      `5. Be strategic — missing warrants, weak links, unqualified authors, contradictions, non-unique impacts, overclaims.`,
       ``,
-      skill ? `## Event guide (${skillName})\n${skill.slice(0, 12000)}\n` : '',
-      `## Document\n${text.slice(0, 60000)}`,
+      skill ? `## Event guide (${skillName})\n${skill.slice(0, 8000)}\n` : '',
+      `## Highlighted text (tags, cites, underlined/highlighted runs)\n${text.slice(0, 40000)}\n`,
+      fullSection,
     ].filter(Boolean).join('\n');
 
     return { content: [{ type: 'text', text: out }] };

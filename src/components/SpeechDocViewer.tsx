@@ -472,9 +472,7 @@ function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
       className="rounded-xl p-3 transition"
       style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
     >
-      <div className="text-[13px] leading-snug font-medium" style={{ color: 'rgb(var(--ink-rgb))' }}>
-        {q.question}
-      </div>
+      <CxText text={q.question} className="text-[13px] leading-snug font-medium block" style={{ color: 'rgb(var(--ink-rgb))' }} />
 
       <div className="flex items-center gap-1.5 mt-2.5">
         {/* Show answers disclosure */}
@@ -508,10 +506,10 @@ function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
 
       {open && (
         <div
-          className="mt-2.5 pt-2.5 text-[12px] leading-relaxed whitespace-pre-wrap"
+          className="mt-2.5 pt-2.5 text-[12px] leading-relaxed"
           style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.82, borderTop: '1px solid var(--border-subtle)' }}
         >
-          {q.answer}
+          <CxText text={q.answer} />
         </div>
       )}
 
@@ -522,30 +520,40 @@ function CrossExPill({ q, event, highlightedText, fullText, onInsertMore }: {
   );
 }
 
-function CrossExPanel({ event, getDocText, onClose, docKey }: {
+function CrossExPanel({ event, onClose, docKey }: {
   event: DebateEvent;
-  getDocText: () => string;
   onClose: () => void;
   docKey: string;
 }) {
-  // Restore any previously generated questions for this document.
   const [questions, setQuestions] = useState<CxQuestion[]>(() => loadCxQuestions(docKey));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [started, setStarted] = useState(() => loadCxQuestions(docKey).length > 0);
 
-  // Persist on every change so questions survive panel close / doc reload / restart.
+  // Cache extracted doc text so we don't re-extract every time
+  const extractedRef = useRef<{ highlighted: string; full: string } | null>(null);
+
   useEffect(() => { saveCxQuestions(docKey, questions); }, [docKey, questions]);
 
+  async function getExtracted(): Promise<{ highlighted: string; full: string }> {
+    if (extractedRef.current) return extractedRef.current;
+    const res = await (window.warroom as any).speechdoc.extract(docKey);
+    if (!res?.ok || !res.data) throw new Error('Could not extract document text.');
+    const out = { highlighted: res.data.tokenSaving ?? '', full: res.data.full ?? '' };
+    extractedRef.current = out;
+    return out;
+  }
+
   async function generate() {
-    const docText = getDocText().trim();
-    if (!docText) { setError('No readable text in this document yet.'); return; }
     setLoading(true);
     setError('');
     setStarted(true);
     try {
+      const { highlighted, full } = await getExtracted();
+      if (!highlighted.trim()) throw new Error('No highlighted text found in this document.');
       const res = await window.warroom.ai.crossExQuestions({
-        docText,
+        highlightedText: highlighted,
+        fullText: full,
         event: event as 'policy' | 'pf' | 'ld',
         count: 4,
       });
@@ -569,6 +577,9 @@ function CrossExPanel({ event, getDocText, onClose, docKey }: {
       return [...prev.slice(0, idx + 1), ...generated, ...prev.slice(idx + 1)];
     });
   }
+
+  const highlighted = extractedRef.current?.highlighted ?? '';
+  const full = extractedRef.current?.full ?? '';
 
   return (
     <div
@@ -610,7 +621,7 @@ function CrossExPanel({ event, getDocText, onClose, docKey }: {
         )}
 
         {questions.map(q => (
-          <CrossExPill key={q.id} q={q} event={event} onInsertMore={insertMore} />
+          <CrossExPill key={q.id} q={q} event={event} highlightedText={highlighted} fullText={full} onInsertMore={insertMore} />
         ))}
       </div>
 
@@ -902,7 +913,6 @@ export default function SpeechDocViewer() {
             key={filePath}
             docKey={filePath}
             event={event}
-            getDocText={() => containerRef.current?.textContent ?? ''}
             onClose={() => setCxOpen(false)}
           />
         )}
