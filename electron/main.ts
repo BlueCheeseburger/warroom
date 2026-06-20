@@ -1635,13 +1635,13 @@ const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
 - Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
 - These are questions an opponent would ask YOU in cross-ex about the cards on that side.`;
 
-function cxParseQuestions(raw: string): { question: string; answer: string }[] {
+function cxParseQuestions(raw: string): { question: string; answer: string; cardCite?: string }[] {
   const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
   const parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
   return parsed
     .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-    .map((q) => ({ question: String(q.question), answer: String(q.answer) }));
+    .map((q) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }));
 }
 
 ipcMain.handle('ai:crossExQuestions', async (_e, {
@@ -1686,7 +1686,8 @@ Generate 3 NEW questions in the same spirit as this seed — same line of attack
 SEED: ${basedOn.slice(0, 500)}
 
 Return ONLY a JSON array of exactly 3 objects, no markdown fences, no preamble:
-[{"question": "short pointed question", "answer": "short answer + one-line follow-up"}]`;
+"cardCite": the short cite (Author LastName + 2-digit year) of the specific card this question targets, exactly as it appears in the highlighted text. Omit if the question targets the case generally rather than a specific card.
+[{"question": "short pointed question", "answer": "short answer + one-line follow-up", "cardCite": "Author Year"}]`;
       const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
       if (questions.length === 0) throw new Error('No questions returned — try again.');
       return { ok: true, questions };
@@ -1710,13 +1711,14 @@ TASK:
 - Do not duplicate or overlap questions across sides.
 
 Return ONLY this JSON (no markdown fences, no preamble):
-{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "..."}]}]}`;
+"cardCite": the short cite (Author LastName + 2-digit year) of the specific card this question targets, exactly as it appears in the highlighted text. Omit if the question targets the case generally rather than a specific card.
+{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Author Year or omit"}]}]}`;
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
 
-    let groups: { side: string; questions: { question: string; answer: string }[] }[] = [];
+    let groups: { side: string; questions: { question: string; answer: string; cardCite?: string }[] }[] = [];
     if (parsed && Array.isArray(parsed.groups)) {
       groups = parsed.groups
         .map((g: any) => ({
@@ -1724,7 +1726,7 @@ Return ONLY this JSON (no markdown fences, no preamble):
           questions: Array.isArray(g?.questions)
             ? g.questions
                 .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-                .map((q: any) => ({ question: String(q.question), answer: String(q.answer) }))
+                .map((q: any) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }))
             : [],
         }))
         .filter((g: any) => g.questions.length > 0);
@@ -1732,7 +1734,7 @@ Return ONLY this JSON (no markdown fences, no preamble):
       // Fallback: model returned a flat array — treat as one undifferentiated group.
       const qs = parsed
         .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-        .map((q: any) => ({ question: String(q.question), answer: String(q.answer) }));
+        .map((q: any) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }));
       if (qs.length) groups = [{ side: 'General', questions: qs }];
     }
 

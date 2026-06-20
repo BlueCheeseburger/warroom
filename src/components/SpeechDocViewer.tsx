@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { renderAsync } from 'docx-preview';
 import { LoadingPanel, Spinner } from './Spinner';
 import { useApp } from '../store/appStore';
@@ -438,7 +438,7 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
 
 // ── Cross-ex practice panel ─────────────────────────────────────────────────
 
-interface CxQuestion { id: string; question: string; answer: string }
+interface CxQuestion { id: string; question: string; answer: string; cardCite?: string }
 type CxSide = 'Aff' | 'Neg' | 'General';
 interface CxGroup { side: CxSide; questions: CxQuestion[] }
 
@@ -457,7 +457,7 @@ function loadCxGroups(path: string): CxGroup[] {
     }
     return (v as any[])
       .filter((g) => g && Array.isArray(g.questions) && g.questions.length > 0)
-      .map((g) => ({ side: (['Aff', 'Neg', 'General'].includes(g.side) ? g.side : 'General') as CxSide, questions: g.questions }));
+      .map((g) => ({ side: (['Aff', 'Neg', 'General'].includes(g.side) ? g.side : 'General') as CxSide, questions: (g.questions as any[]).map((q: any) => ({ id: q.id ?? crypto.randomUUID(), question: q.question, answer: q.answer, cardCite: q.cardCite })) }));
   } catch { return []; }
 }
 function saveCxGroups(path: string, groups: CxGroup[]) {
@@ -487,13 +487,14 @@ function CxText({ text, className, style }: { text: string; className?: string; 
   );
 }
 
-function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore }: {
+function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, onScrollToCite }: {
   q: CxQuestion;
   event: DebateEvent;
   side: CxSide;
   highlightedText: string;
   fullText: string;
   onInsertMore: (after: CxQuestion, generated: CxQuestion[]) => void;
+  onScrollToCite?: (cite: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
@@ -515,6 +516,7 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore }
         id: `${q.id}-m${Date.now()}-${i}`,
         question: x.question,
         answer: x.answer,
+        cardCite: x.cardCite,
       })));
     } catch (e: any) {
       setMoreErr(e?.message ?? 'Could not generate more');
@@ -528,6 +530,19 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore }
       className="rounded-xl p-3 transition"
       style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
     >
+      {q.cardCite && (
+        <button
+          onClick={() => onScrollToCite?.(q.cardCite!)}
+          className="inline-flex items-center gap-1 mb-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition"
+          style={{ background: 'var(--bg-card)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--nav-active-color)'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-subtle)'}
+          title={`Scroll to ${q.cardCite} in document`}
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          {q.cardCite}
+        </button>
+      )}
       <CxText text={q.question} className="text-[13px] leading-snug font-medium block" style={{ color: 'rgb(var(--ink-rgb))' }} />
 
       <div className="flex items-center gap-1.5 mt-2.5">
@@ -759,10 +774,11 @@ function TrapDrill({ event, highlighted, full, onExit }: {
   );
 }
 
-function CrossExPanel({ event, onClose, docKey }: {
+function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
   event: DebateEvent;
   onClose: () => void;
   docKey: string;
+  onScrollToCite?: (cite: string) => void;
 }) {
   const [groups, setGroups] = useState<CxGroup[]>(() => loadCxGroups(docKey));
   const [loading, setLoading] = useState(false);
@@ -917,7 +933,7 @@ function CrossExPanel({ event, onClose, docKey }: {
                   </div>
                 )}
                 {g.questions.map(q => (
-                  <CrossExPill key={q.id} q={q} event={event} side={g.side} highlightedText={highlighted} fullText={full} onInsertMore={insertMore} />
+                  <CrossExPill key={q.id} q={q} event={event} side={g.side} highlightedText={highlighted} fullText={full} onInsertMore={insertMore} onScrollToCite={onScrollToCite} />
                 ))}
               </div>
             ))}
@@ -970,6 +986,19 @@ export default function SpeechDocViewer() {
   const focusTypeRef   = useRef<FocusType>('highlight');
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToCite = useCallback((cite: string) => {
+    if (!containerRef.current) return;
+    const lower = cite.toLowerCase().trim();
+    const walker = document.createTreeWalker(containerRef.current, NodeFilter.SHOW_TEXT);
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      if (node.textContent?.toLowerCase().includes(lower)) {
+        const el = node.parentElement;
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      }
+    }
+  }, []);
 
   // Re-apply / remove dark-mode fixes whenever the theme class on <html> changes
   useEffect(() => {
@@ -1225,6 +1254,7 @@ export default function SpeechDocViewer() {
             docKey={filePath}
             event={event}
             onClose={() => setCxOpen(false)}
+            onScrollToCite={scrollToCite}
           />
         )}
       </div>

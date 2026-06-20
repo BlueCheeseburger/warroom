@@ -271,8 +271,8 @@ declare global {
         }) => Promise<{
           ok: boolean;
           // Initial generation returns grouped questions; "3 more like this" returns a flat array.
-          groups?: { side: 'Aff' | 'Neg' | 'General'; questions: { question: string; answer: string }[] }[];
-          questions?: { question: string; answer: string }[];
+          groups?: { side: 'Aff' | 'Neg' | 'General'; questions: { question: string; answer: string; cardCite?: string }[] }[];
+          questions?: { question: string; answer: string; cardCite?: string }[];
           error?: string;
         }>;
         crossExTraps: (params: {
