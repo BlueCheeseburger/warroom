@@ -4094,14 +4094,25 @@ Link back to any item using:
 Examples:
 - \`@[My 2AC](warroom:case:abc123)\` → renders as a clickable chip that opens that case
 - \`@[Spending DA](warroom:block:def456)\` → opens that block
+- \`@[UQ card](warroom:card:ghi789)\` → opens the block containing that specific card
 - \`@[Harvard Team](warroom:opponent:xyz789)\` → opens that opponent profile
 - \`@[Round 3 Flow](warroom:flow:uvw012)\` → opens that flow
 - \`@[Jane Smith](warroom:judge:pqr345)\` → opens that judge's profile
 
+Card warroom_ids appear in each case synopsis alongside the card tag — use them when referencing specific evidence.
+
 For flows: after resolving the flow's id from the index, call read_flow (or use any attached flow context) to get the sheets and columns before editing.
 
 **Only use warroom_ids from the APP INDEX or from explicit attachments in this conversation.** Never invent IDs.
-Use links naturally inline — e.g. "Your @[2AC](warroom:case:abc123) has three blocks that cover this argument."`;
+Use links naturally inline — e.g. "Your @[2AC](warroom:case:abc123) has three blocks that cover this argument."
+
+## Text formatting
+The UI renders lightweight markdown in your responses:
+- \`**bold**\` — use for argument names, key claims, verdicts
+- \`*italic*\` — use for author names, qualifiers, caveats
+- \`__underline__\` — use for card tags or key terms you are calling out
+- Backtick \`code\` — use for exact UI labels, file names, or skill names
+- No headers (#) or block quotes — keep responses conversational`;
 
 
 const AGENT_TOOLS = [{

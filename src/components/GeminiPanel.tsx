@@ -230,7 +230,7 @@ function ContextArc({ tokens }: { tokens: number }) {
 // ─── Type icons ───────────────────────────────────────────────────────────────
 
 const TYPE_ICONS: Record<string, string> = {
-  case: '📁', block: '⬜', flow: '📋', opponent: '🔍', member: '👤', image: '🖼', speechdoc: '📝', judge: '👨‍⚖️',
+  case: '📁', block: '⬜', card: '🃏', flow: '📋', opponent: '🔍', member: '👤', image: '🖼', speechdoc: '📝', judge: '👨‍⚖️',
 };
 
 // ─── Attachment serializer for Gemini context ─────────────────────────────────
@@ -396,9 +396,11 @@ function renderMarkdown(text: string, onNav?: NavFn): React.ReactNode[] {
 function WarroomLinkChip({ label, type, id, onNav }: {
   label: string; type: string; id: string; onNav?: (v: any) => void;
 }) {
+  const { db } = useApp();
   const navView: any =
     type === 'case'     ? { kind: 'case',     caseId: id }      :
     type === 'block'    ? { kind: 'block',    blockId: id }      :
+    type === 'card'     ? (() => { const c = (db as any)?.cards?.[id]; return c?.blockId ? { kind: 'block', blockId: c.blockId } : null; })() :
     type === 'opponent' ? { kind: 'opponent', opponentId: id }   :
     type === 'flow'     ? { kind: 'flow',     flowId: id }       :
     type === 'judge'    ? { kind: 'judge',    judgeId: id }      :
@@ -438,7 +440,7 @@ type NavFn = (v: any) => void;
 
 function renderInline(line: string, onNav?: NavFn): React.ReactNode[] {
   // Split on @[Name](warroom:type:id) first, then standard markdown tokens
-  const tokenRe = /(@\[[^\]]+\]\(warroom:[^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
+  const tokenRe = /(@\[[^\]]+\]\(warroom:[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
   const parts = line.split(tokenRe);
   const result: React.ReactNode[] = [];
   parts.forEach((part, i) => {
@@ -451,8 +453,10 @@ function renderInline(line: string, onNav?: NavFn): React.ReactNode[] {
       );
       return;
     }
-    if (part.startsWith('**') && part.endsWith('**')) {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       result.push(<strong key={i}>{part.slice(2, -2)}</strong>);
+    } else if (part.startsWith('__') && part.endsWith('__') && part.length > 4) {
+      result.push(<u key={i}>{part.slice(2, -2)}</u>);
     } else if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
       result.push(<em key={i}>{part.slice(1, -1)}</em>);
     } else if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
@@ -489,7 +493,8 @@ type ToolName =
   | 'read_flow'
   | 'edit_flow_cell'
   | 'read_speech_doc'
-  | 'control_timer';
+  | 'control_timer'
+  | 'get_case_synopses';
 
 interface ToolStep {
   id: string;
@@ -533,7 +538,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
   const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
   const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
   // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
-  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer']);
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer', 'get_case_synopses']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
   const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
@@ -1149,14 +1154,39 @@ function MicIcon({ size = 14 }: { size?: number }) {
 
 // ─── Build tournament/round context string for system prompt injection ───────────
 
+const CASE_SYNOPSIS_THRESHOLD = 8;
+
+function buildCaseSynopsis(c: any, db: any): string {
+  const lines: string[] = [`case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} | warroom_id:case:${c.id}`];
+  for (const blockId of (c.blocks ?? [])) {
+    const b = db.blocks?.[blockId];
+    if (!b) continue;
+    lines.push(`  block:"${b.title}" | warroom_id:block:${b.id}`);
+    for (const cardId of (b.cards ?? [])) {
+      const card = db.cards?.[cardId];
+      if (card?.tag) lines.push(`    · "${card.tag}" | warroom_id:card:${cardId}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function buildAppIndex(db: any, flowsIndex: any[]): string {
   const sections: string[] = [];
 
   // Cases
   const cases = Object.values(db.cases ?? {}) as any[];
   if (cases.length > 0) {
-    sections.push('[CASES — reference by name; use warroom_id to link back]\n' +
-      cases.map((c: any) => `  case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} blocks:${(c.blocks ?? []).length} | warroom_id:case:${c.id}`).join('\n'));
+    if (cases.length <= CASE_SYNOPSIS_THRESHOLD) {
+      sections.push(
+        `[CASES — ${cases.length} case(s) with full synopses. Cases may have both AFF and NEG sections labeled within their blocks.]\n` +
+        cases.map((c: any) => buildCaseSynopsis(c, db)).join('\n\n')
+      );
+    } else {
+      sections.push(
+        `[CASES — ${cases.length} cases (synopses not auto-loaded; call get_case_synopses to see block titles and taglines for any case). Cases may have both AFF and NEG sections.]\n` +
+        cases.map((c: any) => `  case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} | warroom_id:case:${c.id}`).join('\n')
+      );
+    }
   }
 
   // Blocks
@@ -2004,6 +2034,25 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               syncSteps(steps);
               return { name, functionResult: `Could not read flow: ${e.message}` };
             }
+
+          } else if (name === 'get_case_synopses') {
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'get_case_synopses', label: 'Loading case synopses', status: 'running' }];
+            syncSteps(steps);
+            const allCases = Object.values(db.cases ?? {}) as any[];
+            const query = String(args.name ?? '').trim().toLowerCase();
+            const filtered = query
+              ? allCases.filter((c: any) => c.name?.toLowerCase().includes(query) || query.includes(c.name?.toLowerCase()))
+              : allCases;
+            if (filtered.length === 0) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: 'No matching cases', status: 'done' } : s);
+              syncSteps(steps);
+              return { name, functionResult: query ? `No case matching "${args.name}" found.` : 'No cases saved yet.' };
+            }
+            const result = filtered.map((c: any) => buildCaseSynopsis(c, db)).join('\n\n');
+            steps = steps.map((s) => s.id === stepId ? { ...s, label: `Loaded ${filtered.length} case synopsis${filtered.length !== 1 ? 'es' : ''}`, status: 'done' } : s);
+            syncSteps(steps);
+            return { name, functionResult: result };
 
           } else if (name === 'read_speech_doc') {
             const normDocQuery = (s: string) => s.trim().toLowerCase().replace(/\.docx$/i, '').replace(/[_\s]+/g, ' ');
