@@ -1685,9 +1685,10 @@ ${sideLine}
 Generate 3 NEW questions in the same spirit as this seed — same line of attack, fresh angles. Do NOT repeat it.
 SEED: ${basedOn.slice(0, 500)}
 
+For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if not targeting a specific card.
+
 Return ONLY a JSON array of exactly 3 objects, no markdown fences, no preamble:
-"cardCite": the short cite (Author LastName + 2-digit year) of the specific card this question targets, exactly as it appears in the highlighted text. Omit if the question targets the case generally rather than a specific card.
-[{"question": "short pointed question", "answer": "short answer + one-line follow-up", "cardCite": "Author Year"}]`;
+[{"question": "short pointed question", "answer": "short answer + one-line follow-up", "cardCite": "Brady 25"}]`;
       const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
       if (questions.length === 0) throw new Error('No questions returned — try again.');
       return { ok: true, questions };
@@ -1709,10 +1710,10 @@ TASK:
 - Generate between 3 and 6 questions TOTAL, distributed across the sides present in proportion to each side's highlighted content.
 - If only one side is present, return a single group for that side ("Aff", "Neg", or "General" if genuinely undeterminable).
 - Do not duplicate or overlap questions across sides.
+- For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if the question targets the case generally rather than a specific card.
 
 Return ONLY this JSON (no markdown fences, no preamble):
-"cardCite": the short cite (Author LastName + 2-digit year) of the specific card this question targets, exactly as it appears in the highlighted text. Omit if the question targets the case generally rather than a specific card.
-{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Author Year or omit"}]}]}`;
+{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Brady 25"}]}]}`;
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
