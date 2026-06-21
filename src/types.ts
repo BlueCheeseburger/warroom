@@ -293,6 +293,11 @@ declare global {
           feedback?: string;
           error?: string;
         }>;
+        scoreCards: (params: { cards: { tag: string; cite: string }[] }) => Promise<{
+          ok: boolean;
+          scores?: { score: number; verdict: string; author: number; recency: number; source: number; reason: string; press: string }[];
+          error?: string;
+        }>;
       };
       clipboard: {
         readImage: () => Promise<{ ok: boolean; base64?: string; mimeType?: string; error?: string }>;

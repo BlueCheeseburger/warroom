@@ -1870,6 +1870,77 @@ Return ONLY this JSON, no fences, no preamble:
   }
 });
 
+// ─── Card credibility scoring ────────────────────────────────────────────────
+// Scores every card in a speech doc in ONE AI call. The renderer extracts each
+// card's tag + cite text from the rendered DOM and sends them numbered; we return
+// a score array in the same order. Uses the 'balanced' tier — the user's selected
+// model, but never the cheapest lite model (lite → balanced; e.g. Gemini Flash
+// Lite is bumped to Flash) for a more reliable judgment.
+ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
+  cards: { tag: string; cite: string }[];
+}) => {
+  try {
+    const list = Array.isArray(cards) ? cards.slice(0, 150) : [];
+    if (list.length === 0) throw new Error('No cards found to score.');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const cardLines = list.map((c, i) =>
+      `${i + 1}. TAG: ${String(c.tag ?? '').slice(0, 300)} | CITE: ${String(c.cite ?? '').slice(0, 600) || '(no citation text)'}`,
+    ).join('\n');
+
+    const prompt = `You are an evidence-credibility analyst for competitive debate. Today's date is ${today}.
+
+You will score each card's credibility using its citation. For every card you get a TAG (the claim it makes) and a CITE (the citation text — may contain the author, their qualifications, the date, and the publication/source).
+
+Score each card 0-10 (10 = excellent) on three factors:
+- "author": the author's qualifications and expertise RELEVANT TO THE CLAIM. A credentialed domain expert scores high; a student, journalist, or anonymous author scores low. If the cite states no qualifications, score low and say so.
+- "recency": how current the evidence is given today's date. Older evidence scores lower; weight this by how time-sensitive the claim is (breaking geopolitics decays fast; settled theory does not). If no date is present, score low.
+- "source": publication quality. Peer-reviewed journal > established think tank / government body > reputable news outlet > op-ed / magazine > personal blog / unknown website.
+
+Then give:
+- "score": overall credibility 0-10 (holistic — weigh the three factors).
+- "verdict": exactly one word — "Strong" (8-10), "Solid" (6-7), "Shaky" (4-5), or "Weak" (0-3).
+- "reason": 12 words or fewer naming the single biggest credibility factor (good or bad).
+- "press": 15 words or fewer — the single best cross-examination attack on THIS card's credibility (e.g. "Author is a student, not a defense expert — press their qualifications").
+
+CRITICAL: Judge author and source ONLY from what the cite actually states. If qualifications, date, or source are missing, score that factor low and note it — NEVER invent credentials, dates, or outlets.
+
+Cards:
+${cardLines}
+
+Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as the cards above. No markdown fences, no preamble:
+[{"score":7,"verdict":"Solid","author":6,"recency":8,"source":7,"reason":"...","press":"..."}]`;
+
+    const raw = await callAI(prompt, 'balanced');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape.');
+
+    const clamp = (n: any) => Math.max(0, Math.min(10, Math.round(Number(n))));
+    const verdictFor = (s: number) => s >= 8 ? 'Strong' : s >= 6 ? 'Solid' : s >= 4 ? 'Shaky' : 'Weak';
+    const scores = list.map((_c, i) => {
+      const r = parsed[i] ?? {};
+      const score = Number.isFinite(Number(r.score)) ? clamp(r.score) : 0;
+      const verdict = ['Strong', 'Solid', 'Shaky', 'Weak'].includes(r.verdict) ? r.verdict : verdictFor(score);
+      return {
+        score,
+        verdict,
+        author: Number.isFinite(Number(r.author)) ? clamp(r.author) : 0,
+        recency: Number.isFinite(Number(r.recency)) ? clamp(r.recency) : 0,
+        source: Number.isFinite(Number(r.source)) ? clamp(r.source) : 0,
+        reason: typeof r.reason === 'string' ? r.reason.slice(0, 160) : '',
+        press: typeof r.press === 'string' ? r.press.slice(0, 200) : '',
+      };
+    });
+    return { ok: true, scores };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to score cards');
+    return { ok: false, error: msg };
+  }
+});
+
 // OpenCaselist — return { ok, data, error } so renderer can inspect without IPC error serialization issues
 ipcMain.handle('opencaselist:login', async (_e, username: string, password: string) => {
   try { await ocLogin(username, password); return { ok: true }; }

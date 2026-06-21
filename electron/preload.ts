@@ -29,6 +29,8 @@ const api = {
       ipcRenderer.invoke('ai:crossExTraps', params),
     crossExGradeTrap: (params: { setup: string; idealAnswer: string; trapAnswer: string; gotcha: string; lesson: string; userAnswer: string; event: 'policy' | 'pf' | 'ld' }) =>
       ipcRenderer.invoke('ai:crossExGradeTrap', params),
+    scoreCards: (params: { cards: { tag: string; cite: string }[] }) =>
+      ipcRenderer.invoke('ai:scoreCards', params),
   },
   clipboard: {
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),

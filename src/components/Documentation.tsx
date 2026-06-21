@@ -518,7 +518,7 @@ export default function Documentation() {
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
             structure and highlighted / underlined runs), <strong>Outline</strong> (heading
             navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
-            auto-scroll, and <strong>Cross-Ex Practice</strong>.
+            auto-scroll, <strong>Cross-Ex Practice</strong>, and <strong>Card Credibility</strong>.
           </P>
           <H3>Find (in-document search)</H3>
           <P>
@@ -580,6 +580,44 @@ export default function Documentation() {
           <P>
             Your questions are saved per-document, so they stay put when you close and reopen the
             panel, reload the doc, or restart the app — they only clear when you regenerate.
+          </P>
+          <H3>Card Credibility</H3>
+          <P>
+            A shield-icon <strong>Credibility</strong> button opens a right-hand panel that grades the
+            evidentiary credibility of every card in the open doc. It is <strong>mutually exclusive</strong>{' '}
+            with the Cross-Ex panel — opening one closes the other. The renderer extracts cards from the
+            rendered DOM via <Code>buildCards</Code>: a "card" is a paragraph at the deepest heading level
+            present (<Code>Heading4</Code> in Verbatim docs) used as the tag, plus the following
+            non-heading paragraphs as the cite (capped at ~80 words / 600 chars). Cards are sent{' '}
+            <strong>numbered</strong> to the model.
+          </P>
+          <P>
+            The <Code>ai:scoreCards</Code> handler takes{' '}
+            <Code>{'{ cards: { tag: string; cite: string }[] }'}</Code> and returns{' '}
+            <Code>{'{ ok, scores?: { score, verdict, author, recency, source, reason, press }[], error? }'}</Code>.
+            In <strong>one AI call</strong> the model scores all cards at once and returns a JSON array in
+            the <strong>same order</strong>; results map back to cards by index. Each card gets an overall{' '}
+            <strong>score 0–10</strong>, a one-word <strong>verdict</strong> (Strong 8–10 / Solid 6–7 /
+            Shaky 4–5 / Weak 0–3), three sub-scores (<strong>Author qualifications</strong>,{' '}
+            <strong>Recency</strong>, <strong>Source quality</strong>), a short <strong>reason</strong>, and
+            a <strong>"press"</strong> line — the single best cross-examination attack on that card's
+            credibility.
+          </P>
+          <P>
+            The call uses <Code>callAI(prompt, 'balanced')</Code>. The <strong>balanced tier</strong> is
+            your selected model from Settings, but never the cheapest "lite" model — e.g. Gemini 2.5 Flash
+            Lite is bumped up to Gemini 2.5 Flash (analogously for OpenAI / Anthropic). The prompt instructs
+            the model to judge author and source <strong>only</strong> from what the cite text states and to{' '}
+            <strong>never fabricate</strong> credentials, dates, or outlets.
+          </P>
+          <P>
+            Results are cached per document in <Code>localStorage</Code> under{' '}
+            <Code>warroom-cred-&lt;path&gt;</Code>, keyed by a content hash (<Code>hashCards</Code>) so the
+            cache is invalidated when the doc's cards change — reopening the panel is instant and free.{' '}
+            <Code>loadCred</Code> / <Code>saveCred</Code> read and write the cache, and a{' '}
+            <strong>Re-score</strong> button forces a fresh pass. The panel lists each card with a colored
+            score chip; clicking a card expands its sub-score bars, reason, and press line, and a{' '}
+            <strong>Go to card in document</strong> button scrolls the doc to that card and flashes it.
           </P>
         </section>
 

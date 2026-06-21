@@ -145,6 +145,16 @@ function IcoPause() {
   );
 }
 
+// Credibility: a shield with a checkmark — "vetted evidence"
+function IcoShield({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 1.8l6 2.2v4.2c0 3.6-2.5 6-6 7.8-3.5-1.8-6-4.2-6-7.8V4z"/>
+      <path d="M6.3 8.6L8.2 10.5 11.8 6.8"/>
+    </svg>
+  );
+}
+
 // Cross-ex: two opposing speech bubbles with a question mark — "the questioning exchange"
 function IcoCrossEx({ active }: { active?: boolean }) {
   return (
@@ -940,6 +950,209 @@ function countSpokenWords(root: Node, range?: Range | null): number {
   return total;
 }
 
+// ── Card credibility scoring ───────────────────────────────────────────────
+interface CredCard { id: string; tag: string; cite: string }
+interface CardScore { score: number; verdict: string; author: number; recency: number; source: number; reason: string; press: string }
+
+// Extract each card (tag + the cite text that follows it) from the rendered doc.
+// A "card" is a tag — the deepest heading level used in the doc (Heading4 in
+// Verbatim). The cite is the text of the paragraphs after the tag, up to the next
+// heading, capped so we send the author/quals/date without the whole card body.
+function buildCards(container: HTMLElement): CredCard[] {
+  const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
+  const levelOf = (p: HTMLElement) => {
+    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  const maxLevel = paras.reduce((mx, p) => Math.max(mx, levelOf(p)), 0);
+  if (maxLevel === 0) return [];
+
+  const cards: CredCard[] = [];
+  let n = 0;
+  for (const p of paras) {
+    if (levelOf(p) !== maxLevel) continue;
+    const tag = (p.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!tag) continue;
+    let cite = '';
+    let sib = p.nextElementSibling as HTMLElement | null;
+    while (sib && wordCount(cite) < 80) {
+      if (levelOf(sib) > 0) break; // next heading → end of this card's cite
+      const t = (sib.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t) cite = cite ? `${cite} ${t}` : t;
+      sib = sib.nextElementSibling as HTMLElement | null;
+    }
+    const id = `wr-cred-${n++}`;
+    p.dataset.credId = id;
+    cards.push({ id, tag, cite: cite.slice(0, 600) });
+  }
+  return cards;
+}
+
+function hashCards(cards: CredCard[]): string {
+  const s = cards.map(c => `${c.tag}|${c.cite}`).join('§');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return `${h}:${cards.length}`;
+}
+
+const credKey = (path: string) => `warroom-cred-${path}`;
+function loadCred(path: string, hash: string): CardScore[] | null {
+  if (!path) return null;
+  try {
+    const v = JSON.parse(localStorage.getItem(credKey(path)) ?? 'null');
+    if (v && v.hash === hash && Array.isArray(v.scores)) return v.scores as CardScore[];
+  } catch { /* ignore */ }
+  return null;
+}
+function saveCred(path: string, hash: string, scores: CardScore[]) {
+  if (!path) return;
+  try { localStorage.setItem(credKey(path), JSON.stringify({ hash, scores })); } catch { /* ignore */ }
+}
+
+// Color a 0-10 score: green (strong) → blue (solid) → amber (shaky) → red (weak).
+function credColor(score: number): string {
+  if (score >= 8) return '34 197 94';
+  if (score >= 6) return '66 133 244';
+  if (score >= 4) return '217 164 6';
+  return 'var(--danger-rgb)';
+}
+
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] w-[52px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{label}</span>
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border-subtle)' }}>
+        <div className="h-full rounded-full" style={{ width: `${value * 10}%`, background: `rgb(${credColor(value)})` }} />
+      </div>
+      <span className="text-[10px] tabular-nums w-[22px] text-right shrink-0" style={{ color: 'rgb(var(--ink-rgb))' }}>{value}</span>
+    </div>
+  );
+}
+
+function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCard, onClose }: {
+  cards: CredCard[];
+  scores: CardScore[] | null;
+  loading: boolean;
+  error: string;
+  onScore: () => void;
+  onScrollToCard: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const avg = scores && scores.length
+    ? Math.round((scores.reduce((s, x) => s + x.score, 0) / scores.length) * 10) / 10
+    : null;
+
+  return (
+    <div className="shrink-0 flex flex-col h-full" style={{ width: 300, borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
+      <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoShield active /></span>
+        <div className="flex flex-col min-w-0 flex-1">
+          <span className="text-[12.5px] font-semibold leading-tight truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Card Credibility</span>
+          <span className="text-[10px] leading-tight" style={{ color: 'var(--nav-inactive-color)' }}>
+            {cards.length} card{cards.length === 1 ? '' : 's'}{avg !== null ? ` · avg ${avg}/10` : ''}
+          </span>
+        </div>
+        {scores && !loading && (
+          <IconBtn icon={<IcoMore />} label="Re-score all cards" onClick={onScore} />
+        )}
+        <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} tooltipAlign="right" />
+      </div>
+
+      <div className="flex-1 overflow-y-auto scroll-thin px-2.5 py-2.5 space-y-2">
+        {error && (
+          <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
+            {error}
+          </div>
+        )}
+
+        {loading && (
+          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
+            <Spinner className="w-5 h-5" />
+            <div className="text-[12px]">Scoring {cards.length} cards…</div>
+          </div>
+        )}
+
+        {!loading && cards.length === 0 && !error && (
+          <div className="px-1 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            No cards found. Credibility scoring works with docs that use Word/Verbatim card tags and cites.
+          </div>
+        )}
+
+        {!loading && !scores && cards.length > 0 && !error && (
+          <div className="px-1 py-2">
+            <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--nav-inactive-color)' }}>
+              Warroom AI will rate every card's credibility — author qualifications, recency, and source quality — in one pass, and suggest how to attack each in cross-ex.
+            </p>
+            <button
+              onClick={onScore}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+              style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+            >
+              <IcoShield active /> Score {cards.length} cards
+            </button>
+          </div>
+        )}
+
+        {!loading && scores && cards.map((c, i) => {
+          const sc = scores[i];
+          if (!sc) return null;
+          const open = expanded === c.id;
+          return (
+            <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              <button
+                onClick={() => setExpanded(open ? null : c.id)}
+                className="w-full text-left p-2.5 flex items-start gap-2.5 transition"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              >
+                <div
+                  className="shrink-0 w-9 h-9 rounded-lg flex flex-col items-center justify-center"
+                  style={{ background: `rgba(${credColor(sc.score)}, 0.15)`, border: `1px solid rgba(${credColor(sc.score)}, 0.4)` }}
+                >
+                  <span className="text-[14px] font-bold leading-none tabular-nums" style={{ color: `rgb(${credColor(sc.score)})` }}>{sc.score}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold mb-0.5" style={{ color: `rgb(${credColor(sc.score)})` }}>{sc.verdict}</div>
+                  <div className="text-[11.5px] leading-snug" style={{ color: 'rgb(var(--ink-rgb))', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.tag}</div>
+                </div>
+              </button>
+
+              {open && (
+                <div className="px-2.5 pb-2.5 space-y-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <div className="space-y-1 pt-2">
+                    <ScoreBar label="Author" value={sc.author} />
+                    <ScoreBar label="Recency" value={sc.recency} />
+                    <ScoreBar label="Source" value={sc.source} />
+                  </div>
+                  {sc.reason && (
+                    <div className="text-[11px] leading-relaxed" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }}>{sc.reason}</div>
+                  )}
+                  {sc.press && (
+                    <div className="rounded-lg p-2 text-[11px] leading-relaxed" style={{ background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.2)', color: 'rgb(var(--ink-rgb))' }}>
+                      <span className="font-semibold" style={{ color: 'rgb(var(--danger-rgb))' }}>Press: </span>{sc.press}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => onScrollToCard(c.id)}
+                    className="text-[11px] font-medium px-2 py-1 rounded-md transition"
+                    style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                    onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                    onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                  >
+                    Go to card in document
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Warn when a doc is too thin to yield good cross-ex questions. Questions are built
 // only from highlighted (read) text, so we check that first, then overall length.
 function cxShortDocWarning(highlighted: string, full: string): string {
@@ -1367,6 +1580,13 @@ export default function SpeechDocViewer() {
   const [selWords, setSelWords] = useState(0);
   const [autoScroll, setAutoScroll] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
+  // Card credibility
+  const [credOpen, setCredOpen] = useState(false);
+  const [credCards, setCredCards] = useState<CredCard[]>([]);
+  const [credScores, setCredScores] = useState<CardScore[] | null>(null);
+  const [credLoading, setCredLoading] = useState(false);
+  const [credError, setCredError] = useState('');
+  const credHashRef = useRef('');
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapRef = useRef<HTMLDivElement>(null);
   const wpmRef = useRef(wpm);
@@ -1531,6 +1751,51 @@ export default function SpeechDocViewer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [step, findOpen]);
 
+  // ── Credibility ─────────────────────────────────────────────────────────
+  // When the panel opens, extract the cards and load any cached scores for this
+  // exact doc content. Scoring itself is explicit (one AI call on button press).
+  useEffect(() => {
+    if (!credOpen || step !== 'viewing' || !containerRef.current) return;
+    const cards = buildCards(containerRef.current);
+    setCredCards(cards);
+    setCredError('');
+    const hash = hashCards(cards);
+    credHashRef.current = hash;
+    setCredScores(cards.length ? loadCred(filePath, hash) : null);
+  }, [credOpen, step, filePath]);
+
+  const runScoreCards = useCallback(async () => {
+    if (credCards.length === 0) return;
+    setCredLoading(true);
+    setCredError('');
+    try {
+      const res = await window.warroom.ai.scoreCards({
+        cards: credCards.map(c => ({ tag: c.tag, cite: c.cite })),
+      });
+      if (!res.ok || !res.scores) throw new Error(res.error ?? 'Failed to score cards');
+      setCredScores(res.scores);
+      saveCred(filePath, credHashRef.current, res.scores);
+    } catch (e: any) {
+      setCredError(e?.message ?? 'Failed to score cards');
+    } finally {
+      setCredLoading(false);
+    }
+  }, [credCards, filePath]);
+
+  const scrollToCard = useCallback((id: string) => {
+    const el = containerRef.current?.querySelector<HTMLElement>(`[data-cred-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'auto', block: 'start' });
+    const prevBg = el.style.backgroundColor;
+    const prevTrans = el.style.transition;
+    el.style.transition = 'background-color 0.25s ease';
+    el.style.backgroundColor = 'rgba(66, 133, 244, 0.22)';
+    window.setTimeout(() => {
+      el.style.backgroundColor = prevBg;
+      window.setTimeout(() => { el.style.transition = prevTrans; }, 300);
+    }, 650);
+  }, []);
+
   // Smooth-scroll the document to a heading and flash it briefly.
   const scrollToHeading = useCallback((id: string) => {
     const el = containerRef.current?.querySelector<HTMLElement>(`[data-outline-id="${id}"]`);
@@ -1647,12 +1912,15 @@ export default function SpeechDocViewer() {
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-      // Reset find / auto-scroll state tied to the previous document.
+      // Reset find / auto-scroll / credibility state tied to the previous document.
       stopAuto();
       setFindOpen(false);
       setFindQuery('');
       findRangesRef.current = [];
       clearFindHighlights();
+      setCredScores(null);
+      setCredCards([]);
+      setCredError('');
 
       setStep('viewing');
       setTimeout(async () => {
@@ -1754,6 +2022,9 @@ export default function SpeechDocViewer() {
     findRangesRef.current = [];
     clearFindHighlights();
     setDocWords(0);
+    setCredScores(null);
+    setCredCards([]);
+    setCredError('');
     if (containerRef.current) containerRef.current.innerHTML = '';
   }
 
@@ -1846,9 +2117,15 @@ export default function SpeechDocViewer() {
         />
 
         <div className="flex-1" />
+        <ToolbarToggle
+          active={credOpen}
+          label="Score card credibility"
+          icon={<IcoShield active={credOpen} />}
+          onClick={() => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; })}
+        />
         <div className="relative" onMouseEnter={() => {}}>
           <button
-            onClick={() => setCxOpen(v => !v)}
+            onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
             className="flex items-center gap-1.5 h-9 px-2.5 rounded-lg transition text-[12px] font-medium"
             style={{
               background: cxOpen ? 'var(--nav-active-bg)' : 'transparent',
@@ -2049,6 +2326,17 @@ export default function SpeechDocViewer() {
             event={event}
             onClose={() => setCxOpen(false)}
             onScrollToCite={scrollToCite}
+          />
+        )}
+        {credOpen && step === 'viewing' && (
+          <CredibilityPanel
+            cards={credCards}
+            scores={credScores}
+            loading={credLoading}
+            error={credError}
+            onScore={runScoreCards}
+            onScrollToCard={scrollToCard}
+            onClose={() => setCredOpen(false)}
           />
         )}
       </div>

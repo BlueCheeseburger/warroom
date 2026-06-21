@@ -146,6 +146,7 @@ Opens .docx files in-app.
   - **Short-doc warning**: if the doc has little highlighted text or is very short, you'll see a notice that you may get few or shallow questions.
   - **Harder** button: runs a trap drill — Warroom AI asks a setup question, you type your answer, and it tells you whether you avoided the trap or fell for it, with the fix. Three traps per drill.
   - Tap **Generate** (or **Regenerate**) at the bottom. Your questions are saved per doc — they stay even if you close the panel or reopen the file, and only clear when you regenerate.
+- **Card Credibility** (toolbar shield button): opens a side panel where Warroom AI grades the evidence in your doc. In one pass it scores **every card** at once and gives each one an overall score out of 10 plus a one-word verdict (**Strong / Solid / Shaky / Weak**), three sub-scores — **Author qualifications**, **Recency**, and **Source quality** — a short reason, and a **"press"** line: the single sharpest cross-ex attack on that card's credibility. Warroom AI judges only what the cite actually says and never makes up credentials, dates, or sources. Click any card to expand its breakdown, then use **Go to card in document** to jump straight to it. Results are cached per document, so reopening the panel is instant and free; tap **Re-score** to refresh. (The Credibility and Cross-Ex panels share the same space — opening one closes the other.)
 
 ---
 

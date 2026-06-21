@@ -171,7 +171,7 @@ The `SpeechDocViewer` renders `.docx` files in-app using `docx-preview`. It is a
 
 Opening a `.docx` from Finder triggers the `onFileOpen` IPC event and navigates to the speech-doc view. Speech docs can also be attached to chat messages and shared with teammates.
 
-The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), **Find** (in-doc search), **Reading time / auto-scroll**, and **Cross-Ex Practice** (see below).
+The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), **Find** (in-doc search), **Reading time / auto-scroll**, **Cross-Ex Practice**, and **Card Credibility** (see below).
 
 ### Find (in-document search)
 
@@ -192,6 +192,16 @@ A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that
 Question rules enforced by the prompt: questions target highlighted text only (the one exception being un-highlighted small text that directly and completely contradicts highlighted text in the same card); questions are 1-3 sentences and answers 2-4 sentences; no markdown emphasis (key phrases use 'single quotes', rendered bold by `CxText`).
 
 **Aff/Neg sections.** The handler asks the model to decide whether the doc is Aff, Neg, or both — using speech labels (1AC/2AC/1AR/2AR = aff; 1NC/2NC/1NR/2NR = neg) and argument type — and returns `{ groups: [{ side, questions }] }`. Question counts are weighted by how much highlighted content each side has (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg). The panel renders an Aff / Neg header per group when both sides are present.
+
+### Card Credibility
+
+A shield-icon "Credibility" toolbar button opens a right-hand panel that grades the evidentiary credibility of every card in the open doc. It is **mutually exclusive with the Cross-Ex panel** — opening one closes the other. The renderer extracts cards directly from the rendered DOM via `buildCards`: a "card" is a paragraph at the deepest heading level present (Heading4 in Verbatim docs) used as the tag, plus the following non-heading paragraphs as the cite (capped at ~80 words / 600 chars). Cards are sent **numbered** to the model.
+
+The `ai:scoreCards` handler in `electron/main.ts` takes `{ cards: { tag: string; cite: string }[] }` and returns `{ ok, scores?: { score, verdict, author, recency, source, reason, press }[], error? }`. In **one AI call** the model scores all cards at once and returns a JSON array in the **same order**; results map back to cards by index. Each card gets an overall **score 0–10**, a one-word **verdict** (Strong 8–10 / Solid 6–7 / Shaky 4–5 / Weak 0–3), three sub-scores (**Author qualifications**, **Recency**, **Source quality**), a short **reason**, and a **"press"** line — the single best cross-examination attack on that card's credibility.
+
+The call uses `callAI(prompt, 'balanced')`. The **balanced tier** is the user's selected model from Settings, but never the cheapest "lite" model — e.g. Gemini 2.5 Flash Lite is bumped up to Gemini 2.5 Flash (analogously for OpenAI/Anthropic). The prompt instructs the model to judge author and source **only** from what the cite text states and to **never fabricate** credentials, dates, or outlets.
+
+Results are cached per document in `localStorage` under the key `warroom-cred-<path>`, keyed by a content hash (`hashCards`) so the cache is invalidated when the doc's cards change; this makes reopening instant and free. `loadCred`/`saveCred` read and write the cache, and a **Re-score** button forces a fresh pass. The panel lists each card with a colored score chip; clicking a card expands its sub-score bars, reason, and press line, and a **Go to card in document** button scrolls the doc to that card and flashes it.
 
 Each question renders as a pill with:
 - A **Show answer** disclosure that reveals the model answer (and the strategic follow-up) — hidden by default.

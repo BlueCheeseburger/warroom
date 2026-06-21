@@ -10,6 +10,7 @@
  *   get_skill             — load a skill .md file by name
  *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
  *   cross_ex_trap_drill   — prep a cross-ex trap drill (mirrors in-app "Harder questions")
+ *   score_card_credibility — prep a credibility scoring pass for a speech doc's cards (mirrors in-app Card Credibility)
  *   search_library        — fuzzy search saved cards
  *   get_cases / get_blocks / get_cards — browse the card library
  *   get_opponents         — saved opponent scouting notes
@@ -429,6 +430,55 @@ Returns the event guide + doc + a brief telling you to write trap questions: a s
       `## Highlighted text\n${text.slice(0, 40000)}\n`,
       full_text?.trim() ? `## Full card text\n${(full_text ?? '').slice(0, 60000)}\n` : '',
     ].filter(Boolean).join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
+  }
+);
+
+// ── score_card_credibility ──────────────────────────────────────────────────────
+// Mirrors the in-app "Card Credibility" panel in the speech doc viewer: given the
+// doc's cards (tag + cite), score each one's evidentiary credibility. The server has
+// no LLM, so it returns the cards plus a scoring brief for the calling model.
+server.tool(
+  'score_card_credibility',
+  `Score the credibility of every evidence card in a speech document, the same way the in-app Card Credibility panel does.
+Pass the cards as a list of { tag, cite } objects (the card's tag/headline plus the cite text that follows it). Returns a brief telling you to grade each card and a numbered list of the cards to score.
+Judge ONLY from what the cite text states — never invent credentials, dates, or outlets that are not present.`,
+  {
+    cards: z.array(z.object({
+      tag: z.string().describe('The card tag/headline'),
+      cite: z.string().describe('The cite text that follows the tag (author, date, source, body)'),
+    })).describe('The cards to score, in document order'),
+  },
+  async ({ cards }) => {
+    const list = (cards ?? []).filter((c) => (c?.tag ?? '').trim() || (c?.cite ?? '').trim());
+    if (!list.length) return { content: [{ type: 'text', text: 'No cards provided.' }] };
+
+    const numbered = list
+      .map((c, i) => `### Card ${i + 1}\nTAG: ${(c.tag ?? '').trim().slice(0, 600)}\nCITE: ${(c.cite ?? '').trim().slice(0, 600)}`)
+      .join('\n\n');
+
+    const out = [
+      `# Card Credibility`,
+      ``,
+      `Score the credibility of each numbered card below as evidence. Return your results in the SAME ORDER as the cards are listed.`,
+      ``,
+      `For EACH card give:`,
+      `- An OVERALL score from 0 to 10.`,
+      `- A one-word VERDICT: Strong (8-10), Solid (6-7), Shaky (4-5), or Weak (0-3).`,
+      `- Three SUB-SCORES, each 0-10: Author qualifications, Recency, Source quality.`,
+      `- A short REASON (one or two sentences) for the overall score.`,
+      `- A "PRESS" line: the single best cross-examination attack on this card's credibility.`,
+      ``,
+      `RULES:`,
+      `1. Judge author qualifications and source quality ONLY from what the CITE text states. Never invent or assume credentials, dates, or outlets that are not present.`,
+      `2. If the cite does not state the author's qualifications, score Author qualifications low and say so — do not guess.`,
+      `3. If no date is present, score Recency low and note the missing date — do not fabricate a date.`,
+      `4. Keep the reason and press line short and plain. No markdown emphasis (no **, *, __). Use single quotes around key phrases.`,
+      ``,
+      `## Cards to score (${list.length})`,
+      numbered,
+    ].join('\n');
 
     return { content: [{ type: 'text', text: out }] };
   }
