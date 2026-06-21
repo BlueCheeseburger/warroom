@@ -833,6 +833,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
           id: `q${stamp}-${gi}-${i}`,
           question: x.question,
           answer: x.answer,
+          cardCite: x.cardCite,
         })),
       })));
     } catch (e: any) {
