@@ -532,10 +532,12 @@ export default function Documentation() {
           </P>
           <H3>Reading time &amp; auto-scroll</H3>
           <P>
-            The clock button opens a popover estimating how long the doc takes to read at your
-            words-per-minute, which is saved between sessions. Preset chips set ~175 wpm (lay /
-            traditional) and ~300 wpm (flow / spreading). Select a portion of the doc first and it
-            estimates just that selection. <strong>Auto-scroll</strong> scrolls the doc at your wpm
+            The clock button opens a popover estimating how long the doc takes to read aloud at your
+            words-per-minute, which is saved between sessions. It counts only spoken words — headings
+            (pockets / hats / blocks / tags), highlighted / underlined card text, and the author +
+            date of each cite — not the full small-text cites or unread body. Preset chips set ~175
+            wpm (lay / traditional) and ~300 wpm (flow / spreading). Select a portion of the doc first
+            and it estimates just that selection. <strong>Auto-scroll</strong> scrolls the doc at your wpm
             (a <Code>requestAnimationFrame</Code> loop paced by{' '}
             <Code>scrollHeight / wordCount</Code>); a floating control lets you pause / resume, change
             speed live, or stop.

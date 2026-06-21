@@ -895,6 +895,51 @@ function fmtDuration(totalSec: number): string {
   return `${ss}s`;
 }
 
+// ── "Spoken" word count (reading time) ─────────────────────────────────────
+// A debater only reads aloud a fraction of a doc: headings (pockets/hats/blocks/
+// tags), the highlighted/underlined card text, and the bold author+date at the
+// start of each cite (the bracketed full cite is NOT read). We count exactly
+// those, so the reading estimate reflects spoken words — not every word in the file.
+function isHeadingP(el: Element | null): boolean {
+  return !!el && /heading[\s_-]?[1-9]/i.test((el as HTMLElement).className || '');
+}
+
+// A run is "spoken" if it's highlighted, underlined, or bold (bold catches the
+// author+date of a cite, which is bolded while the rest of the cite is not).
+function isSpokenRun(el: HTMLElement): boolean {
+  const bgStr = el.dataset.origBg || window.getComputedStyle(el).backgroundColor;
+  const rgb = parseRgb(bgStr);
+  if (rgb && isBrightHighlight(rgb)) return true;
+  const cs = window.getComputedStyle(el);
+  const deco = (cs.textDecorationLine || cs.textDecoration || '');
+  if (deco.includes('underline')) return true;
+  if (parseInt(cs.fontWeight, 10) >= 600) return true;
+  return false;
+}
+
+function countSpokenWords(root: Node, range?: Range | null): number {
+  const host = root.nodeType === Node.ELEMENT_NODE ? (root as Element) : root.parentElement;
+  if (!host) return 0;
+  let total = 0;
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (range && !range.intersectsNode(node)) continue;
+    let text = node.nodeValue ?? '';
+    if (range) {
+      const start = node === range.startContainer ? range.startOffset : 0;
+      const end = node === range.endContainer ? range.endOffset : text.length;
+      text = text.slice(start, end);
+    }
+    if (!text.trim()) continue;
+    const parent = node.parentElement;
+    if (!parent || parent.dataset?.focusHidden) continue;
+    const spoken = isHeadingP(parent.closest('p')) || isSpokenRun(parent);
+    if (spoken) total += wordCount(text);
+  }
+  return total;
+}
+
 // Warn when a doc is too thin to yield good cross-ex questions. Questions are built
 // only from highlighted (read) text, so we check that first, then overall length.
 function cxShortDocWarning(highlighted: string, full: string): string {
@@ -1449,17 +1494,20 @@ export default function SpeechDocViewer() {
   // Track the selected word count while the reading popover is open.
   useEffect(() => {
     if (!readOpen) return;
+    let t = 0;
     const update = () => {
       const sel = window.getSelection();
       const cont = containerRef.current;
       if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !cont) { setSelWords(0); return; }
       const r = sel.getRangeAt(0);
       if (!cont.contains(r.commonAncestorContainer)) { setSelWords(0); return; }
-      setSelWords(wordCount(sel.toString()));
+      // Count only the spoken words within the selection (same rule as the doc total).
+      setSelWords(countSpokenWords(r.commonAncestorContainer, r));
     };
+    const onChange = () => { window.clearTimeout(t); t = window.setTimeout(update, 150); };
     update();
-    document.addEventListener('selectionchange', update);
-    return () => document.removeEventListener('selectionchange', update);
+    document.addEventListener('selectionchange', onChange);
+    return () => { window.clearTimeout(t); document.removeEventListener('selectionchange', onChange); };
   }, [readOpen]);
 
   const commitWpm = useCallback((v: number) => {
@@ -1656,8 +1704,10 @@ export default function SpeechDocViewer() {
         setActiveHeadingId(built[0]?.id ?? null);
         setOutlineOpen(built.length > 0);
 
-        // Reading-time word count for the freshly loaded doc.
-        const words = wordCount(containerRef.current.textContent ?? '');
+        // Reading-time word count for the freshly loaded doc — only words that
+        // are actually read aloud (headings, tags, highlighted/underlined text,
+        // and the bold author+date of cites), not every word in the file.
+        const words = countSpokenWords(containerRef.current);
         setDocWords(words);
         docWordsRef.current = words;
       }, 0);
