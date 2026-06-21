@@ -110,6 +110,41 @@ function IcoChevDown() {
   );
 }
 
+function IcoSearch({ active }: { active?: boolean }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="5"/>
+      <path d="M11.8 11.8L15.5 15.5"/>
+    </svg>
+  );
+}
+
+function IcoClock({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="9" r="7"/>
+      <path d="M9 5v4l2.5 2"/>
+    </svg>
+  );
+}
+
+function IcoPlay() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5 3.5l8 4.5-8 4.5z"/>
+    </svg>
+  );
+}
+
+function IcoPause() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <rect x="4" y="3.5" width="3" height="9" rx="1"/>
+      <rect x="9" y="3.5" width="3" height="9" rx="1"/>
+    </svg>
+  );
+}
+
 // Cross-ex: two opposing speech bubbles with a question mark — "the questioning exchange"
 function IcoCrossEx({ active }: { active?: boolean }) {
   return (
@@ -445,6 +480,37 @@ function OutlineToggleBtn({ active, count, onClick }: {
   );
 }
 
+// Generic toolbar toggle (icon button with active state + styled hover tooltip).
+function ToolbarToggle({ active, label, icon, onClick }: {
+  active: boolean; label: string; icon: React.ReactNode; onClick: () => void;
+}) {
+  const [tip, setTip] = useState(false);
+  return (
+    <div className="relative" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+      <button
+        onClick={onClick}
+        className="flex items-center justify-center w-9 h-9 rounded-lg transition"
+        style={{
+          background: active ? 'var(--nav-active-bg)' : 'transparent',
+          boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
+          border: 'none', cursor: 'pointer',
+          color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+        }}
+        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        {icon}
+      </button>
+      {tip && (
+        <div className="absolute top-full mt-1.5 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
+          style={{ left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Focus button icon ──────────────────────────────────────────────────────
 
 function IcoFocus({ active }: { active: boolean }) {
@@ -757,6 +823,77 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, 
 }
 
 const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+// ── In-doc find ────────────────────────────────────────────────────────────
+// Uses the CSS Custom Highlight API so matches are painted without mutating the
+// DOM (keeps focus mode, the outline ids, and dark-mode fixes intact).
+const FIND_HL = 'wr-find';
+const FIND_HL_ACTIVE = 'wr-find-active';
+const FIND_MATCH_CAP = 5000;
+
+function buildFindMatches(container: HTMLElement, query: string): Range[] {
+  const q = query.toLowerCase();
+  const out: Range[] = [];
+  if (!q.trim()) return out;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(n: Node) {
+      const el = (n as Text).parentElement;
+      if (!el) return NodeFilter.FILTER_REJECT;
+      if ((el as HTMLElement).dataset?.focusHidden) return NodeFilter.FILTER_REJECT; // skip hidden-by-focus text
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue ?? '';
+    const lower = text.toLowerCase();
+    let from = 0;
+    let i = lower.indexOf(q, from);
+    while (i !== -1) {
+      const r = document.createRange();
+      r.setStart(node, i);
+      r.setEnd(node, i + q.length);
+      out.push(r);
+      if (out.length >= FIND_MATCH_CAP) return out;
+      from = i + q.length;
+      i = lower.indexOf(q, from);
+    }
+  }
+  return out;
+}
+
+function clearFindHighlights() {
+  const reg = (CSS as any)?.highlights;
+  if (reg) { reg.delete(FIND_HL); reg.delete(FIND_HL_ACTIVE); }
+}
+
+function paintFindHighlights(all: Range[], active: Range | null) {
+  const reg = (CSS as any)?.highlights;
+  const H = (window as any)?.Highlight;
+  if (!reg || !H) return;
+  reg.delete(FIND_HL); reg.delete(FIND_HL_ACTIVE);
+  if (all.length) reg.set(FIND_HL, new H(...all));
+  if (active) reg.set(FIND_HL_ACTIVE, new H(active));
+}
+
+// ── Reading time / WPM ─────────────────────────────────────────────────────
+const WPM_KEY = 'warroom-reading-wpm';
+function loadWpm(): number {
+  const v = parseInt(localStorage.getItem(WPM_KEY) ?? '', 10);
+  return Number.isFinite(v) && v > 0 ? v : 200;
+}
+function saveWpm(v: number) {
+  try { localStorage.setItem(WPM_KEY, String(v)); } catch { /* ignore */ }
+}
+function fmtDuration(totalSec: number): string {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${ss}s`;
+  return `${ss}s`;
+}
 
 // Warn when a doc is too thin to yield good cross-ex questions. Questions are built
 // only from highlighted (read) text, so we check that first, then overall length.
@@ -1171,8 +1308,180 @@ export default function SpeechDocViewer() {
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+  // Find bar
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findCount, setFindCount] = useState(0);
+  const [findIdx, setFindIdx] = useState(0);
+  const findRangesRef = useRef<Range[]>([]);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  // Reading time / auto-scroll
+  const [readOpen, setReadOpen] = useState(false);
+  const [wpm, setWpm] = useState(loadWpm);
+  const [docWords, setDocWords] = useState(0);
+  const [selWords, setSelWords] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(false);
+  const [autoPaused, setAutoPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapRef = useRef<HTMLDivElement>(null);
+  const wpmRef = useRef(wpm);
+  const docWordsRef = useRef(0);
+  const autoRafRef = useRef(0);
+  const autoAccRef = useRef(0);
+  const autoLastRef = useRef(0);
+  const autoLastSetRef = useRef(0);
+  useEffect(() => { wpmRef.current = wpm; }, [wpm]);
+  useEffect(() => { docWordsRef.current = docWords; }, [docWords]);
+
+  // Inject the find-highlight styles once.
+  useEffect(() => {
+    if (document.getElementById('wr-find-style')) return;
+    const el = document.createElement('style');
+    el.id = 'wr-find-style';
+    el.textContent =
+      `::highlight(${FIND_HL}){background-color:rgba(255,213,0,0.40);}` +
+      `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}`;
+    document.head.appendChild(el);
+  }, []);
+
+  // ── Find handlers ──────────────────────────────────────────────────────
+  const scrollRangeIntoView = useCallback((range: Range) => {
+    const wrap = scrollWrapRef.current;
+    if (!wrap) return;
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      (range.startContainer.parentElement as HTMLElement | null)?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    const wrapRect = wrap.getBoundingClientRect();
+    const target = wrap.scrollTop + (rect.top - wrapRect.top) - wrap.clientHeight / 2 + rect.height / 2;
+    wrap.scrollTo({ top: Math.max(0, target), behavior: 'auto' });
+  }, []);
+
+  const setActiveMatch = useCallback((i: number) => {
+    const ranges = findRangesRef.current;
+    if (!ranges.length) return;
+    const idx = ((i % ranges.length) + ranges.length) % ranges.length;
+    setFindIdx(idx);
+    paintFindHighlights(ranges, ranges[idx]);
+    scrollRangeIntoView(ranges[idx]);
+  }, [scrollRangeIntoView]);
+
+  const runFind = useCallback((query: string) => {
+    const cont = containerRef.current;
+    if (!cont || !query.trim()) {
+      findRangesRef.current = [];
+      clearFindHighlights();
+      setFindCount(0);
+      setFindIdx(0);
+      return;
+    }
+    const ranges = buildFindMatches(cont, query);
+    findRangesRef.current = ranges;
+    setFindCount(ranges.length);
+    if (ranges.length) {
+      paintFindHighlights(ranges, ranges[0]);
+      setFindIdx(0);
+      scrollRangeIntoView(ranges[0]);
+    } else {
+      clearFindHighlights();
+      setFindIdx(0);
+    }
+  }, [scrollRangeIntoView]);
+
+  // Debounce find as the query changes while the bar is open.
+  useEffect(() => {
+    if (!findOpen) return;
+    const t = window.setTimeout(() => runFind(findQuery), 120);
+    return () => window.clearTimeout(t);
+  }, [findQuery, findOpen, runFind]);
+
+  // Clear highlights when the find bar closes.
+  useEffect(() => {
+    if (!findOpen) clearFindHighlights();
+  }, [findOpen]);
+
+  const closeFind = useCallback(() => { setFindOpen(false); }, []);
+
+  // ── Auto-scroll handlers ────────────────────────────────────────────────
+  const stopAutoRaf = useCallback(() => {
+    if (autoRafRef.current) { cancelAnimationFrame(autoRafRef.current); autoRafRef.current = 0; }
+  }, []);
+  const stopAuto = useCallback(() => { stopAutoRaf(); setAutoScroll(false); setAutoPaused(false); }, [stopAutoRaf]);
+
+  const autoStep = useCallback((now: number) => {
+    const wrap = scrollWrapRef.current;
+    if (!wrap) { stopAuto(); return; }
+    // If the user scrolled manually, resync to their position.
+    if (Math.abs(wrap.scrollTop - autoLastSetRef.current) > 3) autoAccRef.current = wrap.scrollTop;
+    const dt = now - autoLastRef.current;
+    autoLastRef.current = now;
+    const pxPerWord = wrap.scrollHeight / (docWordsRef.current || 1);
+    autoAccRef.current += (wpmRef.current / 60000) * pxPerWord * dt;
+    wrap.scrollTop = autoAccRef.current;
+    autoLastSetRef.current = wrap.scrollTop;
+    if (wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 1) { stopAuto(); return; }
+    autoRafRef.current = requestAnimationFrame(autoStep);
+  }, [stopAuto]);
+
+  const startAuto = useCallback(() => {
+    const wrap = scrollWrapRef.current;
+    if (!wrap || !docWordsRef.current) return;
+    stopAutoRaf();
+    autoAccRef.current = wrap.scrollTop;
+    autoLastSetRef.current = wrap.scrollTop;
+    autoLastRef.current = performance.now();
+    setAutoScroll(true);
+    setAutoPaused(false);
+    autoRafRef.current = requestAnimationFrame(autoStep);
+  }, [autoStep, stopAutoRaf]);
+
+  const pauseAuto = useCallback(() => { stopAutoRaf(); setAutoPaused(true); }, [stopAutoRaf]);
+  const resumeAuto = useCallback(() => {
+    autoLastRef.current = performance.now();
+    setAutoPaused(false);
+    autoRafRef.current = requestAnimationFrame(autoStep);
+  }, [autoStep]);
+
+  // Stop auto-scroll when the viewer unmounts.
+  useEffect(() => () => stopAutoRaf(), [stopAutoRaf]);
+
+  // Track the selected word count while the reading popover is open.
+  useEffect(() => {
+    if (!readOpen) return;
+    const update = () => {
+      const sel = window.getSelection();
+      const cont = containerRef.current;
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !cont) { setSelWords(0); return; }
+      const r = sel.getRangeAt(0);
+      if (!cont.contains(r.commonAncestorContainer)) { setSelWords(0); return; }
+      setSelWords(wordCount(sel.toString()));
+    };
+    update();
+    document.addEventListener('selectionchange', update);
+    return () => document.removeEventListener('selectionchange', update);
+  }, [readOpen]);
+
+  const commitWpm = useCallback((v: number) => {
+    const clamped = Math.max(50, Math.min(700, Math.round(v)));
+    setWpm(clamped);
+    saveWpm(clamped);
+  }, []);
+
+  // Cmd/Ctrl+F opens the find bar; Esc closes it.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && step === 'viewing') {
+        e.preventDefault();
+        setFindOpen(true);
+        window.setTimeout(() => findInputRef.current?.focus(), 0);
+      } else if (e.key === 'Escape' && findOpen) {
+        setFindOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [step, findOpen]);
 
   // Smooth-scroll the document to a heading and flash it briefly.
   const scrollToHeading = useCallback((id: string) => {
@@ -1290,6 +1599,13 @@ export default function SpeechDocViewer() {
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
+      // Reset find / auto-scroll state tied to the previous document.
+      stopAuto();
+      setFindOpen(false);
+      setFindQuery('');
+      findRangesRef.current = [];
+      clearFindHighlights();
+
       setStep('viewing');
       setTimeout(async () => {
         if (!containerRef.current) return;
@@ -1339,6 +1655,11 @@ export default function SpeechDocViewer() {
         setOutline(built);
         setActiveHeadingId(built[0]?.id ?? null);
         setOutlineOpen(built.length > 0);
+
+        // Reading-time word count for the freshly loaded doc.
+        const words = wordCount(containerRef.current.textContent ?? '');
+        setDocWords(words);
+        docWordsRef.current = words;
       }, 0);
 
       // Auto-save to recents so it appears in the sidebar
@@ -1377,6 +1698,12 @@ export default function SpeechDocViewer() {
     loadedPath.current = '';
     setOutline([]);
     setActiveHeadingId(null);
+    stopAuto();
+    setFindOpen(false);
+    setFindQuery('');
+    findRangesRef.current = [];
+    clearFindHighlights();
+    setDocWords(0);
     if (containerRef.current) containerRef.current.innerHTML = '';
   }
 
@@ -1452,6 +1779,22 @@ export default function SpeechDocViewer() {
           </>
         )}
 
+        <ToolbarToggle
+          active={findOpen}
+          label="Find in document (⌘F)"
+          icon={<IcoSearch active={findOpen} />}
+          onClick={() => {
+            setFindOpen(v => !v);
+            window.setTimeout(() => findInputRef.current?.focus(), 0);
+          }}
+        />
+        <ToolbarToggle
+          active={readOpen}
+          label="Reading time & auto-scroll"
+          icon={<IcoClock active={readOpen} />}
+          onClick={() => setReadOpen(v => !v)}
+        />
+
         <div className="flex-1" />
         <div className="relative" onMouseEnter={() => {}}>
           <button
@@ -1492,6 +1835,144 @@ export default function SpeechDocViewer() {
           onOpenInWord={() => window.warroom.shell.openPath(filePath)}
           onExportDocx={exportDocx}
         />
+      )}
+
+      {/* Find bar (top-right overlay) */}
+      {findOpen && step === 'viewing' && (
+        <div
+          className="absolute z-40 flex items-center gap-1 rounded-lg px-2 py-1.5"
+          style={{ top: 48, right: 16, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}
+        >
+          <span style={{ color: 'var(--nav-inactive-color)' }}><IcoSearch /></span>
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => setFindQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); setActiveMatch(findIdx + (e.shiftKey ? -1 : 1)); }
+              else if (e.key === 'Escape') { e.preventDefault(); setFindOpen(false); }
+            }}
+            placeholder="Find in document…"
+            className="text-[12.5px] bg-transparent outline-none"
+            style={{ color: 'rgb(var(--ink-rgb))', width: 200 }}
+          />
+          <span className="text-[11px] tabular-nums shrink-0 px-1" style={{ color: 'var(--nav-inactive-color)', minWidth: 46, textAlign: 'right' }}>
+            {findQuery.trim() ? (findCount > 0 ? `${findIdx + 1}/${findCount}` : '0/0') : ''}
+          </span>
+          <IconBtn icon={<IcoChevUp />} label="Previous (⇧⏎)" onClick={() => setActiveMatch(findIdx - 1)} />
+          <IconBtn icon={<IcoChevDown />} label="Next (⏎)" onClick={() => setActiveMatch(findIdx + 1)} />
+          <IconBtn icon={<IcoClose />} label="Close (Esc)" onClick={() => setFindOpen(false)} tooltipAlign="right" />
+        </div>
+      )}
+
+      {/* Reading time / auto-scroll popover (top-right) */}
+      {readOpen && step === 'viewing' && (() => {
+        const activeWords = selWords > 0 ? selWords : docWords;
+        const estSec = wpm > 0 ? (activeWords / wpm) * 60 : 0;
+        return (
+          <div
+            className="absolute z-40 rounded-xl p-3 w-[270px]"
+            style={{ top: findOpen ? 98 : 48, right: 16, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}
+          >
+            <div className="flex items-center gap-2 mb-2.5">
+              <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoClock active /></span>
+              <span className="text-[12.5px] font-semibold flex-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Reading time</span>
+              <IconBtn icon={<IcoClose />} label="Close" onClick={() => setReadOpen(false)} tooltipAlign="right" />
+            </div>
+
+            <div className="rounded-lg p-2.5 mb-2.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px]" style={{ color: 'var(--nav-inactive-color)' }}>
+                  {selWords > 0 ? 'Selected text' : 'Whole document'}
+                </span>
+                <span className="text-[11px] tabular-nums" style={{ color: 'var(--nav-inactive-color)' }}>
+                  {activeWords.toLocaleString()} words
+                </span>
+              </div>
+              <div className="text-[22px] font-semibold tabular-nums mt-0.5" style={{ color: 'rgb(var(--ink-rgb))' }}>
+                {activeWords > 0 ? fmtDuration(estSec) : '—'}
+              </div>
+              <div className="text-[10.5px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>at {wpm} wpm</div>
+            </div>
+
+            <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Your reading speed (wpm)</label>
+            <div className="flex items-center gap-2 mb-1.5">
+              <input
+                type="range" min={50} max={500} step={5} value={Math.min(500, wpm)}
+                onChange={(e) => commitWpm(parseInt(e.target.value, 10))}
+                className="flex-1" style={{ accentColor: 'var(--nav-active-color, #4285F4)' }}
+              />
+              <input
+                type="number" min={50} max={700} value={wpm}
+                onChange={(e) => commitWpm(parseInt(e.target.value || '0', 10))}
+                className="text-[12px] tabular-nums rounded-md px-1.5 py-1 w-[58px] outline-none"
+                style={{ background: 'var(--bg-input)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)' }}
+              />
+            </div>
+            <div className="flex gap-1.5 mb-2.5">
+              <button
+                onClick={() => commitWpm(175)}
+                className="flex-1 text-[10.5px] rounded-md py-1 transition"
+                style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                title="Lay / traditional round pace"
+              >Lay ~175</button>
+              <button
+                onClick={() => commitWpm(300)}
+                className="flex-1 text-[10.5px] rounded-md py-1 transition"
+                style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                title="Flow round spreading pace"
+              >Flow ~300</button>
+            </div>
+            <div className="text-[10px] leading-relaxed mb-2.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              Lay / traditional rounds average ~150–200 wpm. Flow rounds (spreading) average ~300–400+ wpm.
+            </div>
+
+            <button
+              onClick={() => (autoScroll ? stopAuto() : startAuto())}
+              disabled={docWords === 0}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition"
+              style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', cursor: docWords === 0 ? 'default' : 'pointer', opacity: docWords === 0 ? 0.5 : 1 }}
+            >
+              {autoScroll ? <IcoPause /> : <IcoPlay />}
+              {autoScroll ? 'Stop auto-scroll' : 'Auto-scroll at this pace'}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Auto-scroll floating control */}
+      {autoScroll && step === 'viewing' && (
+        <div
+          className="absolute z-40 flex items-center gap-2.5 rounded-full px-3 py-2"
+          style={{ bottom: 18, left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}
+        >
+          <button
+            onClick={() => (autoPaused ? resumeAuto() : pauseAuto())}
+            className="flex items-center justify-center w-7 h-7 rounded-full transition"
+            style={{ background: 'var(--nav-active-bg)', color: 'rgb(var(--ink-rgb))', border: 'none', cursor: 'pointer' }}
+            title={autoPaused ? 'Resume' : 'Pause'}
+          >
+            {autoPaused ? <IcoPlay /> : <IcoPause />}
+          </button>
+          <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'rgb(var(--ink-rgb))' }}>{wpm} wpm</span>
+          <input
+            type="range" min={50} max={500} step={5} value={Math.min(500, wpm)}
+            onChange={(e) => commitWpm(parseInt(e.target.value, 10))}
+            style={{ width: 120, accentColor: 'var(--nav-active-color, #4285F4)' }}
+          />
+          <button
+            onClick={stopAuto}
+            className="flex items-center justify-center w-7 h-7 rounded-full transition"
+            style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+            title="Stop"
+          >
+            <IcoClose />
+          </button>
+        </div>
       )}
 
       {/* Outline + document + cross-ex side panel */}

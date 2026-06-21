@@ -171,7 +171,15 @@ The `SpeechDocViewer` renders `.docx` files in-app using `docx-preview`. It is a
 
 Opening a `.docx` from Finder triggers the `onFileOpen` IPC event and navigates to the speech-doc view. Speech docs can also be attached to chat messages and shared with teammates.
 
-The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), and **Cross-Ex Practice** (see below).
+The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), **Find** (in-doc search), **Reading time / auto-scroll**, and **Cross-Ex Practice** (see below).
+
+### Find (in-document search)
+
+A magnifier toolbar button (or ⌘F / Ctrl+F) opens a find bar. Matches are painted using the **CSS Custom Highlight API** (`CSS.highlights` + `Highlight` + `Range`) rather than by wrapping nodes in `<mark>`, so the document DOM is never mutated — focus mode, the outline `data-outline-id`s, and dark-mode fixes all stay intact. `buildFindMatches` walks text nodes (skipping `data-focus-hidden` ones), builds a `Range` per case-insensitive match (capped at 5000), and registers two highlights: `wr-find` for all matches and `wr-find-active` for the current one, styled via injected `::highlight()` CSS. Enter / Shift+Enter (or the chevrons) move between matches and scroll the active `Range` to center; the bar shows "current / total". Searching is debounced 120ms. Highlights are cleared on close and when a new doc loads.
+
+### Reading time & auto-scroll
+
+A clock toolbar button opens a popover estimating how long the document takes to read at the user's words-per-minute. The doc word count is computed from `containerRef.textContent` at load; if there is a non-collapsed selection inside the viewer (tracked via a `selectionchange` listener while the popover is open), it estimates the selection instead. The WPM is persisted in `localStorage` under `warroom-reading-wpm` and exposed via `loadWpm`/`saveWpm`; preset chips set ~175 (lay/traditional) and ~300 (flow/spreading) with on-screen guidance. **Auto-scroll** drives `scrollWrapRef.scrollTop` with a `requestAnimationFrame` loop at a rate of `(wpm/60000) * (scrollHeight / docWords)` px per ms, so scroll pace matches reading pace; a floating control pill lets the user pause/resume, change speed live (the loop reads `wpmRef`), or stop. Manual scrolling during playback is detected and the accumulator resyncs to the user's position. Auto-scroll stops on doc reload and viewer unmount.
 
 ### Outline (heading navigation)
 

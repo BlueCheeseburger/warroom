@@ -517,7 +517,28 @@ export default function Documentation() {
           <P>
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
             structure and highlighted / underlined runs), <strong>Outline</strong> (heading
-            navigation), and <strong>Cross-Ex Practice</strong>.
+            navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
+            auto-scroll, and <strong>Cross-Ex Practice</strong>.
+          </P>
+          <H3>Find (in-document search)</H3>
+          <P>
+            The magnifier button (or <Code>⌘F</Code> / <Code>Ctrl+F</Code>) opens a find bar.
+            Matches are painted with the <strong>CSS Custom Highlight API</strong> (
+            <Code>CSS.highlights</Code> + <Code>Highlight</Code> + <Code>Range</Code>) instead of
+            wrapping nodes in <Code>&lt;mark&gt;</Code>, so the document DOM is never mutated — focus
+            mode, outline ids, and dark-mode fixes stay intact. Enter / Shift+Enter (or the chevrons)
+            move between matches and center the active one; a counter shows "current / total". Press
+            Esc to close.
+          </P>
+          <H3>Reading time &amp; auto-scroll</H3>
+          <P>
+            The clock button opens a popover estimating how long the doc takes to read at your
+            words-per-minute, which is saved between sessions. Preset chips set ~175 wpm (lay /
+            traditional) and ~300 wpm (flow / spreading). Select a portion of the doc first and it
+            estimates just that selection. <strong>Auto-scroll</strong> scrolls the doc at your wpm
+            (a <Code>requestAnimationFrame</Code> loop paced by{' '}
+            <Code>scrollHeight / wordCount</Code>); a floating control lets you pause / resume, change
+            speed live, or stop.
           </P>
           <H3>Outline (heading navigation)</H3>
           <P>
