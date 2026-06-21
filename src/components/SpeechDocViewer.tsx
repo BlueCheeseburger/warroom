@@ -119,11 +119,14 @@ function IcoSearch({ active }: { active?: boolean }) {
   );
 }
 
+// Reading-time tool: an hourglass.
 function IcoClock({ active }: { active?: boolean }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="9" r="7"/>
-      <path d="M9 5v4l2.5 2"/>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.1 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="3" x2="18" y2="3" />
+      <line x1="6" y1="21" x2="18" y2="21" />
+      <path d="M7 3v3.4a5 5 0 0 0 2.5 4.33L12 12l2.5-1.27A5 5 0 0 0 17 6.4V3" />
+      <path d="M7 21v-3.4a5 5 0 0 1 2.5-4.33L12 12l2.5 1.27A5 5 0 0 1 17 17.6V21" />
     </svg>
   );
 }
@@ -523,14 +526,13 @@ function ToolbarToggle({ active, label, icon, onClick }: {
 
 // ── Focus button icon ──────────────────────────────────────────────────────
 
+// Focus mode (hide everything but read text): an eye with a slash through it.
 function IcoFocus({ active }: { active: boolean }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 17 17" fill="currentColor">
-      <rect x="1" y="2" width="15" height="1.5" rx="0.75" opacity="0.22"/>
-      <rect x="1" y="5.75" width="15" height="2.75" rx="1.375"/>
-      <rect x="1" y="10.5" width="10" height="2.75" rx="1.375" opacity={active ? 1 : 0.75}/>
-      <rect x="12" y="10.5" width="4" height="2.75" rx="1.375" opacity={active ? 0.6 : 0.3}/>
-      <rect x="1" y="15.25" width="9" height="1.5" rx="0.75" opacity="0.22"/>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.1 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.4 18.4 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <path d="M6.61 6.61A18.4 18.4 0 0 0 1 12s4 8 11 8a9.1 9.1 0 0 0 5.39-1.61" />
+      <line x1="1" y1="1" x2="23" y2="23" />
     </svg>
   );
 }
@@ -910,44 +912,88 @@ function fmtDuration(totalSec: number): string {
 // tags), the highlighted/underlined card text, and the bold author+date at the
 // start of each cite (the bracketed full cite is NOT read). We count exactly
 // those, so the reading estimate reflects spoken words — not every word in the file.
-function isHeadingP(el: Element | null): boolean {
-  return !!el && /heading[\s_-]?[1-9]/i.test((el as HTMLElement).className || '');
+function headingLevelOf(el: Element | null): number {
+  const m = el && ((el as HTMLElement).className || '').match(/heading[\s_-]?([1-9])/i);
+  return m ? parseInt(m[1], 10) : 0;
 }
 
-// A run is "spoken" if it's highlighted, underlined, or bold (bold catches the
-// author+date of a cite, which is bolded while the rest of the cite is not).
-function isSpokenRun(el: HTMLElement): boolean {
+function isHighlightedEl(el: HTMLElement): boolean {
   const bgStr = el.dataset.origBg || window.getComputedStyle(el).backgroundColor;
   const rgb = parseRgb(bgStr);
-  if (rgb && isBrightHighlight(rgb)) return true;
-  const cs = window.getComputedStyle(el);
-  const deco = (cs.textDecorationLine || cs.textDecoration || '');
-  if (deco.includes('underline')) return true;
-  if (parseInt(cs.fontWeight, 10) >= 600) return true;
-  return false;
+  return !!(rgb && isBrightHighlight(rgb));
+}
+function isBoldEl(el: HTMLElement): boolean {
+  return parseInt(window.getComputedStyle(el).fontWeight, 10) >= 600;
 }
 
-function countSpokenWords(root: Node, range?: Range | null): number {
-  const host = root.nodeType === Node.ELEMENT_NODE ? (root as Element) : root.parentElement;
-  if (!host) return 0;
-  let total = 0;
-  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    if (range && !range.intersectsNode(node)) continue;
-    let text = node.nodeValue ?? '';
-    if (range) {
-      const start = node === range.startContainer ? range.startOffset : 0;
-      const end = node === range.endContainer ? range.endOffset : text.length;
-      text = text.slice(start, end);
+const COUNT_HL = 'wr-count';
+
+// Collect the words a debater actually reads ALOUD. That is the highlighted text
+// (what Verbatim's word count measures), plus heading paragraphs (pockets/hats/
+// blocks/tags) and the bold author+date at the start of each cite. We deliberately
+// do NOT count plain underlined or generally-bold body text — counting those was
+// inflating the estimate ~3× versus Verbatim. Returns the word count and, if
+// requested, a Range per counted run (used to visually highlight what's counted).
+function collectSpoken(
+  host: Node,
+  opts?: { range?: Range | null; wantRanges?: boolean; maxLevel?: number },
+): { count: number; ranges: Range[] } {
+  const root = host.nodeType === Node.ELEMENT_NODE ? (host as Element) : host.parentElement;
+  if (!root) return { count: 0, ranges: [] };
+  const range = opts?.range ?? null;
+  const wantRanges = !!opts?.wantRanges;
+
+  const paras = Array.from(root.querySelectorAll<HTMLElement>('p'));
+  let maxLevel = opts?.maxLevel ?? 0;
+  if (!maxLevel) for (const p of paras) maxLevel = Math.max(maxLevel, headingLevelOf(p));
+
+  let count = 0;
+  const ranges: Range[] = [];
+  let prevWasTag = false;
+
+  for (const p of paras) {
+    if (range && !range.intersectsNode(p)) continue;
+    const level = headingLevelOf(p);
+    const isHeading = level > 0;
+    const isCite = !isHeading && prevWasTag;
+    let citeLeadingBold = isCite; // count leading bold runs (author+date) until first non-bold
+
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      if (range && !range.intersectsNode(node)) continue;
+      const full = node.nodeValue ?? '';
+      let startOff = 0, endOff = full.length;
+      if (range) {
+        startOff = node === range.startContainer ? range.startOffset : 0;
+        endOff = node === range.endContainer ? range.endOffset : full.length;
+      }
+      const text = full.slice(startOff, endOff);
+      const hasText = !!text.trim();
+      const parent = node.parentElement;
+      if (!parent || parent.dataset?.focusHidden) { if (hasText) citeLeadingBold = false; continue; }
+
+      let counted = false;
+      if (isHeading) counted = true;
+      else if (isHighlightedEl(parent)) counted = true;
+      else if (citeLeadingBold && isBoldEl(parent)) counted = true;
+
+      if (isCite && hasText && !isBoldEl(parent)) citeLeadingBold = false;
+
+      if (counted && hasText) {
+        count += wordCount(text);
+        if (wantRanges) {
+          const r = document.createRange();
+          r.setStart(node, startOff);
+          r.setEnd(node, endOff);
+          ranges.push(r);
+        }
+      }
     }
-    if (!text.trim()) continue;
-    const parent = node.parentElement;
-    if (!parent || parent.dataset?.focusHidden) continue;
-    const spoken = isHeadingP(parent.closest('p')) || isSpokenRun(parent);
-    if (spoken) total += wordCount(text);
+
+    if ((p.textContent || '').trim()) prevWasTag = maxLevel > 0 && level === maxLevel;
   }
-  return total;
+  return { count, ranges };
 }
 
 // ── Card credibility scoring ───────────────────────────────────────────────
@@ -981,6 +1027,9 @@ function buildCards(container: HTMLElement): CredCard[] {
       if (t) cite = cite ? `${cite} ${t}` : t;
       sib = sib.nextElementSibling as HTMLElement | null;
     }
+    // Skip headings that have no citation under them (section headers, blank tags,
+    // analytics) — only real cards (tag + cite) get scored.
+    if (!cite.trim()) continue;
     const id = `wr-cred-${n++}`;
     p.dataset.credId = id;
     cards.push({ id, tag, cite: cite.slice(0, 600) });
@@ -1580,6 +1629,7 @@ export default function SpeechDocViewer() {
   const [selWords, setSelWords] = useState(0);
   const [autoScroll, setAutoScroll] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
+  const [countDebug, setCountDebug] = useState(false); // highlight what's counted as words
   // Card credibility
   const [credOpen, setCredOpen] = useState(false);
   const [credCards, setCredCards] = useState<CredCard[]>([]);
@@ -1605,7 +1655,8 @@ export default function SpeechDocViewer() {
     el.id = 'wr-find-style';
     el.textContent =
       `::highlight(${FIND_HL}){background-color:rgba(255,213,0,0.40);}` +
-      `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}`;
+      `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}` +
+      `::highlight(${COUNT_HL}){background-color:rgba(16,185,129,0.45);}`;
     document.head.appendChild(el);
   }, []);
 
@@ -1722,7 +1773,7 @@ export default function SpeechDocViewer() {
       const r = sel.getRangeAt(0);
       if (!cont.contains(r.commonAncestorContainer)) { setSelWords(0); return; }
       // Count only the spoken words within the selection (same rule as the doc total).
-      setSelWords(countSpokenWords(r.commonAncestorContainer, r));
+      setSelWords(collectSpoken(r.commonAncestorContainer, { range: r }).count);
     };
     const onChange = () => { window.clearTimeout(t); t = window.setTimeout(update, 150); };
     update();
@@ -1735,6 +1786,22 @@ export default function SpeechDocViewer() {
     setWpm(clamped);
     saveWpm(clamped);
   }, []);
+
+  // Debug: paint every run that's being counted toward reading time, so the user
+  // can see exactly what the estimate is based on.
+  useEffect(() => {
+    const reg = (CSS as any)?.highlights;
+    const H = (window as any)?.Highlight;
+    if (!reg) return;
+    if (countDebug && readOpen && step === 'viewing' && containerRef.current && H) {
+      const { ranges } = collectSpoken(containerRef.current, { wantRanges: true });
+      if (ranges.length) reg.set(COUNT_HL, new H(...ranges));
+      else reg.delete(COUNT_HL);
+    } else {
+      reg.delete(COUNT_HL);
+    }
+    return () => { reg?.delete(COUNT_HL); };
+  }, [countDebug, readOpen, step, filePath, docWords]);
 
   // Cmd/Ctrl+F opens the find bar; Esc closes it.
   useEffect(() => {
@@ -1918,6 +1985,7 @@ export default function SpeechDocViewer() {
       setFindQuery('');
       findRangesRef.current = [];
       clearFindHighlights();
+      setCountDebug(false);
       setCredScores(null);
       setCredCards([]);
       setCredError('');
@@ -1975,7 +2043,7 @@ export default function SpeechDocViewer() {
         // Reading-time word count for the freshly loaded doc — only words that
         // are actually read aloud (headings, tags, highlighted/underlined text,
         // and the bold author+date of cites), not every word in the file.
-        const words = countSpokenWords(containerRef.current);
+        const words = collectSpoken(containerRef.current).count;
         setDocWords(words);
         docWordsRef.current = words;
       }, 0);
@@ -2021,6 +2089,7 @@ export default function SpeechDocViewer() {
     setFindQuery('');
     findRangesRef.current = [];
     clearFindHighlights();
+    setCountDebug(false);
     setDocWords(0);
     setCredScores(null);
     setCredCards([]);
@@ -2266,6 +2335,20 @@ export default function SpeechDocViewer() {
             >
               {autoScroll ? <IcoPause /> : <IcoPlay />}
               {autoScroll ? 'Stop auto-scroll' : 'Auto-scroll at this pace'}
+            </button>
+
+            <button
+              onClick={() => setCountDebug(v => !v)}
+              className="w-full mt-1.5 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-medium transition"
+              style={{
+                background: countDebug ? 'rgba(16,185,129,0.15)' : 'transparent',
+                color: countDebug ? 'rgb(16,185,129)' : 'var(--nav-inactive-color)',
+                border: `1px solid ${countDebug ? 'rgba(16,185,129,0.4)' : 'var(--border-subtle)'}`,
+                cursor: 'pointer',
+              }}
+              title="Highlight every word being counted toward the reading time"
+            >
+              {countDebug ? 'Hide counted words' : 'Show counted words'}
             </button>
           </div>
         );
