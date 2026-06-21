@@ -518,7 +518,8 @@ export default function Documentation() {
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
             structure and highlighted / underlined runs), <strong>Outline</strong> (heading
             navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
-            auto-scroll, <strong>Cross-Ex Practice</strong>, and <strong>Card Credibility</strong>.
+            auto-scroll, <strong>Send to Flow</strong>, <strong>Cross-Ex Practice</strong>, and{' '}
+            <strong>Card Credibility</strong>.
           </P>
           <H3>Find (in-document search)</H3>
           <P>
@@ -536,13 +537,23 @@ export default function Documentation() {
             words-per-minute, which is saved between sessions. It counts only spoken words — headings
             (pockets / hats / blocks / tags), highlighted card text, and the bold author + date of each
             cite — not plain underlined / bold body text, the full small-text cites, or unread body, so
-            the estimate matches Verbatim's highlighted-word count. <strong>Show counted words</strong>
-            paints every counted run green so you can see what the estimate is based on. Preset chips set
+            the estimate matches Verbatim's highlighted-word count. Preset chips set
             ~175 wpm (lay / traditional) and ~300 wpm (flow / spreading). Select a portion of the doc
             first and it estimates just that selection. <strong>Auto-scroll</strong> scrolls the doc at
             your wpm (a <Code>requestAnimationFrame</Code> loop paced by{' '}
             <Code>scrollHeight / wordCount</Code>); a floating control lets you pause / resume, change
             speed live, or stop.
+          </P>
+          <H3>Send to Flow</H3>
+          <P>
+            The grid-with-arrow button opens a popover that pushes a card or heading from your speech doc
+            straight into a flow (<Code>.xlsx</Code>) sheet, like Verbatim's Send-to-Flow. Pick a{' '}
+            <strong>mode</strong> — <strong>Selection</strong> (the text you've selected, or the heading at
+            the top of the view if nothing is selected) or <strong>Tag + cite</strong> (the current card's
+            tag plus its author + date) — then choose the target <strong>flow</strong>, <strong>sheet</strong>,
+            and <strong>column</strong>. A live preview shows exactly what will be sent. On send, the content
+            lands in the <strong>next empty row</strong> of that column; if the flow is open in another view,
+            it updates live.
           </P>
           <H3>Outline (heading navigation)</H3>
           <P>
@@ -553,8 +564,18 @@ export default function Documentation() {
             etc.), so <Code>buildOutline</Code> detects heading paragraphs, stamps each with a stable{' '}
             <Code>data-outline-id</Code>, and records its level and text. Clicking an entry scrolls to
             and flashes that heading; a scroll listener keeps the entry for whatever you're currently
-            reading highlighted. Two chevron buttons in the toolbar step to the previous / next
-            heading. Works on docs that use Word / Verbatim heading styles.
+            reading highlighted. Prev / next chevron buttons in the <strong>outline header</strong> step
+            through headings relative to the active one. Works on docs that use Word / Verbatim heading
+            styles.
+          </P>
+          <P>
+            The outline <strong>auto-shows only on the first document you open each app launch</strong>;
+            after that it stays in whatever state you left it. A <strong>layers button</strong> (e.g.
+            "2/4") in the header cycles how many heading levels are shown — collapse a long file to just
+            pockets / hats for fast high-level navigation, then expand back. Cards that are unusually{' '}
+            <strong>over- or under-highlighted</strong> versus the rest of the doc (computed by comparing
+            each card's highlight ratio against the doc's mean ± 1.5σ) get an amber warning badge; click it
+            for an explanation and a permanent dismiss (saved per-doc).
           </P>
           <H3>Cross-Ex Practice</H3>
           <P>
@@ -590,20 +611,25 @@ export default function Documentation() {
             with the Cross-Ex panel — opening one closes the other. The renderer extracts cards from the
             rendered DOM via <Code>buildCards</Code>: a "card" is a paragraph at the deepest heading level
             present (<Code>Heading4</Code> in Verbatim docs) used as the tag, plus the following
-            non-heading paragraphs as the cite (capped at ~80 words / 600 chars). Cards are sent{' '}
+            non-heading paragraphs as the cite (capped at ~80 words / 600 chars). Headings with no
+            citation under them (section headers, blank tags, analytics) are skipped. Cards are sent{' '}
             <strong>numbered</strong> to the model.
           </P>
           <P>
             The <Code>ai:scoreCards</Code> handler takes{' '}
             <Code>{'{ cards: { tag: string; cite: string }[] }'}</Code> and returns{' '}
-            <Code>{'{ ok, scores?: { score, verdict, author, recency, source, reason, press }[], error? }'}</Code>.
+            <Code>{'{ ok, scores?: { score, verdict, author, recency, source, claim, reason, press }[], error? }'}</Code>.
             In <strong>one AI call</strong> the model scores all cards at once and returns a JSON array in
             the <strong>same order</strong>; results map back to cards by index. Each card gets an overall{' '}
             <strong>score 0–10</strong>, a one-word <strong>verdict</strong> (Strong 8–10 / Solid 6–7 /
-            Shaky 4–5 / Weak 0–3), three sub-scores (<strong>Author qualifications</strong>,{' '}
-            <strong>Recency</strong>, <strong>Source quality</strong>), a short <strong>reason</strong>, and
+            Shaky 4–5 / Weak 0–3), four sub-scores (<strong>Author qualifications</strong>,{' '}
+            <strong>Recency</strong>, <strong>Source quality</strong>, and <strong>Claim fit</strong> —
+            whether the cite actually supports the tag's claim), a short <strong>reason</strong>, and
             a <strong>"press"</strong> line — the single best cross-examination attack on that card's
-            credibility.
+            credibility. The prompt gives the model an explicit rubric per factor: author by{' '}
+            <strong>domain match</strong> (with org reputation as a proxy when individual credentials are
+            absent), recency by <strong>topic-specific decay rate</strong>, and source by a publication
+            hierarchy.
           </P>
           <P>
             The call uses <Code>callAI(prompt, 'balanced')</Code>. The <strong>balanced tier</strong> is
@@ -614,12 +640,15 @@ export default function Documentation() {
           </P>
           <P>
             Results are cached per document in <Code>localStorage</Code> under{' '}
-            <Code>warroom-cred-&lt;path&gt;</Code>, keyed by a content hash (<Code>hashCards</Code>) so the
-            cache is invalidated when the doc's cards change — reopening the panel is instant and free.{' '}
+            <Code>warroom-cred-&lt;path&gt;</Code>, keyed by a content hash (<Code>hashCards</Code>, which
+            hashes the tag text only since cite text can vary slightly between renders) so the cache is
+            invalidated when the doc's cards change — reopening the panel is instant and free.{' '}
             <Code>loadCred</Code> / <Code>saveCred</Code> read and write the cache, and a{' '}
             <strong>Re-score</strong> button forces a fresh pass. The panel lists each card with a colored
-            score chip; clicking a card expands its sub-score bars, reason, and press line, and a{' '}
-            <strong>Go to card in document</strong> button scrolls the doc to that card and flashes it.
+            score chip and a chevron affordance; clicking a card expands its four sub-score bars, reason,
+            and press line. Over / under-highlighted cards also show a dismissible highlight warning here
+            with the exact percentage. A <strong>Go to card in document</strong> button scrolls the doc to
+            that card and flashes it.
           </P>
         </section>
 

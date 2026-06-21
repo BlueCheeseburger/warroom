@@ -195,11 +195,21 @@ function IcoSidebarExpand() {
 
 export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
+  const [driveConfigured, setDriveConfigured] = useState(false);
   const { db, view, setView, mode, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
   const cases = Object.values(db.cases);
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});
+
+  useEffect(() => {
+    Promise.all([
+      window.warroom?.secure.get('gdrive_client_id'),
+      window.warroom?.secure.get('gdrive_client_secret'),
+    ]).then(([id, secret]) => {
+      setDriveConfigured(!!id && !!secret);
+    });
+  }, []);
 
   async function createFlow() {
     const id = crypto.randomUUID();
@@ -241,7 +251,7 @@ export default function Sidebar() {
           view={view} mode={mode} setView={setView}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           flowsIndex={flowsIndex} createFlow={createFlow}
-          toggleCollapsed={toggleCollapsed}
+          toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
         />
       ) : (
         <ExpandedNav
@@ -250,7 +260,7 @@ export default function Sidebar() {
           flowsIndex={flowsIndex} busyViews={busyViews}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
-          db={db} toggleCollapsed={toggleCollapsed}
+          db={db} toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
         />
       )}
     </aside>
@@ -259,7 +269,7 @@ export default function Sidebar() {
 
 // ── Collapsed navigation (icons only) ────────────────────────────────────────
 
-function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed }: any) {
+function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
   const isHome       = view.kind === 'home';
   const isCases      = view.kind === 'case' || view.kind === 'block';
   const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'speech-doc' || view.kind === 'google-scholar';
@@ -316,9 +326,11 @@ function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount,
 
         {mode === 'prep' && (
           <>
-            <CIcon label="Google Drive" active={isDrive} onClick={() => setView({ kind: 'gdrive' })}>
-              <IcoDrive />
-            </CIcon>
+            {driveConfigured && (
+              <CIcon label="Google Drive" active={isDrive} onClick={() => setView({ kind: 'gdrive' })}>
+                <IcoDrive />
+              </CIcon>
+            )}
             <CIcon label="Topics" active={isTopics} onClick={() => setView({ kind: 'topics' })}>
               <IcoTopics />
             </CIcon>
@@ -388,7 +400,7 @@ function CIcon({ label, active, onClick, children }: {
 function ExpandedNav({
   view, mode, setView, cases, tournaments, opponents,
   flowsIndex, busyViews, chatOpen, setChatOpen, unreadCount,
-  createFlow, deleteFlow, renameFlow, db, toggleCollapsed,
+  createFlow, deleteFlow, renameFlow, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
@@ -524,11 +536,13 @@ function ExpandedNav({
             </Section>
 
             {/* Google Drive */}
-            <Section title="Drive" icon={<IcoDrive />}>
-              <NavItem active={view.kind === 'gdrive'} onClick={() => setView({ kind: 'gdrive' })}>
-                My files
-              </NavItem>
-            </Section>
+            {driveConfigured && (
+              <Section title="Drive" icon={<IcoDrive />}>
+                <NavItem active={view.kind === 'gdrive'} onClick={() => setView({ kind: 'gdrive' })}>
+                  My files
+                </NavItem>
+              </Section>
+            )}
 
             {/* NSDA Topics */}
             <Section title="Topics" icon={<IcoTopics />}>

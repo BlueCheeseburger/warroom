@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { renderAsync } from 'docx-preview';
 import { LoadingPanel, Spinner } from './Spinner';
 import { useApp } from '../store/appStore';
-import type { DebateEvent } from '../store/appStore';
+import type { DebateEvent, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
+import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './FlowView';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -106,6 +107,17 @@ function IcoChevUp() {
   );
 }
 
+// Stacked layers — controls how many heading levels the outline shows.
+function IcoLayers() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2l6 3-6 3-6-3 6-3z"/>
+      <path d="M2 8l6 3 6-3"/>
+      <path d="M2 11l6 3 6-3" opacity="0.6"/>
+    </svg>
+  );
+}
+
 function IcoChevDown() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -170,6 +182,17 @@ function IcoCrossEx({ active }: { active?: boolean }) {
       <path d="M8.2 14.5h7.3a1.5 1.5 0 0 0 1.5-1.5v-2a1.5 1.5 0 0 0-1.5-1.5h-1" opacity={active ? 0.9 : 0.5}/>
       <path d="M6 6.4a1.1 1.1 0 1 1 1.6 1c-.4.25-.6.5-.6 1" />
       <circle cx="7" cy="8.7" r="0.35" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+// Send to flow — a small grid/table with an arrow pointing into it.
+function IcoSendFlow({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="3" width="8" height="14" rx="1"/>
+      <path d="M13 7v6M13 7h-2M13 13h-2" opacity="0.55"/>
+      <path d="M2 10h6M5.5 7L8 10l-2.5 3"/>
     </svg>
   );
 }
@@ -449,6 +472,16 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
   const depths = Array.from(new Set(items.map(i => i.level))).sort((a, b) => a - b);
   const depthOf = (lvl: number) => Math.max(0, depths.indexOf(lvl));
 
+  // Heading-level collapse (like Verbatim's NavPaneCycle): cycle how many of the
+  // distinct depth levels are shown. `visibleDepths` = N means show depths 0..N-1.
+  // Long debate files clutter the outline with all four levels; collapsing to just
+  // pockets/hats makes high-level navigation fast. Starts fully expanded.
+  const [visibleDepths, setVisibleDepths] = useState(depths.length);
+  // Reset whenever the document's heading structure changes.
+  useEffect(() => { setVisibleDepths(depths.length); }, [depths.length]);
+  const cycleDepths = () => setVisibleDepths(v => (v >= depths.length ? 1 : v + 1));
+  const shown = items.filter(it => depthOf(it.level) < visibleDepths);
+
   return (
     <div
       className="shrink-0 flex flex-col h-full"
@@ -457,7 +490,20 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
       <div className="flex items-center gap-1 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
         <span className="text-[12.5px] font-semibold flex-1 truncate ml-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
-        <span className="text-[11px] shrink-0 tabular-nums mr-1" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
+        <span className="text-[11px] shrink-0 tabular-nums mr-1" style={{ color: 'var(--nav-inactive-color)' }}>{shown.length}</span>
+        {depths.length > 1 && (
+          <button
+            onClick={cycleDepths}
+            className="flex items-center gap-0.5 justify-center h-7 px-1.5 rounded-md transition"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+            title={visibleDepths >= depths.length ? 'Showing all heading levels — click to collapse' : `Showing ${visibleDepths} of ${depths.length} levels — click to expand`}
+          >
+            <IcoLayers />
+            <span className="text-[10px] font-semibold tabular-nums">{visibleDepths}/{depths.length}</span>
+          </button>
+        )}
         {items.length > 0 && (
           <>
             <button
@@ -487,7 +533,7 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
             No headings found in this document. Outline navigation works with docs that use Word/Verbatim heading styles (pockets, hats, blocks, tags).
           </div>
         ) : (
-          items.map((it, idx) => {
+          shown.map((it, idx) => {
             const active = it.id === activeId;
             const depth = depthOf(it.level);
             const topLevel = depth === 0;
@@ -1816,12 +1862,221 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
   );
 }
 
+// ── Send to Flow ────────────────────────────────────────────────────────────
+// Bridge from the speech doc to a Verbatim-style flow (.xlsx) sheet, mirroring
+// Verbatim's "Send To Flow" — push a selected card / heading into a flow cell.
+interface StoredFlowShape {
+  event?: string;
+  pfOrder?: string;
+  customColumns?: string[] | null;
+  sheets?: { id: string; name: string; cells?: Record<string, string> }[];
+}
+
+function flowColumnsOf(data: StoredFlowShape | null | undefined): string[] {
+  if (data?.customColumns?.length) return data.customColumns;
+  if ((data?.event ?? 'policy') === 'pf') return data?.pfOrder === 'con-first' ? PF_CON_FIRST_COLS : PF_PRO_FIRST_COLS;
+  return POLICY_COLS;
+}
+
+// The cite shorthand (author last name + date) is the leading-bold run of the
+// paragraph right after a tag. Returns '' if the next block is another heading.
+function citeShorthandAfter(tagEl: HTMLElement): string {
+  let sib = tagEl.nextElementSibling as HTMLElement | null;
+  while (sib && !(sib.textContent || '').trim()) sib = sib.nextElementSibling as HTMLElement | null;
+  if (!sib) return '';
+  if ((sib.className || '').match(/heading[\s_-]?[1-9]/i)) return '';
+  let out = '';
+  const walker = document.createTreeWalker(sib, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue ?? '';
+    if (!text.trim()) { out += text; continue; }
+    const parent = (node as Text).parentElement;
+    if (parent && isBoldEl(parent)) out += text;
+    else break; // leading-bold section (author + date) ended
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+type FlowSendMode = 'text' | 'shorthand';
+
+function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClose }: {
+  container: HTMLElement | null;
+  flows: FlowMeta[];
+  activeHeadingId: string | null;
+  anchorTop: number;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<FlowSendMode>('text');
+  const [flowId, setFlowId] = useState<string>(flows[0]?.id ?? '');
+  const [data, setData] = useState<StoredFlowShape | null>(null);
+  const [sheetIdx, setSheetIdx] = useState(0);
+  const [colIdx, setColIdx] = useState(0);
+  const [content, setContent] = useState<{ text: string; source: string }>({ text: '', source: '' });
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  // Recompute the content to send from the current selection / active card.
+  const recompute = useCallback(() => {
+    if (!container) { setContent({ text: '', source: '' }); return; }
+    const sel = window.getSelection();
+    const hasSel = !!(sel && !sel.isCollapsed && sel.rangeCount > 0 &&
+      container.contains(sel.getRangeAt(0).commonAncestorContainer));
+    const tagEl = activeHeadingId ? container.querySelector<HTMLElement>(`[data-outline-id="${activeHeadingId}"]`) : null;
+
+    if (mode === 'shorthand') {
+      if (!tagEl) { setContent({ text: '', source: 'Scroll to a card first' }); return; }
+      const tag = (tagEl.textContent || '').replace(/\s+/g, ' ').trim();
+      const cite = citeShorthandAfter(tagEl);
+      setContent({ text: cite ? `${tag} — ${cite}` : tag, source: 'Current card (tag + cite)' });
+      return;
+    }
+    if (hasSel) { setContent({ text: sel!.toString().replace(/\s+/g, ' ').trim(), source: 'Selected text' }); return; }
+    if (tagEl) { setContent({ text: (tagEl.textContent || '').replace(/\s+/g, ' ').trim(), source: 'Current heading' }); return; }
+    setContent({ text: '', source: 'Select text or scroll to a card' });
+  }, [container, activeHeadingId, mode]);
+
+  // Recompute on open, on mode change, and as the user changes their selection.
+  useEffect(() => {
+    recompute();
+    const onChange = () => recompute();
+    document.addEventListener('selectionchange', onChange);
+    return () => document.removeEventListener('selectionchange', onChange);
+  }, [recompute]);
+
+  // Load the chosen flow's sheets + columns.
+  useEffect(() => {
+    if (!flowId) { setData(null); return; }
+    let cancelled = false;
+    (async () => {
+      const d = await window.warroom?.storage.read(`flow_data_${flowId}`) as StoredFlowShape | null;
+      if (cancelled) return;
+      setData(d ?? null);
+      setSheetIdx(0);
+      setColIdx(0);
+    })();
+    return () => { cancelled = true; };
+  }, [flowId]);
+
+  const sheets = data?.sheets ?? [];
+  const columns = flowColumnsOf(data);
+
+  async function send() {
+    if (!flowId || !content.text) return;
+    setStatus('sending');
+    setErrMsg('');
+    try {
+      const key = `flow_data_${flowId}`;
+      const d = (await window.warroom?.storage.read(key)) as StoredFlowShape | null;
+      if (!d?.sheets?.length) throw new Error('That flow has no sheets yet — open it once first.');
+      const sIdx = Math.min(sheetIdx, d.sheets.length - 1);
+      const sheet = d.sheets[sIdx];
+      sheet.cells = sheet.cells || {};
+      // Append to the next empty row in the chosen column.
+      let row = 0;
+      for (; row < NUM_ROWS; row++) if (!(sheet.cells[`${row}-${colIdx}`] || '').trim()) break;
+      if (row >= NUM_ROWS) throw new Error('That column is full.');
+      sheet.cells[`${row}-${colIdx}`] = content.text;
+      await window.warroom?.storage.write(key, d);
+      // Live-refresh the flow if it's open in another view.
+      window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId } }));
+      setStatus('sent');
+      window.setTimeout(() => setStatus('idle'), 1800);
+    } catch (e: any) {
+      setStatus('error');
+      setErrMsg(e?.message ?? 'Could not send to flow');
+    }
+  }
+
+  const selStyle: React.CSSProperties = {
+    background: 'var(--bg-input)', color: 'rgb(var(--ink-rgb))',
+    border: '1px solid var(--border-med)', borderRadius: 7, padding: '4px 6px',
+    fontSize: 12, outline: 'none', width: '100%',
+  };
+
+  return (
+    <div
+      className="absolute z-40 rounded-xl p-3 w-[280px]"
+      style={{ top: anchorTop, right: 16, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}
+    >
+      <div className="flex items-center gap-2 mb-2.5">
+        <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoSendFlow active /></span>
+        <span className="text-[12.5px] font-semibold flex-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Send to Flow</span>
+        <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} tooltipAlign="right" />
+      </div>
+
+      {flows.length === 0 ? (
+        <div className="text-[12px] leading-relaxed py-2" style={{ color: 'var(--nav-inactive-color)' }}>
+          You don't have any flows yet. Create one in the Flows section first.
+        </div>
+      ) : (
+        <>
+          {/* Mode toggle */}
+          <div className="flex gap-1 mb-2.5 p-0.5 rounded-lg" style={{ background: 'var(--bg-side)' }}>
+            {([['text', 'Selection'], ['shorthand', 'Tag + cite']] as [FlowSendMode, string][]).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="flex-1 text-[11px] font-medium py-1 rounded-md transition"
+                style={{ background: mode === m ? 'var(--nav-active-bg)' : 'transparent', color: mode === m ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)', border: 'none', cursor: 'pointer' }}
+              >{label}</button>
+            ))}
+          </div>
+
+          {/* Preview */}
+          <div className="rounded-lg p-2 mb-2.5" style={{ background: 'var(--bg-side)', border: '1px solid var(--border-subtle)' }}>
+            <div className="text-[9.5px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--nav-inactive-color)' }}>{content.source || 'Nothing to send'}</div>
+            <div className="text-[11.5px] leading-snug" style={{ color: 'rgb(var(--ink-rgb))', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {content.text || <span style={{ opacity: 0.5 }}>Select text in the doc, or scroll so a card tag is at the top.</span>}
+            </div>
+          </div>
+
+          {/* Destination */}
+          <label className="text-[10.5px] font-medium block mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Flow</label>
+          <select value={flowId} onChange={e => setFlowId(e.target.value)} style={{ ...selStyle, marginBottom: 8 }}>
+            {flows.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+
+          <div className="flex gap-2 mb-2.5">
+            <div className="flex-1 min-w-0">
+              <label className="text-[10.5px] font-medium block mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Sheet</label>
+              <select value={sheetIdx} onChange={e => setSheetIdx(parseInt(e.target.value, 10))} style={selStyle}>
+                {sheets.length === 0 ? <option value={0}>—</option> : sheets.map((s, i) => <option key={s.id ?? i} value={i}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="flex-1 min-w-0">
+              <label className="text-[10.5px] font-medium block mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Column</label>
+              <select value={colIdx} onChange={e => setColIdx(parseInt(e.target.value, 10))} style={selStyle}>
+                {columns.map((c, i) => <option key={i} value={i}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <button
+            onClick={send}
+            disabled={!content.text || status === 'sending'}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition"
+            style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', cursor: (!content.text || status === 'sending') ? 'default' : 'pointer', opacity: (!content.text || status === 'sending') ? 0.5 : 1 }}
+          >
+            {status === 'sent' ? '✓ Sent to flow' : status === 'sending' ? 'Sending…' : <><IcoSendFlow /> Send to next empty row</>}
+          </button>
+
+          {status === 'error' && errMsg && (
+            <div className="mt-2 text-[11px]" style={{ color: 'rgb(var(--danger-rgb))' }}>{errMsg}</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function SpeechDocViewer() {
-  const { setBusy, view, setView, event } = useApp();
+  const { setBusy, view, setView, event, flowsIndex } = useApp();
   const [step, setStep] = useState<Step>('idle');
   const [cxOpen, setCxOpen] = useState(false);
+  const [flowSendOpen, setFlowSendOpen] = useState(false);
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState('');
   const [fileName, setFileName] = useState('');
@@ -2414,7 +2669,13 @@ export default function SpeechDocViewer() {
           active={readOpen}
           label="Reading time & auto-scroll"
           icon={<IcoClock active={readOpen} />}
-          onClick={() => setReadOpen(v => !v)}
+          onClick={() => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; })}
+        />
+        <ToolbarToggle
+          active={flowSendOpen}
+          label="Send selection to a flow"
+          icon={<IcoSendFlow active={flowSendOpen} />}
+          onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
         />
 
         <div className="flex-1" />
@@ -2571,6 +2832,17 @@ export default function SpeechDocViewer() {
           </div>
         );
       })()}
+
+      {/* Send to Flow popover (top-right) */}
+      {flowSendOpen && step === 'viewing' && (
+        <SendToFlowPopover
+          container={containerRef.current}
+          flows={flowsIndex}
+          activeHeadingId={activeHeadingId}
+          anchorTop={findOpen ? 98 : 48}
+          onClose={() => setFlowSendOpen(false)}
+        />
+      )}
 
       {/* Auto-scroll floating control */}
       {autoScroll && step === 'viewing' && (

@@ -61,8 +61,11 @@ function SpeechTimer() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [editingPart, setEditingPart] = useState<'min' | 'sec' | null>(null);
+  const [editVal, setEditVal] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   const slots = getSlots(event, level);
   const safeIdx = Math.min(slotIdx, slots.length - 1);
@@ -114,6 +117,41 @@ function SpeechTimer() {
   }
 
   function reset() { setRunning(false); setTimeLeft(null); }
+
+  function startEdit(part: 'min' | 'sec') {
+    if (running) return;
+    const cur = timeLeft ?? slot.secs;
+    const val = part === 'min'
+      ? String(Math.floor(cur / 60))
+      : String(cur % 60).padStart(2, '0');
+    setEditingPart(part);
+    setEditVal(val);
+    setTimeout(() => { editInputRef.current?.select(); }, 0);
+  }
+
+  function commitEdit() {
+    if (!editingPart) return;
+    const cur = timeLeft ?? slot.secs;
+    const parsed = parseInt(editVal, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      const mins = editingPart === 'min' ? parsed : Math.floor(cur / 60);
+      const secs = editingPart === 'sec' ? Math.min(parsed, 59) : cur % 60;
+      setTimeLeft(mins * 60 + secs);
+    }
+    setEditingPart(null);
+    setEditVal('');
+  }
+
+  useEffect(() => {
+    if (!editingPart) return;
+    function onMouseDown(e: MouseEvent) {
+      if (editInputRef.current && !editInputRef.current.contains(e.target as Node)) {
+        commitEdit();
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [editingPart, editVal]);
 
   function toggleLevel() {
     const next: PolicyLevel = level === 'hs' ? 'clg' : 'hs';
@@ -243,12 +281,54 @@ function SpeechTimer() {
         )}
       </div>
 
-      {/* Countdown */}
+      {/* Countdown — click minutes or seconds to edit when paused */}
       <span
-        className="font-mono font-bold tabular-nums px-1"
-        style={{ fontSize: 13, color: timeColor, minWidth: 38, textAlign: 'right', transition: 'color 0.25s' }}
+        className="font-mono font-bold tabular-nums px-1 flex items-center"
+        style={{ fontSize: 13, color: timeColor, minWidth: 38, transition: 'color 0.25s', gap: 0 }}
       >
-        {fmt(display)}
+        {editingPart === 'min' ? (
+          <input
+            ref={editInputRef}
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
+            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
+            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
+            type="text"
+            inputMode="numeric"
+          />
+        ) : (
+          <span
+            onClick={() => startEdit('min')}
+            title={running ? undefined : 'Click to edit minutes'}
+            style={{ cursor: running ? 'default' : 'text' }}
+          >
+            {String(Math.floor(display / 60))}
+          </span>
+        )}
+        <span>:</span>
+        {editingPart === 'sec' ? (
+          <input
+            ref={editInputRef}
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
+            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
+            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
+            type="text"
+            inputMode="numeric"
+          />
+        ) : (
+          <span
+            onClick={() => startEdit('sec')}
+            title={running ? undefined : 'Click to edit seconds'}
+            style={{ cursor: running ? 'default' : 'text' }}
+          >
+            {String(display % 60).padStart(2, '0')}
+          </span>
+        )}
       </span>
 
       {/* Play / Pause */}
