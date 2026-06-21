@@ -1890,26 +1890,60 @@ ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
 
     const prompt = `You are an evidence-credibility analyst for competitive debate. Today's date is ${today}.
 
-You will score each card's credibility using its citation. For every card you get a TAG (the claim it makes) and a CITE (the citation text — may contain the author, their qualifications, the date, and the publication/source).
+Score debate evidence ("cards") based solely on what their citation text actually states. Never invent credentials, dates, publications, or qualifications not present in the text.
 
-Score each card 0-10 (10 = excellent) on three factors:
-- "author": the author's qualifications and expertise RELEVANT TO THE CLAIM. A credentialed domain expert scores high; a student, journalist, or anonymous author scores low. If the cite states no qualifications, score low and say so.
-- "recency": how current the evidence is given today's date. Older evidence scores lower; weight this by how time-sensitive the claim is (breaking geopolitics decays fast; settled theory does not). If no date is present, score low.
-- "source": publication quality. Peer-reviewed journal > established think tank / government body > reputable news outlet > op-ed / magazine > personal blog / unknown website.
+For each card you receive a TAG (the claim being made) and a CITE (the citation — may include author name, credentials, date, and source/publication).
+
+Score 0–10 on FOUR factors:
+
+--- AUTHOR (0–10): expertise of the author(s) RELATIVE TO THIS SPECIFIC CLAIM ---
+Judge domain match, not just credentials:
+• 10 — PhD/professor/senior practitioner in the exact field the tag claim is about
+• 8 — credentialed expert in a closely related field, or senior government official on their area
+• 6 — credentialed expert in a tangentially related field, or established think-tank fellow
+• 4 — journalist or policy staffer with relevant beat; credentialed expert off their specialty
+• 2 — student, generalist commentator, or non-expert with no stated credentials
+• 0 — anonymous, or credentials entirely absent from the cite
+If ONLY an organization is listed (no individual), use the org's reputation as a proxy:
+RAND / CBO / CRS / GAO / OMB / IPCC → 8–9 | Established think tanks (Brookings, CSIS, CFR, Wilson Center) → 6–7 | Ideologically-aligned think tanks (Heritage, CATO, CAP, AEI) → 4–5 | Media outlet → 3–4
+
+--- RECENCY (0–10): how current the evidence is, weighted by how fast this topic decays ---
+Decay rates:
+• Geopolitics / military posture / economic data / polling — fast decay: 2024=10, 2023=8, 2022=6, 2020=3, pre-2019=1
+• Policy / legislation / public health — medium decay: 2024=10, 2022=8, 2020=6, 2018=4, pre-2016=2
+• Social science / theory / historical analysis — slow decay: within 10 years=8+, within 20 years=5+
+• No date present in cite → 0
+
+--- SOURCE (0–10): publication quality ---
+Peer-reviewed journal → 9–10
+Government report (CRS, CBO, GAO, RAND, IPCC, official agency) → 8–9
+Established think tank (Brookings, CSIS, Chatham House, CFR, Wilson Center) → 7–8
+Ideologically-aligned think tank (Heritage, CATO, CAP, AEI) → 5–6
+Major newspaper / wire service news article (NYT, WaPo, FT, Economist, AP) → 5–6
+Trade publication / specialized magazine → 4–5
+Op-ed, magazine essay, or editorial → 3–4
+Personal blog, advocacy website, or unknown outlet → 1–2
+Source entirely absent from the cite → 0
+
+--- CLAIM MATCH (0–10): does the cited source actually support what the TAG claims? ---
+Judge based on logical fit between the tag text and the cite's apparent subject:
+• 10 — cite directly proves the exact claim in the tag
+• 7 — cite is related and supports the general argument; tag may be slightly overextended
+• 4 — cite is tangentially related; tag makes a stronger claim than the source likely supports
+• 1 — obvious mismatch; the source topic does not support the tag's claim
+Note: you cannot read the full card body — judge from how specific/bold the tag claim is vs what the cite suggests about the source's scope.
 
 Then give:
-- "score": overall credibility 0-10 (holistic — weigh the three factors).
-- "verdict": exactly one word — "Strong" (8-10), "Solid" (6-7), "Shaky" (4-5), or "Weak" (0-3).
-- "reason": 12 words or fewer naming the single biggest credibility factor (good or bad).
-- "press": 15 words or fewer — the single best cross-examination attack on THIS card's credibility (e.g. "Author is a student, not a defense expert — press their qualifications").
-
-CRITICAL: Judge author and source ONLY from what the cite actually states. If qualifications, date, or source are missing, score that factor low and note it — NEVER invent credentials, dates, or outlets.
+- "score": overall credibility 0–10 (holistic — weigh all four factors)
+- "verdict": exactly one word — "Strong" (8–10), "Solid" (6–7), "Shaky" (4–5), or "Weak" (0–3)
+- "reason": 12 words or fewer — the single most important credibility factor (good or bad)
+- "press": 15 words or fewer — the sharpest cross-ex attack on THIS card's credibility specifically
 
 Cards:
 ${cardLines}
 
-Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as the cards above. No markdown fences, no preamble:
-[{"score":7,"verdict":"Solid","author":6,"recency":8,"source":7,"reason":"...","press":"..."}]`;
+Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as above. No markdown, no preamble:
+[{"score":7,"verdict":"Solid","author":6,"recency":8,"source":7,"claim":7,"reason":"...","press":"..."}]`;
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -1928,6 +1962,7 @@ Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as 
         author: Number.isFinite(Number(r.author)) ? clamp(r.author) : 0,
         recency: Number.isFinite(Number(r.recency)) ? clamp(r.recency) : 0,
         source: Number.isFinite(Number(r.source)) ? clamp(r.source) : 0,
+        claim: Number.isFinite(Number(r.claim)) ? clamp(r.claim) : 0,
         reason: typeof r.reason === 'string' ? r.reason.slice(0, 160) : '',
         press: typeof r.press === 'string' ? r.press.slice(0, 200) : '',
       };

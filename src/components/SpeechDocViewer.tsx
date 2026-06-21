@@ -7,6 +7,10 @@ import SharePanel from './SharePanel';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
+// Reset to false on every app launch — outline auto-shows only on the first
+// document opened per session, then stays in whatever state the user leaves it.
+let outlineAutoShownThisSession = false;
+
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 
 interface RecentDoc { path: string; name: string }
@@ -337,7 +341,26 @@ function removeDarkModeViewerFixes(container: HTMLElement) {
 type FocusType = 'highlight' | 'highlight+underline';
 
 function applyFocusMode(container: HTMLElement, mode: FocusType) {
-  container.querySelectorAll<HTMLElement>('p').forEach(para => {
+  const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
+  // Compute the deepest heading level (= tag level in Verbatim) so we can
+  // identify cite paragraphs (the one right after a tag heading). Cite paragraphs
+  // must always show their leading-bold author+date span even in focus mode.
+  const hlvl = (el: HTMLElement) => {
+    const m = (el.className || '').match(/heading[\s_-]?([1-9])/i);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  let maxLevel = 0;
+  for (const p of paras) maxLevel = Math.max(maxLevel, hlvl(p));
+  let prevWasTag = false;
+
+  paras.forEach(para => {
+    const level = hlvl(para);
+    const isHeading = level > 0;
+    const isCite = !isHeading && prevWasTag;
+    if ((para.textContent || '').trim()) {
+      prevWasTag = maxLevel > 0 && level === maxLevel;
+    }
+
     const spans = Array.from(para.querySelectorAll<HTMLElement>('span'));
     if (spans.length === 0) return;
 
@@ -350,13 +373,24 @@ function applyFocusMode(container: HTMLElement, mode: FocusType) {
     });
     if (allBold && !anyHighlight) return;
 
+    // In a cite paragraph (right after a tag), the leading-bold spans are the
+    // author name + date — always shown in focus mode because they are read aloud.
+    let citeLeadingBold = isCite;
+
     // Body paragraph — hide spans that don't meet the mode criteria
     spans.forEach(span => {
       const cs  = window.getComputedStyle(span);
       const rgb = parseRgb(cs.backgroundColor);
       const highlighted = !!(rgb && isBrightHighlight(rgb));
       const underlined  = cs.textDecoration.includes('underline');
-      const keep = highlighted || (mode === 'highlight+underline' && underlined);
+      const bold = parseInt(cs.fontWeight, 10) >= 600;
+
+      // Once a non-bold span with real text appears, the leading-bold section ends
+      if (citeLeadingBold && !bold && (span.textContent ?? '').trim()) citeLeadingBold = false;
+
+      const keep = highlighted ||
+        (mode === 'highlight+underline' && underlined) ||
+        (isCite && bold && citeLeadingBold);
       if (!keep) {
         span.dataset.focusHidden = '1';
         span.style.setProperty('opacity', '0', 'important');
@@ -378,7 +412,7 @@ function removeFocusMode(container: HTMLElement) {
 // (and Word's built-in styles) use style ids Heading1…Heading9, so heading
 // paragraphs carry classes like `docx-render_heading1`. We detect those, stamp
 // each with a stable data-outline-id, and build a clickable outline from them.
-interface OutlineItem { id: string; level: number; text: string }
+interface OutlineItem { id: string; level: number; text: string; warn?: 'over' | 'under' }
 
 function buildOutline(container: HTMLElement): OutlineItem[] {
   const items: OutlineItem[] = [];
@@ -395,11 +429,14 @@ function buildOutline(container: HTMLElement): OutlineItem[] {
   return items;
 }
 
-function OutlinePanel({ items, activeId, onPick, onClose }: {
+function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onDismiss }: {
   items: OutlineItem[];
   activeId: string | null;
   onPick: (id: string) => void;
   onClose: () => void;
+  onStep: (dir: 1 | -1) => void;
+  dismissed: Set<string>;
+  onDismiss: (text: string) => void;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
   // Keep the active heading in view within the outline list as the user scrolls.
@@ -417,10 +454,30 @@ function OutlinePanel({ items, activeId, onPick, onClose }: {
       className="shrink-0 flex flex-col h-full"
       style={{ width: 248, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
     >
-      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+      <div className="flex items-center gap-1 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
-        <span className="text-[12.5px] font-semibold flex-1 truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
-        <span className="text-[11px] shrink-0 tabular-nums" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
+        <span className="text-[12.5px] font-semibold flex-1 truncate ml-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
+        <span className="text-[11px] shrink-0 tabular-nums mr-1" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
+        {items.length > 0 && (
+          <>
+            <button
+              onClick={() => onStep(-1)}
+              className="flex items-center justify-center w-7 h-7 rounded-md transition"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              title="Previous heading"
+            ><IcoChevUp /></button>
+            <button
+              onClick={() => onStep(1)}
+              className="flex items-center justify-center w-7 h-7 rounded-md transition"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              title="Next heading"
+            ><IcoChevDown /></button>
+          </>
+        )}
         <IconBtn icon={<IcoClose />} label="Close outline" onClick={onClose} tooltipAlign="right" />
       </div>
 
@@ -435,25 +492,37 @@ function OutlinePanel({ items, activeId, onPick, onClose }: {
             const depth = depthOf(it.level);
             const topLevel = depth === 0;
             return (
-              <button
+              <div
                 key={it.id}
-                ref={active ? activeRef : undefined}
-                onClick={() => onPick(it.id)}
-                className="w-full text-left text-[12px] leading-snug py-1.5 pr-2 rounded-md transition block truncate"
+                className="flex items-center rounded-md transition"
                 style={{
-                  paddingLeft: 8 + depth * 13,
                   marginTop: topLevel && idx > 0 ? 6 : 0,
-                  color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
                   background: active ? 'var(--nav-active-bg)' : 'transparent',
-                  fontWeight: active || topLevel ? 600 : 400,
                   borderLeft: active ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
                 }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                title={it.text}
               >
-                {it.text}
-              </button>
+                <button
+                  ref={active ? activeRef : undefined}
+                  onClick={() => onPick(it.id)}
+                  className="flex-1 text-left text-[12px] leading-snug py-1.5 truncate min-w-0"
+                  style={{
+                    paddingLeft: 8 + depth * 13,
+                    color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontWeight: active || topLevel ? 600 : 400,
+                  }}
+                  title={it.text}
+                >
+                  {it.text}
+                </button>
+                {it.warn && !dismissed.has(it.text) && (
+                  <div className="shrink-0 pr-1.5">
+                    <WarnBadge type={it.warn} onDismiss={() => onDismiss(it.text)} />
+                  </div>
+                )}
+              </div>
             );
           })
         )}
@@ -926,8 +995,6 @@ function isBoldEl(el: HTMLElement): boolean {
   return parseInt(window.getComputedStyle(el).fontWeight, 10) >= 600;
 }
 
-const COUNT_HL = 'wr-count';
-
 // Collect the words a debater actually reads ALOUD. That is the highlighted text
 // (what Verbatim's word count measures), plus heading paragraphs (pockets/hats/
 // blocks/tags) and the bold author+date at the start of each cite. We deliberately
@@ -997,7 +1064,131 @@ function collectSpoken(
 }
 
 // ── Card credibility scoring ───────────────────────────────────────────────
-interface CredCard { id: string; tag: string; cite: string }
+interface CredCard { id: string; tag: string; cite: string; highlightRatio?: number; warn?: 'over' | 'under' | null }
+
+// Dismiss highlight warnings permanently, keyed per document path.
+const hlWarnDismissKey = (path: string) => `warroom-hl-warn-${path}`;
+function loadDismissed(path: string): Set<string> {
+  if (!path) return new Set();
+  try {
+    const v = JSON.parse(localStorage.getItem(hlWarnDismissKey(path)) ?? '[]');
+    return new Set(Array.isArray(v) ? v : []);
+  } catch { return new Set(); }
+}
+function saveDismissed(path: string, set: Set<string>) {
+  if (!path) return;
+  try { localStorage.setItem(hlWarnDismissKey(path), JSON.stringify([...set])); } catch {}
+}
+
+// For each card, compute highlighted_words / total_body_words and flag outliers.
+// Cards more than 1.5σ above/below the mean are marked 'over' / 'under'.
+function computeHighlightWarnings(container: HTMLElement, cards: CredCard[]): void {
+  const levelOf = (p: HTMLElement) => {
+    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  const ratioByCard: (number | null)[] = [];
+  const validRatios: number[] = [];
+
+  for (const card of cards) {
+    const tagEl = container.querySelector<HTMLElement>(`[data-cred-id="${card.id}"]`);
+    if (!tagEl) { ratioByCard.push(null); continue; }
+    let hlWords = 0, totalWords = 0;
+    let sib = tagEl.nextElementSibling as HTMLElement | null;
+    while (sib) {
+      if (levelOf(sib) > 0) break;
+      const walker = document.createTreeWalker(sib, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const text = (node.nodeValue ?? '').trim();
+        if (!text) continue;
+        const parent = (node as Text).parentElement;
+        if (!parent) continue;
+        const wc = wordCount(text);
+        totalWords += wc;
+        if (isHighlightedEl(parent)) hlWords += wc;
+      }
+      sib = sib.nextElementSibling as HTMLElement | null;
+    }
+    if (totalWords < 20) { ratioByCard.push(null); continue; }
+    const ratio = hlWords / totalWords;
+    ratioByCard.push(ratio);
+    validRatios.push(ratio);
+  }
+
+  if (validRatios.length < 4) return; // too few cards for meaningful stats
+
+  const mean = validRatios.reduce((s, v) => s + v, 0) / validRatios.length;
+  const variance = validRatios.reduce((s, v) => s + (v - mean) ** 2, 0) / validRatios.length;
+  const std = Math.sqrt(variance);
+  const THRESHOLD = 1.5;
+
+  for (let i = 0; i < cards.length; i++) {
+    const r = ratioByCard[i];
+    cards[i].highlightRatio = r ?? undefined;
+    if (r === null || std < 0.05) { cards[i].warn = null; continue; }
+    if (r > mean + THRESHOLD * std) cards[i].warn = 'over';
+    else if (r < mean - THRESHOLD * std) cards[i].warn = 'under';
+    else cards[i].warn = null;
+  }
+}
+
+// Small amber warning badge with an interactive popover and permanent dismiss.
+function WarnBadge({ type, onDismiss }: { type: 'over' | 'under'; onDismiss: () => void }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  function toggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 5, left: Math.min(r.left, window.innerWidth - 260) });
+    setOpen(v => !v);
+  }
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const msg = type === 'over'
+    ? 'Over-highlighted — more text is marked than most cards in this doc. Check if you\'re reading too broadly.'
+    : 'Under-highlighted — less text is marked than most cards in this doc. You may not have prepped this card.';
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        className="shrink-0 flex items-center justify-center rounded transition"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgb(217 164 6)', padding: '1px', width: 16, height: 16 }}
+      >
+        <IcoWarn size={11} />
+      </button>
+      {open && pos && (
+        <div
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(217,164,6,0.4)', boxShadow: 'var(--shadow-elevated)', borderRadius: '10px', padding: '10px 12px', maxWidth: '240px' }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="text-[11px] leading-relaxed mb-2.5" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }}>{msg}</div>
+          <button
+            onClick={() => { onDismiss(); setOpen(false); }}
+            className="text-[10.5px] font-medium px-2 py-1 rounded-md transition"
+            style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+          >
+            Dismiss permanently
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 interface CardScore { score: number; verdict: string; author: number; recency: number; source: number; reason: string; press: string }
 
 // Extract each card (tag + the cite text that follows it) from the rendered doc.
@@ -1028,8 +1219,9 @@ function buildCards(container: HTMLElement): CredCard[] {
       sib = sib.nextElementSibling as HTMLElement | null;
     }
     // Skip headings that have no citation under them (section headers, blank tags,
-    // analytics) — only real cards (tag + cite) get scored.
-    if (!cite.trim()) continue;
+    // analytics) — only real cards (tag + cite) get scored. Use wordCount so that
+    // invisible characters or lone punctuation don't trick the check.
+    if (wordCount(cite) === 0) continue;
     const id = `wr-cred-${n++}`;
     p.dataset.credId = id;
     cards.push({ id, tag, cite: cite.slice(0, 600) });
@@ -1038,7 +1230,9 @@ function buildCards(container: HTMLElement): CredCard[] {
 }
 
 function hashCards(cards: CredCard[]): string {
-  const s = cards.map(c => `${c.tag}|${c.cite}`).join('§');
+  // Hash by tag text only — cite text can vary slightly between renders due to
+  // whitespace differences in the DOM, but heading text is stable.
+  const s = cards.map(c => c.tag).join('§');
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return `${h}:${cards.length}`;
@@ -1078,7 +1272,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   );
 }
 
-function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCard, onClose }: {
+function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCard, onClose, dismissed, onDismiss }: {
   cards: CredCard[];
   scores: CardScore[] | null;
   loading: boolean;
@@ -1086,6 +1280,8 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
   onScore: () => void;
   onScrollToCard: (id: string) => void;
   onClose: () => void;
+  dismissed: Set<string>;
+  onDismiss: (tag: string) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const avg = scores && scores.length
@@ -1166,6 +1362,9 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
                   <div className="text-[11px] font-semibold mb-0.5" style={{ color: `rgb(${credColor(sc.score)})` }}>{sc.verdict}</div>
                   <div className="text-[11.5px] leading-snug" style={{ color: 'rgb(var(--ink-rgb))', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.tag}</div>
                 </div>
+                <span className="shrink-0 mt-1" style={{ color: 'var(--nav-inactive-color)', transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none', display: 'block' }}>
+                  <IcoChevron open={open} />
+                </span>
               </button>
 
               {open && (
@@ -1174,7 +1373,28 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
                     <ScoreBar label="Author" value={sc.author} />
                     <ScoreBar label="Recency" value={sc.recency} />
                     <ScoreBar label="Source" value={sc.source} />
+                    {'claim' in sc && <ScoreBar label="Claim fit" value={(sc as any).claim} />}
                   </div>
+                  {c.warn && !dismissed.has(c.tag) && (
+                    <div className="flex items-start gap-2 rounded-lg px-2.5 py-2" style={{ background: 'rgba(217,164,6,0.08)', border: '1px solid rgba(217,164,6,0.3)' }}>
+                      <span style={{ color: 'rgb(217 164 6)', marginTop: 1 }}><IcoWarn size={12} /></span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10.5px] leading-snug" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }}>
+                          {c.warn === 'over' ? 'Over-highlighted — more text marked than most cards in this doc.' : 'Under-highlighted — less text marked than most cards. May not be well prepped.'}
+                          {c.highlightRatio !== undefined && (
+                            <span style={{ opacity: 0.6 }}> ({Math.round(c.highlightRatio * 100)}% highlighted)</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => onDismiss(c.tag)}
+                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded transition"
+                        style={{ background: 'transparent', border: '1px solid rgba(217,164,6,0.3)', color: 'var(--nav-inactive-color)', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                      >Dismiss</button>
+                    </div>
+                  )}
                   {sc.reason && (
                     <div className="text-[11px] leading-relaxed" style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.85 }}>{sc.reason}</div>
                   )}
@@ -1629,7 +1849,6 @@ export default function SpeechDocViewer() {
   const [selWords, setSelWords] = useState(0);
   const [autoScroll, setAutoScroll] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
-  const [countDebug, setCountDebug] = useState(false); // highlight what's counted as words
   // Card credibility
   const [credOpen, setCredOpen] = useState(false);
   const [credCards, setCredCards] = useState<CredCard[]>([]);
@@ -1637,6 +1856,8 @@ export default function SpeechDocViewer() {
   const [credLoading, setCredLoading] = useState(false);
   const [credError, setCredError] = useState('');
   const credHashRef = useRef('');
+  // Highlight-outlier warning dismissals (per-doc, loaded from localStorage)
+  const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapRef = useRef<HTMLDivElement>(null);
   const wpmRef = useRef(wpm);
@@ -1648,6 +1869,18 @@ export default function SpeechDocViewer() {
   useEffect(() => { wpmRef.current = wpm; }, [wpm]);
   useEffect(() => { docWordsRef.current = docWords; }, [docWords]);
 
+  // Load per-doc dismissed highlight warnings whenever the open file changes.
+  useEffect(() => { setDismissedWarnings(loadDismissed(filePath)); }, [filePath]);
+
+  const dismissWarning = useCallback((tagText: string) => {
+    setDismissedWarnings(prev => {
+      const next = new Set(prev);
+      next.add(tagText);
+      saveDismissed(filePath, next);
+      return next;
+    });
+  }, [filePath]);
+
   // Inject the find-highlight styles once.
   useEffect(() => {
     if (document.getElementById('wr-find-style')) return;
@@ -1655,8 +1888,7 @@ export default function SpeechDocViewer() {
     el.id = 'wr-find-style';
     el.textContent =
       `::highlight(${FIND_HL}){background-color:rgba(255,213,0,0.40);}` +
-      `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}` +
-      `::highlight(${COUNT_HL}){background-color:rgba(16,185,129,0.45);}`;
+      `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}`;
     document.head.appendChild(el);
   }, []);
 
@@ -1787,22 +2019,6 @@ export default function SpeechDocViewer() {
     saveWpm(clamped);
   }, []);
 
-  // Debug: paint every run that's being counted toward reading time, so the user
-  // can see exactly what the estimate is based on.
-  useEffect(() => {
-    const reg = (CSS as any)?.highlights;
-    const H = (window as any)?.Highlight;
-    if (!reg) return;
-    if (countDebug && readOpen && step === 'viewing' && containerRef.current && H) {
-      const { ranges } = collectSpoken(containerRef.current, { wantRanges: true });
-      if (ranges.length) reg.set(COUNT_HL, new H(...ranges));
-      else reg.delete(COUNT_HL);
-    } else {
-      reg.delete(COUNT_HL);
-    }
-    return () => { reg?.delete(COUNT_HL); };
-  }, [countDebug, readOpen, step, filePath, docWords]);
-
   // Cmd/Ctrl+F opens the find bar; Esc closes it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -1819,17 +2035,16 @@ export default function SpeechDocViewer() {
   }, [step, findOpen]);
 
   // ── Credibility ─────────────────────────────────────────────────────────
-  // When the panel opens, extract the cards and load any cached scores for this
-  // exact doc content. Scoring itself is explicit (one AI call on button press).
+  // When the panel opens, load any cached scores for the current cards.
+  // Cards are already extracted at doc-load time (in loadFile), so we just
+  // compute the hash and check the cache.
   useEffect(() => {
-    if (!credOpen || step !== 'viewing' || !containerRef.current) return;
-    const cards = buildCards(containerRef.current);
-    setCredCards(cards);
+    if (!credOpen || step !== 'viewing') return;
     setCredError('');
-    const hash = hashCards(cards);
+    const hash = hashCards(credCards);
     credHashRef.current = hash;
-    setCredScores(cards.length ? loadCred(filePath, hash) : null);
-  }, [credOpen, step, filePath]);
+    setCredScores(credCards.length ? loadCred(filePath, hash) : null);
+  }, [credOpen, step, filePath, credCards]);
 
   const runScoreCards = useCallback(async () => {
     if (credCards.length === 0) return;
@@ -1985,7 +2200,6 @@ export default function SpeechDocViewer() {
       setFindQuery('');
       findRangesRef.current = [];
       clearFindHighlights();
-      setCountDebug(false);
       setCredScores(null);
       setCredCards([]);
       setCredError('');
@@ -2033,12 +2247,37 @@ export default function SpeechDocViewer() {
         // Apply focus mode if it was already active when this doc loaded
         if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current);
 
-        // Build the heading outline for one-click navigation; auto-show it for
-        // docs that actually have headings, hide it for ones that don't.
+        // Build the heading outline and extract cards; compute highlight-outlier
+        // warnings (over/under-highlighted cards) and cross-reference them back
+        // into the outline items so the outline can show warning badges.
         const built = buildOutline(containerRef.current);
-        setOutline(built);
+        const builtCards = buildCards(containerRef.current);
+        computeHighlightWarnings(containerRef.current, builtCards);
+
+        // Annotate outline items: card tag elements carry both data-outline-id
+        // and data-cred-id, so we can map warnings across.
+        const warnForOutline = new Map<string, 'over' | 'under'>();
+        for (const card of builtCards) {
+          if (!card.warn) continue;
+          const el = containerRef.current.querySelector<HTMLElement>(`[data-cred-id="${card.id}"]`);
+          const outlineId = el?.dataset.outlineId;
+          if (outlineId) warnForOutline.set(outlineId, card.warn);
+        }
+        const annotatedOutline = built.map(item => ({
+          ...item,
+          warn: warnForOutline.get(item.id),
+        }));
+
+        setOutline(annotatedOutline);
         setActiveHeadingId(built[0]?.id ?? null);
-        setOutlineOpen(built.length > 0);
+        setCredCards(builtCards);
+
+        // Auto-show the outline only on the FIRST document opened per app session.
+        // After that, leave it in whatever state the user last set.
+        if (!outlineAutoShownThisSession) {
+          setOutlineOpen(built.length > 0);
+          outlineAutoShownThisSession = true;
+        }
 
         // Reading-time word count for the freshly loaded doc — only words that
         // are actually read aloud (headings, tags, highlighted/underlined text,
@@ -2089,7 +2328,6 @@ export default function SpeechDocViewer() {
     setFindQuery('');
     findRangesRef.current = [];
     clearFindHighlights();
-    setCountDebug(false);
     setDocWords(0);
     setCredScores(null);
     setCredCards([]);
@@ -2160,14 +2398,8 @@ export default function SpeechDocViewer() {
           onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
         />
 
-        {/* Outline toggle + prev/next heading steppers */}
+        {/* Outline toggle */}
         <OutlineToggleBtn active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
-        {outline.length > 0 && (
-          <>
-            <IconBtn icon={<IcoChevUp />} label="Previous heading" onClick={() => goToHeading(-1)} />
-            <IconBtn icon={<IcoChevDown />} label="Next heading" onClick={() => goToHeading(1)} />
-          </>
-        )}
 
         <ToolbarToggle
           active={findOpen}
@@ -2336,20 +2568,6 @@ export default function SpeechDocViewer() {
               {autoScroll ? <IcoPause /> : <IcoPlay />}
               {autoScroll ? 'Stop auto-scroll' : 'Auto-scroll at this pace'}
             </button>
-
-            <button
-              onClick={() => setCountDebug(v => !v)}
-              className="w-full mt-1.5 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-medium transition"
-              style={{
-                background: countDebug ? 'rgba(16,185,129,0.15)' : 'transparent',
-                color: countDebug ? 'rgb(16,185,129)' : 'var(--nav-inactive-color)',
-                border: `1px solid ${countDebug ? 'rgba(16,185,129,0.4)' : 'var(--border-subtle)'}`,
-                cursor: 'pointer',
-              }}
-              title="Highlight every word being counted toward the reading time"
-            >
-              {countDebug ? 'Hide counted words' : 'Show counted words'}
-            </button>
           </div>
         );
       })()}
@@ -2393,6 +2611,9 @@ export default function SpeechDocViewer() {
             activeId={activeHeadingId}
             onPick={scrollToHeading}
             onClose={() => setOutlineOpen(false)}
+            onStep={goToHeading}
+            dismissed={dismissedWarnings}
+            onDismiss={dismissWarning}
           />
         )}
         <div ref={scrollWrapRef} className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0">
@@ -2420,6 +2641,8 @@ export default function SpeechDocViewer() {
             onScore={runScoreCards}
             onScrollToCard={scrollToCard}
             onClose={() => setCredOpen(false)}
+            dismissed={dismissedWarnings}
+            onDismiss={dismissWarning}
           />
         )}
       </div>
