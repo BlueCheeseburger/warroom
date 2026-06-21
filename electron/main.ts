@@ -1778,6 +1778,12 @@ ${full}
 
 Design 3 cross-ex TRAPS. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.
 
+TRAP RULES:
+- The setup must probe argument logic, warrants, or internal links — NOT card wording. NEVER ask the student to quote specific sentences, recall exact phrasing, or cite internal evidence from the card. They cannot see the card during the drill.
+- The trap should work by getting the student to overclaim, underclaim, or concede a logical implication — not by testing whether they memorized the card.
+- Good traps: "Does your card say X is already happening or just that it might happen?", "If that's true, doesn't that mean Y is also true?", "So your impact assumes Z — but does your card actually say that?"
+- Bad traps: "What specific evidence in that card supports that claim?", "What does the card say about X exactly?"
+
 For each trap provide:
 - "setup": the opening question you ask the student (1-2 sentences).
 - "trapAnswer": the tempting WRONG answer most students give that springs the trap (1 sentence).

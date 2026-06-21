@@ -729,15 +729,27 @@ function TrapDrill({ event, highlighted, full, onExit }: {
             />
 
             {!result && (
-              <button
-                onClick={grade}
-                disabled={grading || !answer.trim()}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
-                style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: grading || !answer.trim() ? 'default' : 'pointer', opacity: grading || !answer.trim() ? 0.55 : 1 }}
-              >
-                {grading ? <Spinner className="w-3.5 h-3.5" /> : <IcoTrap />}
-                {grading ? 'Checking…' : 'Check my answer'}
-              </button>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={grade}
+                  disabled={grading || !answer.trim()}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+                  style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: grading || !answer.trim() ? 'default' : 'pointer', opacity: grading || !answer.trim() ? 0.55 : 1 }}
+                >
+                  {grading ? <Spinner className="w-3.5 h-3.5" /> : <IcoTrap />}
+                  {grading ? 'Checking…' : 'Check my answer'}
+                </button>
+                <button
+                  onClick={next}
+                  disabled={grading}
+                  className="w-full py-1.5 rounded-lg text-[11.5px] font-medium transition"
+                  style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: grading ? 'default' : 'pointer', opacity: grading ? 0.4 : 1 }}
+                  onMouseEnter={e => { if (!grading) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                >
+                  Skip this trap
+                </button>
+              </div>
             )}
 
             {result && (
