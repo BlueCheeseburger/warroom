@@ -138,6 +138,7 @@ Opens .docx files in-app.
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
 - **Focus mode** (toolbar): hides body text, showing only card tags, cites, and highlighted/underlined text
+- **Outline** (toolbar): opens a side panel listing every heading in the doc — pockets, hats, blocks, and card tags — indented by level. Click any entry to jump straight to it; the entry for whatever you're currently reading stays highlighted as you scroll. Two chevron buttons next to the Outline button step to the previous/next heading in one click, so you can move card-to-card without scrolling. Works on docs that use Word/Verbatim heading styles.
 - **Cross-Ex Practice** (toolbar): opens a side panel where Warroom AI writes targeted cross-examination questions for the open doc, drawn from your **highlighted** text. Each question hides its model answer behind a **Show answer** dropdown, and a **3 more like this** button generates three more of the same kind. Warroom AI is automatically given the guide for your event (Policy / LD / PF).
   - **Aff/Neg split**: if a doc has both aff and neg, the questions are grouped under Aff and Neg headers, with more questions for whichever side has more content.
   - **Short-doc warning**: if the doc has little highlighted text or is very short, you'll see a notice that you may get few or shallow questions.

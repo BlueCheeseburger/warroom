@@ -80,6 +80,36 @@ function IcoShare() {
   );
 }
 
+// Outline / table-of-contents: stacked lines with leading bullets
+function IcoOutline({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="3" cy="4" r="1" fill="currentColor" stroke="none" opacity={active ? 1 : 0.85}/>
+      <path d="M6.5 4H16"/>
+      <circle cx="3" cy="9" r="1" fill="currentColor" stroke="none" opacity={active ? 1 : 0.85}/>
+      <path d="M6.5 9H16"/>
+      <circle cx="3" cy="14" r="1" fill="currentColor" stroke="none" opacity={active ? 1 : 0.85}/>
+      <path d="M6.5 14H13"/>
+    </svg>
+  );
+}
+
+function IcoChevUp() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 10l4-4 4 4"/>
+    </svg>
+  );
+}
+
+function IcoChevDown() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6l4 4 4-4"/>
+    </svg>
+  );
+}
+
 // Cross-ex: two opposing speech bubbles with a question mark — "the questioning exchange"
 function IcoCrossEx({ active }: { active?: boolean }) {
   return (
@@ -292,6 +322,90 @@ function removeFocusMode(container: HTMLElement) {
     span.style.removeProperty('opacity');
     delete span.dataset.focusHidden;
   });
+}
+
+// ── Document outline (heading navigation) ──────────────────────────────────
+// docx-preview renders every paragraph as <p> and tags it with a class derived
+// from the paragraph's style id: `docx-render_<styleid-lowercased>`. Verbatim
+// (and Word's built-in styles) use style ids Heading1…Heading9, so heading
+// paragraphs carry classes like `docx-render_heading1`. We detect those, stamp
+// each with a stable data-outline-id, and build a clickable outline from them.
+interface OutlineItem { id: string; level: number; text: string }
+
+function buildOutline(container: HTMLElement): OutlineItem[] {
+  const items: OutlineItem[] = [];
+  let counter = 0;
+  container.querySelectorAll<HTMLElement>('p').forEach((p) => {
+    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
+    if (!m) return;
+    const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) return; // skip empty heading paragraphs
+    const id = `wr-h-${counter++}`;
+    p.dataset.outlineId = id;
+    items.push({ id, level: parseInt(m[1], 10), text });
+  });
+  return items;
+}
+
+function OutlinePanel({ items, activeId, onPick, onClose }: {
+  items: OutlineItem[];
+  activeId: string | null;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  const activeRef = useRef<HTMLButtonElement>(null);
+  // Keep the active heading in view within the outline list as the user scrolls.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeId]);
+
+  const minLevel = items.length ? Math.min(...items.map(i => i.level)) : 1;
+
+  return (
+    <div
+      className="shrink-0 flex flex-col h-full"
+      style={{ width: 260, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
+    >
+      <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
+        <span className="text-[12.5px] font-semibold flex-1 truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
+        <span className="text-[11px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
+        <IconBtn icon={<IcoClose />} label="Close outline" onClick={onClose} tooltipAlign="right" />
+      </div>
+
+      <div className="flex-1 overflow-y-auto scroll-thin py-1.5">
+        {items.length === 0 ? (
+          <div className="px-3.5 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            No headings found in this document. Outline navigation works with docs that use Word/Verbatim heading styles (pockets, hats, blocks, tags).
+          </div>
+        ) : (
+          items.map((it) => {
+            const active = it.id === activeId;
+            return (
+              <button
+                key={it.id}
+                ref={active ? activeRef : undefined}
+                onClick={() => onPick(it.id)}
+                className="w-full text-left text-[12px] leading-snug py-1.5 pr-2.5 rounded-md transition block truncate"
+                style={{
+                  paddingLeft: 12 + (it.level - minLevel) * 14,
+                  color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  background: active ? 'var(--nav-active-bg)' : 'transparent',
+                  fontWeight: active ? 600 : (it.level <= minLevel ? 600 : 400),
+                  borderLeft: active ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
+                }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                title={it.text}
+              >
+                {it.text}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Focus button icon ──────────────────────────────────────────────────────
@@ -1017,7 +1131,60 @@ export default function SpeechDocViewer() {
   const focusActiveRef = useRef(false);
   const focusTypeRef   = useRef<FocusType>('highlight');
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollWrapRef = useRef<HTMLDivElement>(null);
+
+  // Smooth-scroll the document to a heading and flash it briefly.
+  const scrollToHeading = useCallback((id: string) => {
+    const el = containerRef.current?.querySelector<HTMLElement>(`[data-outline-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveHeadingId(id);
+    const prevBg = el.style.backgroundColor;
+    const prevTrans = el.style.transition;
+    el.style.transition = 'background-color 0.25s ease';
+    el.style.backgroundColor = 'rgba(66, 133, 244, 0.22)';
+    window.setTimeout(() => {
+      el.style.backgroundColor = prevBg;
+      window.setTimeout(() => { el.style.transition = prevTrans; }, 300);
+    }, 650);
+  }, []);
+
+  // Step to the previous/next heading relative to the one currently in view.
+  function goToHeading(dir: 1 | -1) {
+    if (outline.length === 0) return;
+    const i = outline.findIndex(o => o.id === activeHeadingId);
+    const next = i < 0
+      ? (dir === 1 ? 0 : outline.length - 1)
+      : Math.min(outline.length - 1, Math.max(0, i + dir));
+    scrollToHeading(outline[next].id);
+  }
+
+  // Track which heading is currently at the top of the viewport as the user scrolls.
+  useEffect(() => {
+    const wrap = scrollWrapRef.current;
+    if (!wrap || outline.length === 0) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const cont = containerRef.current;
+      if (!cont) return;
+      const threshold = wrap.getBoundingClientRect().top + 90;
+      const heads = cont.querySelectorAll<HTMLElement>('[data-outline-id]');
+      let current: string | null = heads.length ? heads[0].dataset.outlineId! : null;
+      heads.forEach((h) => {
+        if (h.getBoundingClientRect().top <= threshold) current = h.dataset.outlineId!;
+      });
+      setActiveHeadingId((prev) => (prev === current ? prev : current));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    wrap.addEventListener('scroll', onScroll, { passive: true });
+    update();
+    return () => { wrap.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [outline.length]);
 
   const scrollToCite = useCallback((cite: string) => {
     if (!containerRef.current) return;
@@ -1128,6 +1295,11 @@ export default function SpeechDocViewer() {
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
         // Apply focus mode if it was already active when this doc loaded
         if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current);
+
+        // Build the heading outline for one-click navigation
+        const built = buildOutline(containerRef.current);
+        setOutline(built);
+        setActiveHeadingId(built[0]?.id ?? null);
       }, 0);
 
       // Auto-save to recents so it appears in the sidebar
@@ -1164,6 +1336,8 @@ export default function SpeechDocViewer() {
     setFilePath('');
     setFileName('');
     loadedPath.current = '';
+    setOutline([]);
+    setActiveHeadingId(null);
     if (containerRef.current) containerRef.current.innerHTML = '';
   }
 
@@ -1229,6 +1403,32 @@ export default function SpeechDocViewer() {
           onToggle={() => setFocusActive(v => !v)}
           onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
         />
+
+        {/* Outline toggle + prev/next heading steppers */}
+        <div className="relative">
+          <button
+            onClick={() => setOutlineOpen(v => !v)}
+            className="flex items-center justify-center w-9 h-9 rounded-lg transition"
+            style={{
+              background: outlineOpen ? 'var(--nav-active-bg)' : 'transparent',
+              boxShadow: outlineOpen ? 'var(--nav-active-shadow)' : 'none',
+              border: 'none', cursor: 'pointer',
+              color: outlineOpen ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+            }}
+            onMouseEnter={e => { if (!outlineOpen) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+            onMouseLeave={e => { if (!outlineOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            title={outline.length ? `Outline — ${outline.length} headings` : 'Outline'}
+          >
+            <IcoOutline active={outlineOpen} />
+          </button>
+        </div>
+        {outline.length > 0 && (
+          <>
+            <IconBtn icon={<IcoChevUp />} label="Previous heading" onClick={() => goToHeading(-1)} />
+            <IconBtn icon={<IcoChevDown />} label="Next heading" onClick={() => goToHeading(1)} />
+          </>
+        )}
+
         <div className="flex-1" />
         <div className="relative" onMouseEnter={() => {}}>
           <button
@@ -1271,9 +1471,17 @@ export default function SpeechDocViewer() {
         />
       )}
 
-      {/* Document + cross-ex side panel */}
+      {/* Outline + document + cross-ex side panel */}
       <div className="flex-1 flex min-h-0">
-        <div className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0">
+        {outlineOpen && step === 'viewing' && (
+          <OutlinePanel
+            items={outline}
+            activeId={activeHeadingId}
+            onPick={scrollToHeading}
+            onClose={() => setOutlineOpen(false)}
+          />
+        )}
+        <div ref={scrollWrapRef} className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0">
           {step === 'loading' && <LoadingPanel message="Loading document…" />}
           <div
             ref={containerRef}

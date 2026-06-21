@@ -171,7 +171,11 @@ The `SpeechDocViewer` renders `.docx` files in-app using `docx-preview`. It is a
 
 Opening a `.docx` from Finder triggers the `onFileOpen` IPC event and navigates to the speech-doc view. Speech docs can also be attached to chat messages and shared with teammates.
 
-The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs) and **Cross-Ex Practice** (see below).
+The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), and **Cross-Ex Practice** (see below).
+
+### Outline (heading navigation)
+
+The **Outline** toolbar button opens a left-hand panel listing every heading in the document — pockets, hats, blocks, and card tags — indented by level, so the user can jump anywhere in one click instead of scrolling. `docx-preview` renders every paragraph as a `<p>` and tags it with a class derived from the paragraph's style id (`docx-render_<styleid-lowercased>`); Verbatim and Word built-in heading styles use style ids `Heading1`–`Heading9`, so heading paragraphs carry classes like `docx-render_heading4`. `buildOutline` scans for `<p>` elements whose class matches `/heading(\d)/i`, stamps each with a stable `data-outline-id`, and records its level + text. Clicking an entry `scrollIntoView`s the matching paragraph and flashes it. A scroll listener on the viewer (throttled with `requestAnimationFrame`) tracks which heading is currently at the top of the viewport and highlights it in the panel. Two chevron buttons in the toolbar (prev/next) step through the headings relative to the active one. If a doc uses no heading styles, the panel shows a "No headings found" notice.
 
 ### Cross-Ex Practice
 

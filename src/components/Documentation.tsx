@@ -516,7 +516,20 @@ export default function Documentation() {
           </P>
           <P>
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
-            structure and highlighted / underlined runs) and <strong>Cross-Ex Practice</strong>.
+            structure and highlighted / underlined runs), <strong>Outline</strong> (heading
+            navigation), and <strong>Cross-Ex Practice</strong>.
+          </P>
+          <H3>Outline (heading navigation)</H3>
+          <P>
+            The <strong>Outline</strong> button opens a left-hand panel listing every heading in the
+            document — pockets, hats, blocks, and card tags — indented by level, so you can jump
+            anywhere in one click instead of scrolling. <Code>docx-preview</Code> tags each paragraph
+            with a class from its style id (<Code>docx-render_heading4</Code> for a Verbatim tag,
+            etc.), so <Code>buildOutline</Code> detects heading paragraphs, stamps each with a stable{' '}
+            <Code>data-outline-id</Code>, and records its level and text. Clicking an entry scrolls to
+            and flashes that heading; a scroll listener keeps the entry for whatever you're currently
+            reading highlighted. Two chevron buttons in the toolbar step to the previous / next
+            heading. Works on docs that use Word / Verbatim heading styles.
           </P>
           <H3>Cross-Ex Practice</H3>
           <P>
