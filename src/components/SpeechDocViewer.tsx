@@ -442,10 +442,24 @@ interface CxQuestion { id: string; question: string; answer: string; cardCite?: 
 type CxSide = 'Aff' | 'Neg' | 'General';
 interface CxGroup { side: CxSide; questions: CxQuestion[] }
 
-// Cross-ex questions are persisted per-document so they survive closing/reopening
-// the panel, navigating away, reloading the doc, and app restarts. They are only
-// cleared when the user regenerates them.
+// Cross-ex questions and trap drills are persisted per-document so they survive
+// closing/reopening the panel, navigating away, and app restarts. Cleared only on regenerate.
 const cxStorageKey = (path: string) => `warroom-cx-questions-${path}`;
+const cxTrapsKey   = (path: string) => `warroom-cx-traps-${path}`;
+function loadCxTraps(path: string): CxTrap[] {
+  if (!path) return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(cxTrapsKey(path)) ?? '[]');
+    return Array.isArray(v) ? (v as CxTrap[]) : [];
+  } catch { return []; }
+}
+function saveCxTraps(path: string, traps: CxTrap[]) {
+  if (!path) return;
+  try {
+    if (traps.length === 0) localStorage.removeItem(cxTrapsKey(path));
+    else localStorage.setItem(cxTrapsKey(path), JSON.stringify(traps));
+  } catch {}
+}
 function loadCxGroups(path: string): CxGroup[] {
   if (!path) return [];
   try {
@@ -612,14 +626,16 @@ interface CxTrap { setup: string; trapAnswer: string; gotcha: string; idealAnswe
 interface CxTrapResult { verdict: 'avoided' | 'fell' | 'partial'; feedback: string }
 
 // ── Trap drill — interactive "harder questions" gauntlet ────────────────────
-function TrapDrill({ event, highlighted, full, onExit }: {
+function TrapDrill({ event, highlighted, full, docKey, onExit }: {
   event: DebateEvent;
   highlighted: string;
   full: string;
+  docKey: string;
   onExit: () => void;
 }) {
-  const [traps, setTraps] = useState<CxTrap[]>([]);
-  const [loading, setLoading] = useState(true);
+  const saved = loadCxTraps(docKey);
+  const [traps, setTraps] = useState<CxTrap[]>(saved);
+  const [loading, setLoading] = useState(saved.length === 0);
   const [error, setError] = useState('');
   const [idx, setIdx] = useState(0);
   const [answer, setAnswer] = useState('');
@@ -627,6 +643,7 @@ function TrapDrill({ event, highlighted, full, onExit }: {
   const [result, setResult] = useState<CxTrapResult | null>(null);
 
   useEffect(() => {
+    if (saved.length > 0) return; // already have saved traps — skip generation
     let cancelled = false;
     (async () => {
       try {
@@ -636,6 +653,7 @@ function TrapDrill({ event, highlighted, full, onExit }: {
         if (cancelled) return;
         if (!res.ok || !res.traps?.length) throw new Error(res.error ?? 'No traps generated');
         setTraps(res.traps);
+        saveCxTraps(docKey, res.traps);
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? 'Failed to load traps');
       } finally {
@@ -643,7 +661,7 @@ function TrapDrill({ event, highlighted, full, onExit }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [event, highlighted, full]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trap = traps[idx];
 
@@ -828,6 +846,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
     setLoading(true);
     setError('');
     setStarted(true);
+    saveCxTraps(docKey, []); // clear saved traps so the drill regenerates for the new questions
     try {
       const { highlighted, full } = await getExtracted();
       if (!highlighted.trim()) throw new Error('No highlighted text found in this document.');
@@ -897,7 +916,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
       </div>
 
       {trapMode ? (
-        <TrapDrill event={event} highlighted={highlighted} full={full} onExit={() => setTrapMode(false)} />
+        <TrapDrill event={event} highlighted={highlighted} full={full} docKey={docKey} onExit={() => setTrapMode(false)} />
       ) : (
         <>
           {/* Body */}
