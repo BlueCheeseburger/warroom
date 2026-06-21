@@ -359,39 +359,45 @@ function OutlinePanel({ items, activeId, onPick, onClose }: {
     activeRef.current?.scrollIntoView({ block: 'nearest' });
   }, [activeId]);
 
-  const minLevel = items.length ? Math.min(...items.map(i => i.level)) : 1;
+  // Collapse level gaps: debate docs jump from H1 to H4, which would push tags far
+  // right. Map the distinct levels present to consecutive depths (0, 1, 2, …).
+  const depths = Array.from(new Set(items.map(i => i.level))).sort((a, b) => a - b);
+  const depthOf = (lvl: number) => Math.max(0, depths.indexOf(lvl));
 
   return (
     <div
       className="shrink-0 flex flex-col h-full"
-      style={{ width: 260, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
+      style={{ width: 248, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
     >
-      <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
         <span className="text-[12.5px] font-semibold flex-1 truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
-        <span className="text-[11px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
+        <span className="text-[11px] shrink-0 tabular-nums" style={{ color: 'var(--nav-inactive-color)' }}>{items.length}</span>
         <IconBtn icon={<IcoClose />} label="Close outline" onClick={onClose} tooltipAlign="right" />
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll-thin py-1.5">
+      <div className="flex-1 overflow-y-auto scroll-thin py-1.5 px-1.5">
         {items.length === 0 ? (
-          <div className="px-3.5 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+          <div className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
             No headings found in this document. Outline navigation works with docs that use Word/Verbatim heading styles (pockets, hats, blocks, tags).
           </div>
         ) : (
-          items.map((it) => {
+          items.map((it, idx) => {
             const active = it.id === activeId;
+            const depth = depthOf(it.level);
+            const topLevel = depth === 0;
             return (
               <button
                 key={it.id}
                 ref={active ? activeRef : undefined}
                 onClick={() => onPick(it.id)}
-                className="w-full text-left text-[12px] leading-snug py-1.5 pr-2.5 rounded-md transition block truncate"
+                className="w-full text-left text-[12px] leading-snug py-1.5 pr-2 rounded-md transition block truncate"
                 style={{
-                  paddingLeft: 12 + (it.level - minLevel) * 14,
-                  color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  paddingLeft: 8 + depth * 13,
+                  marginTop: topLevel && idx > 0 ? 6 : 0,
+                  color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
                   background: active ? 'var(--nav-active-bg)' : 'transparent',
-                  fontWeight: active ? 600 : (it.level <= minLevel ? 600 : 400),
+                  fontWeight: active || topLevel ? 600 : 400,
                   borderLeft: active ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
                 }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
@@ -404,6 +410,37 @@ function OutlinePanel({ items, activeId, onPick, onClose }: {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// Toolbar toggle for the outline panel — styled hover tooltip + active state.
+function OutlineToggleBtn({ active, count, onClick }: {
+  active: boolean; count: number; onClick: () => void;
+}) {
+  const [tip, setTip] = useState(false);
+  return (
+    <div className="relative" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+      <button
+        onClick={onClick}
+        className="flex items-center justify-center w-9 h-9 rounded-lg transition"
+        style={{
+          background: active ? 'var(--nav-active-bg)' : 'transparent',
+          boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
+          border: 'none', cursor: 'pointer',
+          color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+        }}
+        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        <IcoOutline active={active} />
+      </button>
+      {tip && (
+        <div className="absolute top-full mt-1.5 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
+          style={{ left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
+          {active ? 'Hide outline' : count > 0 ? `Outline · ${count} headings` : 'Outline'}
+        </div>
+      )}
     </div>
   );
 }
@@ -1132,7 +1169,7 @@ export default function SpeechDocViewer() {
   const focusTypeRef   = useRef<FocusType>('highlight');
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(true);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapRef = useRef<HTMLDivElement>(null);
@@ -1141,7 +1178,7 @@ export default function SpeechDocViewer() {
   const scrollToHeading = useCallback((id: string) => {
     const el = containerRef.current?.querySelector<HTMLElement>(`[data-outline-id="${id}"]`);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.scrollIntoView({ behavior: 'auto', block: 'start' });
     setActiveHeadingId(id);
     const prevBg = el.style.backgroundColor;
     const prevTrans = el.style.transition;
@@ -1296,10 +1333,12 @@ export default function SpeechDocViewer() {
         // Apply focus mode if it was already active when this doc loaded
         if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current);
 
-        // Build the heading outline for one-click navigation
+        // Build the heading outline for one-click navigation; auto-show it for
+        // docs that actually have headings, hide it for ones that don't.
         const built = buildOutline(containerRef.current);
         setOutline(built);
         setActiveHeadingId(built[0]?.id ?? null);
+        setOutlineOpen(built.length > 0);
       }, 0);
 
       // Auto-save to recents so it appears in the sidebar
@@ -1405,23 +1444,7 @@ export default function SpeechDocViewer() {
         />
 
         {/* Outline toggle + prev/next heading steppers */}
-        <div className="relative">
-          <button
-            onClick={() => setOutlineOpen(v => !v)}
-            className="flex items-center justify-center w-9 h-9 rounded-lg transition"
-            style={{
-              background: outlineOpen ? 'var(--nav-active-bg)' : 'transparent',
-              boxShadow: outlineOpen ? 'var(--nav-active-shadow)' : 'none',
-              border: 'none', cursor: 'pointer',
-              color: outlineOpen ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
-            }}
-            onMouseEnter={e => { if (!outlineOpen) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={e => { if (!outlineOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            title={outline.length ? `Outline — ${outline.length} headings` : 'Outline'}
-          >
-            <IcoOutline active={outlineOpen} />
-          </button>
-        </div>
+        <OutlineToggleBtn active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
         {outline.length > 0 && (
           <>
             <IconBtn icon={<IcoChevUp />} label="Previous heading" onClick={() => goToHeading(-1)} />
