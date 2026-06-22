@@ -151,6 +151,25 @@ Opens .docx files in-app.
 
 ---
 
+## Impact Calc
+⚖️ scale icon in the title bar.
+
+Pre-round prep tool: compare two speech docs side-by-side and get a full AI impact calculus breakdown — clashes, winners per dimension, overall verdict.
+
+**How to open**: click the ⚖️ (scale) icon in the title bar.
+
+**How to use**:
+1. Click **Your Doc** → pick your speech doc (.docx)
+2. Click **Their Doc** → pick your opponent's speech doc (.docx)
+3. Click **Analyze** — Warroom AI extracts every impact claim from both docs and runs the comparison
+
+**What you see in the results**:
+- **Clashes** — each row pairs one of your impacts against the opponent impact it directly competes with
+- **Dimension winners** — for each clash, a winner is called on: **Magnitude** (how big is the harm?), **Probability** (how likely to occur?), **Timeframe** (how soon?), and **Reversibility** (can it be undone?)
+- **Overall verdict** — a summary of who wins the impact calc exchange and why, ready to use in your final rebuttal
+
+---
+
 ## Find Cards (Logos) / Open Evidence
 Built-in browser panels for evidence databases.
 

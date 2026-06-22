@@ -851,6 +851,88 @@ server.tool(
   }
 );
 
+// ── compare_impact_calc ────────────────────────────────────────────────────────
+// Mirrors the in-app Impact Calc panel: given two speech doc texts, extract every
+// impact claim, find clashes, and produce dimension-by-dimension winners + overall
+// verdict. The server has no LLM, so it returns the doc texts plus a structured
+// brief for the calling model to run the analysis from.
+server.tool(
+  'compare_impact_calc',
+  `Compare two speech doc file paths for policy debate impact calculus. Returns AI analysis of impact clashes, winners, and overall verdict.
+Pass the absolute paths to both .docx files (or their extracted plain text) and labels for each side. The tool reads the files and returns a brief that tells the calling model how to run a full impact calculus comparison: extract all impact claims, find clashes, determine a winner on magnitude, probability, timeframe, and reversibility for each clash, and deliver an overall verdict.`,
+  {
+    pathA:  z.string().describe('Absolute file path to your speech doc (.docx or .txt), or the extracted plain text of your doc'),
+    pathB:  z.string().describe('Absolute file path to the opponent speech doc (.docx or .txt), or the extracted plain text of their doc'),
+    labelA: z.string().optional().describe('Label for your doc (default: "Your Doc")'),
+    labelB: z.string().optional().describe('Label for their doc (default: "Their Doc")'),
+  },
+  async ({ pathA, pathB, labelA = 'Your Doc', labelB = 'Their Doc' }) => {
+    // Attempt to read each argument as a file path first; fall back to treating
+    // it as inline text (callers may pass extracted text directly).
+    async function resolveText(pathOrText) {
+      if (!pathOrText?.trim()) return '';
+      // If it looks like a file path (starts with / or drive letter), try reading it.
+      if (/^(\/|[A-Za-z]:\\)/.test(pathOrText.trim())) {
+        try {
+          const raw = await fs.readFile(pathOrText.trim());
+          // Return as utf-8; for binary .docx the caller should pass extracted text instead.
+          return raw.toString('utf-8').replace(/\0/g, '').slice(0, 60000);
+        } catch {
+          return `(Could not read file at path: ${pathOrText.trim()})`;
+        }
+      }
+      // Otherwise treat as inline extracted text.
+      return pathOrText.trim().slice(0, 60000);
+    }
+
+    const [textA, textB] = await Promise.all([resolveText(pathA), resolveText(pathB)]);
+
+    const out = [
+      `# Impact Calc — ${labelA} vs ${labelB}`,
+      ``,
+      `You are performing a full **policy debate impact calculus** comparison between two speech documents.`,
+      ``,
+      `## Steps`,
+      `1. Extract every distinct **impact claim** from each document: what the harm is, how big, how likely, how soon, and whether it can be undone.`,
+      `2. Identify **clashes** — pairs of impacts (one from each doc) that directly compete for the same "space" (e.g. both claim to control nuclear war, or one claims the plan causes an impact the other claims it solves).`,
+      `3. For each clash, call a **winner on each dimension**:`,
+      `   - **Magnitude**: how severe is the harm (deaths, civilizational scale, etc.)?`,
+      `   - **Probability**: how likely is the harm to actually occur (% chance, mechanism, link chain strength)?`,
+      `   - **Timeframe**: how soon does the harm happen (years/decades/centuries)?`,
+      `   - **Reversibility**: once it occurs, can it be undone?`,
+      `4. For each clash, call an **overall impact winner** (the side whose impact outweighs on balance).`,
+      `5. Deliver an **overall verdict**: which side wins the impact calc exchange, on what grounds, and what should go in the final rebuttal.`,
+      ``,
+      `## Format`,
+      `For each clash:`,
+      `- **Clash [N]: [brief description]**`,
+      `  - ${labelA} impact: [summary]`,
+      `  - ${labelB} impact: [summary]`,
+      `  - Magnitude winner: [label] — [one sentence why]`,
+      `  - Probability winner: [label] — [one sentence why]`,
+      `  - Timeframe winner: [label] — [one sentence why]`,
+      `  - Reversibility winner: [label] — [one sentence why]`,
+      `  - Overall clash winner: [label]`,
+      ``,
+      `Then write an **Overall Verdict** paragraph (3-5 sentences) summarising who wins the impact debate and why. Make it concrete enough to read into a rebuttal.`,
+      ``,
+      `No markdown emphasis (no **, *, __) inside the verdict or reasons — plain text only. Use single quotes around key phrases.`,
+      ``,
+      `---`,
+      ``,
+      `## ${labelA}`,
+      textA || '(No text provided)',
+      ``,
+      `---`,
+      ``,
+      `## ${labelB}`,
+      textB || '(No text provided)',
+    ].join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
+  }
+);
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 // Keep the process alive on uncaught errors so Claude doesn't show "disconnected".

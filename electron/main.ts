@@ -1976,6 +1976,104 @@ Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as 
   }
 });
 
+// ─── Impact calculus comparator ───────────────────────────────────────────────
+
+ipcMain.handle('gemini:compareImpacts', async (
+  _e,
+  pathA: string,
+  pathB: string,
+  labelA: string,
+  labelB: string,
+) => {
+  try {
+    const mammoth = require('mammoth');
+    const rawA = (await mammoth.extractRawText({ path: pathA })).value as string;
+    const rawB = (await mammoth.extractRawText({ path: pathB })).value as string;
+    const textA = rawA.slice(0, 40000);
+    const textB = rawB.slice(0, 40000);
+
+    const prompt = `You are an expert policy debate judge performing impact calculus — the process of comparing the relative importance of harms from two opposing sides.
+
+IMPACT CALCULUS CRITERIA
+Impact calculus typically weighs harms across five dimensions (debaters may argue alternative orderings):
+1. Magnitude — how severe is the harm? (extinction > existential > major > moderate > minor)
+2. Probability — how likely is the harm to occur? (high / medium / low)
+3. Timeframe — how soon does the harm materialize? (immediate / short / medium / long)
+4. Reversibility — can the harm be undone? (irreversible > difficult > reversible)
+5. Breadth — how many people or systems are affected? (describe in context)
+
+A common default hierarchy is: magnitude first, then probability, then timeframe, then reversibility. However, debaters can and do flip this ordering with warrants.
+
+YOUR TASK
+Below are two debate documents. Extract every distinct impact claim from each, compare them across the five dimensions above, identify the direct clashes between them, decide who wins each clash with explicit reasoning, and give an overall verdict on which side has the better impacts.
+
+DOC A: ${labelA}
+---
+${textA}
+---
+
+DOC B: ${labelB}
+---
+${textB}
+---
+
+Return ONLY valid JSON — no markdown fences, no extra text, no commentary — matching this exact shape:
+{
+  "summary": "<2-3 sentence overall verdict synthesizing the impact comparison>",
+  "docA": {
+    "label": "${labelA}",
+    "impacts": [
+      {
+        "claim": "<short description of the impact>",
+        "magnitude": "<extinction|existential|major|moderate|minor>",
+        "probability": "<high|medium|low>",
+        "timeframe": "<immediate|short|medium|long>",
+        "reversibility": "<irreversible|difficult|reversible>"
+      }
+    ]
+  },
+  "docB": {
+    "label": "${labelB}",
+    "impacts": [
+      {
+        "claim": "<short description of the impact>",
+        "magnitude": "<extinction|existential|major|moderate|minor>",
+        "probability": "<high|medium|low>",
+        "timeframe": "<immediate|short|medium|long>",
+        "reversibility": "<irreversible|difficult|reversible>"
+      }
+    ]
+  },
+  "clashes": [
+    {
+      "claimA": "<impact claim from Doc A, or null if no direct clash>",
+      "claimB": "<impact claim from Doc B, or null if no direct clash>",
+      "winner": "<A|B|even>",
+      "reasoning": "<concise explanation of why this side wins this clash>",
+      "dimension": "<the primary dimension that decides this clash, e.g. magnitude, probability, timeframe>"
+    }
+  ],
+  "verdict": "<A|B|even>",
+  "verdictReason": "<1-2 sentence explanation of the overall verdict>"
+}`;
+
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let result: any;
+    try {
+      result = JSON.parse(cleaned);
+    } catch {
+      return { ok: false, error: 'parse_failed' };
+    }
+    return { ok: true, result };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to compare impacts');
+    return { ok: false, error: msg };
+  }
+});
+
 // OpenCaselist — return { ok, data, error } so renderer can inspect without IPC error serialization issues
 ipcMain.handle('opencaselist:login', async (_e, username: string, password: string) => {
   try { await ocLogin(username, password); return { ok: true }; }

@@ -425,6 +425,10 @@ declare global {
         onUpdated: (cb: () => void) => () => void;
         onNavigateTo: (cb: (eventType: 'pf' | 'ld') => void) => () => void;
       };
+      gemini: {
+        compareImpacts: (pathA: string, pathB: string, labelA: string, labelB: string) =>
+          Promise<{ ok: true; result: ImpactCalcResult } | { ok: false; error: string }>;
+      };
       agent: {
         fetchArticle: (url: string) => Promise<{ ok: boolean; text: string; error?: string }>;
       };
@@ -524,5 +528,32 @@ export interface ExtractedCard {
   cite: string;
   body: string;
   year: number;
+}
+
+// ─── Impact calculus ──────────────────────────────────────────────────────────
+
+export interface ImpactItem {
+  claim: string;
+  magnitude: 'extinction' | 'existential' | 'major' | 'moderate' | 'minor';
+  probability: 'high' | 'medium' | 'low';
+  timeframe: 'immediate' | 'short' | 'medium' | 'long';
+  reversibility: 'irreversible' | 'difficult' | 'reversible';
+}
+
+export interface ImpactClash {
+  claimA: string | null;
+  claimB: string | null;
+  winner: 'A' | 'B' | 'even';
+  reasoning: string;
+  dimension: string;
+}
+
+export interface ImpactCalcResult {
+  summary: string;
+  docA: { label: string; impacts: ImpactItem[] };
+  docB: { label: string; impacts: ImpactItem[] };
+  clashes: ImpactClash[];
+  verdict: 'A' | 'B' | 'even';
+  verdictReason: string;
 }
 

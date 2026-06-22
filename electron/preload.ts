@@ -241,6 +241,10 @@ const api = {
       return () => ipcRenderer.removeListener('navigate-to-topics', handler);
     },
   },
+  gemini: {
+    compareImpacts: (pathA: string, pathB: string, labelA: string, labelB: string) =>
+      ipcRenderer.invoke('gemini:compareImpacts', pathA, pathB, labelA, labelB),
+  },
   agent: {
     fetchArticle: (url: string) => ipcRenderer.invoke('agent:fetchArticle', url),
   },

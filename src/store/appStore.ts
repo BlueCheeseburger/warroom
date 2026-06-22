@@ -96,6 +96,9 @@ interface AppState {
   // Onboarding
   showOnboarding: boolean;
   setShowOnboarding: (show: boolean) => void;
+  // Impact Calc
+  impactCalcOpen: boolean;
+  setImpactCalcOpen: (open: boolean) => void;
   // Agent search registry — webview components register their search fns here
   agentSearchFns: { logos: AgentSearchFn | null; openev: AgentSearchFn | null };
   registerAgentSearch: (source: 'logos' | 'openev', fn: AgentSearchFn | null) => void;
@@ -118,6 +121,8 @@ export const useApp = create<AppState>((set, get) => ({
   chatOpen: false,
   geminiOpen: false,
   geminiActiveId: null,
+  impactCalcOpen: false,
+  setImpactCalcOpen: (open) => set({ impactCalcOpen: open }),
   unreadCount: 0,
   currentUser: null,
   currentTeam: null,

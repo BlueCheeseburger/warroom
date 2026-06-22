@@ -86,6 +86,7 @@ const TOC_SECTIONS = [
   { id: 'background',  label: 'Background notifications' },
   { id: 'flows',       label: 'Flows' },
   { id: 'speech-doc',  label: 'Speech doc viewer' },
+  { id: 'impact-calc', label: 'Impact Calc' },
   { id: 'find-cards',  label: 'FindCards (Logos)' },
   { id: 'open-ev',     label: 'Open Evidence' },
   { id: 'agent',       label: 'Warroom Agent (AI)' },
@@ -649,6 +650,44 @@ export default function Documentation() {
             and press line. Over / under-highlighted cards also show a dismissible highlight warning here
             with the exact percentage. A <strong>Go to card in document</strong> button scrolls the doc to
             that card and flashes it.
+          </P>
+        </section>
+
+        {/* ── Impact Calc ────────────────────────────────────────────── */}
+        <section id="doc-impact-calc">
+          <H2>Impact Calc</H2>
+          <P>
+            Impact Calc is a pre-round prep tool that compares two speech docs (<Code>.docx</Code>{' '}
+            files) and produces an AI-powered policy debate impact calculus analysis — surfacing every
+            clash, determining a winner on each standard (magnitude, probability, timeframe,
+            reversibility), and delivering an overall verdict.
+          </P>
+          <H3>Opening Impact Calc</H3>
+          <P>
+            Click the scale icon <strong>⚖️</strong> in the title bar to open the Impact Calc panel.
+            It slides in from the right alongside — but separate from — the Warroom AI panel and team
+            chat.
+          </P>
+          <H3>Running an analysis</H3>
+          <UL>
+            <LI>Click <strong>Your Doc</strong> to pick your speech doc (<Code>.docx</Code>).</LI>
+            <LI>Click <strong>Their Doc</strong> to pick your opponent's speech doc.</LI>
+            <LI>Click <strong>Analyze</strong>. Warroom AI extracts every impact claim from both
+              docs, finds the direct clashes, and weighs them across all four impact calculus
+              dimensions.</LI>
+          </UL>
+          <H3>Reading the results</H3>
+          <UL>
+            <LI><strong>Clashes</strong> — each row matches one of your impacts against the opponent
+              impact it directly competes with.</LI>
+            <LI><strong>Dimension winners</strong> — for each clash, a winner is called on
+              magnitude, probability, timeframe, and reversibility separately.</LI>
+            <LI><strong>Overall verdict</strong> — a summary declaring which side wins the impact
+              calc exchange and why, suitable for use in a final rebuttal.</LI>
+          </UL>
+          <P>
+            The analysis is powered by <Code>gemini:compareImpacts</Code> in the main process,
+            which uses the balanced model tier (your selected model, never Flash Lite).
           </P>
         </section>
 

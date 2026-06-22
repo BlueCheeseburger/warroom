@@ -227,6 +227,27 @@ The panel's **Generate / Regenerate** action and the **Harder** button live in t
 
 ---
 
+## Impact Calc
+
+Impact Calc is a pre-round prep tool that compares two speech docs (`.docx` files) and produces an AI-powered policy debate impact calculus analysis — surfacing every clash, determining a winner on each standard (magnitude, probability, timeframe, reversibility), and delivering an overall verdict.
+
+### Opening Impact Calc
+Click the scale icon **⚖️** in the title bar to open the Impact Calc panel. It slides in from the right alongside — but separate from — the Warroom AI panel and team chat.
+
+### Running an analysis
+1. Click **Your Doc** to pick your speech doc (`.docx`).
+2. Click **Their Doc** to pick your opponent's speech doc.
+3. Click **Analyze**. Warroom AI extracts every impact claim from both docs, finds the direct clashes, and weighs them across all four impact calculus dimensions.
+
+### Reading the results
+- **Clashes** — each row matches one of your impacts against the opponent impact it directly competes with.
+- **Dimension winners** — for each clash, a winner is called on magnitude, probability, timeframe, and reversibility separately.
+- **Overall verdict** — a summary declaring which side wins the impact calc exchange and why, suitable for use in a final rebuttal.
+
+The analysis is powered by `gemini:compareImpacts` in the main process, which uses the balanced model tier (your selected model, never Flash Lite).
+
+---
+
 ## FindCards (Logos)
 
 `FindCards` is a persistent Electron `<webview>` pointing at Logos evidence search. The view is always mounted off-screen; navigating to `logos` makes it visible. Warroom AI can also trigger Logos searches programmatically via the agent search registry without disturbing the user-visible view (using a second hidden webview in `AgentSearchViews`).
