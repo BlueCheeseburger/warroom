@@ -140,6 +140,38 @@ Import is **very robust** — it works no matter how the spreadsheet is laid out
 
 The imported flow shows up in the sidebar named after the file — rename and edit it like any other flow.
 
+### Editing a flow
+The flow editor works like a paper flow, with some spreadsheet shortcuts on top.
+
+**Format text in a cell.** While typing in a cell, select text and use the standard shortcuts:
+- **Bold** — ⌘B
+- *Italic* — ⌘I
+- Underline — ⌘U
+- Strikethrough — ⌘⇧X
+
+Cells grow automatically to fit whatever you type.
+
+**Move around with the keyboard.**
+1. Press the **arrow keys** to move to the next cell when your cursor is already at that edge of the current cell (Up/Down/Left/Right).
+2. Press **Tab** or **Enter** to jump to the next column or row.
+3. Press **Alt+↑** or **Alt+↓** to shift the cell's content up or down a row.
+
+**Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
+1. Click the **curved-arrow button** in the toolbar to enter draw mode.
+2. Click the **source cell** (the argument).
+3. Click the **target cell** (its answer) — an arrow is drawn between them, even across columns.
+4. To remove an arrow, click the **×** on its midpoint. Press **Esc** anytime to cancel drawing.
+
+Arrows are saved with the sheet, so they're there when you reopen the flow.
+
+**Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar. It searches every sheet in the flow at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close.
+
+**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** (or **⌘Y**) to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, and arrows.
+
+**Recolor a column.** Click the **▾** menu on any column header (it's always visible) and pick a color from the palette to recolor that column. Choose **Reset to default** to restore the side's standard color.
+
+**Set default flow colors.** To change the colors used for new flows, go to **Settings → Flow colors** and set the default Aff/Pro and Neg/Con column colors. These apply to all your flows.
+
 ---
 
 ## Speech Doc Viewer
@@ -248,6 +280,7 @@ Gear icon at bottom of sidebar.
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |
 | Google Drive | OAuth Client ID + Client Secret |
 | Sharing default | "Can edit" or "Can view" for shared attachments |
+| Flow colors | Default Aff/Pro and Neg/Con column colors for all flows |
 | Setup wizard | Re-run onboarding |
 
 ---
@@ -257,6 +290,15 @@ Gear icon at bottom of sidebar.
 - **Shift+Enter**: new line in AI panel
 - **Escape**: close mention picker or attach menu
 - **@**: type in AI composer to open mention picker
+
+### In a flow
+- **⌘B / ⌘I / ⌘U / ⌘⇧X**: bold / italic / underline / strikethrough in a cell
+- **⌘F**: find across all sheets in the flow
+- **⌘Z / ⌘⇧Z (or ⌘Y)**: undo / redo
+- **Arrow keys**: move between cells from a cell's edge
+- **Tab / Enter**: move to next column / row
+- **Alt+↑ / Alt+↓**: shift a cell's content between rows
+- **Esc**: cancel arrow-draw mode or close find
 
 ---
 

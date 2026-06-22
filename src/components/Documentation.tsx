@@ -521,6 +521,42 @@ export default function Documentation() {
             The imported flow appears in the sidebar and can be renamed and edited like any other
             flow.
           </P>
+          <H3>Editing flows</H3>
+          <P>
+            The flow editor works like a paper flow with spreadsheet conveniences. Cells support{' '}
+            <strong>rich text</strong> — <Code>⌘B</Code> for bold, <Code>⌘I</Code> for italic,{' '}
+            <Code>⌘U</Code> for underline, and <Code>⌘⇧X</Code> for strikethrough (the standard
+            keyboard shortcuts). Cells <strong>auto-grow</strong> to fit their text.
+          </P>
+          <P>
+            <strong>Keyboard navigation:</strong> arrow keys move between cells when the caret is at
+            a cell's edge (Up / Down / Left / Right); <Code>Tab</Code> and <Code>Enter</Code> move to
+            the next column / row; <Code>Alt+↑</Code> / <Code>Alt+↓</Code> shift a cell's content
+            between rows.
+          </P>
+          <P>
+            <strong>Draw arrows:</strong> the curved-arrow toolbar button enters draw mode — click a
+            source cell, then a target cell, to draw a connector arrow linking an argument to its
+            answer across columns (like the line on a paper flow). Click the <Code>×</Code> on an
+            arrow's midpoint to delete it; press <Code>Esc</Code> to cancel. Arrows are saved per
+            sheet.
+          </P>
+          <P>
+            <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all sheets in the
+            flow. Enter / Shift+Enter jump between matches; Esc closes. (Mirrors the speech-doc
+            viewer's find.)
+          </P>
+          <P>
+            <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> (or{' '}
+            <Code>⌘Y</Code>) redoes, also available as toolbar buttons. Undo covers text edits, column
+            changes, colors, and arrows.
+          </P>
+          <P>
+            <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}
+            menu with a color palette to recolor that column; "Reset to default" restores the side
+            color. The default Aff/Pro and Neg/Con column colors can be set for all flows in{' '}
+            <strong>Settings → Flow colors</strong>.
+          </P>
         </section>
 
         {/* ── Speech Doc ─────────────────────────────────────────────── */}
@@ -886,6 +922,10 @@ export default function Documentation() {
               <div>
                 <span className="font-semibold text-ink">Sharing default</span>
                 <span className="ml-2 text-ink/60">Can edit (default) or Can view — applied when sharing via chat.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Flow colors</span>
+                <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Setup wizard</span>

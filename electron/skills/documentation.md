@@ -171,6 +171,20 @@ Import is **very robust** — it works no matter how the spreadsheet is laid out
 
 The imported flow appears in the sidebar and can be renamed and edited like any other flow.
 
+### Editing flows
+
+The flow editor works like a paper flow with spreadsheet conveniences. Cells support **rich text** — `⌘B` for bold, `⌘I` for italic, `⌘U` for underline, and `⌘⇧X` for strikethrough (the standard keyboard shortcuts). Cells **auto-grow** to fit their text.
+
+**Keyboard navigation:** arrow keys move between cells when the caret is at a cell's edge (Up / Down / Left / Right); `Tab` and `Enter` move to the next column / row; `Alt+↑` / `Alt+↓` shift a cell's content between rows.
+
+**Draw arrows:** the curved-arrow toolbar button enters draw mode — click a source cell, then a target cell, to draw a connector arrow linking an argument to its answer across columns (like the line on a paper flow). Click the `×` on an arrow's midpoint to delete it; press `Esc` to cancel. Arrows are saved per sheet.
+
+**Find (`⌘F`):** a find bar searches across all sheets in the flow. Enter / Shift+Enter jump between matches; Esc closes. (Mirrors the speech-doc viewer's find.)
+
+**Undo / redo:** `⌘Z` undoes and `⌘⇧Z` (or `⌘Y`) redoes, also available as toolbar buttons. Undo covers text edits, column changes, colors, and arrows.
+
+**Column colors:** each column header has an always-visible `▾` menu with a color palette to recolor that column; "Reset to default" restores the side color. The default Aff/Pro and Neg/Con column colors can be set for all flows in **Settings → Flow colors**.
+
 ---
 
 ## Speech Doc Viewer
@@ -365,6 +379,7 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 | Google Drive | OAuth Client ID + Secret. Requires Desktop app type in Google Cloud. |
 | Chat | Shows current user; sign-out button. |
 | Sharing default | Can edit (default) or Can view — applied when sharing via chat. |
+| Flow colors | Default Aff/Pro and Neg/Con column colors applied to all flows. |
 | Setup wizard | Re-runs the onboarding flow. |
 
 ---
