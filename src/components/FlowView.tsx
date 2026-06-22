@@ -1331,9 +1331,11 @@ export default function FlowView() {
           </div>
         ) : (
           <ToolBtn
-            onClick={() => {
+            onClick={async () => {
               if (!currentUser || !currentTeam) { setShareOpen(true); return; }
-              startLiveCollab();
+              // Go live, then open Share so inviting a teammate is the same motion.
+              const ok = await startLiveCollab();
+              if (ok) setShareOpen(true);
             }}
             disabled={liveStarting}
             title={currentUser && currentTeam ? 'Collaborate live — flow this round together with your team in realtime' : 'Sign in to a team to collaborate live'}
@@ -1410,6 +1412,7 @@ export default function FlowView() {
             return data;
           }}
           onClose={() => setShareOpen(false)}
+          collabNote={live ? 'This flow is live — anyone you share it with joins your realtime session and edits it with you, instead of getting a copy.' : undefined}
           onExportXlsx={exportXlsx}
           onOpenInExcel={openInExcel}
           onOpenInSheets={openInSheets}

@@ -13,6 +13,8 @@ interface Props {
   getData: () => Promise<any>;
   onClose: () => void;
   onShared?: () => void;
+  // Optional banner shown at the top of the panel (e.g. live-collab explainer).
+  collabNote?: string;
   onExportXlsx?: () => Promise<void>;
   onExportDocx?: () => Promise<void>;
   onOpenInExcel?: () => Promise<void>;
@@ -26,7 +28,7 @@ function dmChannelTitle(ch: DMChannel, myId?: string) {
 
 interface EmailRecipient { userId: string; displayName: string; email: string; }
 
-export default function SharePanel({ type, id, name, getData, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord }: Props) {
+export default function SharePanel({ type, id, name, getData, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord, collabNote }: Props) {
   const { currentUser, currentTeam, teamMembers, defaultSharePermission, flowsIndex, setFlowsIndex, update, setView } = useApp();
   const [dmChannels, setDmChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,6 +196,19 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-thin px-4 py-3 space-y-4">
+
+          {collabNote && (
+            <div
+              className="flex items-start gap-2 px-3 py-2 rounded-lg text-[11px] leading-snug"
+              style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)' }}
+            >
+              <span className="relative flex h-2 w-2 shrink-0 mt-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: '#16a34a' }} />
+                <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: '#16a34a' }} />
+              </span>
+              <span>{collabNote}</span>
+            </div>
+          )}
 
           {/* ── Open & Export section ── */}
           {(onOpenInWord || onExportDocx || onOpenInExcel || onOpenInSheets || onExportXlsx) && (
