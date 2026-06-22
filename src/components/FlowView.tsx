@@ -170,6 +170,7 @@ export default function FlowView() {
   const [drawMode, setDrawMode] = useState(false);
   const [arrowFrom, setArrowFrom] = useState<string | null>(null);
   const [arrowGeo, setArrowGeo] = useState<{ id: string; d: string; mx: number; my: number }[]>([]);
+  const [hoveredArrow, setHoveredArrow] = useState<string | null>(null);
 
   // ── UI state ──────────────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ export default function FlowView() {
   const gridContentRef = useRef<HTMLDivElement>(null);
   const flowNameInputRef = useRef<HTMLInputElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+  const focusedCell = useRef<string | null>(null);
 
   // Undo / redo — snapshots of editable flow state
   const history = useRef<FlowSnapshot[]>([]);
@@ -436,6 +438,19 @@ export default function FlowView() {
   function handleInput(ri: number, ci: number, e: React.FormEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     cellsRef.current[`${ri}-${ci}`] = el.innerHTML;
+    scheduleSave();
+  }
+
+  // Apply rich-text emphasis to the focused cell (toolbar buttons).
+  // Buttons call this from onMouseDown(preventDefault) so the cell keeps focus
+  // and its selection, letting execCommand act on the selected text.
+  function applyFormat(cmd: 'bold' | 'italic' | 'underline' | 'strikeThrough') {
+    const key = focusedCell.current;
+    const el = key ? cellEls.current[key] : null;
+    if (!key || !el) return;
+    el.focus();
+    document.execCommand(cmd);
+    cellsRef.current[key] = el.innerHTML;
     scheduleSave();
   }
 
@@ -896,8 +911,8 @@ export default function FlowView() {
 
       {/* ── Top bar ── */}
       <div
-        className="flex items-center gap-2 px-3 py-1.5 flex-shrink-0 flex-wrap"
-        style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', minHeight: 44 }}
+        className="flex items-center gap-1 px-2.5 py-1 flex-shrink-0 flex-wrap"
+        style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', minHeight: 38 }}
       >
         {/* Flow name */}
         {renamingFlow ? (
@@ -944,86 +959,78 @@ export default function FlowView() {
 
         <div className="flex-1" />
 
-        {/* Font size */}
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--label-color)' }}>Font</span>
-          <button className="btn px-1.5 py-0.5 text-sm leading-none" onClick={() => changeFontSize(-1)}>−</button>
-          <span className="text-xs w-5 text-center tabular-nums" style={{ color: 'var(--label-color)' }}>{fontSize}</span>
-          <button className="btn px-1.5 py-0.5 text-sm leading-none" onClick={() => changeFontSize(1)}>+</button>
-        </div>
+        {/* Emphasis */}
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('bold'); }} title="Bold (⌘B)">
+          <span style={{ fontWeight: 800, fontSize: 13 }}>B</span>
+        </ToolBtn>
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('italic'); }} title="Italic (⌘I)">
+          <span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif', fontSize: 13 }}>I</span>
+        </ToolBtn>
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('underline'); }} title="Underline (⌘U)">
+          <span style={{ textDecoration: 'underline', fontSize: 13 }}>U</span>
+        </ToolBtn>
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('strikeThrough'); }} title="Strikethrough (⌘⇧X)">
+          <span style={{ textDecoration: 'line-through', fontSize: 13 }}>S</span>
+        </ToolBtn>
 
-        <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
+        <ToolDivider />
+
+        {/* Font size */}
+        <ToolBtn onClick={() => changeFontSize(-1)} title="Smaller text"><span style={{ fontSize: 11 }}>A−</span></ToolBtn>
+        <span className="text-xs w-4 text-center tabular-nums shrink-0" style={{ color: 'var(--label-color)' }}>{fontSize}</span>
+        <ToolBtn onClick={() => changeFontSize(1)} title="Larger text"><span style={{ fontSize: 13 }}>A+</span></ToolBtn>
+
+        <ToolDivider />
 
         {/* Zoom */}
-        <div className="flex items-center gap-1 shrink-0">
-          <button className="btn px-1.5 py-0.5 text-sm leading-none" onClick={() => changeZoom(zoom - 10)} title="Zoom out">−</button>
-          <button
-            className="text-xs w-10 text-center tabular-nums transition hover:opacity-70"
-            style={{ color: 'var(--label-color)' }}
-            onClick={fitZoom}
-            title="Click to fit columns to window width"
-          >
-            {zoom}%
-          </button>
-          <button className="btn px-1.5 py-0.5 text-sm leading-none" onClick={() => changeZoom(zoom + 10)} title="Zoom in">+</button>
-          <button className="btn text-xs px-2 py-0.5" onClick={fitZoom} title="Fit columns to window">Fit</button>
-        </div>
+        <ToolBtn onClick={() => changeZoom(zoom - 10)} title="Zoom out"><span style={{ fontSize: 15 }}>−</span></ToolBtn>
+        <button
+          className="text-xs w-9 text-center tabular-nums transition hover:opacity-70 shrink-0"
+          style={{ color: 'var(--label-color)' }}
+          onClick={fitZoom}
+          title="Click to fit columns to window width"
+        >
+          {zoom}%
+        </button>
+        <ToolBtn onClick={() => changeZoom(zoom + 10)} title="Zoom in"><span style={{ fontSize: 14 }}>+</span></ToolBtn>
+        <ToolBtn onClick={fitZoom} title="Fit columns to window"><IcoFit /></ToolBtn>
 
         {customColumns && (
-          <button className="btn text-xs px-2 py-0.5 shrink-0" onClick={resetColumns}>Reset cols</button>
+          <ToolBtn onClick={resetColumns} title="Reset columns to default"><IcoResetCols /></ToolBtn>
         )}
 
-        <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
+        <ToolDivider />
 
         {/* Undo / Redo */}
-        <button className="btn px-1.5 py-0.5 shrink-0 flex items-center" onClick={undo} title="Undo (⌘Z)"><IcoUndo /></button>
-        <button className="btn px-1.5 py-0.5 shrink-0 flex items-center" onClick={redo} title="Redo (⌘⇧Z)"><IcoRedo /></button>
+        <ToolBtn onClick={undo} title="Undo (⌘Z)"><IcoUndo /></ToolBtn>
+        <ToolBtn onClick={redo} title="Redo (⌘⇧Z)"><IcoRedo /></ToolBtn>
+
+        <ToolDivider />
 
         {/* Find */}
-        <button
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition shrink-0"
-          onClick={() => { setFindOpen(true); setTimeout(() => findInputRef.current?.focus(), 0); }}
-          title="Find (⌘F)"
-          style={{ background: findOpen ? 'var(--nav-hover-bg)' : 'transparent', color: 'var(--nav-inactive-color)' }}
-        >
-          <IcoFind />
-        </button>
+        <ToolBtn onClick={() => { setFindOpen(true); setTimeout(() => findInputRef.current?.focus(), 0); }} active={findOpen} title="Find (⌘F)"><IcoFind /></ToolBtn>
 
         {/* Draw arrow */}
-        <button
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition shrink-0"
+        <ToolBtn
           onClick={() => { setDrawMode((v) => !v); setArrowFrom(null); }}
-          title={drawMode ? 'Click a source cell, then a target cell — Esc to cancel' : 'Draw an arrow between two cells'}
-          style={{ background: drawMode ? 'var(--nav-active-bg)' : 'transparent', color: drawMode ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}
+          active={drawMode}
+          title={drawMode ? 'Click a source cell, then a target cell — Esc to cancel' : 'Draw an arrow linking two cells'}
         >
           <IcoArrow />
-        </button>
+        </ToolBtn>
 
-        {/* Share button — icon only */}
+        {/* Share */}
         <div className="relative shrink-0">
-          <button
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition"
-            onClick={() => setShareOpen(true)}
-            title="Share / Open / Export"
-            style={{ background: 'transparent', color: 'var(--nav-inactive-color)' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            <ShareIcon />
-          </button>
+          <ToolBtn onClick={() => setShareOpen(true)} title="Share / Open / Export"><ShareIcon /></ToolBtn>
           {flowMeta?.shared && (
             <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: '#0077ed' }} />
           )}
         </div>
 
-        {/* Shortcuts hint */}
-        <div
-          className="text-[10px] px-1.5 py-0.5 rounded shrink-0 cursor-default"
-          style={{ color: 'var(--placeholder)', background: 'var(--mode-toggle-bg)' }}
-          title="Tab → next col  |  Enter → next row  |  Shift+Enter → newline  |  Arrows → move between cells  |  Alt+↑↓ → move rows  |  ⌘B/I/U bold·italic·underline  |  ⌘⇧X strikethrough  |  ⌘Z undo  |  ⌘F find  |  Double-click header → rename"
-        >
-          ?
-        </div>
+        {/* Shortcuts help */}
+        <ToolBtn title={'Keyboard shortcuts:\nTab → next column   Enter → next row   Shift+Enter → line break\nArrows → move between cells   Alt+↑↓ → move a cell up/down\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find\nDouble-click a column header to rename · click ▾ for color'}>
+          <IcoHelp />
+        </ToolBtn>
       </div>
 
       {/* Find bar */}
@@ -1103,20 +1110,41 @@ export default function FlowView() {
                   <path d="M0,0 L7,3 L0,6 Z" fill="var(--nav-active-color)" />
                 </marker>
               </defs>
-              {arrowGeo.map((g) => (
-                <g key={g.id}>
-                  <path d={g.d} fill="none" stroke="var(--nav-active-color)" strokeWidth={2} markerEnd="url(#wr-arrowhead)" opacity={0.85} />
-                  <circle
-                    cx={g.mx} cy={g.my} r={7}
-                    fill="var(--bg-elevated)" stroke="var(--nav-active-color)" strokeWidth={1}
-                    style={{ pointerEvents: 'all', cursor: 'pointer' }}
-                    onClick={() => deleteArrow(g.id)}
-                  >
-                    <title>Delete arrow</title>
-                  </circle>
-                  <text x={g.mx} y={g.my + 3} textAnchor="middle" fontSize={9} fill="var(--nav-active-color)" style={{ pointerEvents: 'none' }}>×</text>
-                </g>
-              ))}
+              {arrowGeo.map((g) => {
+                const hov = hoveredArrow === g.id;
+                return (
+                  <g key={g.id}>
+                    {/* Visible arrow — fades when hovered so content underneath is readable */}
+                    <path
+                      d={g.d} fill="none" stroke="var(--nav-active-color)" strokeWidth={2}
+                      markerEnd="url(#wr-arrowhead)" opacity={hov ? 0.18 : 0.85}
+                      style={{ pointerEvents: 'none', transition: 'opacity 0.12s' }}
+                    />
+                    {/* Wide invisible hit area for hover/click */}
+                    <path
+                      d={g.d} fill="none" stroke="transparent" strokeWidth={16}
+                      style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredArrow(g.id)}
+                      onMouseLeave={() => setHoveredArrow((cur) => (cur === g.id ? null : cur))}
+                      onClick={() => deleteArrow(g.id)}
+                    >
+                      <title>Click to delete this arrow</title>
+                    </path>
+                    {/* Delete affordance — only while hovering the arrow */}
+                    {hov && (
+                      <g
+                        style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                        onMouseEnter={() => setHoveredArrow(g.id)}
+                        onMouseLeave={() => setHoveredArrow((cur) => (cur === g.id ? null : cur))}
+                        onClick={() => deleteArrow(g.id)}
+                      >
+                        <circle cx={g.mx} cy={g.my} r={8} fill="var(--bg-elevated)" stroke="var(--nav-active-color)" strokeWidth={1.2} />
+                        <text x={g.mx} y={g.my + 3.5} textAnchor="middle" fontSize={11} fill="var(--nav-active-color)">×</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
             </svg>
           )}
 
@@ -1271,6 +1299,7 @@ export default function FlowView() {
                       }}
                       contentEditable={!drawMode}
                       suppressContentEditableWarning
+                      onFocus={() => { focusedCell.current = cellKey; }}
                       onInput={(e) => handleInput(ri, ci, e)}
                       onKeyDown={(e) => handleKeyDown(ri, ci, e)}
                       onMouseDown={(e) => { if (drawMode) { e.preventDefault(); handleArrowCellClick(cellKey); } }}
@@ -1286,7 +1315,7 @@ export default function FlowView() {
                       spellCheck={false}
                     />
                     {/* Cell move buttons — top-right corner on hover */}
-                    {isHovered && (
+                    {isHovered && !drawMode && (
                       <div
                         className="absolute flex flex-col"
                         style={{ top: 2, right: 2, gap: 1, zIndex: 5, pointerEvents: 'auto' }}
@@ -1401,12 +1430,70 @@ function IcoFind() {
   );
 }
 function IcoArrow() {
+  // A source node connected by a curve to an arrowhead — reads as "link two cells".
   return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 16C5 9 9 6 16 5" />
-      <path d="M11 4.5L16.5 4.5L16.5 10" />
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="4.5" cy="5" r="1.7" fill="currentColor" stroke="none" />
+      <path d="M5 6.3C7 11 9.8 13.2 14 13.7" />
+      <path d="M10.8 12.2L14.4 13.8L12.7 10.2" />
     </svg>
   );
+}
+
+function IcoFit() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 4H4v3M16 7V4h-3M13 16h3v-3M4 13v3h3" />
+    </svg>
+  );
+}
+function IcoResetCols() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="14" height="12" rx="1.5" />
+      <path d="M8 4v12M12 4v12" />
+    </svg>
+  );
+}
+function IcoHelp() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M8 8a2 2 0 1 1 2.7 1.9c-.5.2-.7.6-.7 1.1v.4" />
+      <circle cx="10" cy="14" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// Shared compact toolbar icon button with a consistent hover background.
+function ToolBtn({ children, onClick, onMouseDown, title, active, disabled }: {
+  children: React.ReactNode; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
+  title?: string; active?: boolean; disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+      title={title}
+      disabled={disabled}
+      className="flex items-center justify-center rounded-md transition shrink-0"
+      style={{
+        width: 26, height: 26,
+        background: active ? 'var(--nav-active-bg)' : 'transparent',
+        color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+        opacity: disabled ? 0.4 : 1,
+        cursor: disabled ? 'default' : 'pointer',
+      }}
+      onMouseEnter={(e) => { if (!active && !disabled) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+      onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolDivider() {
+  return <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />;
 }
 
 function SmallBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
