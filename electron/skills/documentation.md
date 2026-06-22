@@ -185,6 +185,14 @@ The flow editor works like a paper flow with spreadsheet conveniences. Cells sup
 
 **Column colors:** each column header has an always-visible `▾` menu with a color palette to recolor that column; "Reset to default" restores the side color. The default Aff/Pro and Neg/Con column colors can be set for all flows in **Settings → Flow colors**.
 
+### Live collaboration (realtime co-flowing)
+
+The **Live** toolbar button (two-people icon) turns a flow into a shared realtime session — two or more teammates type into the same flow at once and see each other's edits appear **character-by-character**, like Google Docs. A green "Live" pill shows who else is present, and each teammate's active cell is ringed and tagged in their color.
+
+The flow's editable state is mapped onto a **Yjs CRDT** document (`src/lib/flowDoc.ts`). Each cell is a `Y.Text` holding its HTML, so concurrent edits merge deterministically — even two people in the same cell never lose text (the cell *this* user is focused in is left alone until blur, to protect the caret). Layout/structure (columns, colors, variant, sheet names) lives in a `meta` map plus the `sheets` array as last-write-wins.
+
+**Transport.** Yjs update + awareness bytes ride a Supabase *Realtime broadcast* channel keyed by the flow's unguessable id (no per-keystroke DB writes). Durability is a debounced base64 snapshot of the doc in a new `flows` table (team-scoped RLS), so a teammate who opens the flow later — or reconnects — loads the current merged state. The Supabase client lives in the main process; the renderer talks to it via the `flowSync:*` IPC bridge (`src/lib/flowSync.ts` ↔ `electron/main.ts`). Late-join convergence is handled by re-broadcasting full state when a new peer's presence appears. Sharing a live flow sends a *pointer* (same id + team, `live: true`) so recipients join the same doc rather than cloning it; each device keeps a local `flow_data_*` mirror so the flow still works offline. Requires a configured Supabase backend and the `flows` table from `supabase/schema.sql`.
+
 ---
 
 ## Speech Doc Viewer

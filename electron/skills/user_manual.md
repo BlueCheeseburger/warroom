@@ -172,6 +172,15 @@ Arrows are saved with the sheet, so they're there when you reopen the flow.
 
 **Set default flow colors.** To change the colors used for new flows, go to **Settings → Flow colors** and set the default Aff/Pro and Neg/Con column colors. These apply to all your flows.
 
+**Flow together in realtime (live collaboration).** You and a teammate can type into the *same* flow at the same time and watch each other's edits appear letter-by-letter — perfect for splitting a round (one person flows aff, the other neg) or for a coach watching live.
+1. Click the **Live button** (two-people icon) in the flow toolbar. You need to be signed in to a team.
+2. A green **"Live"** pill appears showing who else is in the flow. Each teammate's cursor cell is outlined and labeled in their own color.
+3. **Share it** with your partner the normal way (Share button → pick them / your team room). When they open it, they join the *same* live flow — not a copy — and start seeing your edits instantly.
+4. Edits in different cells always merge cleanly. If you both edit the *exact same cell* at once, nothing is lost — the text merges; you just won't see their changes to a cell while your cursor is sitting in it (they show up when you click away).
+5. Click the **✕** on the Live pill to leave the live session on your device (your teammates keep collaborating). The flow keeps working offline either way.
+
+Realtime sync needs the team's Supabase backend set up (the same one team chat uses).
+
 ---
 
 ## Speech Doc Viewer

@@ -770,7 +770,7 @@ server.tool(
   async () => {
     const index = await readJson('flows_index');
     if (!Array.isArray(index) || index.length === 0) return { content: [{ type: 'text', text: 'No flows exist yet.' }] };
-    const text = index.map(f => `- "${f.name}" (${f.event}, id:${f.id})`).join('\n');
+    const text = index.map(f => `- "${f.name}" (${f.event}, id:${f.id})${f.live ? ' [LIVE — being co-edited with the team in realtime]' : ''}`).join('\n');
     return { content: [{ type: 'text', text: `${index.length} flow(s):\n${text}` }] };
   }
 );

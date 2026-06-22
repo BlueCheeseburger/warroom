@@ -557,6 +557,35 @@ export default function Documentation() {
             color. The default Aff/Pro and Neg/Con column colors can be set for all flows in{' '}
             <strong>Settings → Flow colors</strong>.
           </P>
+          <H3>Live collaboration (realtime co-flowing)</H3>
+          <P>
+            The <strong>Live</strong> toolbar button (two-people icon) turns a flow into a shared
+            realtime session — two or more teammates can type into the same flow at once and see
+            each other's edits appear <strong>character-by-character</strong>, like Google Docs.
+            A green "Live" pill shows who else is present, and each teammate's active cell is ringed
+            and tagged in their color.
+          </P>
+          <P>
+            Under the hood the flow's editable state is mapped onto a <strong>Yjs CRDT</strong>{' '}
+            document (<Code>src/lib/flowDoc.ts</Code>). Each cell is a <Code>Y.Text</Code> holding its
+            HTML, so concurrent edits merge deterministically — even two people in the same cell never
+            lose text (the cell <em>this</em> user is focused in is left alone until blur to protect
+            the caret). Layout/structure (columns, colors, variant, sheet names) lives in a{' '}
+            <Code>meta</Code> map and the <Code>sheets</Code> array as last-write-wins.
+          </P>
+          <P>
+            <strong>Transport:</strong> Yjs update and awareness bytes ride a Supabase{' '}
+            <em>Realtime broadcast</em> channel keyed by the flow's unguessable id (no per-keystroke
+            DB writes). Durability is a debounced base64 snapshot of the doc in a new{' '}
+            <Code>flows</Code> table (team-scoped RLS), so a teammate who opens the flow later — or
+            reconnects — loads the current merged state. The Supabase client lives in the main
+            process; the renderer talks to it through the <Code>flowSync:*</Code> IPC bridge
+            (<Code>src/lib/flowSync.ts</Code>). Sharing a live flow sends a <em>pointer</em> (same id
+            + team) so recipients join the same doc instead of getting a frozen copy. Each device
+            keeps a local <Code>flow_data_*</Code> mirror so the flow still works offline. (Requires a
+            configured Supabase backend and the <Code>flows</Code> table from{' '}
+            <Code>supabase/schema.sql</Code>.)
+          </P>
         </section>
 
         {/* ── Speech Doc ─────────────────────────────────────────────── */}
