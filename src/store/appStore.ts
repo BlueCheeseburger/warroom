@@ -22,6 +22,10 @@ export interface FlowMeta {
   name: string;
   event: DebateEvent;
   shared?: boolean;
+  // Live collaborative flowing: when true this flow is synced in realtime with
+  // the team via a Yjs doc over Supabase Realtime. teamId scopes the shared row.
+  live?: boolean;
+  teamId?: string;
 }
 
 export type View =

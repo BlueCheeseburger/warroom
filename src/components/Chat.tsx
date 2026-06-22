@@ -1014,6 +1014,18 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete }: {
   const [hovered, setHovered] = React.useState(false);
 
   async function importFlow(att: any) {
+    // Live flow: join the same realtime doc instead of cloning it.
+    if (att.data?.live && att.data?.flowId) {
+      const id = att.data.flowId as string;
+      const meta: FlowMeta = { id, name: att.name, event: att.data?.event ?? 'policy', live: true, teamId: att.data?.teamId };
+      const exists = flowsIndex.some((f) => f.id === id);
+      const newIndex = exists ? flowsIndex.map((f) => (f.id === id ? { ...f, ...meta } : f)) : [...flowsIndex, meta];
+      setFlowsIndex(newIndex);
+      await window.warroom.storage.write('flows_index', newIndex);
+      if (!exists) await window.warroom.storage.write(`flow_data_${id}`, att.data ?? {});
+      setView({ kind: 'flow', flowId: id });
+      return;
+    }
     const newId = crypto.randomUUID();
     const meta: FlowMeta = { id: newId, name: att.name, event: att.data?.event ?? 'policy' };
     const newIndex = [...flowsIndex, meta];

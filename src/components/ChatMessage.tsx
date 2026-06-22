@@ -59,6 +59,20 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete }: Props
               ? <ImageAttachment key={att.id} attachment={att} />
               : <AttachmentChip key={att.id} attachment={att} isSelf={isSelf}
                   onImportFlow={async (a) => {
+                    // A live flow shares a pointer — open the *same* flow id and
+                    // mark it live so this device joins the realtime session,
+                    // instead of importing a frozen copy under a new id.
+                    if (a.data?.live && a.data?.flowId) {
+                      const id = a.data.flowId as string;
+                      const meta: FlowMeta = { id, name: a.name, event: a.data?.event ?? 'policy', live: true, teamId: a.data?.teamId };
+                      const exists = flowsIndex.some((f) => f.id === id);
+                      const next = exists ? flowsIndex.map((f) => (f.id === id ? { ...f, ...meta } : f)) : [...flowsIndex, meta];
+                      setFlowsIndex(next);
+                      await window.warroom.storage.write('flows_index', next);
+                      if (!exists) await window.warroom.storage.write(`flow_data_${id}`, a.data ?? {});
+                      setView({ kind: 'flow', flowId: id });
+                      return;
+                    }
                     const newId = crypto.randomUUID();
                     const meta: FlowMeta = { id: newId, name: a.name, event: a.data?.event ?? 'policy' };
                     const next = [...flowsIndex, meta];

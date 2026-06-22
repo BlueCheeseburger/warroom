@@ -1,7 +1,21 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
+import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser } from '../lib/flowSync';
+import {
+  seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
+  u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
+} from '../lib/flowDoc';
+
+// Stable per-user cursor color (hash the user id into a fixed palette).
+const PRESENCE_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#0d9488'];
+function colorForUser(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return PRESENCE_COLORS[Math.abs(h) % PRESENCE_COLORS.length];
+}
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -137,7 +151,7 @@ function colBg(color: string, isDark: boolean, isHeader: boolean): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FlowView() {
-  const { view, event, setEvent, flowsIndex, setFlowsIndex, chatOpen } = useApp();
+  const { view, event, setEvent, flowsIndex, setFlowsIndex, chatOpen, currentUser, currentTeam } = useApp();
   const flowId = view.kind === 'flow' ? (view as any).flowId : undefined;
   const flowMeta: FlowMeta | undefined = flowsIndex.find((f) => f.id === flowId);
   const dark = useDarkMode();
@@ -184,6 +198,15 @@ export default function FlowView() {
   const [colMenu, setColMenu] = useState<number | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // ── Live collaboration ──────────────────────────────────────────────────────
+  const [live, setLive] = useState(false);              // is this flow live-synced?
+  const [liveReady, setLiveReady] = useState(false);    // sync handle attached
+  const [liveStarting, setLiveStarting] = useState(false);
+  const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+  const syncRef = useRef<FlowSyncHandle | null>(null);
+  const liveRef = useRef(false);                          // mirror for callbacks
+  const applyingRemote = useRef(false);                   // guard structural echo
 
   // ── Refs ──────────────────────────────────────────────────────────────────
 
@@ -232,6 +255,10 @@ export default function FlowView() {
   const totalWidth = effectiveWidths.reduce((a, b) => a + b, 0);
   const gridTemplate = effectiveWidths.map((w) => `${w}px`).join(' ');
 
+  // Which cell (in the active sheet) each remote teammate is currently editing.
+  const remoteCursorMap = new Map<string, RemoteCursor>();
+  remoteCursors.forEach((c) => { if (c.cell) remoteCursorMap.set(c.cell, c); });
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -239,6 +266,9 @@ export default function FlowView() {
     setLoaded(false);
     cellsRef.current = {};
     window.warroom?.storage.read(`flow_data_${flowId}`).then((data: StoredFlowData | null) => {
+      // If live sync already took over, don't let this (possibly stale) local
+      // mirror clobber the merged doc state.
+      if (liveRef.current) { setLoaded(true); return; }
       if (data?.sheets?.length) {
         const ev = data.event ?? flowMeta?.event ?? 'policy';
         const v: PolicyVariant = data.variant ?? 'stock-issues';
@@ -359,7 +389,7 @@ export default function FlowView() {
     const flushedSheets = s.sheets.map((sh, i) =>
       i === s.activeSheetIdx ? { ...sh, cells: { ...cellsRef.current } } : sh
     );
-    window.warroom?.storage.write(`flow_data_${flowId}`, {
+    const payload = {
       event: flowMeta?.event ?? event,
       variant: s.variant,
       pfOrder: s.pfOrder,
@@ -370,7 +400,216 @@ export default function FlowView() {
       fontSize: s.fontSize,
       zoom: s.zoom,
       ...overrides,
-    } as StoredFlowData);
+    } as StoredFlowData;
+    // Local mirror — keeps the flow in the sidebar and working offline even when live.
+    window.warroom?.storage.write(`flow_data_${flowId}`, payload);
+    // When live, mirror layout/structure into the Y.Doc so the shared snapshot
+    // carries it and teammates re-render. Cell *text* is synced separately, per
+    // keystroke, so we deliberately don't push cells here (would clobber merges).
+    if (liveRef.current && !applyingRemote.current) syncStructureToDoc(payload);
+  }
+
+  // ── Live: structure ↔ Y.Doc ────────────────────────────────────────────────
+  // Mirror meta + sheet identity/names into the doc (not cell text). Reconciles
+  // the sheets Y.Array by stable id so renames/adds/removes propagate.
+  function syncStructureToDoc(data: StoredFlowData) {
+    const handle = syncRef.current;
+    if (!handle) return;
+    const doc = handle.doc;
+    doc.transact(() => {
+      const meta = metaMap(doc);
+      meta.set('event', data.event);
+      meta.set('variant', data.variant);
+      meta.set('pfOrder', data.pfOrder);
+      meta.set('fontSize', data.fontSize);
+      meta.set('zoom', data.zoom);
+      meta.set('customColumns', data.customColumns ?? null);
+      meta.set('columnWidths', data.columnWidths);
+      meta.set('columnColors', data.columnColors ?? []);
+
+      const arr = sheetsArr(doc);
+      const haveIds = new Set<string>();
+      for (let i = 0; i < arr.length; i++) haveIds.add(arr.get(i).get('id'));
+      // add / rename
+      data.sheets.forEach((sh) => {
+        let sm: Y.Map<any> | null = null;
+        for (let i = 0; i < arr.length; i++) { const m = arr.get(i); if (m.get('id') === sh.id) { sm = m; break; } }
+        if (!sm) {
+          sm = new Y.Map();
+          sm.set('id', sh.id);
+          sm.set('name', sh.name);
+          sm.set('cells', new Y.Map<Y.Text>());
+          sm.set('arrows', new Y.Array());
+          arr.push([sm]);
+        } else if (sm.get('name') !== sh.name) {
+          sm.set('name', sh.name);
+        }
+        haveIds.delete(sh.id);
+      });
+      // remove sheets that no longer exist locally
+      if (haveIds.size) {
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (haveIds.has(arr.get(i).get('id'))) arr.delete(i, 1);
+        }
+      }
+    }, LOCAL_ORIGIN);
+  }
+
+  // Push one cell's HTML into its Y.Text (realtime, per keystroke).
+  function pushLiveCell(key: string, html: string) {
+    const handle = syncRef.current;
+    if (!liveRef.current || !handle || applyingRemote.current) return;
+    const sheetId = snap.current.sheets[snap.current.activeSheetIdx]?.id;
+    if (!sheetId) return;
+    const t = cellText(handle.doc, sheetId, key);
+    if (t) setYText(t, html, LOCAL_ORIGIN);
+  }
+
+  // Build the current flow's plain data (for seeding a fresh live doc).
+  function currentDataForDoc(): FlowDocData {
+    const s = snap.current;
+    const sheets = s.sheets.map((sh, i) => ({
+      id: sh.id, name: sh.name,
+      cells: i === s.activeSheetIdx ? { ...cellsRef.current } : { ...sh.cells },
+      arrows: [...(sh.arrows ?? [])],
+    }));
+    return {
+      event: (flowMeta?.event === 'pf' ? 'pf' : 'policy'),
+      variant: s.variant, pfOrder: s.pfOrder, sheets,
+      columnWidths: [...s.columnWidths], customColumns: s.customColumns ? [...s.customColumns] : null,
+      columnColors: [...s.columnColors], fontSize: s.fontSize, zoom: s.zoom,
+    };
+  }
+
+  // Replace local React state + cell DOM from the Y.Doc (initial hydrate on join,
+  // and a coarse rebuild when a remote *structural* change lands).
+  function hydrateFromDoc(doc: Y.Doc, opts: { remountCells: boolean } = { remountCells: true }) {
+    const data = docToData(doc);
+    if (!data) return;
+    applyingRemote.current = true;
+    try {
+      const cols = data.event === 'policy' ? POLICY_COLS : (data.pfOrder === 'pro-first' ? PF_PRO_FIRST_COLS : PF_CON_FIRST_COLS);
+      const colCount = (data.customColumns ?? cols).length;
+      setVariant(data.variant);
+      setPfOrder(data.pfOrder);
+      setSheets(data.sheets as any);
+      setColumnWidths(data.columnWidths?.length === colCount ? data.columnWidths : (data.customColumns ?? cols).map(() => DEFAULT_COL_WIDTH));
+      setCustomColumns(data.customColumns);
+      setColumnColors(data.columnColors?.length === colCount ? data.columnColors : (data.customColumns ?? cols).map(() => null));
+      setFontSize(data.fontSize); setZoom(data.zoom);
+      const idx = Math.min(snap.current.activeSheetIdx, data.sheets.length - 1);
+      cellsRef.current = { ...(data.sheets[idx]?.cells ?? {}) };
+      if (opts.remountCells) setCellNonce((n) => n + 1);
+    } finally {
+      // release on the next tick so setState-driven persists don't echo back
+      requestAnimationFrame(() => { applyingRemote.current = false; });
+    }
+  }
+
+  // Apply a single remote cell-text change straight to the DOM (no remount, so
+  // neither user loses their caret). We never overwrite the cell *this* user is
+  // focused in — same-cell concurrent edits reconcile on blur instead.
+  function patchRemoteCell(key: string, html: string) {
+    cellsRef.current[key] = html;
+    if (focusedCell.current === key) return;
+    const el = cellEls.current[key];
+    if (el) { el.innerHTML = html || ''; el.dataset.init = '1'; }
+  }
+
+  // ── Live lifecycle: attach / detach the sync handle ─────────────────────────
+  useEffect(() => {
+    if (!flowId || !live || !currentUser || !currentTeam) return;
+    let cancelled = false;
+    let handle: FlowSyncHandle | null = null;
+    setLiveStarting(true);
+    (async () => {
+      const me: PresenceUser = { id: currentUser.id, name: currentUser.displayName, color: colorForUser(currentUser.id) };
+      try {
+        handle = await createFlowSync(flowId, currentTeam.id, flowMeta?.name ?? 'Flow', me);
+      } catch {
+        if (!cancelled) { setLiveStarting(false); setLive(false); }
+        return;
+      }
+      if (cancelled) { handle.destroy(); return; }
+      syncRef.current = handle;
+      liveRef.current = true;
+      // If the doc already has content (snapshot or a peer), adopt it. Otherwise
+      // we're the first writer — seed it from what we already have on screen.
+      if (!docToData(handle.doc)) seedDoc(handle.doc, currentDataForDoc(), cellToHtml);
+      else hydrateFromDoc(handle.doc, { remountCells: true });
+      handle.onCursors((c) => { if (!cancelled) setRemoteCursors(c); });
+      setLiveReady(true);
+      setLiveStarting(false);
+    })();
+    return () => {
+      cancelled = true;
+      liveRef.current = false;
+      setLiveReady(false);
+      setRemoteCursors([]);
+      syncRef.current = null;
+      handle?.destroy();
+    };
+  }, [flowId, live, currentUser?.id, currentTeam?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-enter live mode for a flow already marked live.
+  useEffect(() => { setLive(!!flowMeta?.live); }, [flowId, flowMeta?.live]);
+
+  // ── Live observers: meta/sheets (structural) + active-sheet cells (text) ─────
+  useEffect(() => {
+    const handle = syncRef.current;
+    if (!liveReady || !handle) return;
+    const doc = handle.doc;
+    const onMeta = (_e: any, tr: Y.Transaction) => { if (tr.origin === REMOTE_ORIGIN) hydrateFromDoc(doc, { remountCells: false }); };
+    const onSheets = (_e: any, tr: Y.Transaction) => { if (tr.origin === REMOTE_ORIGIN) hydrateFromDoc(doc, { remountCells: true }); };
+    metaMap(doc).observe(onMeta);
+    sheetsArr(doc).observe(onSheets);
+    return () => { metaMap(doc).unobserve(onMeta); sheetsArr(doc).unobserve(onSheets); };
+  }, [liveReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Observe the *active* sheet's cells; patch remote text edits into the DOM.
+  useEffect(() => {
+    const handle = syncRef.current;
+    const sheetId = activeSheet?.id;
+    if (!liveReady || !handle || !sheetId) return;
+    const sheet = findSheet(handle.doc, sheetId);
+    if (!sheet) return;
+    const cells = sheetCells(sheet);
+    const onCells = (events: any[], tr: Y.Transaction) => {
+      if (tr.origin !== REMOTE_ORIGIN) return;
+      applyingRemote.current = true;
+      try {
+        events.forEach((ev: any) => {
+          if (ev.target instanceof Y.Text && ev.path.length >= 1) {
+            patchRemoteCell(String(ev.path[ev.path.length - 1]), ev.target.toString());
+          } else if (ev.target === cells && ev.changes?.keys) {
+            ev.changes.keys.forEach((_chg: any, key: string) => {
+              const t = cells.get(key); patchRemoteCell(key, t ? t.toString() : '');
+            });
+          }
+        });
+      } finally { requestAnimationFrame(() => { applyingRemote.current = false; }); }
+    };
+    cells.observeDeep(onCells);
+    return () => cells.unobserveDeep(onCells);
+  }, [liveReady, activeSheet?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Go live / leave ─────────────────────────────────────────────────────────
+  async function startLiveCollab(): Promise<boolean> {
+    if (!flowId || !currentTeam || !currentUser) return false;
+    setLiveStarting(true);
+    const data = currentDataForDoc();
+    const seed = new Y.Doc();
+    seedDoc(seed, data, cellToHtml);
+    const res = await window.warroom.flowSync.promote(flowId, currentTeam.id, flowMeta?.name ?? 'Flow', u8ToB64(Y.encodeStateAsUpdate(seed)));
+    seed.destroy();
+    if (!res.ok) { setLiveStarting(false); return false; }
+    updateFlowMeta({ live: true, teamId: currentTeam.id });
+    setLive(true); // the lifecycle effect picks it up
+    return true;
+  }
+  function stopLiveCollab() {
+    updateFlowMeta({ live: false });
+    setLive(false);
   }
 
   // ── Undo / redo ──────────────────────────────────────────────────────────
@@ -450,7 +689,9 @@ export default function FlowView() {
 
   function handleInput(ri: number, ci: number, e: React.FormEvent<HTMLDivElement>) {
     const el = e.currentTarget;
-    cellsRef.current[`${ri}-${ci}`] = el.innerHTML;
+    const key = `${ri}-${ci}`;
+    cellsRef.current[key] = el.innerHTML;
+    pushLiveCell(key, el.innerHTML);
     scheduleSave();
   }
 
@@ -464,6 +705,7 @@ export default function FlowView() {
     el.focus();
     document.execCommand(cmd);
     cellsRef.current[key] = el.innerHTML;
+    pushLiveCell(key, el.innerHTML);
     scheduleSave();
   }
 
@@ -502,13 +744,13 @@ export default function FlowView() {
     if (mod && !e.shiftKey && (k === 'b' || k === 'i' || k === 'u')) {
       e.preventDefault();
       document.execCommand(k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline');
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; scheduleSave();
+      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
     if (mod && e.shiftKey && (k === 'x' || k === 's')) {
       e.preventDefault();
       document.execCommand('strikeThrough');
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; scheduleSave();
+      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
     if (mod) return; // let ⌘Z/⌘F/⌘A etc. bubble to global handlers
@@ -521,7 +763,7 @@ export default function FlowView() {
     } else if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
       document.execCommand('insertLineBreak');
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; scheduleSave();
+      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
@@ -556,6 +798,8 @@ export default function FlowView() {
     const targetEl = cellEls.current[targetKey];
     if (el) el.innerHTML = cellToHtml(b);
     if (targetEl) targetEl.innerHTML = cellToHtml(a);
+    pushLiveCell(key, cellToHtml(b));
+    pushLiveCell(targetKey, cellToHtml(a));
     scheduleSave();
   }
 
@@ -736,8 +980,21 @@ export default function FlowView() {
     if (idx === activeSheetIdx) return;
     const saved = flushAndGetSheets();
     setSheets(saved);
-    cellsRef.current = saved[idx]?.cells ?? {};
+    // When live, the Y.Doc is the source of truth — a sheet we left may have
+    // received remote edits while it was inactive, so read its cells back from
+    // the doc rather than the (possibly stale) local snapshot.
+    const handle = syncRef.current;
+    const targetId = saved[idx]?.id;
+    if (liveRef.current && handle && targetId) {
+      const sheet = findSheet(handle.doc, targetId);
+      const cells: Record<string, string> = {};
+      if (sheet) sheetCells(sheet).forEach((t, k) => { const v = t.toString(); if (v) cells[k] = v; });
+      cellsRef.current = cells;
+    } else {
+      cellsRef.current = saved[idx]?.cells ?? {};
+    }
     setActiveSheetIdx(idx);
+    setCellNonce((n) => n + 1);
     persist({ sheets: saved });
   }
 
@@ -1040,6 +1297,51 @@ export default function FlowView() {
           <IcoArrow />
         </ToolBtn>
 
+        {/* Live collaboration */}
+        {live ? (
+          <div
+            className="flex items-center gap-1.5 shrink-0 px-2 h-[26px] rounded-md"
+            style={{ background: 'var(--nav-active-bg)' }}
+            title={liveReady
+              ? `Live — editing together in realtime${remoteCursors.length ? ` with ${remoteCursors.map((c) => c.user.name).join(', ')}` : ' (no one else here yet)'}`
+              : 'Connecting to live session…'}
+          >
+            <span className="relative flex h-2 w-2 shrink-0">
+              {liveReady && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: '#16a34a' }} />}
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: liveReady ? '#16a34a' : '#d97706' }} />
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--nav-active-color)' }}>Live</span>
+            {/* Present teammates */}
+            <div className="flex items-center -space-x-1">
+              {remoteCursors.slice(0, 4).map((c) => (
+                <span
+                  key={c.user.id}
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                  style={{ background: c.user.color, border: '1px solid var(--bg-elevated)' }}
+                  title={c.user.name}
+                >{c.user.name[0]?.toUpperCase()}</span>
+              ))}
+            </div>
+            <button
+              onClick={stopLiveCollab}
+              className="text-[10px] leading-none ml-0.5 opacity-70 hover:opacity-100"
+              style={{ color: 'var(--nav-active-color)' }}
+              title="Leave the live session (stops syncing your edits)"
+            >✕</button>
+          </div>
+        ) : (
+          <ToolBtn
+            onClick={() => {
+              if (!currentUser || !currentTeam) { setShareOpen(true); return; }
+              startLiveCollab();
+            }}
+            disabled={liveStarting}
+            title={currentUser && currentTeam ? 'Collaborate live — flow this round together with your team in realtime' : 'Sign in to a team to collaborate live'}
+          >
+            <IcoLive />
+          </ToolBtn>
+        )}
+
         {/* Share */}
         <div className="relative shrink-0">
           <ToolBtn onClick={() => setShareOpen(true)} title="Share / Open / Export"><ShareIcon /></ToolBtn>
@@ -1101,8 +1403,11 @@ export default function FlowView() {
           id={flowId}
           name={flowMeta?.name ?? 'Untitled Flow'}
           getData={async () => {
-            const data = await window.warroom?.storage.read(`flow_data_${flowId}`);
-            return data ?? {};
+            const data = (await window.warroom?.storage.read(`flow_data_${flowId}`)) ?? {};
+            // A live flow shares a *pointer* (same id + team) so recipients join the
+            // very same realtime doc rather than getting a frozen copy.
+            if (live && currentTeam) return { ...data, live: true, flowId, teamId: currentTeam.id };
+            return data;
           }}
           onClose={() => setShareOpen(false)}
           onExportXlsx={exportXlsx}
@@ -1298,6 +1603,7 @@ export default function FlowView() {
                 const cellKey = `${ri}-${ci}`;
                 const isHovered = hoveredCell?.ri === ri && hoveredCell?.ci === ci;
                 const isArrowSrc = drawMode && arrowFrom === cellKey;
+                const remoteCur = remoteCursorMap.get(cellKey);
                 return (
                   <div
                     key={ci}
@@ -1306,12 +1612,22 @@ export default function FlowView() {
                       background: colBg(colColor(ci), dark, false),
                       borderRight: ci < columns.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                       borderBottom: '1px solid var(--border-subtle)',
-                      boxShadow: isArrowSrc ? 'inset 0 0 0 2px var(--nav-active-color)' : undefined,
+                      boxShadow: isArrowSrc
+                        ? 'inset 0 0 0 2px var(--nav-active-color)'
+                        : (remoteCur ? `inset 0 0 0 2px ${remoteCur.user.color}` : undefined),
                       cursor: drawMode ? 'crosshair' : undefined,
                     }}
                     onMouseEnter={() => setHoveredCell({ ri, ci })}
                     onMouseLeave={() => setHoveredCell(null)}
                   >
+                    {remoteCur && (
+                      <div
+                        className="absolute z-10 px-1.5 py-0.5 rounded text-[9px] font-semibold pointer-events-none whitespace-nowrap"
+                        style={{ top: -9, left: 4, background: remoteCur.user.color, color: '#fff' }}
+                      >
+                        {remoteCur.user.name}
+                      </div>
+                    )}
                     <div
                       key={`${activeSheet?.id ?? 'sheet'}-${cellKey}-${reloadNonce}-${cellNonce}`}
                       ref={(el) => {
@@ -1320,7 +1636,8 @@ export default function FlowView() {
                       }}
                       contentEditable={!drawMode}
                       suppressContentEditableWarning
-                      onFocus={() => { focusedCell.current = cellKey; }}
+                      onFocus={() => { focusedCell.current = cellKey; syncRef.current?.setActiveCell(cellKey); }}
+                      onBlur={(e) => { if (liveRef.current) { pushLiveCell(cellKey, e.currentTarget.innerHTML); syncRef.current?.setActiveCell(null); } }}
                       onInput={(e) => handleInput(ri, ci, e)}
                       onKeyDown={(e) => handleKeyDown(ri, ci, e)}
                       onMouseDown={(e) => { if (drawMode) { e.preventDefault(); handleArrowCellClick(cellKey); } }}
@@ -1417,6 +1734,18 @@ export default function FlowView() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+// Two people / live-collab glyph.
+function IcoLive() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7" cy="7" r="2.4" />
+      <path d="M2.8 15c0-2.3 1.9-3.8 4.2-3.8s4.2 1.5 4.2 3.8" />
+      <circle cx="13.6" cy="6.2" r="2" />
+      <path d="M13.2 11.3c2 0 3.9 1.3 3.9 3.7" />
+    </svg>
+  );
+}
 
 function ShareIcon() {
   return (
