@@ -6,6 +6,18 @@ import { linkifyText } from '../lib/linkify';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS, makeDefaultData } from './FlowView';
 import type { View } from '../store/appStore';
 
+// Flow cells are stored as HTML (rich text). Strip tags for AI-readable plain text.
+function stripCellHtml(s: string): string {
+  if (!s) return '';
+  if (!/[<&]/.test(s)) return s;
+  return String(s)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .trim();
+}
+
 // ─── Model lists (kept in sync with Settings.tsx) ─────────────────────────────
 const GEMINI_MODEL_OPTIONS = [
   { value: 'flash-lite', label: '2.5 Flash Lite' },
@@ -270,7 +282,7 @@ function serializeAttachment(att: any): string {
       Object.entries(cells).forEach(([key, val]) => {
         if (!val) return;
         const [r, c] = key.split('-').map(Number);
-        filledRows.push(`    row ${r + 1}, col "${cols[c] ?? c + 1}": ${String(val).slice(0, 200)}`);
+        filledRows.push(`    row ${r + 1}, col "${cols[c] ?? c + 1}": ${stripCellHtml(String(val)).slice(0, 200)}`);
       });
       return `  Sheet ${si + 1} "${sh.name ?? `Sheet ${si + 1}`}" — columns: ${colHeaders}\n${filledRows.join('\n') || '    (empty)'}`;
     }).join('\n');
@@ -1155,6 +1167,24 @@ function MicIcon({ size = 14 }: { size?: number }) {
 // ─── Build tournament/round context string for system prompt injection ───────────
 
 const CASE_SYNOPSIS_THRESHOLD = 8;
+const SPEECH_DOC_RECENTS_KEY = 'warroom-speech-doc-recents';
+
+function getSpeechDocRecents(): { path: string; name: string }[] {
+  try { return JSON.parse(localStorage.getItem(SPEECH_DOC_RECENTS_KEY) ?? '[]'); }
+  catch { return []; }
+}
+
+function inferSide(name: string): string {
+  const l = name.toLowerCase();
+  if (l.includes('aff') || l.includes('pro')) return 'AFF';
+  if (l.includes('neg') || l.includes('con')) return 'NEG';
+  return '?';
+}
+
+function buildDocCaseLine(doc: { path: string; name: string }): string {
+  const displayName = doc.name.replace(/\.docx$/i, '');
+  return `case:"${displayName}" side:${inferSide(displayName)} source:speech-doc path:${doc.path}`;
+}
 
 function buildCaseSynopsis(c: any, db: any): string {
   const lines: string[] = [`case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} | warroom_id:case:${c.id}`];
@@ -1173,18 +1203,25 @@ function buildCaseSynopsis(c: any, db: any): string {
 function buildAppIndex(db: any, flowsIndex: any[]): string {
   const sections: string[] = [];
 
-  // Cases
-  const cases = Object.values(db.cases ?? {}) as any[];
-  if (cases.length > 0) {
-    if (cases.length <= CASE_SYNOPSIS_THRESHOLD) {
+  // Cases — merge db.cases with speech doc recents
+  const dbCases = Object.values(db.cases ?? {}) as any[];
+  const speechDocs = getSpeechDocRecents();
+  const totalCases = dbCases.length + speechDocs.length;
+
+  if (totalCases > 0) {
+    if (totalCases <= CASE_SYNOPSIS_THRESHOLD) {
+      const dbPart = dbCases.map((c: any) => buildCaseSynopsis(c, db)).join('\n\n');
+      const docPart = speechDocs.map((d) => buildDocCaseLine(d)).join('\n');
+      const body = [dbPart, docPart].filter(Boolean).join('\n\n');
       sections.push(
-        `[CASES — ${cases.length} case(s) with full synopses. Cases may have both AFF and NEG sections labeled within their blocks.]\n` +
-        cases.map((c: any) => buildCaseSynopsis(c, db)).join('\n\n')
+        `[CASES — ${totalCases} total (${dbCases.length} in-app, ${speechDocs.length} speech doc). Cases may have AFF and NEG sections. For speech-doc cases use read_speech_doc for full content or get_case_synopses for headings.]\n${body}`
       );
     } else {
+      const dbPart = dbCases.map((c: any) => `  case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} | warroom_id:case:${c.id}`).join('\n');
+      const docPart = speechDocs.map((d) => `  ${buildDocCaseLine(d)}`).join('\n');
+      const body = [dbPart, docPart].filter(Boolean).join('\n');
       sections.push(
-        `[CASES — ${cases.length} cases (synopses not auto-loaded; call get_case_synopses to see block titles and taglines for any case). Cases may have both AFF and NEG sections.]\n` +
-        cases.map((c: any) => `  case:"${c.name}" side:${c.side?.toUpperCase() ?? '?'} | warroom_id:case:${c.id}`).join('\n')
+        `[CASES — ${totalCases} total (call get_case_synopses for block/heading structure). Cases may have AFF and NEG sections.]\n${body}`
       );
     }
   }
@@ -2021,8 +2058,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 for (let r = 0; r < NUM_ROWS; r++) {
                   const parts: string[] = [];
                   cols.forEach((c, ci) => {
-                    const v = cells[`${r}-${ci}`];
-                    if (v && String(v).trim()) parts.push(`${c}: ${v}`);
+                    const v = stripCellHtml(String(cells[`${r}-${ci}`] ?? ''));
+                    if (v.trim()) parts.push(`${c}: ${v}`);
                   });
                   if (parts.length) rowsWithContent.push(`  Row ${r + 1} — ${parts.join(' | ')}`);
                 }
@@ -2039,20 +2076,38 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'get_case_synopses', label: 'Loading case synopses', status: 'running' }];
             syncSteps(steps);
-            const allCases = Object.values(db.cases ?? {}) as any[];
             const query = String(args.name ?? '').trim().toLowerCase();
-            const filtered = query
-              ? allCases.filter((c: any) => c.name?.toLowerCase().includes(query) || query.includes(c.name?.toLowerCase()))
-              : allCases;
-            if (filtered.length === 0) {
+            const dbCases = Object.values(db.cases ?? {}) as any[];
+            const speechDocCases = getSpeechDocRecents();
+            const matchesQuery = (n: string) => !query || n.toLowerCase().includes(query) || query.includes(n.toLowerCase());
+            const filteredDb = dbCases.filter((c: any) => matchesQuery(c.name ?? ''));
+            const filteredDocs = speechDocCases.filter((d) => matchesQuery(d.name.replace(/\.docx$/i, '')));
+            if (filteredDb.length === 0 && filteredDocs.length === 0) {
               steps = steps.map((s) => s.id === stepId ? { ...s, label: 'No matching cases', status: 'done' } : s);
               syncSteps(steps);
               return { name, functionResult: query ? `No case matching "${args.name}" found.` : 'No cases saved yet.' };
             }
-            const result = filtered.map((c: any) => buildCaseSynopsis(c, db)).join('\n\n');
-            steps = steps.map((s) => s.id === stepId ? { ...s, label: `Loaded ${filtered.length} case synopsis${filtered.length !== 1 ? 'es' : ''}`, status: 'done' } : s);
+            const parts: string[] = filteredDb.map((c: any) => buildCaseSynopsis(c, db));
+            // Extract headings from speech-doc cases
+            for (const doc of filteredDocs) {
+              const displayName = doc.name.replace(/\.docx$/i, '');
+              try {
+                const res = await (window.warroom as any)?.speechdoc?.extract(doc.path);
+                if (res?.ok && res.data?.tokenSaving) {
+                  const headings = res.data.tokenSaving.split('\n').filter((l: string) => l.trim());
+                  parts.push(`case:"${displayName}" side:${inferSide(displayName)} source:speech-doc\n` +
+                    headings.map((h: string) => `  · ${h}`).join('\n'));
+                } else {
+                  parts.push(`case:"${displayName}" side:${inferSide(displayName)} source:speech-doc (could not extract — file may have moved)`);
+                }
+              } catch {
+                parts.push(`case:"${displayName}" side:${inferSide(displayName)} source:speech-doc (extraction failed)`);
+              }
+            }
+            const total = filteredDb.length + filteredDocs.length;
+            steps = steps.map((s) => s.id === stepId ? { ...s, label: `Loaded ${total} case synopsis${total !== 1 ? 'es' : ''}`, status: 'done' } : s);
             syncSteps(steps);
-            return { name, functionResult: result };
+            return { name, functionResult: parts.join('\n\n') };
 
           } else if (name === 'read_speech_doc') {
             const normDocQuery = (s: string) => s.trim().toLowerCase().replace(/\.docx$/i, '').replace(/[_\s]+/g, ' ');

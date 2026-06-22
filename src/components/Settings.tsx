@@ -222,6 +222,31 @@ export default function Settings() {
   const [settingsEvent, setSettingsEvent] = useState('hspolicy');
   const [eventSaved, setEventSaved] = useState(false);
 
+  // Flow column colors (display prefs — plain localStorage, read live by FlowView)
+  const [flowAffColor, setFlowAffColor] = useState(
+    () => localStorage.getItem('warroom-flow-aff-color') || '#2563eb'
+  );
+  const [flowNegColor, setFlowNegColor] = useState(
+    () => localStorage.getItem('warroom-flow-neg-color') || '#16a34a'
+  );
+  const setFlowColor = (side: 'aff' | 'neg', hex: string) => {
+    if (side === 'aff') {
+      localStorage.setItem('warroom-flow-aff-color', hex);
+      setFlowAffColor(hex);
+    } else {
+      localStorage.setItem('warroom-flow-neg-color', hex);
+      setFlowNegColor(hex);
+    }
+    window.dispatchEvent(new CustomEvent('warroom-flow-colors-changed'));
+  };
+  const resetFlowColors = () => {
+    localStorage.setItem('warroom-flow-aff-color', '#2563eb');
+    localStorage.setItem('warroom-flow-neg-color', '#16a34a');
+    setFlowAffColor('#2563eb');
+    setFlowNegColor('#16a34a');
+    window.dispatchEvent(new CustomEvent('warroom-flow-colors-changed'));
+  };
+
   useEffect(() => {
     Promise.all([
       window.warroom?.secure.get('gemini'),
@@ -735,6 +760,52 @@ export default function Settings() {
             Requires a free OAuth credential from Google Cloud (Desktop app type).
           </p>
           {loaded && <GDriveSettings />}
+        </div>
+      </div>
+
+      {/* Flow colors */}
+      <div id="settings-flow-colors" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        <div>
+          <div className="label mb-1">Flow colors</div>
+          <p className="text-xs mb-3 text-ink/50">
+            Default column colors for new and existing flow sheets. Aff/Pro columns use the first
+            color; Neg/Con columns use the second.
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span
+                className="shrink-0 w-4 h-4 rounded"
+                style={{ background: flowAffColor, border: '1px solid var(--border-side)' }}
+              />
+              <span className="text-xs text-ink/70 flex-1">Aff / Pro</span>
+              <input
+                type="color"
+                value={flowAffColor}
+                onChange={(e) => setFlowColor('aff', e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer bg-transparent border-0 p-0"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className="shrink-0 w-4 h-4 rounded"
+                style={{ background: flowNegColor, border: '1px solid var(--border-side)' }}
+              />
+              <span className="text-xs text-ink/70 flex-1">Neg / Con</span>
+              <input
+                type="color"
+                value={flowNegColor}
+                onChange={(e) => setFlowColor('neg', e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer bg-transparent border-0 p-0"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetFlowColors}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-1"
+          >
+            Reset to defaults
+          </button>
         </div>
       </div>
 

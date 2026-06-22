@@ -255,6 +255,18 @@ const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2',
 const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
 const FLOW_NUM_ROWS = 60;
 
+// Flow cells are stored as HTML (rich text). Strip tags for plain-text output.
+function stripFlowHtml(s) {
+  if (!s) return '';
+  if (!/[<&]/.test(String(s))) return String(s);
+  return String(s)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .trim();
+}
+
 function flowColumns(data) {
   if (data?.customColumns?.length) return data.customColumns;
   if ((data?.event ?? 'policy') === 'pf')
@@ -783,7 +795,7 @@ server.tool(
       const rows = [];
       for (let r = 0; r < FLOW_NUM_ROWS; r++) {
         const parts = [];
-        cols.forEach((c, ci) => { const v = cells[`${r}-${ci}`]; if (v && String(v).trim()) parts.push(`${c}: ${v}`); });
+        cols.forEach((c, ci) => { const v = stripFlowHtml(cells[`${r}-${ci}`]); if (v && v.trim()) parts.push(`${c}: ${v}`); });
         if (parts.length) rows.push(`  Row ${r + 1} — ${parts.join(' | ')}`);
       }
       out.push(`\nSheet ${si + 1}: "${sh.name}"${rows.length ? '\n' + rows.join('\n') : ' (empty)'}`);
