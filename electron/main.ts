@@ -4909,6 +4909,99 @@ ipcMain.handle('chat:unsubscribeDM', async () => {
   dmChannel = null;
 });
 
+// ─── Collaborative flows (Yjs over Supabase Realtime broadcast) ────────────────
+// Live flowing rides a Supabase Realtime *broadcast* channel keyed by the flow's
+// unguessable UUID. Broadcast is ephemeral pub/sub (no DB write per keystroke);
+// durability is a debounced base64 Yjs snapshot in the `flows` table. The Yjs doc
+// itself, the merge logic, and awareness all live in the renderer — this process
+// is only the transport bridge (relay update/awareness bytes, forward presence).
+const flowChannels = new Map<string, any>();
+
+ipcMain.handle('flowSync:join', async (_e, flowId: string) => {
+  if (!sb || !mainWin) return sbErr('Supabase not configured');
+  if (flowChannels.has(flowId)) return sbOk(true);
+  const ch = sb.channel(`flow-${flowId}`, { config: { broadcast: { self: false }, presence: { key: '' } } });
+  ch.on('broadcast', { event: 'update' }, (msg: any) => {
+    mainWin?.webContents.send('flowSync:remoteUpdate', { flowId, update: msg.payload?.u });
+  });
+  ch.on('broadcast', { event: 'awareness' }, (msg: any) => {
+    mainWin?.webContents.send('flowSync:remoteAwareness', { flowId, awareness: msg.payload?.a });
+  });
+  ch.on('presence', { event: 'sync' }, () => {
+    mainWin?.webContents.send('flowSync:presence', { flowId, state: ch.presenceState() });
+  });
+  await new Promise<void>((resolve) => {
+    ch.subscribe((status: string) => { if (status === 'SUBSCRIBED') resolve(); });
+  });
+  flowChannels.set(flowId, ch);
+  return sbOk(true);
+});
+
+ipcMain.handle('flowSync:leave', async (_e, flowId: string) => {
+  const ch = flowChannels.get(flowId);
+  if (ch) { try { await ch.unsubscribe(); } catch {} flowChannels.delete(flowId); }
+  return sbOk(true);
+});
+
+ipcMain.handle('flowSync:broadcastUpdate', async (_e, flowId: string, u: string) => {
+  const ch = flowChannels.get(flowId);
+  if (!ch) return sbErr('not joined');
+  await ch.send({ type: 'broadcast', event: 'update', payload: { u } });
+  return sbOk(true);
+});
+
+ipcMain.handle('flowSync:broadcastAwareness', async (_e, flowId: string, a: string) => {
+  const ch = flowChannels.get(flowId);
+  if (!ch) return sbOk(false);
+  await ch.send({ type: 'broadcast', event: 'awareness', payload: { a } });
+  return sbOk(true);
+});
+
+ipcMain.handle('flowSync:track', async (_e, flowId: string, meta: any) => {
+  const ch = flowChannels.get(flowId);
+  if (ch) { try { await ch.track(meta); } catch {} }
+  return sbOk(true);
+});
+
+// Promote a flow to live: insert the owning row (owner = me) if it doesn't exist.
+ipcMain.handle('flowSync:promote', async (_e, flowId: string, teamId: string, name: string, contentB64: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const uid = sess?.session?.user?.id;
+    if (!uid) return sbErr('Not signed in');
+    const { error } = await sb.from('flows').upsert(
+      { id: flowId, team_id: teamId, owner_id: uid, name, content: contentB64, updated_at: new Date().toISOString() },
+      { onConflict: 'id', ignoreDuplicates: true },
+    );
+    if (error) return sbErr(error);
+    return sbOk(true);
+  } catch (e) { return sbErr(e); }
+});
+
+// Persist the merged Yjs snapshot. Pure UPDATE — never touches owner_id, so any
+// team member can save without seizing ownership.
+ipcMain.handle('flowSync:saveSnapshot', async (_e, flowId: string, name: string, contentB64: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('flows')
+      .update({ content: contentB64, name, updated_at: new Date().toISOString() })
+      .eq('id', flowId);
+    if (error) return sbErr(error);
+    return sbOk(true);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('flowSync:loadSnapshot', async (_e, flowId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('flows')
+      .select('content,name,team_id,owner_id,updated_at').eq('id', flowId).maybeSingle();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
 // ─── Google Drive ─────────────────────────────────────────────────────────────
 
 interface GDriveTokens {

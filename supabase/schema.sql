@@ -423,3 +423,45 @@ create policy "sender_can_delete_dm_attachments" on dm_message_attachments
   for delete using (
     exists (select 1 from dm_messages dm where dm.id = dm_message_id and dm.sender_id = auth.uid())
   );
+
+-- ─── Collaborative flows (live realtime flowing) ──────────────────────────────
+-- A flow promoted to "live" gets a row here so teammates can edit it together in
+-- realtime. The live transport is Supabase Realtime *broadcast* on an unguessable
+-- channel (`flow-<id>`); this table only holds the durable Yjs snapshot so a
+-- teammate who opens the flow later (or reconnects) loads the current state.
+-- `content` is base64 of the encoded Yjs document state (Y.encodeStateAsUpdate).
+create table if not exists flows (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid references teams(id) on delete cascade,
+  owner_id uuid references auth.users(id),
+  name text not null default 'Flow',
+  content text,                       -- base64( Y.encodeStateAsUpdate(doc) )
+  updated_at timestamptz default now(),
+  created_at timestamptz default now()
+);
+
+create index if not exists flows_team_updated_idx on flows(team_id, updated_at desc);
+
+alter table flows enable row level security;
+
+-- Any team member can read a flow shared into their team.
+drop policy if exists "team_members_can_read_flows" on flows;
+create policy "team_members_can_read_flows" on flows
+  for select using (is_team_member(team_id));
+
+-- A team member can promote one of their flows to live (owner = themselves).
+drop policy if exists "team_members_can_insert_flows" on flows;
+create policy "team_members_can_insert_flows" on flows
+  for insert with check (owner_id = auth.uid() and is_team_member(team_id));
+
+-- Any team member can update the shared snapshot — that's the whole point of
+-- collaborative editing. (Live edits go over broadcast; this only persists the
+-- merged Yjs state on a debounce.)
+drop policy if exists "team_members_can_update_flows" on flows;
+create policy "team_members_can_update_flows" on flows
+  for update using (is_team_member(team_id)) with check (is_team_member(team_id));
+
+-- Only the owner can delete the live flow.
+drop policy if exists "flow_owner_can_delete" on flows;
+create policy "flow_owner_can_delete" on flows
+  for delete using (owner_id = auth.uid());

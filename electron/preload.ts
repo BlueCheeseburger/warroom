@@ -5,6 +5,35 @@ const api = {
     read: (name: string) => ipcRenderer.invoke('storage:read', name),
     write: (name: string, data: unknown) => ipcRenderer.invoke('storage:write', name, data),
   },
+  // Live collaborative flowing: Yjs document synced over Supabase Realtime
+  // broadcast. Update/awareness payloads are base64 strings (Uint8Array <-> b64).
+  flowSync: {
+    join: (flowId: string) => ipcRenderer.invoke('flowSync:join', flowId),
+    leave: (flowId: string) => ipcRenderer.invoke('flowSync:leave', flowId),
+    broadcastUpdate: (flowId: string, updateB64: string) => ipcRenderer.invoke('flowSync:broadcastUpdate', flowId, updateB64),
+    broadcastAwareness: (flowId: string, awarenessB64: string) => ipcRenderer.invoke('flowSync:broadcastAwareness', flowId, awarenessB64),
+    track: (flowId: string, meta: any) => ipcRenderer.invoke('flowSync:track', flowId, meta),
+    promote: (flowId: string, teamId: string, name: string, contentB64: string) =>
+      ipcRenderer.invoke('flowSync:promote', flowId, teamId, name, contentB64),
+    saveSnapshot: (flowId: string, name: string, contentB64: string) =>
+      ipcRenderer.invoke('flowSync:saveSnapshot', flowId, name, contentB64),
+    loadSnapshot: (flowId: string) => ipcRenderer.invoke('flowSync:loadSnapshot', flowId),
+    onRemoteUpdate: (cb: (p: { flowId: string; update: string }) => void) => {
+      const h = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('flowSync:remoteUpdate', h);
+      return () => ipcRenderer.removeListener('flowSync:remoteUpdate', h);
+    },
+    onRemoteAwareness: (cb: (p: { flowId: string; awareness: string }) => void) => {
+      const h = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('flowSync:remoteAwareness', h);
+      return () => ipcRenderer.removeListener('flowSync:remoteAwareness', h);
+    },
+    onPresence: (cb: (p: { flowId: string; state: any }) => void) => {
+      const h = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('flowSync:presence', h);
+      return () => ipcRenderer.removeListener('flowSync:presence', h);
+    },
+  },
   secure: {
     set: (key: string, value: string) => ipcRenderer.invoke('secure:set', key, value),
     get: (key: string) => ipcRenderer.invoke('secure:get', key),

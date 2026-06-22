@@ -213,6 +213,19 @@ declare global {
         read: (name: string) => Promise<any>;
         write: (name: string, data: unknown) => Promise<boolean>;
       };
+      flowSync: {
+        join: (flowId: string) => Promise<{ ok: boolean; error?: string }>;
+        leave: (flowId: string) => Promise<{ ok: boolean }>;
+        broadcastUpdate: (flowId: string, updateB64: string) => Promise<{ ok: boolean; error?: string }>;
+        broadcastAwareness: (flowId: string, awarenessB64: string) => Promise<{ ok: boolean }>;
+        track: (flowId: string, meta: any) => Promise<{ ok: boolean }>;
+        promote: (flowId: string, teamId: string, name: string, contentB64: string) => Promise<{ ok: boolean; error?: string }>;
+        saveSnapshot: (flowId: string, name: string, contentB64: string) => Promise<{ ok: boolean; error?: string }>;
+        loadSnapshot: (flowId: string) => Promise<{ ok: boolean; data?: { content: string | null; name: string; team_id: string; owner_id: string; updated_at: string } | null; error?: string }>;
+        onRemoteUpdate: (cb: (p: { flowId: string; update: string }) => void) => () => void;
+        onRemoteAwareness: (cb: (p: { flowId: string; awareness: string }) => void) => () => void;
+        onPresence: (cb: (p: { flowId: string; state: any }) => void) => () => void;
+      };
       secure: {
         set: (key: string, value: string) => Promise<boolean>;
         get: (key: string) => Promise<string | null>;
