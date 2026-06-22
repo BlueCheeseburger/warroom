@@ -4920,7 +4920,7 @@ const flowChannels = new Map<string, any>();
 ipcMain.handle('flowSync:join', async (_e, flowId: string) => {
   if (!sb || !mainWin) return sbErr('Supabase not configured');
   if (flowChannels.has(flowId)) return sbOk(true);
-  const ch = sb.channel(`flow-${flowId}`, { config: { broadcast: { self: false }, presence: { key: '' } } });
+  const ch = sb.channel(`flow-${flowId}`, { config: { broadcast: { self: false } } });
   ch.on('broadcast', { event: 'update' }, (msg: any) => {
     mainWin?.webContents.send('flowSync:remoteUpdate', { flowId, update: msg.payload?.u });
   });
