@@ -60,6 +60,9 @@ interface FlowSnapshot {
   customColumns: string[] | null;
   columnWidths: number[];
   activeSheetIdx: number;
+  variant: PolicyVariant;
+  pfOrder: PFOrder;
+  event: 'policy' | 'pf';
 }
 
 const AFF_COLOR_KEY = 'warroom-flow-aff-color';
@@ -200,8 +203,8 @@ export default function FlowView() {
   const restoring = useRef(false);
 
   // Always-current snapshot for use in async/event callbacks
-  const snap = useRef({ sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx });
-  useEffect(() => { snap.current = { sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx }; });
+  const snap = useRef({ sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: 'policy' as 'policy' | 'pf' });
+  useEffect(() => { snap.current = { sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: flowEvent }; });
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -384,6 +387,9 @@ export default function FlowView() {
       customColumns: s.customColumns ? [...s.customColumns] : null,
       columnWidths: [...s.columnWidths],
       activeSheetIdx: s.activeSheetIdx,
+      variant: s.variant,
+      pfOrder: s.pfOrder,
+      event: s.event,
     };
   }
 
@@ -402,11 +408,18 @@ export default function FlowView() {
     setCustomColumns(s.customColumns);
     setColumnWidths(s.columnWidths);
     setColumnColors(s.columnColors);
+    setVariant(s.variant);
+    setPfOrder(s.pfOrder);
     setSheets(s.sheets);
     setActiveSheetIdx(idx);
+    // Event lives in the flow index (global store) — restore it if it changed.
+    if ((flowMeta?.event === 'pf' ? 'pf' : 'policy') !== s.event) {
+      setEvent(s.event);
+      updateFlowMeta({ event: s.event });
+    }
     cellsRef.current = { ...(s.sheets[idx]?.cells ?? {}) };
-    snap.current = { ...snap.current, sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, activeSheetIdx: idx };
-    persist({ sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths });
+    snap.current = { ...snap.current, sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, activeSheetIdx: idx, variant: s.variant, pfOrder: s.pfOrder };
+    persist({ sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, variant: s.variant, pfOrder: s.pfOrder, event: s.event });
     setCellNonce((n) => n + 1);
     requestAnimationFrame(recomputeArrows);
     setTimeout(() => { restoring.current = false; }, 0);
@@ -796,14 +809,19 @@ export default function FlowView() {
     setSheets(newSheets);
     // Keep the same active position; update cellsRef to that sheet's content
     cellsRef.current = newSheets[snap.current.activeSheetIdx]?.cells ?? {};
+    snap.current = { ...snap.current, sheets: newSheets, variant: v };
     persist({ variant: v, sheets: newSheets });
+    recordHistory();
   }
 
   function changePfOrder(o: PFOrder) {
     const newCols = o === 'pro-first' ? PF_PRO_FIRST_COLS : PF_CON_FIRST_COLS;
     const newW = newCols.map(() => DEFAULT_COL_WIDTH);
-    setPfOrder(o); setCustomColumns(null); setColumnWidths(newW);
-    persist({ pfOrder: o, customColumns: null, columnWidths: newW });
+    const newC = newCols.map(() => null);
+    setPfOrder(o); setCustomColumns(null); setColumnWidths(newW); setColumnColors(newC);
+    snap.current = { ...snap.current, pfOrder: o, customColumns: null, columnWidths: newW, columnColors: newC };
+    persist({ pfOrder: o, customColumns: null, columnWidths: newW, columnColors: newC });
+    recordHistory();
   }
 
   // ── Flow meta (name/event) ────────────────────────────────────────────────
@@ -827,11 +845,14 @@ export default function FlowView() {
     const defO: PFOrder = 'pro-first';
     const defCols = e === 'policy' ? POLICY_COLS : PF_PRO_FIRST_COLS;
     const defW = defCols.map(() => DEFAULT_COL_WIDTH);
+    const defC = defCols.map(() => null);
     const newSheets = makeSheets(e, defV);
     setVariant(defV); setPfOrder(defO);
-    setCustomColumns(null); setColumnWidths(defW);
+    setCustomColumns(null); setColumnWidths(defW); setColumnColors(defC);
     setSheets(newSheets); cellsRef.current = {}; setActiveSheetIdx(0);
-    persist({ event: e, variant: defV, pfOrder: defO, customColumns: null, columnWidths: defW, sheets: newSheets });
+    snap.current = { ...snap.current, event: e, variant: defV, pfOrder: defO, customColumns: null, columnWidths: defW, columnColors: defC, sheets: newSheets, activeSheetIdx: 0 };
+    persist({ event: e, variant: defV, pfOrder: defO, customColumns: null, columnWidths: defW, columnColors: defC, sheets: newSheets });
+    recordHistory();
   }
 
   // ── xlsx export ───────────────────────────────────────────────────────────
