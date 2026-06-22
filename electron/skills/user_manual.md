@@ -129,6 +129,17 @@ The timer turns amber in the last 30 seconds and red when time is up (overtime c
 - **Open**: drag .xlsx onto app window, or Flows section in sidebar → "+ Open flow"
 - Share via team chat with "Can view" or "Can edit" permissions
 
+### Import a flow from a spreadsheet
+You can bring an existing flow spreadsheet (.xlsx) straight into the app as a new flow sheet.
+
+1. In the sidebar's **Flow** section, click the **import button** next to the `+`.
+2. Pick the `.xlsx` file you want to import.
+3. The app parses it and creates a **new flow** named after the file. Each worksheet (tab) in the spreadsheet becomes its own flow sheet.
+
+Import is **very robust** — it works no matter how the spreadsheet is laid out. It first tries to auto-detect the layout itself, recognizing speech-column headers (for policy: 1AC, 1NC, 2AC, 2NC/1NR, 1AR, 2NR, 2AR; PF layouts too). Real policy has 8 speeches, but the app merges 2NC + 1NR (the neg block) into one column, so a standard 8-column sheet lines up cleanly. If it can't confidently work out a sheet's layout, it falls back to **Warroom AI** to read the spreadsheet and map the columns for you. Policy and PF flows are both supported.
+
+The imported flow shows up in the sidebar named after the file — rename and edit it like any other flow.
+
 ---
 
 ## Speech Doc Viewer

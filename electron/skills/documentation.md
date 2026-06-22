@@ -163,6 +163,14 @@ Flows are `.xlsx` spreadsheets opened in-app using SheetJS. They appear in the s
 
 Each flow has an ID, name, and debate event type. The flows index is persisted separately from the main DB in `flows_index.json`.
 
+### Importing a flow
+
+An **import button** sits next to the `+` in the sidebar's Flow section. Clicking it opens a file picker for an existing flow spreadsheet (`.xlsx`); the app parses it and creates a new flow named after the file. Each **worksheet (tab)** in the workbook becomes its own flow sheet in the app.
+
+Import is **very robust** — it works no matter how the spreadsheet is laid out. It first tries to auto-detect the structure algorithmically, recognizing speech-column headers (for policy: `1AC`, `1NC`, `2AC`, `2NC/1NR`, `1AR`, `2NR`, `2AR`, plus PF column layouts). Real policy debate has 8 speeches, but the app merges **2NC + 1NR** (the neg block) into a single column, so a standard 8-column source sheet maps cleanly onto the app's layout. If it can't confidently figure out a sheet's structure, it falls back to **Warroom AI** to interpret the spreadsheet and map the columns correctly. Both policy and PF flows are supported.
+
+The imported flow appears in the sidebar and can be renamed and edited like any other flow.
+
 ---
 
 ## Speech Doc Viewer

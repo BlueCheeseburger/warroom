@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
 import gdriveLogo from '../assets/gdrive-logo.png';
+import { importFlowFromXlsx } from '../utils/flowImport';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string }
@@ -196,6 +197,7 @@ function IcoSidebarExpand() {
 export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [driveConfigured, setDriveConfigured] = useState(false);
+  const [importing, setImporting] = useState(false);
   const { db, view, setView, mode, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
   const cases = Object.values(db.cases);
   const tournaments = Object.values(db.tournaments);
@@ -218,6 +220,31 @@ export default function Sidebar() {
     setFlowsIndex(newIndex);
     await window.warroom?.storage.write('flows_index', newIndex);
     setView({ kind: 'flow', flowId: id });
+  }
+
+  async function importFlow() {
+    if (importing) return;
+    const path = await window.warroom?.dialog.openFile(['xlsx']);
+    if (!path) return;
+    setImporting(true);
+    try {
+      const res = await window.warroom?.fs.readFileBytes(path);
+      if (!res?.ok || !res.base64) throw new Error(res?.error || 'Could not read the file.');
+      const data = await importFlowFromXlsx(res.base64);
+      const id = crypto.randomUUID();
+      const baseName = (path.split(/[\\/]/).pop() ?? 'Imported flow').replace(/\.xlsx$/i, '');
+      const meta: FlowMeta = { id, name: baseName || `Flow ${flowsIndex.length + 1}`, event: data.event };
+      const newIndex = [...flowsIndex, meta];
+      await window.warroom?.storage.write(`flow_data_${id}`, data);
+      setFlowsIndex(newIndex);
+      await window.warroom?.storage.write('flows_index', newIndex);
+      setView({ kind: 'flow', flowId: id });
+    } catch (e: any) {
+      console.error('Flow import failed:', e);
+      window.alert(`Import failed: ${e?.message ?? 'unknown error'}`);
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function deleteFlow(id: string) {
@@ -260,6 +287,7 @@ export default function Sidebar() {
           flowsIndex={flowsIndex} busyViews={busyViews}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
+          importFlow={importFlow} importing={importing}
           db={db} toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
         />
       )}
@@ -400,7 +428,7 @@ function CIcon({ label, active, onClick, children }: {
 function ExpandedNav({
   view, mode, setView, cases, tournaments, opponents,
   flowsIndex, busyViews, chatOpen, setChatOpen, unreadCount,
-  createFlow, deleteFlow, renameFlow, db, toggleCollapsed, driveConfigured,
+  createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
@@ -560,7 +588,11 @@ function ExpandedNav({
         )}
 
         {/* Flow — both modes */}
-        <Section title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+">
+        <Section
+          title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
+          extraAction={importFlow} extraBusy={importing}
+          extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
+        >
           {flowsIndex.length === 0 && <Empty>No flows yet</Empty>}
           {flowsIndex.map((f: any) => (
             <NavItem key={f.id}
@@ -649,9 +681,11 @@ function NavRowPrimary({ active, onClick, icon, label }: {
 
 // ── Section ───────────────────────────────────────────────────────────────────
 
-function Section({ title, children, action, actionLabel, icon, defaultOpen = true }: {
+function Section({ title, children, action, actionLabel, icon, defaultOpen = true,
+  extraAction, extraIcon, extraTitle, extraBusy }: {
   title: string; children?: React.ReactNode; action?: () => void;
   actionLabel?: string; icon?: React.ReactNode; defaultOpen?: boolean;
+  extraAction?: () => void; extraIcon?: React.ReactNode; extraTitle?: string; extraBusy?: boolean;
 }) {
   const key = `sidebar-collapsed-${title.toLowerCase()}`;
   const [open, setOpen] = useState(() => {
@@ -691,19 +725,42 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
             {title}
           </span>
         </button>
-        {action && (
-          <button
-            onClick={action}
-            className="flex items-center justify-center transition rounded"
-            style={{
-              width: 22, height: 22, flexShrink: 0,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: 'var(--nav-section-color)', fontSize: 16, lineHeight: 1, fontWeight: 500,
-            }}
-            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'}
-            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
-          >{actionLabel}</button>
-        )}
+        <div className="flex items-center" style={{ gap: 2 }}>
+          {extraAction && (
+            <button
+              onClick={extraAction}
+              disabled={extraBusy}
+              title={extraTitle}
+              className="flex items-center justify-center transition rounded"
+              style={{
+                width: 22, height: 22, flexShrink: 0,
+                background: 'transparent', border: 'none', cursor: extraBusy ? 'default' : 'pointer',
+                color: 'var(--nav-section-color)',
+              }}
+              onMouseEnter={(e) => { if (!extraBusy) (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'; }}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
+            >
+              {extraBusy ? (
+                <svg className="animate-spin" width="11" height="11" viewBox="0 0 10 10" fill="none">
+                  <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 20" strokeLinecap="round" opacity="0.7" />
+                </svg>
+              ) : extraIcon}
+            </button>
+          )}
+          {action && (
+            <button
+              onClick={action}
+              className="flex items-center justify-center transition rounded"
+              style={{
+                width: 22, height: 22, flexShrink: 0,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: 'var(--nav-section-color)', fontSize: 16, lineHeight: 1, fontWeight: 500,
+              }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
+            >{actionLabel}</button>
+          )}
+        </div>
       </div>
       {open && <div>{children}</div>}
     </div>

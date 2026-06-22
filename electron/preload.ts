@@ -244,6 +244,8 @@ const api = {
   gemini: {
     compareImpacts: (pathA: string, pathB: string, labelA: string, labelB: string) =>
       ipcRenderer.invoke('gemini:compareImpacts', pathA, pathB, labelA, labelB),
+    importFlow: (input: { event: 'policy' | 'pf' | null; sheets: { name: string; grid: string[][] }[] }) =>
+      ipcRenderer.invoke('gemini:importFlow', input),
   },
   agent: {
     fetchArticle: (url: string) => ipcRenderer.invoke('agent:fetchArticle', url),

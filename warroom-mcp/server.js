@@ -19,6 +19,7 @@
  *   fetch_article         — fetch readable text from a URL
  *   search_tabroom_tournament — search Tabroom by tournament name
  *   search_judge          — look up a judge paradigm on Tabroom
+ *   import_flow           — import a flow spreadsheet (.xlsx) as a new flow (auto-detect layout, AI fallback)
  *
  * Missing vs in-app agent (require Electron webview):
  *   search_logos, search_openevidence — use the in-app agent for those.
@@ -927,6 +928,64 @@ Pass the absolute paths to both .docx files (or their extracted plain text) and 
       ``,
       `## ${labelB}`,
       textB || '(No text provided)',
+    ].join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
+  }
+);
+
+// ── import_flow ────────────────────────────────────────────────────────────────
+// Mirrors the in-app "Import Flow" button next to the + in the Flow sidebar
+// section: read a flow spreadsheet (.xlsx) and create a new flow from it. The app
+// first auto-detects the layout (recognizing speech-column headers like 1AC/1NC/
+// 2AC/2NC-1NR/1AR/2NR/2AR for policy, plus PF layouts) and falls back to AI mapping
+// for unusual spreadsheets. The MCP server has no SheetJS or LLM, so it verifies the
+// file, names the flow after it, and returns a brief instructing the calling model to
+// read each worksheet, auto-detect (or AI-map) its layout, and write the cells via
+// edit_flow_cell.
+server.tool(
+  'import_flow',
+  `Import a flow spreadsheet (.xlsx) into Warroom as a new flow. Auto-detects the layout and falls back to AI mapping for unusual spreadsheets.`,
+  {
+    filePath: z.string().describe('Absolute path to the .xlsx flow spreadsheet to import'),
+  },
+  async ({ filePath }) => {
+    const path = (filePath ?? '').trim();
+    if (!path) return { content: [{ type: 'text', text: 'No file path provided.' }] };
+    if (!/\.xlsx$/i.test(path)) {
+      return { content: [{ type: 'text', text: `"${path}" is not a .xlsx file. Provide an absolute path to a flow spreadsheet.` }] };
+    }
+
+    // Confirm the file exists and is readable. The server can't parse the binary
+    // .xlsx itself (no SheetJS), so it returns a brief for the calling model.
+    try {
+      await fs.access(path);
+    } catch {
+      return { content: [{ type: 'text', text: `Could not read file at path: ${path}` }] };
+    }
+
+    // Name the new flow after the file (matches in-app behavior).
+    const base = path.split(/[\\/]/).pop() ?? 'Imported Flow';
+    const flowName = base.replace(/\.xlsx$/i, '').trim() || 'Imported Flow';
+
+    const out = [
+      `# Import Flow — ${flowName}`,
+      ``,
+      `Import the flow spreadsheet at \`${path}\` into Warroom as a new flow named "${flowName}".`,
+      `Each worksheet (tab) in the workbook becomes its own flow sheet.`,
+      ``,
+      `## Steps`,
+      `1. Read every worksheet in the .xlsx (e.g. with SheetJS \`XLSX.readFile\` → \`sheet_to_json({ header: 1 })\`).`,
+      `2. For EACH worksheet, work out the column layout:`,
+      `   - First AUTO-DETECT algorithmically: look for a header row whose cells match speech columns.`,
+      `     - Policy columns: ${POLICY_COLS.map((c) => `'${c}'`).join(', ')} (note 2NC + 1NR are merged into the single '2NC/1NR' neg-block column — an 8-speech source maps to these 7 columns).`,
+      `     - PF (pro-first) columns: ${PF_PRO_FIRST_COLS.map((c) => `'${c}'`).join(', ')}.`,
+      `     - PF (con-first) columns: ${PF_CON_FIRST_COLS.map((c) => `'${c}'`).join(', ')}.`,
+      `   - If a sheet's layout is unclear (no recognizable header, shifted/merged cells, custom labels), FALL BACK to interpreting the sheet yourself: infer which source column corresponds to each speech and map accordingly. This is the AI-fallback path the in-app importer uses.`,
+      `3. Pick the flow's overall event (policy or PF) from whichever layout the sheets match.`,
+      `4. Write the parsed content cell-by-cell into the new flow using \`edit_flow_cell\` (flow name "${flowName}", the sheet/tab name, the resolved column header, and a 1-based row). Rows beyond ${FLOW_NUM_ROWS} are out of range.`,
+      ``,
+      `Be robust: it must work no matter how the spreadsheet is laid out. Policy and PF flows are both supported.`,
     ].join('\n');
 
     return { content: [{ type: 'text', text: out }] };

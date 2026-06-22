@@ -428,6 +428,7 @@ declare global {
       gemini: {
         compareImpacts: (pathA: string, pathB: string, labelA: string, labelB: string) =>
           Promise<{ ok: true; result: ImpactCalcResult } | { ok: false; error: string }>;
+        importFlow: (input: ImportFlowInput) => Promise<ImportFlowResult>;
       };
       agent: {
         fetchArticle: (url: string) => Promise<{ ok: boolean; text: string; error?: string }>;
@@ -556,4 +557,15 @@ export interface ImpactCalcResult {
   verdict: 'A' | 'B' | 'even';
   verdictReason: string;
 }
+
+// ─── Flow-sheet import (AI fallback) ──────────────────────────────────────────
+
+export interface ImportFlowInput {
+  event: 'policy' | 'pf' | null;
+  sheets: { name: string; grid: string[][] }[];
+}
+
+export type ImportFlowResult =
+  | { ok: true; event: 'policy' | 'pf'; sheets: { name: string; rows: string[][] }[] }
+  | { ok: false; error: string };
 

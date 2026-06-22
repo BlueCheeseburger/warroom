@@ -499,6 +499,28 @@ export default function Documentation() {
             Each flow has an ID, name, and debate event type. The flows index is persisted separately
             from the main DB in <Code>flows_index.json</Code>.
           </P>
+          <H3>Importing a flow</H3>
+          <P>
+            An <strong>import button</strong> sits next to the <Code>+</Code> in the sidebar's Flow
+            section. Clicking it opens a file picker for an existing flow spreadsheet
+            (<Code>.xlsx</Code>); the app parses it and creates a new flow named after the file. Each
+            <strong> worksheet (tab)</strong> in the workbook becomes its own flow sheet in the app.
+          </P>
+          <P>
+            Import is <strong>very robust</strong> — it works no matter how the spreadsheet is laid
+            out. It first tries to auto-detect the structure algorithmically, recognizing
+            speech-column headers (for policy: <Code>1AC</Code>, <Code>1NC</Code>, <Code>2AC</Code>,{' '}
+            <Code>2NC/1NR</Code>, <Code>1AR</Code>, <Code>2NR</Code>, <Code>2AR</Code>, plus PF
+            column layouts). Real policy debate has 8 speeches, but the app merges{' '}
+            <strong>2NC + 1NR</strong> (the neg block) into a single column, so a standard 8-column
+            source sheet maps cleanly onto the app's layout. If it can't confidently figure out a
+            sheet's structure, it falls back to <strong>Warroom AI</strong> to interpret the
+            spreadsheet and map the columns correctly. Both policy and PF flows are supported.
+          </P>
+          <P>
+            The imported flow appears in the sidebar and can be renamed and edited like any other
+            flow.
+          </P>
         </section>
 
         {/* ── Speech Doc ─────────────────────────────────────────────── */}

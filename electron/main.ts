@@ -2074,6 +2074,89 @@ Return ONLY valid JSON — no markdown fences, no extra text, no commentary — 
   }
 });
 
+// ─── Flow-sheet import AI fallback ─────────────────────────────────────────────
+// When the deterministic importer can't recognize a spreadsheet's layout, the
+// renderer sends the raw cell grid here and the AI maps it onto the app's fixed
+// debate-flow column schema (policy = 7 cols, pf = 8 cols).
+ipcMain.handle('gemini:importFlow', async (
+  _e,
+  input: { event: 'policy' | 'pf' | null; sheets: { name: string; grid: string[][] }[] },
+) => {
+  try {
+    const sheetsIn = Array.isArray(input?.sheets) ? input.sheets : [];
+    if (sheetsIn.length === 0) return { ok: false, error: 'no_sheets' };
+
+    // Build a size-capped JSON view of each sheet: max 60 data rows + ~12000 chars.
+    const sheetBlocks = sheetsIn.map((s) => {
+      const name = String(s?.name ?? '');
+      const grid = Array.isArray(s?.grid) ? s.grid : [];
+      const capped = grid.slice(0, 60).map((row) =>
+        (Array.isArray(row) ? row : []).map((c) => String(c ?? '')),
+      );
+      let json = JSON.stringify(capped);
+      if (json.length > 12000) json = json.slice(0, 12000);
+      return `SHEET "${name}":\n${json}`;
+    }).join('\n\n');
+
+    const eventInstruction = input?.event
+      ? `The caller's best guess for the event is "${input.event}". Use that event.`
+      : `The event is unknown. Infer whether this is policy or pf from the column labels and content. Default to policy if unclear.`;
+
+    const prompt = `You are importing a competitive debate "flow" — a spreadsheet a debater uses to track arguments across the speeches of a round. Spreadsheets come in messy, arbitrary layouts (different column orders, extra columns, merged speeches, varied headers). Your job is to map each one onto a FIXED column schema so the app can display it.
+
+TARGET COLUMN SCHEMAS (output cells must align to these exact columns, in this exact order):
+• policy — 7 columns: ["1AC","1NC","2AC","2NC/1NR","1AR","2NR","2AR"]
+• pf — 8 columns: ["Pro Case","Con Case","Con Rebuttal","Pro Rebuttal","Pro Summary","Con Summary","Pro FF","Con FF"]
+
+CRITICAL POLICY MERGE RULE:
+Real policy debate has 8 speeches — 1AC, 1NC, 2AC, 2NC, 1NR, 1AR, 2NR, 2AR. This app MERGES the 2NC and 1NR (the "neg block") into the single column "2NC/1NR" (index 3). If the source spreadsheet has SEPARATE 2NC and 1NR columns (or any column labeled "block" / "neg block"), COMBINE their cell contents for each row into that one column, joining the two cells with a newline ("\\n"). Never emit separate 2NC and 1NR columns.
+
+EVENT:
+${eventInstruction}
+
+SOURCE SHEETS (raw cell grids as 2D arrays of strings; header row included if the sheet has one):
+${sheetBlocks}
+
+INSTRUCTIONS:
+1. Detect any header row and DROP it — output ONLY argument rows, never the header.
+2. Preserve the relative top-to-bottom order of the argument rows.
+3. Each output row must have EXACTLY the right number of columns (7 for policy, 8 for pf). Use an empty string "" for any blank/missing cell.
+4. Map each source column to the target column it best corresponds to. If a source column doesn't map to any target column, ignore it.
+5. Apply the policy merge rule above when relevant.
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{"event":"policy","sheets":[{"name":"<sheet name>","rows":[["...","...","...","...","...","...","..."]]}]}`;
+
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return { ok: false, error: 'parse_failed' };
+    }
+
+    const event: 'policy' | 'pf' = parsed?.event === 'pf' ? 'pf' : 'policy';
+    const colCount = event === 'pf' ? 8 : 7;
+    const outSheets = (Array.isArray(parsed?.sheets) ? parsed.sheets : []).map((s: any) => {
+      const rows = (Array.isArray(s?.rows) ? s.rows : []).slice(0, 60).map((row: any) => {
+        const cells = (Array.isArray(row) ? row : []).map((c: any) => String(c ?? ''));
+        // Pad/truncate to the exact target column count.
+        while (cells.length < colCount) cells.push('');
+        return cells.slice(0, colCount);
+      });
+      return { name: String(s?.name ?? ''), rows };
+    });
+
+    return { ok: true, event, sheets: outSheets };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY'
+      ? 'No AI API key configured — add one in Settings.'
+      : (e?.message ?? 'Failed to import flow');
+    return { ok: false, error: msg };
+  }
+});
+
 // OpenCaselist — return { ok, data, error } so renderer can inspect without IPC error serialization issues
 ipcMain.handle('opencaselist:login', async (_e, username: string, password: string) => {
   try { await ocLogin(username, password); return { ok: true }; }
