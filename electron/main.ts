@@ -3892,7 +3892,7 @@ let sb: SupabaseClient | null = null;
 if (SB_URL && SB_KEY) {
   sb = createClient(SB_URL, SB_KEY, {
     auth: { persistSession: true, storage: sbAuthStorage as any },
-    realtime: { transport: ws },
+    realtime: { transport: ws as any },
   });
 }
 

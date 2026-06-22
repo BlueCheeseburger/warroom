@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
@@ -267,6 +267,16 @@ export default function FlowView() {
     scheduleSave();
   }
 
+  // Grow every cell to fit its content so rows auto-size like a spreadsheet.
+  // Cells loaded via defaultValue don't fire onInput, so they need an explicit pass.
+  function growAllCells() {
+    for (const el of Object.values(cellEls.current)) {
+      if (!el) continue;
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  }
+
   function handleKeyDown(ri: number, ci: number, e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -322,11 +332,18 @@ export default function FlowView() {
       if (!resizing.current) return;
       resizing.current = null;
       persist();
+      // Column width changed → text re-wraps, so re-grow rows to fit.
+      requestAnimationFrame(growAllCells);
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-size all cells whenever content or layout changes ────────────────
+  useLayoutEffect(() => {
+    growAllCells();
+  }, [loaded, reloadNonce, activeSheetIdx, zoom, fontSize, customColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Col menu close on outside click ──────────────────────────────────────
 
@@ -429,11 +446,14 @@ export default function FlowView() {
     changeZoom(Math.round((cw / totalLogical) * 100));
   }
 
-  // Re-fit when chat panel opens/closes so columns always fill available width
+  // Fit columns to the window on open and when the chat panel opens/closes.
+  // Gated on `loaded` so it runs *after* the async data load — otherwise it reads
+  // empty column widths (total 0) and bails, leaving the flow stuck at 100% zoom.
   useEffect(() => {
-    const t = setTimeout(fitZoom, 50);
+    if (!loaded) return;
+    const t = setTimeout(fitZoom, 60);
     return () => clearTimeout(t);
-  }, [chatOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chatOpen, loaded, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Variant / PF order ────────────────────────────────────────────────────
 
