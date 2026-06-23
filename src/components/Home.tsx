@@ -68,9 +68,7 @@ export default function Home() {
             {opponents.length > 0 && <OpponentsPanel />}
           </div>
           <div className="space-y-4">
-            <RecordPanel wins={wins} losses={losses} pending={pending} rounds={rounds} />
             <QuickActions />
-            <GeminiHomeCard />
             <ImpactCalcCard />
           </div>
         </div>
