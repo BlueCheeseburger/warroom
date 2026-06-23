@@ -441,7 +441,7 @@ function NavArrow({ direction, enabled, onClick, title }: {
 // ─── TitleBar ─────────────────────────────────────────────────────────────────
 
 export default function TitleBar() {
-  const { mode, setMode, theme, cycleTheme, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, impactCalcOpen, setImpactCalcOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
+  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, impactCalcOpen, setImpactCalcOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
   const canGoBack = navHistoryIndex > 0;
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
@@ -494,18 +494,7 @@ export default function TitleBar() {
       {/* Divider */}
       <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
 
-      {/* Right: theme / AI / chat */}
-      <button
-        onClick={cycleTheme}
-        title={`Theme: ${THEME_LABELS[theme]} — click to cycle`}
-        className="mr-1 w-6 h-6 flex items-center justify-center rounded-md transition"
-        style={{ color: 'var(--titlebar-label)' }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      >
-        <ThemeIcon theme={theme} />
-      </button>
-
+      {/* Right: AI / chat */}
       <button
         onClick={() => setGeminiOpen(!geminiOpen)}
         title="Warroom AI"

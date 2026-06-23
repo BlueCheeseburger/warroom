@@ -1468,29 +1468,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     setPendingMentions((prev) => [...prev, { type: 'image', id: crypto.randomUUID(), name, data: { src: compressed } }]);
   }
 
-  async function handleAttachment() {
-    setShowAttachMenu(false);
-    try {
-      const path = await window.warroom?.dialog.openFile(['png', 'jpg', 'jpeg', 'gif', 'webp', 'docx']);
-      if (!path) return;
-      const ext = path.split('.').pop()?.toLowerCase() ?? '';
-      const name = path.split(/[\\/]/).pop() ?? 'file';
-      if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
-        const result = await window.warroom?.fs.readFileBytes(path);
-        if (!result?.ok || !result.base64) return;
-        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png';
-        await addImageAttachment(`data:${mime};base64,${result.base64}`, name);
-      } else if (ext === 'docx') {
-        // Extract immediately on attach — cache lives until send/remove
-        const res = await (window.warroom as any)?.speechdoc?.extract(path);
-        if (!res?.ok) return;
-        setPendingMentions((prev) => [
-          ...prev,
-          { type: 'speechdoc', id: crypto.randomUUID(), name, data: { filePath: path, full: res.data.full, tokenSaving: res.data.tokenSaving } },
-        ]);
-      }
-    } catch {}
-  }
 
   async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -2611,11 +2588,18 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           {showAttachMenu && (
             <div className="absolute bottom-full left-0 mb-1 rounded-md shadow-lg overflow-hidden z-50"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', minWidth: 180 }}>
-              <AttachMenuItem icon="🔖" label="Cases, flows & more" onClick={() => {
+              <AttachMenuItem icon="📁" label="Cases" onClick={() => {
                 setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
                 setTimeout(() => textareaRef.current?.focus(), 0);
               }} />
-              <AttachMenuItem icon="📎" label="Attachment" onClick={handleAttachment} />
+              <AttachMenuItem icon="📋" label="Flows" onClick={() => {
+                setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
+                setTimeout(() => textareaRef.current?.focus(), 0);
+              }} />
+              <AttachMenuItem icon="📝" label="Speech docs" onClick={() => {
+                setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
+                setTimeout(() => textareaRef.current?.focus(), 0);
+              }} />
               {pendingMentions.some((m) => m.type === 'speechdoc') && (
                 <div style={{ borderTop: '1px solid var(--border-side)' }}>
                   <button
