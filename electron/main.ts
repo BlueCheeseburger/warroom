@@ -2085,20 +2085,107 @@ ipcMain.handle('ai:compareImpactsText', async (
     const truncA = textA.slice(0, 40000);
     const truncB = textB.slice(0, 40000);
 
-    const prompt = `You are an expert policy debate judge performing impact calculus — the process of comparing the relative importance of harms from two opposing sides.
+    const prompt = `You are an expert policy debate coach and judge with deep knowledge of how impact calculus actually plays out in competitive rounds. Your job is to perform a rigorous, round-realistic impact comparison between two debate documents.
 
-IMPACT CALCULUS CRITERIA
-Impact calculus typically weighs harms across five dimensions (debaters may argue alternative orderings):
-1. Magnitude — how severe is the harm? (extinction > existential > major > moderate > minor)
-2. Probability — how likely is the harm to occur? (high / medium / low)
-3. Timeframe — how soon does the harm materialize? (immediate / short / medium / long)
-4. Reversibility — can the harm be undone? (irreversible > difficult > reversible)
-5. Breadth — how many people or systems are affected? (describe in context)
+═══════════════════════════════════════════════════════════
+WHAT IMPACT CALCULUS ACTUALLY IS IN A REAL ROUND
+═══════════════════════════════════════════════════════════
 
-A common default hierarchy is: magnitude first, then probability, then timeframe, then reversibility. However, debaters can and do flip this ordering with warrants.
+Impact calculus is the process by which debaters and judges decide which harms matter most when both sides are winning some offense. It is NOT just listing impacts — it is the active work of comparing them across specific dimensions with warranted arguments. A debater who says "our impact is extinction" without calculus loses to a debater who says "their extinction scenario requires five independent unlikely steps; ours is immediate and empirically verified."
+
+The standard DEFAULT hierarchy judges use (absent explicit in-round arguments):
+  MAGNITUDE > PROBABILITY > TIMEFRAME > REVERSIBILITY > BREADTH
+
+But this ordering is itself contestable. Debaters win rounds by collapsing the hierarchy:
+  • "Probability first" — if their scenario is speculative and ours is near-certain, even a smaller harm outweighs an extinction risk with a 0.00001% chance
+  • "Timeframe first" — if their harm materializes in 50 years and ours is happening now, we solve first and their impact never happens
+  • "Reversibility first" — irreversible harms (death, extinction, ecosystem collapse) should always outweigh reversible ones regardless of magnitude comparisons
+  • "Breadth first" — systemic harms affecting billions of people outweigh localized harms even if the localized harm is more severe per person
+
+═══════════════════════════════════════════════════════════
+THE FIVE DIMENSIONS — WHAT TO ACTUALLY LOOK FOR
+═══════════════════════════════════════════════════════════
+
+1. MAGNITUDE (most commonly decisive)
+   Scale: extinction > existential risk > civilization-scale > major (millions dead) > moderate (thousands) > minor (hundreds or less)
+   Key distinctions:
+   • Extinction and existential risks have special status — they eliminate ALL future generations, which means the expected value dwarfs any finite harm. This is the "Pascal's mugging" problem in debate: even very low probability extinction outweighs certain moderate harms IF probability calculus applies.
+   • Structural violence (poverty, racism, slow death) can outweigh kinetic violence in magnitude IF the debater establishes breadth — more people die from malnutrition per year than most wars.
+   • "Nuclear war causes extinction" vs "nuclear war kills millions but humanity survives" is itself a contested empirical claim — evaluate what the evidence actually says.
+
+2. PROBABILITY (often decisive against extinction claims)
+   Scale: near-certain > likely > possible > speculative > negligible
+   Key distinctions:
+   • Scenario planning: how many independent steps does the impact require? A 5-step causal chain where each step is 50% likely = 3% overall probability.
+   • Empirical track record: has this causal mechanism happened before? Deterrence has held for 80 years — that's evidence against "miscalculation leads to nuclear war."
+   • "Their scenario requires [X, Y, Z] to all happen" is a devastatingly effective argument when the individual steps are each uncertain.
+   • Brink arguments: "we are already close to the threshold, the plan pushes us over" substantially raises probability.
+
+3. TIMEFRAME (often decisive in policy rounds)
+   Scale: immediate (months) > short (1–5 years) > medium (5–20 years) > long (20+ years) > speculative future
+   Key distinctions:
+   • "Timeframe is a terminal defense" — if our impact happens in 10 years and theirs in 50, we solve theirs before it occurs.
+   • "Short timeframe means we have to act now" — urgency arguments flip the usual caution framework.
+   • "Their evidence is from the 1990s and assumes a world that no longer exists" undercuts both timeframe and probability.
+
+4. REVERSIBILITY (increasingly important in modern debate)
+   Scale: irreversible (extinction, species loss, death) > difficult (economic collapse, political instability) > reversible (policy changes, temporary harms)
+   Key distinctions:
+   • "Death is uniquely irreversible" — the individual can never be compensated. This gives life-and-death impacts a floor value.
+   • "Extinction forecloses all future value" — this is the utilitarian argument for why extinction outweighs everything else.
+   • "Economic harm is reversible but ecological collapse is not" — environmental impacts often win reversibility even at lower magnitude.
+   • Structural violence arguments often invoke irreversibility: communities destroyed by poverty or racism cannot simply be made whole.
+
+5. BREADTH (often used as a tiebreaker or framing move)
+   Scale: all of humanity > most of humanity > a nation > a region > a community > individuals
+   Key distinctions:
+   • Breadth is usually paired with magnitude — "100 million people experience moderate harm" can outweigh "1,000 people experience severe harm" depending on aggregation assumptions.
+   • Some frameworks reject aggregation (deontological, rights-based) and say individual rights cannot be traded off against numbers.
+   • "Our impact is global, theirs is localized" is a strong breadth argument even at equal magnitude.
+
+═══════════════════════════════════════════════════════════
+COMMON IMPACT CALC ARGUMENTS IN REAL ROUNDS
+═══════════════════════════════════════════════════════════
+
+WINNING MOVES FOR BIG IMPACTS (extinction, existential):
+  • "Magnitude controls — finite harms cannot outweigh infinite expected disvalue of extinction"
+  • "Even a 1% chance of extinction outweighs a 100% chance of a recoverable harm"
+  • "Future generations count — their 10,000 lives outweigh today's 1,000 by orders of magnitude"
+  • "Our impact is a prerequisite — without solving [X], their impact can't be solved anyway"
+
+WINNING MOVES AGAINST BIG IMPACTS:
+  • "Probability is so low it doesn't trigger — their scenario requires [list steps]"
+  • "Their evidence is from discredited/outdated sources — the empirical consensus has shifted"
+  • "Deterrence/resilience — the world has faced this situation before and recovered"
+  • "Their impact is linear, not catastrophic — more of a bad thing, not an existential break"
+  • "Timeframe outweighs — our harm is happening right now while theirs is 50 years away"
+  • "Even if their magnitude is bigger, we solve before it materializes"
+
+STRUCTURAL VIOLENCE / FRAMEWORK IMPACTS:
+  • "Structural impacts are ongoing and cumulative — millions dying per year competes with speculative future extinction"
+  • "Rights-based framework: individual dignity cannot be aggregated away by utilitarian calculus"
+  • "Their framework only counts dramatic harms, ignoring slow violence that kills more people"
+
+TURNS AND LINK ARGUMENTS:
+  • "Their impact is our impact — the plan causes the same harm they're trying to prevent"
+  • "Impact turn — their impact is actually good (e.g. war sparks innovation, crisis creates political will)"
+  • "Link turn — the plan decreases the risk of their impact rather than increasing it"
+
+═══════════════════════════════════════════════════════════
+HOW A JUDGE ACTUALLY DECIDES
+═══════════════════════════════════════════════════════════
+
+A judge does NOT simply compare magnitudes. The decision process:
+
+1. Determine which impacts are ACTUALLY in the round (survived with enough defense)
+2. For each surviving impact pair, identify which dimension the debaters flagged as decisive
+3. If no dimension was explicitly argued, apply the default hierarchy (magnitude > probability > timeframe > reversibility)
+4. Look for "impact turns" — cases where winning an impact actually helps the other side
+5. "Even if" calculus — assume they win their link, do we still win on magnitude/probability/timeframe?
+6. The team that wins impact calculus has usually done three things: (a) established their own impact is real, (b) undermined the opponent's impact on at least one dimension, and (c) given the judge an explicit reason to prefer their framework for comparison
 
 YOUR TASK
-Below are two debate documents. Extract every distinct impact claim from each, compare them across the five dimensions above, identify the direct clashes between them, decide who wins each clash with explicit reasoning, and give an overall verdict on which side has the better impacts.
+Below are two debate documents. Extract every distinct impact claim from each. For each claim, assess it through the lens of a real competitive round — not just what magnitude it claims, but how defensible that claim is on probability, timeframe, and reversibility. Identify the direct clashes between them, decide who wins each clash with explicit round-realistic reasoning (the kind a debater would actually read in a rebuttal), and give an overall verdict.
 
 DOC A: ${labelA}
 ---
