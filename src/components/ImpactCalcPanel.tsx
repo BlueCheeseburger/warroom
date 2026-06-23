@@ -3,10 +3,18 @@ import { useApp } from '../store/appStore';
 
 interface SpeechDocRecent { path: string; name: string; }
 
-function DocPicker({ label, value, onChange }: {
-  label: string; value: string; onChange: (v: string) => void;
+// Strip HTML tags from flow cell content (mirrors GeminiPanel's stripCellHtml)
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function DocPicker({ label, value, onChange, disableFlows }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disableFlows: boolean;
 }) {
-  const { db } = useApp();
+  const { db, flowsIndex } = useApp();
   const cases = Object.values(db.cases);
   const recents: SpeechDocRecent[] = (() => {
     try { return JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]'); } catch { return []; }
@@ -33,7 +41,7 @@ function DocPicker({ label, value, onChange }: {
           transition: 'border-color 0.15s',
         }}
       >
-        <option value="">Select a case or speech doc…</option>
+        <option value="">Select a doc…</option>
         {cases.length > 0 && (
           <optgroup label="Cases">
             {cases.map((c) => (
@@ -48,19 +56,30 @@ function DocPicker({ label, value, onChange }: {
             ))}
           </optgroup>
         )}
+        {flowsIndex.length > 0 && (
+          <optgroup label={disableFlows ? 'Flows (one flow per comparison)' : 'Flows'}>
+            {flowsIndex.map((f) => (
+              <option key={f.id} value={`flow:${f.id}`} disabled={disableFlows}>
+                {disableFlows ? '🚫' : '📊'} {f.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </div>
   );
 }
 
 export default function ImpactCalcPanel() {
-  const { db, setView } = useApp();
+  const { db, flowsIndex, setView } = useApp();
   const [valueA, setValueA] = useState('');
   const [valueB, setValueB] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() { setValueA(''); setValueB(''); setError(null); }
+
+  const isFlow = (v: string) => v.startsWith('flow:');
 
   async function extractText(value: string): Promise<{ text: string; label: string }> {
     if (value.startsWith('case:')) {
@@ -84,11 +103,37 @@ export default function ImpactCalcPanel() {
       const label = path.split('/').pop()?.replace(/\.docx$/i, '') ?? path;
       return { text: res.data.full, label };
     }
+    if (value.startsWith('flow:')) {
+      const flowId = value.slice(5);
+      const meta = flowsIndex.find((f) => f.id === flowId);
+      if (!meta) throw new Error('Flow not found');
+      const data: any = await (window.warroom as any).storage.read(`flow_data_${flowId}`);
+      if (!data?.sheets?.length) return { text: `Flow: ${meta.name}\n(no content)`, label: meta.name };
+      const lines: string[] = [`Flow: ${meta.name}`];
+      for (const sheet of data.sheets) {
+        lines.push(`\n[${sheet.name ?? 'Sheet'}]`);
+        const cells = sheet.cells ?? {};
+        const entries = Object.entries(cells) as [string, string][];
+        const sorted = entries
+          .map(([k, v]) => {
+            const [r, c] = k.split('-').map(Number);
+            return { r, c, v: stripHtml(String(v)) };
+          })
+          .filter((e) => e.v)
+          .sort((a, b) => a.r - b.r || a.c - b.c);
+        for (const { v } of sorted) lines.push(v);
+      }
+      return { text: lines.join('\n'), label: meta.name };
+    }
     throw new Error('Invalid selection');
   }
 
   async function analyze() {
     if (!valueA || !valueB || loading) return;
+    if (isFlow(valueA) && isFlow(valueB)) {
+      setError('Only one flow can be compared at a time. Use a case or speech doc for the other side.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -109,12 +154,22 @@ export default function ImpactCalcPanel() {
   const canAnalyze = !!valueA && !!valueB && !loading;
 
   return (
-    <div style={{ padding: '0 4px 4px' }}>
-      <DocPicker label="Your doc" value={valueA} onChange={(v) => { setValueA(v); setError(null); }} />
-      <DocPicker label="Their doc" value={valueB} onChange={(v) => { setValueB(v); setError(null); }} />
+    <div style={{ padding: '0 16px 16px' }}>
+      <DocPicker
+        label="Your doc"
+        value={valueA}
+        onChange={(v) => { setValueA(v); setError(null); }}
+        disableFlows={isFlow(valueB)}
+      />
+      <DocPicker
+        label="Their doc"
+        value={valueB}
+        onChange={(v) => { setValueB(v); setError(null); }}
+        disableFlows={isFlow(valueA)}
+      />
 
       {(valueA || valueB) && (
-        <div style={{ textAlign: 'right', marginBottom: 6 }}>
+        <div style={{ textAlign: 'right', marginBottom: 8 }}>
           <button onClick={reset} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--nav-inactive-color)', textDecoration: 'underline', padding: 0 }}>
             Reset
           </button>
