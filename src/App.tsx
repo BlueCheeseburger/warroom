@@ -43,6 +43,7 @@ import GeminiPanel from './components/GeminiPanel';
 import GoogleDrivePanel from './components/GoogleDrivePanel';
 import Documentation from './components/Documentation';
 import TopicsScreen from './components/TopicsScreen';
+import ImpactCalcView from './components/ImpactCalcView';
 
 const CHAT_MIN_W = 260;
 const CHAT_MAX_W = 600;
@@ -612,10 +613,11 @@ function Router() {
       case 'tournaments': regular = <TournamentList />; break;
       case 'tournament':  regular = <TournamentView />; break;
       case 'flow':        regular = <FlowView />; break;
-      case 'gdrive':      regular = <GoogleDrivePanel />; break;
-      case 'docs':        regular = <Documentation />; break;
-      case 'topics':      regular = <TopicsScreen />; break;
-      default:            regular = <Home />;
+      case 'gdrive':        regular = <GoogleDrivePanel />; break;
+      case 'docs':          regular = <Documentation />; break;
+      case 'topics':        regular = <TopicsScreen />; break;
+      case 'impact-calc':   regular = <ImpactCalcView />; break;
+      default:              regular = <Home />;
     }
   }
 

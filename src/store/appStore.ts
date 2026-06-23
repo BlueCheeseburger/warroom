@@ -48,7 +48,8 @@ export type View =
   | { kind: 'google-scholar' }
   | { kind: 'gdrive' }
   | { kind: 'docs' }
-  | { kind: 'topics'; tab?: 'policy' | 'pf' | 'ld' };
+  | { kind: 'topics'; tab?: 'policy' | 'pf' | 'ld' }
+  | { kind: 'impact-calc'; result: any; labelA: string; labelB: string };
 
 export type AgentSearchFn = (query: string) => Promise<string>;
 
