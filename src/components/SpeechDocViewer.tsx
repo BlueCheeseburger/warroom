@@ -639,6 +639,31 @@ function ToolbarToggle({ active, label, icon, onClick }: {
   );
 }
 
+// Labeled toolbar pill (icon + text). Used for the panel-opening AI tools so
+// they read as distinct actions rather than another anonymous icon.
+function ToolbarPill({ active, label, icon, onClick, title }: {
+  active: boolean; label: string; icon: React.ReactNode; onClick: () => void; title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title ?? label}
+      className="flex items-center gap-1.5 h-8 px-3 rounded-lg transition text-[12px] font-medium shrink-0"
+      style={{
+        background: active ? 'var(--nav-active-bg)' : 'transparent',
+        boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
+        border: 'none', cursor: 'pointer',
+        color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+      }}
+      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+      onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 // ── Focus button icon ──────────────────────────────────────────────────────
 
 // Focus mode (hide everything but read text): an eye with a slash through it.
@@ -829,18 +854,51 @@ function saveCxGroups(path: string, groups: CxGroup[]) {
 const eventLabel = (e: DebateEvent) =>
   e === 'pf' ? 'Public Forum' : e === 'ld' ? 'Lincoln-Douglas' : 'Policy';
 
-// Render AI text with light emphasis. The AI is told to use plain text with
-// 'single quotes' for key phrases (no markdown), which we bold here. preserves
-// newlines so multi-sentence answers/feedback keep their line breaks.
-function CxText({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
-  const parts = text.split(/('(?:[^']+)')/g);
+// Render a plain string with light emphasis. The AI is told to use plain text
+// with 'single quotes' for key phrases (no markdown), which we bold here.
+function emphasize(text: string, keyPrefix: string): React.ReactNode[] {
+  return text.split(/('(?:[^']+)')/g).map((p, i) =>
+    /^'.*'$/.test(p)
+      ? <strong key={`${keyPrefix}-${i}`} style={{ fontWeight: 600 }}>{p.slice(1, -1)}</strong>
+      : <React.Fragment key={`${keyPrefix}-${i}`}>{p}</React.Fragment>
+  );
+}
+
+// Render AI text with light emphasis. Preserves newlines so multi-sentence
+// answers/feedback keep their line breaks. If `cite`/`onCiteClick` are given and
+// the cite string appears in the text, that occurrence becomes a clickable link
+// that jumps to the card in the document.
+function CxText({ text, className, style, cite, onCiteClick }: {
+  text: string; className?: string; style?: React.CSSProperties;
+  cite?: string; onCiteClick?: (cite: string) => void;
+}) {
+  let body: React.ReactNode;
+  const trimmedCite = cite?.trim();
+  const idx = trimmedCite ? text.toLowerCase().indexOf(trimmedCite.toLowerCase()) : -1;
+  if (trimmedCite && onCiteClick && idx !== -1) {
+    const before = text.slice(0, idx);
+    const match = text.slice(idx, idx + trimmedCite.length);
+    const after = text.slice(idx + trimmedCite.length);
+    body = (
+      <>
+        {emphasize(before, 'b')}
+        <button
+          onClick={() => onCiteClick(match)}
+          className="font-semibold transition"
+          style={{ color: 'var(--nav-active-color, #4285F4)', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, font: 'inherit' }}
+          title={`Jump to ${match} in the document`}
+        >
+          {match}
+        </button>
+        {emphasize(after, 'a')}
+      </>
+    );
+  } else {
+    body = emphasize(text, 't');
+  }
   return (
     <span className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
-      {parts.map((p, i) =>
-        /^'.*'$/.test(p)
-          ? <strong key={i} style={{ fontWeight: 600 }}>{p.slice(1, -1)}</strong>
-          : p
-      )}
+      {body}
     </span>
   );
 }
@@ -888,20 +946,13 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, 
       className="rounded-xl p-3 transition"
       style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
     >
-      {q.cardCite && (
-        <button
-          onClick={() => onScrollToCite?.(q.cardCite!)}
-          className="inline-flex items-center gap-1 mb-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition"
-          style={{ background: 'var(--bg-card)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--nav-active-color)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-subtle)'}
-          title={`Scroll to ${q.cardCite} in document`}
-        >
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          {q.cardCite}
-        </button>
-      )}
-      <CxText text={q.question} className="text-[13px] leading-snug font-medium block" style={{ color: 'rgb(var(--ink-rgb))' }} />
+      <CxText
+        text={q.question}
+        cite={q.cardCite}
+        onCiteClick={onScrollToCite}
+        className="text-[13px] leading-snug font-medium block"
+        style={{ color: 'rgb(var(--ink-rgb))' }}
+      />
 
       <div className="flex items-center gap-1.5 mt-2.5">
         {/* Show answers disclosure */}
@@ -1184,22 +1235,23 @@ function WarnBadge({ type, onDismiss }: { type: 'over' | 'under'; onDismiss: () 
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const closeTimer = useRef<number | null>(null);
 
-  function toggle(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!btnRef.current) return;
-    const r = btnRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + 5, left: Math.min(r.left, window.innerWidth - 260) });
-    setOpen(v => !v);
+  // Hover-driven: open on enter, close shortly after leaving so the pointer can
+  // travel from the badge into the (fixed-positioned) tooltip to click Dismiss.
+  function show() {
+    if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null; }
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 5, left: Math.min(r.left, window.innerWidth - 260) });
+    }
+    setOpen(true);
   }
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  function scheduleClose() {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setOpen(false), 140);
+  }
+  useEffect(() => () => { if (closeTimer.current) window.clearTimeout(closeTimer.current); }, []);
 
   const msg = type === 'over'
     ? 'Over-highlighted — more text is marked than most cards in this doc. Check if you\'re reading too broadly.'
@@ -1209,14 +1261,18 @@ function WarnBadge({ type, onDismiss }: { type: 'over' | 'under'; onDismiss: () 
     <>
       <button
         ref={btnRef}
-        onClick={toggle}
+        onMouseEnter={show}
+        onMouseLeave={scheduleClose}
+        onClick={e => e.stopPropagation()}
         className="shrink-0 flex items-center justify-center rounded transition"
-        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgb(217 164 6)', padding: '1px', width: 16, height: 16 }}
+        style={{ background: 'transparent', border: 'none', cursor: 'default', color: 'rgb(217 164 6)', padding: '1px', width: 16, height: 16 }}
       >
         <IcoWarn size={11} />
       </button>
       {open && pos && (
         <div
+          onMouseEnter={show}
+          onMouseLeave={scheduleClose}
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(217,164,6,0.4)', boxShadow: 'var(--shadow-elevated)', borderRadius: '10px', padding: '10px 12px', maxWidth: '240px' }}
           onMouseDown={e => e.stopPropagation()}
         >
@@ -1228,7 +1284,7 @@ function WarnBadge({ type, onDismiss }: { type: 'over' | 'under'; onDismiss: () 
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
           >
-            Dismiss permanently
+            Dismiss
           </button>
         </div>
       )}
@@ -2384,14 +2440,42 @@ export default function SpeechDocViewer() {
 
   const scrollToCite = useCallback((cite: string) => {
     if (!containerRef.current) return;
-    const lower = cite.toLowerCase().trim();
     // Query block-level elements so textContent combines split spans (DOCX renders
-    // cites across multiple child nodes, breaking a text-node walk).
-    const candidates = containerRef.current.querySelectorAll('p, td, li, h1, h2, h3, h4, h5, h6, div');
-    for (const el of Array.from(candidates)) {
-      if ((el as HTMLElement).textContent?.toLowerCase().includes(lower)) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
+    // cites across multiple child nodes, which breaks a raw text-node walk).
+    const blocks = Array.from(
+      containerRef.current.querySelectorAll<HTMLElement>('p, td, li, h1, h2, h3, h4, h5, h6')
+    );
+    const textOf = (el: HTMLElement) => (el.textContent ?? '').replace(/\s+/g, ' ').toLowerCase();
+    const reveal = (el: HTMLElement) => el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const raw = cite.trim();
+    const lower = raw.toLowerCase();
+
+    // 1) Exact substring (handles cites that appear verbatim).
+    for (const el of blocks) {
+      if (textOf(el).includes(lower)) { reveal(el); return; }
+    }
+
+    // 2) Author surname(s) + year. The AI emits "Brady 25" / "Lee and Poling 23"
+    //    but the doc often reads "Brady 2025" or "Brady, J. (2025)". Match the last
+    //    author word together with the year in either 2- or 4-digit form.
+    const yearMatch = raw.match(/\b((?:19|20)?\d{2})\b/);
+    const authors = raw
+      .replace(/\b((?:19|20)?\d{2})\b/g, ' ')
+      .split(/[\s,]+/)
+      .filter(w => w.length > 1 && !['and', 'et', 'al', 'the'].includes(w.toLowerCase()));
+    if (authors.length && yearMatch) {
+      const yy = yearMatch[1].slice(-2);
+      const yearForms = [yy, `20${yy}`, `19${yy}`];
+      for (const el of blocks) {
+        const t = textOf(el);
+        const hasAuthor = authors.some(a => t.includes(a.toLowerCase()));
+        const hasYear = yearForms.some(y => t.includes(y));
+        if (hasAuthor && hasYear) { reveal(el); return; }
+      }
+      // 3) Last resort: any author surname alone (first occurrence).
+      for (const el of blocks) {
+        if (authors.some(a => textOf(el).includes(a.toLowerCase()))) { reveal(el); return; }
       }
     }
   }, []);
@@ -2646,68 +2730,69 @@ export default function SpeechDocViewer() {
   return (
     <div className="flex flex-col h-full relative">
       {/* Toolbar */}
-      <div className="border-b border-line px-3 py-1 flex items-center gap-1 shrink-0">
-        <FocusBtn
-          active={focusActive}
-          type={focusType}
-          onToggle={() => setFocusActive(v => !v)}
-          onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
-        />
-
-        {/* Outline toggle */}
-        <OutlineToggleBtn active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
-
-        <ToolbarToggle
-          active={findOpen}
-          label="Find in document (⌘F)"
-          icon={<IcoSearch active={findOpen} />}
-          onClick={() => {
-            setFindOpen(v => !v);
-            window.setTimeout(() => findInputRef.current?.focus(), 0);
-          }}
-        />
-        <ToolbarToggle
-          active={readOpen}
-          label="Reading time & auto-scroll"
-          icon={<IcoClock active={readOpen} />}
-          onClick={() => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; })}
-        />
-        <ToolbarToggle
-          active={flowSendOpen}
-          label="Send selection to a flow"
-          icon={<IcoSendFlow active={flowSendOpen} />}
-          onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
-        />
+      <div className="border-b border-line px-3 py-1.5 flex items-center gap-2 shrink-0">
+        {/* Document tools — grouped into a segmented cluster so the compact icon
+            buttons read as one intentional control, not stray unlabeled buttons. */}
+        <div
+          className="flex items-center gap-0.5 p-0.5 rounded-xl"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+        >
+          <FocusBtn
+            active={focusActive}
+            type={focusType}
+            onToggle={() => setFocusActive(v => !v)}
+            onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
+          />
+          <div style={{ width: 1, height: 18, background: 'var(--border-subtle)', margin: '0 2px' }} />
+          <OutlineToggleBtn active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
+          <ToolbarToggle
+            active={findOpen}
+            label="Find in document (⌘F)"
+            icon={<IcoSearch active={findOpen} />}
+            onClick={() => {
+              setFindOpen(v => !v);
+              window.setTimeout(() => findInputRef.current?.focus(), 0);
+            }}
+          />
+          <ToolbarToggle
+            active={readOpen}
+            label="Reading time & auto-scroll"
+            icon={<IcoClock active={readOpen} />}
+            onClick={() => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; })}
+          />
+          <ToolbarToggle
+            active={flowSendOpen}
+            label="Send selection to a flow"
+            icon={<IcoSendFlow active={flowSendOpen} />}
+            onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
+          />
+        </div>
 
         <div className="flex-1" />
-        <ToolbarToggle
+
+        {/* AI analysis tools — labeled so their purpose is obvious. */}
+        <ToolbarPill
           active={credOpen}
-          label="Score card credibility"
+          label="Credibility"
+          title="Score card credibility"
           icon={<IcoShield active={credOpen} />}
           onClick={() => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; })}
         />
-        <div className="relative" onMouseEnter={() => {}}>
-          <button
-            onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
-            className="flex items-center gap-1.5 h-9 px-2.5 rounded-lg transition text-[12px] font-medium"
-            style={{
-              background: cxOpen ? 'var(--nav-active-bg)' : 'transparent',
-              boxShadow: cxOpen ? 'var(--nav-active-shadow)' : 'none',
-              border: 'none', cursor: 'pointer',
-              color: cxOpen ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
-            }}
-            onMouseEnter={e => { if (!cxOpen) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={e => { if (!cxOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            title="Practice cross-examination on this doc"
-          >
-            <IcoCrossEx active={cxOpen} />
-            Cross-Ex Practice
-          </button>
-        </div>
+        <ToolbarPill
+          active={cxOpen}
+          label="Cross-Ex"
+          title="Practice cross-examination on this doc"
+          icon={<IcoCrossEx active={cxOpen} />}
+          onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
+        />
+
+        <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
+
         <IconBtn
           icon={<IcoShare />}
           label="Share / Open"
           onClick={() => setShareOpen(true)}
+          tooltipAlign="right"
         />
       </div>
 

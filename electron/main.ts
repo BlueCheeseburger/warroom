@@ -1625,7 +1625,8 @@ const CX_SHARED_RULES = `RULES:
 3. Each question: 1-3 sentences MAX. Be direct and pointed. No preamble, no "Can you explain…".
 4. Each answer: 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
 5. Do NOT use markdown emphasis (no **, *, or __). Plain text only. You may wrap key phrases in 'single quotes'.
-6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, in-card contradictions, non-unique impacts, or overclaims.`;
+6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, in-card contradictions, non-unique impacts, or overclaims.
+7. When a question targets a specific card, name that card by its cite (author last name + year) VERBATIM inside the question text — exactly the same string you put in "cardCite" (e.g. write "Your Brady 25 evidence…"). This lets the reader click the cite to jump to the card.`;
 
 // How to tell aff content from neg content inside a doc that may contain both.
 const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
@@ -1635,9 +1636,40 @@ const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
 - Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
 - These are questions an opponent would ask YOU in cross-ex about the cards on that side.`;
 
+// Robustly parse JSON out of an AI response. Models often wrap output in markdown
+// fences, add a preamble, leave trailing commas, or use smart quotes — all of which
+// make a bare JSON.parse throw. This strips fences, isolates the outermost array/
+// object, then retries with progressively more aggressive repairs.
+function parseAIJson<T = any>(raw: string): T {
+  let s = (raw ?? '').trim();
+  s = s.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
+
+  // Isolate the outermost JSON value (array preferred if it comes first).
+  const firstArr = s.indexOf('[');
+  const firstObj = s.indexOf('{');
+  let start = -1; let close = '';
+  if (firstArr !== -1 && (firstObj === -1 || firstArr < firstObj)) { start = firstArr; close = ']'; }
+  else if (firstObj !== -1) { start = firstObj; close = '}'; }
+  if (start !== -1) {
+    const end = s.lastIndexOf(close);
+    if (end > start) s = s.slice(start, end + 1);
+  }
+
+  const repairs: ((x: string) => string)[] = [
+    (x) => x,
+    (x) => x.replace(/,(\s*[}\]])/g, '$1'),                                   // trailing commas
+    (x) => x.replace(/[“”]/g, '"').replace(/[‘’]/g, "'") // smart quotes
+            .replace(/,(\s*[}\]])/g, '$1'),
+  ];
+  let lastErr: unknown;
+  for (const fix of repairs) {
+    try { return JSON.parse(fix(s)); } catch (e) { lastErr = e; }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Could not parse AI JSON');
+}
+
 function cxParseQuestions(raw: string): { question: string; answer: string; cardCite?: string }[] {
-  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
-  const parsed = JSON.parse(cleaned);
+  const parsed = parseAIJson(raw);
   if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
   return parsed
     .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
@@ -1716,8 +1748,7 @@ Return ONLY this JSON (no markdown fences, no preamble):
 {"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Brady 25"}]}]}`;
 
     const raw = await callAI(prompt, 'balanced');
-    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseAIJson(raw);
 
     let groups: { side: string; questions: { question: string; answer: string; cardCite?: string }[] }[] = [];
     if (parsed && Array.isArray(parsed.groups)) {
@@ -1942,12 +1973,12 @@ Then give:
 Cards:
 ${cardLines}
 
-Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as above. No markdown, no preamble:
+Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as above. No markdown, no preamble.
+Inside any string value, use ONLY single quotes — never double quotes — so the JSON stays valid.
 [{"score":7,"verdict":"Solid","author":6,"recency":8,"source":7,"claim":7,"reason":"...","press":"..."}]`;
 
     const raw = await callAI(prompt, 'balanced');
-    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseAIJson(raw);
     if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape.');
 
     const clamp = (n: any) => Math.max(0, Math.min(10, Math.round(Number(n))));
