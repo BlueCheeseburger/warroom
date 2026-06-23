@@ -1636,10 +1636,52 @@ const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
 - Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
 - These are questions an opponent would ask YOU in cross-ex about the cards on that side.`;
 
+const stripTrailingCommas = (x: string) => x.replace(/,(\s*[}\]])/g, '$1');
+const normalizeSmartQuotes = (x: string) => x.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+// Escape double-quotes that appear INSIDE a JSON string value — the #1 reason AI
+// JSON fails to parse (e.g. the model writes  "answer": "their "expert" is wrong" ).
+// Walks the text char by char tracking string state; a quote is treated as the
+// string's closing delimiter only when the next non-space char is structural
+// (: , } ] or end). Any other quote inside a string is a stray literal and gets
+// escaped. Already-escaped quotes (\") are left untouched.
+function escapeStrayQuotes(x: string): string {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < x.length; i++) {
+    const ch = x[i];
+    if (!inStr) {
+      out += ch;
+      if (ch === '"') inStr = true;
+      continue;
+    }
+    if (ch === '\\') {                       // preserve existing escape sequences
+      out += ch + (x[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < x.length && /\s/.test(x[j])) j++;
+      const next = x[j];
+      if (next === undefined || next === ':' || next === ',' || next === '}' || next === ']') {
+        out += ch;        // genuine closing delimiter
+        inStr = false;
+      } else {
+        out += '\\"';     // stray literal quote inside the value
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 // Robustly parse JSON out of an AI response. Models often wrap output in markdown
-// fences, add a preamble, leave trailing commas, or use smart quotes — all of which
-// make a bare JSON.parse throw. This strips fences, isolates the outermost array/
-// object, then retries with progressively more aggressive repairs.
+// fences, add a preamble, leave trailing commas, use smart quotes, or — most
+// commonly — leave unescaped double-quotes inside string values. This strips
+// fences, isolates the outermost array/object, then retries with progressively
+// more aggressive repairs until one parses.
 function parseAIJson<T = any>(raw: string): T {
   let s = (raw ?? '').trim();
   s = s.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
@@ -1657,9 +1699,10 @@ function parseAIJson<T = any>(raw: string): T {
 
   const repairs: ((x: string) => string)[] = [
     (x) => x,
-    (x) => x.replace(/,(\s*[}\]])/g, '$1'),                                   // trailing commas
-    (x) => x.replace(/[“”]/g, '"').replace(/[‘’]/g, "'") // smart quotes
-            .replace(/,(\s*[}\]])/g, '$1'),
+    (x) => stripTrailingCommas(x),
+    (x) => stripTrailingCommas(normalizeSmartQuotes(x)),
+    (x) => stripTrailingCommas(escapeStrayQuotes(x)),
+    (x) => stripTrailingCommas(escapeStrayQuotes(normalizeSmartQuotes(x))),
   ];
   let lastErr: unknown;
   for (const fix of repairs) {
