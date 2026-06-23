@@ -2385,12 +2385,13 @@ export default function SpeechDocViewer() {
   const scrollToCite = useCallback((cite: string) => {
     if (!containerRef.current) return;
     const lower = cite.toLowerCase().trim();
-    const walker = document.createTreeWalker(containerRef.current, NodeFilter.SHOW_TEXT);
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent?.toLowerCase().includes(lower)) {
-        const el = node.parentElement;
-        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    // Query block-level elements so textContent combines split spans (DOCX renders
+    // cites across multiple child nodes, breaking a text-node walk).
+    const candidates = containerRef.current.querySelectorAll('p, td, li, h1, h2, h3, h4, h5, h6, div');
+    for (const el of Array.from(candidates)) {
+      if ((el as HTMLElement).textContent?.toLowerCase().includes(lower)) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
       }
     }
   }, []);
