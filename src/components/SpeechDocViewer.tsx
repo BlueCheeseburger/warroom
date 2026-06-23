@@ -489,8 +489,9 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
     >
       <div className="flex items-center gap-1 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
-        <span className="text-[12.5px] font-semibold flex-1 truncate ml-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
-        <span className="text-[11px] shrink-0 tabular-nums mr-1" style={{ color: 'var(--nav-inactive-color)' }}>{shown.length}</span>
+        <span className="text-[12.5px] font-semibold shrink-0 ml-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
+        <span className="text-[11px] shrink-0 tabular-nums ml-1.5" style={{ color: 'var(--nav-inactive-color)' }}>{shown.length}</span>
+        <div className="flex-1" />
         {depths.length > 1 && (
           <button
             onClick={cycleDepths}
