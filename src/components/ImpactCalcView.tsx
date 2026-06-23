@@ -1,5 +1,36 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../store/appStore';
+
+const SAVES_KEY = 'impact_calc_saves';
+const MAX_SAVES = 20;
+
+export interface SavedImpactCalc {
+  id: string;
+  labelA: string;
+  labelB: string;
+  savedAt: number;
+  result: any;
+}
+
+export async function loadImpactCalcSaves(): Promise<SavedImpactCalc[]> {
+  try {
+    const raw = await (window.warroom as any).storage.read(SAVES_KEY);
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+export async function saveImpactCalc(entry: Omit<SavedImpactCalc, 'id' | 'savedAt'>): Promise<SavedImpactCalc> {
+  const saves = await loadImpactCalcSaves();
+  const newEntry: SavedImpactCalc = { ...entry, id: crypto.randomUUID(), savedAt: Date.now() };
+  const updated = [newEntry, ...saves].slice(0, MAX_SAVES);
+  await (window.warroom as any).storage.write(SAVES_KEY, updated);
+  return newEntry;
+}
+
+export async function deleteImpactCalcSave(id: string): Promise<void> {
+  const saves = await loadImpactCalcSaves();
+  await (window.warroom as any).storage.write(SAVES_KEY, saves.filter((s) => s.id !== id));
+}
 
 interface ImpactItem {
   claim: string;
@@ -185,6 +216,9 @@ function MagnitudeBar({ impacts, color }: { impacts: ImpactItem[]; color: string
 
 export default function ImpactCalcView() {
   const { view, setView } = useApp();
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   if (view.kind !== 'impact-calc') return null;
 
   const { result, labelA, labelB } = view as { kind: 'impact-calc'; result: ImpactCalcResult; labelA: string; labelB: string };
@@ -193,20 +227,56 @@ export default function ImpactCalcView() {
   const verdictColor = winnerColor(verdict);
   const verdictName = verdict === 'A' ? labelA : verdict === 'B' ? labelB : null;
 
+  async function handleSave() {
+    if (saved || saving) return;
+    setSaving(true);
+    try {
+      await saveImpactCalc({ labelA, labelB, result });
+      setSaved(true);
+    } catch (e) {
+      console.error('Failed to save impact calc', e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full overflow-y-auto scroll-thin" style={{ background: 'var(--bg-main)' }}>
       <div style={{ maxWidth: 860, width: '100%', margin: '0 auto', padding: '28px 32px 48px' }}>
 
-        {/* Back */}
-        <button
-          onClick={() => setView({ kind: 'home' })}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', fontSize: 12, padding: '0 0 20px', display: 'flex', alignItems: 'center', gap: 5 }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-          Home
-        </button>
+        {/* Back + Save row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <button
+            onClick={() => setView({ kind: 'home' })}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', fontSize: 12, padding: 0, display: 'flex', alignItems: 'center', gap: 5 }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+            Home
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saved || saving}
+            className={saved ? '' : 'btn-primary'}
+            style={{
+              fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5,
+              ...(saved ? { background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'default' } : {}),
+            }}
+          >
+            {saved ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Saved
+              </>
+            ) : saving ? 'Saving…' : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save
+              </>
+            )}
+          </button>
+        </div>
 
         {/* Title */}
         <div style={{ marginBottom: 24 }}>

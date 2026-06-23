@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../store/appStore';
+import { loadImpactCalcSaves, deleteImpactCalcSave, type SavedImpactCalc } from './ImpactCalcView';
 
 interface SpeechDocRecent { path: string; name: string; }
 
@@ -70,12 +71,37 @@ function DocPicker({ label, value, onChange, disableFlows }: {
   );
 }
 
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function winnerDot(verdict: 'A' | 'B' | 'even') {
+  if (verdict === 'A') return '#16a34a';
+  if (verdict === 'B') return '#2563eb';
+  return 'var(--nav-inactive-color)';
+}
+
 export default function ImpactCalcPanel() {
   const { db, flowsIndex, setView } = useApp();
   const [valueA, setValueA] = useState('');
   const [valueB, setValueB] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saves, setSaves] = useState<SavedImpactCalc[]>([]);
+
+  const reloadSaves = useCallback(async () => {
+    const s = await loadImpactCalcSaves();
+    setSaves(s);
+  }, []);
+
+  useEffect(() => { reloadSaves(); }, [reloadSaves]);
+
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    await deleteImpactCalcSave(id);
+    setSaves((prev) => prev.filter((s) => s.id !== id));
+  }
 
   function reset() { setValueA(''); setValueB(''); setError(null); }
 
@@ -196,6 +222,47 @@ export default function ImpactCalcPanel() {
       {error && (
         <div style={{ marginTop: 10, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--danger-color, #c0392b)', lineHeight: 1.5 }}>
           {error}
+        </div>
+      )}
+
+      {saves.length > 0 && (
+        <div style={{ marginTop: 16, borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--nav-inactive-color)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            Saved
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {saves.map((s) => (
+              <div
+                key={s.id}
+                onClick={() => setView({ kind: 'impact-calc', result: s.result, labelA: s.labelA, labelB: s.labelB })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 10px', borderRadius: 7,
+                  background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                  cursor: 'pointer', transition: 'background 0.12s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-card)'; }}
+              >
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: winnerDot(s.result?.verdict), flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.labelA} vs {s.labelB}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--nav-inactive-color)', flexShrink: 0 }}>{formatDate(s.savedAt)}</div>
+                <button
+                  onClick={(e) => handleDelete(s.id, e)}
+                  title="Delete"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--nav-inactive-color)', fontSize: 14, lineHeight: 1, flexShrink: 0, opacity: 0.5 }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5'; }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
