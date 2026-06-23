@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useApp } from '../store/appStore';
 
 interface ImpactItem {
   claim: string;
@@ -54,64 +55,6 @@ function verdictBorder(v: 'A' | 'B' | 'even') {
   if (v === 'A') return '#16a34a';
   if (v === 'B') return '#2563eb';
   return 'var(--border-subtle)';
-}
-
-function FilenameFromPath(p: string): string {
-  const base = p.split('/').pop()?.split('\\').pop() ?? p;
-  return base.replace(/\.docx$/i, '');
-}
-
-function DocSlot({
-  label,
-  path,
-  onPick,
-  onClear,
-}: {
-  label: string;
-  path: string | null;
-  onPick: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--nav-inactive-color)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {label}
-      </div>
-      {path ? (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-          borderRadius: 6, padding: '6px 10px',
-        }}>
-          <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {FilenameFromPath(path)}
-          </span>
-          <button
-            onClick={onClear}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', padding: 0, lineHeight: 1, fontSize: 15 }}
-          >
-            ×
-          </button>
-        </div>
-      ) : (
-        <div style={{
-          border: '1.5px dashed var(--border-subtle)', borderRadius: 6,
-          padding: '12px 10px', textAlign: 'center',
-        }}>
-          <button
-            onClick={onPick}
-            style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-              borderRadius: 5, padding: '4px 12px', cursor: 'pointer',
-              fontSize: 12, color: 'var(--ink)', fontWeight: 500,
-            }}
-          >
-            Pick .docx
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function ImpactBadge({ item }: { item: ImpactItem }) {
@@ -175,32 +118,112 @@ function ClashCard({ clash }: { clash: ImpactClash }) {
   );
 }
 
-export default function ImpactCalcPanel({ onClose }: { onClose: () => void }) {
-  const [pathA, setPathA] = useState<string | null>(null);
-  const [pathB, setPathB] = useState<string | null>(null);
-  const [labelA, setLabelA] = useState('');
-  const [labelB, setLabelB] = useState('');
+interface SpeechDocRecent { path: string; name: string; }
+
+function DocPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { db } = useApp();
+  const cases = Object.values(db.cases);
+
+  const speechDocRecents: SpeechDocRecent[] = (() => {
+    try {
+      const raw = localStorage.getItem('warroom-speech-doc-recents');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--nav-inactive-color)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: '100%',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 6,
+          padding: '6px 10px',
+          fontSize: 13,
+          color: value ? 'var(--ink)' : 'var(--nav-inactive-color)',
+          cursor: 'pointer',
+          outline: 'none',
+        }}
+      >
+        <option value="">Select a case or speech doc…</option>
+        {cases.map((c) => (
+          <option key={c.id} value={`case:${c.id}`}>📁 {c.name}</option>
+        ))}
+        {speechDocRecents.map((r) => (
+          <option key={r.path} value={`speechdoc:${encodeURIComponent(r.path)}`}>📝 {r.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export default function ImpactCalcPanel() {
+  const { db } = useApp();
+  const [valueA, setValueA] = useState('');
+  const [valueB, setValueB] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImpactCalcResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function pickFile(side: 'A' | 'B') {
-    const p = await (window as any).warroom?.dialog?.openFile(['docx']);
-    if (!p) return;
-    const name = FilenameFromPath(p);
-    if (side === 'A') { setPathA(p); setLabelA(name); }
-    else { setPathB(p); setLabelB(name); }
+  function reset() {
+    setValueA('');
+    setValueB('');
     setResult(null);
     setError(null);
   }
 
+  async function extractText(value: string): Promise<{ text: string; label: string }> {
+    if (value.startsWith('case:')) {
+      const caseId = value.slice('case:'.length);
+      const c = db.cases[caseId];
+      if (!c) throw new Error('Case not found');
+      const label = c.name;
+      let text = `Case: ${c.name}\n\n`;
+      for (const blockId of c.blocks) {
+        const block = db.blocks[blockId];
+        if (!block) continue;
+        text += `${block.title}\n`;
+        for (const cardId of block.cards) {
+          const card = db.cards[cardId];
+          if (!card) continue;
+          text += `${card.tag ?? ''}\n${card.cite ?? ''}\n${card.body ?? ''}\n\n`;
+        }
+      }
+      return { text, label };
+    } else if (value.startsWith('speechdoc:')) {
+      const path = decodeURIComponent(value.slice('speechdoc:'.length));
+      const res = await (window.warroom as any).speechdoc.extract(path);
+      if (!res?.ok) throw new Error(res?.error ?? 'Failed to extract speech doc');
+      const name = path.split('/').pop()?.split('\\').pop()?.replace(/\.docx$/i, '') ?? path;
+      return { text: res.data.full, label: name };
+    }
+    throw new Error('Invalid selection');
+  }
+
   async function analyze() {
-    if (!pathA || !pathB) return;
+    if (!valueA || !valueB) return;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const res = await (window as any).warroom?.gemini?.compareImpacts(pathA, pathB, labelA, labelB);
+      const [docA, docB] = await Promise.all([extractText(valueA), extractText(valueB)]);
+      const res = await (window.warroom as any).ai.compareImpactsText(docA.text, docB.text, docA.label, docB.label);
       if (res?.ok && res.result) {
         setResult(res.result);
       } else {
@@ -213,45 +236,32 @@ export default function ImpactCalcPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const canAnalyze = !!pathA && !!pathB && !loading;
+  const canAnalyze = !!valueA && !!valueB && !loading;
 
   return (
-    <div style={{
-      width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
-      background: 'var(--bg-main)', overflow: 'hidden',
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Impact Calc</span>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', fontSize: 18, lineHeight: 1, padding: 2 }}
-        >
-          ×
-        </button>
-      </div>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 14px 0' }}>
+        <DocPicker label="Your Doc" value={valueA} onChange={(v) => { setValueA(v); setResult(null); setError(null); }} />
+        <DocPicker label="Their Doc" value={valueB} onChange={(v) => { setValueB(v); setResult(null); setError(null); }} />
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
-        <DocSlot
-          label="Your Doc"
-          path={pathA}
-          onPick={() => pickFile('A')}
-          onClear={() => { setPathA(null); setLabelA(''); setResult(null); setError(null); }}
-        />
-        <DocSlot
-          label="Their Doc"
-          path={pathB}
-          onPick={() => pickFile('B')}
-          onClear={() => { setPathB(null); setLabelB(''); setResult(null); setError(null); }}
-        />
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <button
+            onClick={reset}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 11, color: 'var(--nav-inactive-color)', textDecoration: 'underline',
+              padding: 0,
+            }}
+          >
+            Reset
+          </button>
+        </div>
 
         <button
           onClick={analyze}
           disabled={!canAnalyze}
           style={{
-            width: '100%', marginTop: 4, marginBottom: 14,
+            width: '100%', marginBottom: 14,
             padding: '8px 0', borderRadius: 7, border: 'none', cursor: canAnalyze ? 'pointer' : 'not-allowed',
             background: canAnalyze ? 'var(--nav-active-color)' : 'var(--bg-hover)',
             color: canAnalyze ? '#fff' : 'var(--nav-inactive-color)',
@@ -280,7 +290,7 @@ export default function ImpactCalcPanel({ onClose }: { onClose: () => void }) {
         )}
 
         {result && (
-          <>
+          <div style={{ paddingBottom: 14 }}>
             <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 12 }}>
               {result.summary}
             </div>
@@ -330,7 +340,7 @@ export default function ImpactCalcPanel({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             </section>
-          </>
+          </div>
         )}
       </div>
     </div>

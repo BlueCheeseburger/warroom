@@ -441,7 +441,7 @@ function NavArrow({ direction, enabled, onClick, title }: {
 // ─── TitleBar ─────────────────────────────────────────────────────────────────
 
 export default function TitleBar() {
-  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, impactCalcOpen, setImpactCalcOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
+  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
   const canGoBack = navHistoryIndex > 0;
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
@@ -504,23 +504,6 @@ export default function TitleBar() {
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
         <GeminiIcon size={16} />
-      </button>
-
-      <button
-        onClick={() => setImpactCalcOpen(!impactCalcOpen)}
-        title="Impact Calc"
-        className="mr-1 w-6 h-6 flex items-center justify-center rounded-md transition"
-        style={{ color: impactCalcOpen ? 'var(--nav-active-color)' : 'var(--titlebar-label)' } as any}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="12" y1="3" x2="12" y2="21"/>
-          <path d="M5 21h14"/>
-          <path d="M5 7l7-4 7 4"/>
-          <path d="M5 7l-3 6h6l-3-6z"/>
-          <path d="M19 7l-3 6h6l-3-6z"/>
-        </svg>
       </button>
 
       <button

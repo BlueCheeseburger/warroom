@@ -40,7 +40,6 @@ import GoogleScholarView from './components/GoogleScholarView';
 import AgentSearchViews from './components/AgentSearchViews';
 import Chat from './components/Chat';
 import GeminiPanel from './components/GeminiPanel';
-import ImpactCalcPanel from './components/ImpactCalcPanel';
 import GoogleDrivePanel from './components/GoogleDrivePanel';
 import Documentation from './components/Documentation';
 import TopicsScreen from './components/TopicsScreen';
@@ -50,7 +49,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, impactCalcOpen, setImpactCalcOpen } = useApp();
+  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -542,11 +541,6 @@ export default function App() {
         {geminiOpen && (
           <div style={{ width: chatWidth, minWidth: chatWidth, maxWidth: chatWidth, flexShrink: 0, borderLeft: '1px solid var(--border-side)' }}>
             <GeminiPanel />
-          </div>
-        )}
-        {impactCalcOpen && (
-          <div style={{ width: 380, minWidth: 380, maxWidth: 380, flexShrink: 0, borderLeft: '1px solid var(--border-side)' }}>
-            <ImpactCalcPanel onClose={() => setImpactCalcOpen(false)} />
           </div>
         )}
         {/* Resize handle — only in DOM when chat panel is open */}

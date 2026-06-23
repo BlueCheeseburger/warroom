@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
 import { Case, Round, Side, Tournament } from '../types';
 import { GeminiIcon } from './GeminiPanel';
+import ImpactCalcPanel from './ImpactCalcPanel';
 
 type TournStatus = 'live' | 'upcoming' | 'past';
 
@@ -70,6 +71,7 @@ export default function Home() {
             <RecordPanel wins={wins} losses={losses} pending={pending} rounds={rounds} />
             <QuickActions />
             <GeminiHomeCard />
+            <ImpactCalcCard />
           </div>
         </div>
       </div>
@@ -947,6 +949,26 @@ function QuickActions() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Impact Calc card ────────────────────────────────────────────────────────
+
+export function ImpactCalcCard() {
+  return (
+    <div className="glass-card rounded-xl overflow-hidden">
+      <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="3" x2="12" y2="21"/>
+          <path d="M5 21h14"/>
+          <path d="M5 7l7-4 7 4"/>
+          <path d="M5 7l-3 6h6l-3-6z"/>
+          <path d="M19 7l-3 6h6l-3-6z"/>
+        </svg>
+        <span className="label">Impact Calc</span>
+      </div>
+      <ImpactCalcPanel />
     </div>
   );
 }

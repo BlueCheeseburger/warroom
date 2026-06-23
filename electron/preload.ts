@@ -60,6 +60,8 @@ const api = {
       ipcRenderer.invoke('ai:crossExGradeTrap', params),
     scoreCards: (params: { cards: { tag: string; cite: string }[] }) =>
       ipcRenderer.invoke('ai:scoreCards', params),
+    compareImpactsText: (textA: string, textB: string, labelA: string, labelB: string) =>
+      ipcRenderer.invoke('ai:compareImpactsText', textA, textB, labelA, labelB),
   },
   clipboard: {
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),

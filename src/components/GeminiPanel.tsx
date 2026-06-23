@@ -506,7 +506,8 @@ type ToolName =
   | 'edit_flow_cell'
   | 'read_speech_doc'
   | 'control_timer'
-  | 'get_case_synopses';
+  | 'get_case_synopses'
+  | 'compare_impacts';
 
 interface ToolStep {
   id: string;
@@ -550,7 +551,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
   const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
   const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
   // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
-  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer', 'get_case_synopses']);
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer', 'get_case_synopses', 'compare_impacts']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
   const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
@@ -564,6 +565,15 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
       // compass
       return (<svg {...common}><circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" /></svg>);
     }
+    if (tool === 'compare_impacts') return (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={common.style}>
+        <line x1="12" y1="3" x2="12" y2="21"/>
+        <path d="M5 21h14"/>
+        <path d="M5 7l7-4 7 4"/>
+        <path d="M5 7l-3 6h6l-3-6z"/>
+        <path d="M19 7l-3 6h6l-3-6z"/>
+      </svg>
+    );
     // grid / table — flow ops
     return (<svg {...common}><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /></svg>);
   };
@@ -2144,6 +2154,81 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             steps = steps.map((s) => s.id === stepId ? { ...s, label: doneLabel[action] ?? 'Done', status: 'done' } : s);
             syncSteps(steps);
             return { name, functionResult: desc };
+
+          } else if (name === 'compare_impacts') {
+            const docAName = String(args.doc_a ?? '').trim();
+            const docBName = String(args.doc_b ?? '').trim();
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'compare_impacts', label: `Comparing impacts: "${docAName}" vs "${docBName}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              // Helper to normalize a doc name for fuzzy matching
+              const normName = (s: string) => s.toLowerCase().replace(/\.docx$/i, '').replace(/[_\s]+/g, ' ').trim();
+              const normA = normName(docAName);
+              const normB = normName(docBName);
+
+              // Helper to extract text from a speech doc
+              async function extractSpeechDoc(path: string): Promise<string> {
+                const res = await (window.warroom as any)?.speechdoc?.extract(path);
+                if (res?.ok) return res.data?.full ?? '';
+                throw new Error('Could not extract speech doc');
+              }
+
+              // Helper to build text from an in-app case
+              function buildCaseText(caseObj: any): string {
+                const blocks = (caseObj.blocks ?? []).map((bid: string) => db.blocks[bid]).filter(Boolean);
+                const blockTexts = blocks.map((b: any) => {
+                  const cards = (b.cards ?? []).map((cid: string) => db.cards[cid]).filter(Boolean);
+                  const cardLines = cards.map((c: any) => `${c.tag}\n${c.cite}\n${c.body}`).join('\n\n');
+                  return `[${b.title}]\n${cardLines}`;
+                });
+                return `Case: ${caseObj.name}\n\n${blockTexts.join('\n\n')}`;
+              }
+
+              // Resolve a document name → { text, label }
+              async function resolveDoc(query: string): Promise<{ text: string; label: string }> {
+                const normQ = normName(query);
+                // Check speech doc recents
+                try {
+                  const raw = localStorage.getItem('warroom-speech-doc-recents');
+                  const recents: { path: string; name: string }[] = raw ? JSON.parse(raw) : [];
+                  const match = recents.find((r) => {
+                    const n = normName(r.name);
+                    return n.includes(normQ) || normQ.includes(n);
+                  });
+                  if (match) {
+                    const text = await extractSpeechDoc(match.path);
+                    return { text, label: match.name.replace(/\.docx$/i, '') };
+                  }
+                } catch {}
+                // Check in-app cases
+                const caseObj = Object.values(db.cases).find((c: any) => {
+                  const n = normName(c.name);
+                  return n.includes(normQ) || normQ.includes(n);
+                });
+                if (caseObj) {
+                  return { text: buildCaseText(caseObj), label: (caseObj as any).name };
+                }
+                throw new Error(`No case or speech doc matching "${query}" found. Available: ${[
+                  ...Object.values(db.cases).map((c: any) => c.name),
+                  ...(() => { try { return JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]').map((r: any) => r.name); } catch { return []; } })(),
+                ].join(', ') || '(none)'}`);
+              }
+
+              const [docA, docB] = await Promise.all([resolveDoc(docAName), resolveDoc(docBName)]);
+              const res = await (window.warroom as any)?.ai?.compareImpactsText(docA.text, docB.text, docA.label, docB.label);
+              if (!res?.ok) throw new Error(res?.error ?? 'Impact comparison failed');
+              const r = res.result;
+              const verdict = r.verdict === 'A' ? `${r.docA.label} wins` : r.verdict === 'B' ? `${r.docB.label} wins` : 'Even';
+              const summary = `**${verdict}** — ${r.verdictReason}\n\n${r.summary}\n\n**Impact clashes:**\n${(r.clashes ?? []).map((cl: any) => `- ${cl.dimension}: ${cl.winner === 'even' ? 'Even' : cl.winner === 'A' ? r.docA.label + ' wins' : r.docB.label + ' wins'} — ${cl.reasoning}`).join('\n')}`;
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Impact calc: ${verdict}`, status: 'done' } : s);
+              syncSteps(steps);
+              return { name, functionResult: summary };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Impact calc failed`, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Impact comparison failed: ${e.message}` };
+            }
 
           } else if (name === 'edit_flow_cell') {
             const q = String(args.flow ?? '').trim();
