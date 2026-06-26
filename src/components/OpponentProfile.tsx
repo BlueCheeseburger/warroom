@@ -2,10 +2,11 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { renderAsync } from 'docx-preview';
 import { useApp } from '../store/appStore';
-import { OpponentStats } from '../types';
+import { Case, OpponentStats } from '../types';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { Spinner } from './Spinner';
 import SharedNotesEditor from './SharedNotesEditor';
+import { applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 
 // OpenCaselist cite titles often arrive with markdown heading syntax (e.g. "# 1AC").
 // Strip leading ATX markers so names read cleanly in the UI.
@@ -92,7 +93,7 @@ export default function OpponentProfile() {
         </Section>
 
         {/* Disclosed files */}
-        <DisclosedFiles disc={disc} />
+        <DisclosedFiles disc={disc} teamName={opp.teamName ?? opp.school ?? 'Opponent'} />
 
         {/* Debate Land stats */}
         <DebateLandSection key={opp.id} opp={opp} />
@@ -183,8 +184,8 @@ function collectEntries(disc: any): DisclosureEntry[] {
   return entries;
 }
 
-function DisclosedFiles({ disc }: { disc: any }) {
-  const [viewingFile, setViewingFile] = useState<{ url: string; label: string } | null>(null);
+function DisclosedFiles({ disc, teamName }: { disc: any; teamName: string }) {
+  const [viewingFile, setViewingFile] = useState<{ url: string; label: string; side: string } | null>(null);
   const [expandedText, setExpandedText] = useState<string | null>(null);
 
   const entries = collectEntries(disc);
@@ -208,7 +209,7 @@ function DisclosedFiles({ disc }: { disc: any }) {
                 {e.url ? (
                   <button
                     className="btn text-xs shrink-0"
-                    onClick={() => setViewingFile({ url: e.url, label: e.label })}
+                    onClick={() => setViewingFile({ url: e.url, label: e.label, side: e.side })}
                   >
                     Open
                   </button>
@@ -235,6 +236,8 @@ function DisclosedFiles({ disc }: { disc: any }) {
         <DisclosedFileModal
           url={viewingFile.url}
           label={viewingFile.label}
+          side={viewingFile.side}
+          teamName={teamName}
           onClose={() => setViewingFile(null)}
         />
       )}
@@ -244,13 +247,37 @@ function DisclosedFiles({ disc }: { disc: any }) {
 
 // ─── In-app disclosed file viewer (docx-preview) ──────────────────────────────
 
-function DisclosedFileModal({ url, label, onClose }: { url: string; label: string; onClose: () => void }) {
+function DisclosedFileModal({
+  url, label, side, teamName, onClose,
+}: {
+  url: string; label: string; side: string; teamName: string; onClose: () => void;
+}) {
+  const { update, setView } = useApp();
   const [step, setStep] = useState<'loading' | 'viewing' | 'error'>('loading');
   const [error, setError] = useState('');
   const [tempPath, setTempPath] = useState('');
   const [filename, setFilename] = useState('');
   const [saving, setSaving] = useState(false);
+  const [addedToCase, setAddedToCase] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  function applySectionStyles() {
+    if (!containerRef.current) return;
+    const isDark = document.documentElement.classList.contains('dark');
+    containerRef.current.querySelectorAll<HTMLElement>('section.docx').forEach(s => {
+      s.style.background = isDark ? '#2c2c2e' : '#ffffff';
+      s.style.color = isDark ? '#e8e8ea' : '#1c1c1e';
+      s.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)';
+      s.style.borderRadius = '4px';
+      s.style.marginBottom = '24px';
+      s.style.padding = '48px 56px';
+      s.style.maxWidth = '860px';
+      s.style.marginLeft = 'auto';
+      s.style.marginRight = 'auto';
+    });
+    if (isDark) applyDarkModeViewerFixes(containerRef.current);
+    else removeDarkModeViewerFixes(containerRef.current);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -284,20 +311,9 @@ function DisclosedFileModal({ url, label, onClose }: { url: string; label: strin
             useBase64URL: true,
             experimental: true,
           });
-          const isDark = document.documentElement.classList.contains('dark');
-          containerRef.current.querySelectorAll('section.docx').forEach((el, i) => {
-            const s = el as HTMLElement;
-            if (i === 0 && (s.textContent ?? '').trim().length < 10) { s.remove(); return; }
-            s.style.background = isDark ? '#2c2c2e' : '#ffffff';
-            s.style.color = isDark ? '#e8e8ea' : '#1c1c1e';
-            s.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)';
-            s.style.borderRadius = '4px';
-            s.style.marginBottom = '24px';
-            s.style.padding = '48px 56px';
-            s.style.maxWidth = '860px';
-            s.style.marginLeft = 'auto';
-            s.style.marginRight = 'auto';
-          });
+          // Remove blank first page unconditionally
+          containerRef.current.firstElementChild?.remove();
+          applySectionStyles();
         }, 0);
       } catch (e: any) {
         if (!cancelled) { setError(e.message ?? 'Unknown error'); setStep('error'); }
@@ -305,6 +321,13 @@ function DisclosedFileModal({ url, label, onClose }: { url: string; label: strin
     })();
     return () => { cancelled = true; };
   }, [url]);
+
+  // React to theme changes
+  useEffect(() => {
+    const obs = new MutationObserver(() => applySectionStyles());
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
 
   // Close on Escape key
   useEffect(() => {
@@ -319,19 +342,29 @@ function DisclosedFileModal({ url, label, onClose }: { url: string; label: strin
     setSaving(false);
   }
 
+  async function handleAddToCase() {
+    const caseSide = side === 'Aff' ? 'aff' : 'neg';
+    const caseName = `${teamName} – ${label}`;
+    const id = crypto.randomUUID();
+    const newCase: Case = { id, name: caseName, side: caseSide as any, blocks: [] };
+    await update((db) => ({ ...db, cases: { ...db.cases, [id]: newCase } }));
+    setAddedToCase(true);
+    setTimeout(() => {
+      onClose();
+      setView({ kind: 'case', caseId: id });
+    }, 800);
+  }
+
   const modal = (
     <div
       className="flex flex-col"
       style={{
-        position: 'fixed', inset: 0, zIndex: 200,
+        position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, zIndex: 200,
         background: 'var(--bg-main)',
         WebkitAppRegion: 'no-drag',
       } as React.CSSProperties}
     >
-      {/* Spacer that clears the macOS traffic-light / drag region */}
-      <div className="shrink-0 h-9" />
-
-      {/* Header */}
+      {/* Header / toolbar */}
       <div
         className="shrink-0 px-4 py-2.5 flex items-center justify-between gap-3"
         style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)' }}
@@ -340,9 +373,20 @@ function DisclosedFileModal({ url, label, onClose }: { url: string; label: strin
           <button onClick={onClose} className="text-xs text-ink/50 hover:text-ink shrink-0">
             ← Back
           </button>
+          <span className={`text-[10px] shrink-0 px-1.5 py-0.5 rounded-sm font-medium ${side === 'Aff' ? 'badge-aff' : 'badge-neg'}`}>{side}</span>
           <span className="text-sm font-medium truncate">{label}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {step === 'viewing' && (
+            <button
+              className="btn text-xs"
+              onClick={handleAddToCase}
+              disabled={addedToCase}
+              title="Create a new case in your sidebar from this disclosed file"
+            >
+              {addedToCase ? 'Added!' : '+ Save to Cases'}
+            </button>
+          )}
           {step === 'viewing' && tempPath && (
             <button className="btn text-xs" onClick={handleDownload} disabled={saving}>
               {saving ? 'Saving…' : 'Download'}
