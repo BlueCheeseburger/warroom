@@ -27,6 +27,13 @@ export interface Case {
   side: Side;
   blocks: string[];
   shared?: boolean;
+  ocSource?: {
+    teamName: string;
+    label: string;
+    url: string;
+    importedAt: string;
+    byteLen?: number;
+  };
 }
 
 export interface DisclosedPosition {

@@ -346,7 +346,18 @@ function DisclosedFileModal({
     const caseSide = side === 'Aff' ? 'aff' : 'neg';
     const caseName = `${teamName} – ${label}`;
     const id = crypto.randomUUID();
-    const newCase: Case = { id, name: caseName, side: caseSide as any, blocks: [] };
+    let byteLen: number | undefined;
+    if (tempPath) {
+      const readRes = await window.warroom.fs.readFileBytes(tempPath);
+      if (readRes.ok && readRes.base64) byteLen = atob(readRes.base64).length;
+    }
+    const newCase: Case = {
+      id,
+      name: caseName,
+      side: caseSide as any,
+      blocks: [],
+      ocSource: { teamName, label, url, importedAt: new Date().toISOString(), byteLen },
+    };
     await update((db) => ({ ...db, cases: { ...db.cases, [id]: newCase } }));
     setAddedToCase(true);
     setTimeout(() => {

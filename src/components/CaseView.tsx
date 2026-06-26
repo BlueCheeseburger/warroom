@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { renderAsync } from 'docx-preview';
 import { useApp, useDangerBtnClass } from '../store/appStore';
 import { Block } from '../types';
-import { EditIcon, TrashIcon } from './Spinner';
+import { EditIcon, TrashIcon, Spinner } from './Spinner';
+import { applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 import SharePanel from './SharePanel';
 
 const BLOCK_TYPES = [
@@ -23,9 +25,10 @@ export default function CaseView() {
   const c = db.cases[view.caseId];
   if (!c) return <NotFound />;
 
+  if (c.ocSource) return <OcCaseView c={c} />;
+
   const blocks = c.blocks.map((id) => db.blocks[id]).filter(Boolean);
 
-  // Group by type, preserving order of BLOCK_TYPES
   const grouped = BLOCK_TYPES.map(({ value, label }) => ({
     type: value,
     label,
@@ -47,6 +50,181 @@ export default function CaseView() {
     </div>
   );
 }
+
+// ─── OC-sourced case: docx viewer with disclaimer + change check ──────────────
+
+function OcCaseView({ c }: { c: any }) {
+  const { update, setView, mode } = useApp();
+  const dangerCls = useDangerBtnClass();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [step, setStep] = useState<'loading' | 'viewing' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<'up-to-date' | 'changed' | null>(null);
+  const src = c.ocSource!;
+
+  function applySectionStyles() {
+    if (!containerRef.current) return;
+    const isDark = document.documentElement.classList.contains('dark');
+    containerRef.current.querySelectorAll<HTMLElement>('section.docx').forEach(s => {
+      s.style.background = isDark ? '#2c2c2e' : '#ffffff';
+      s.style.color = isDark ? '#e8e8ea' : '#1c1c1e';
+      s.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)';
+      s.style.borderRadius = '4px';
+      s.style.marginBottom = '24px';
+      s.style.padding = '48px 56px';
+      s.style.maxWidth = '860px';
+      s.style.marginLeft = 'auto';
+      s.style.marginRight = 'auto';
+    });
+    if (isDark) applyDarkModeViewerFixes(containerRef.current);
+    else removeDarkModeViewerFixes(containerRef.current);
+  }
+
+  async function renderBytes(base64: string) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    setStep('viewing');
+    setTimeout(async () => {
+      if (!containerRef.current) return;
+      containerRef.current.innerHTML = '';
+      await renderAsync(bytes.buffer, containerRef.current, undefined, {
+        className: 'docx-render',
+        inWrapper: false,
+        ignoreWidth: true,
+        ignoreHeight: false,
+        breakPages: false,
+        useBase64URL: true,
+        experimental: true,
+      });
+      containerRef.current.firstElementChild?.remove();
+      applySectionStyles();
+    }, 0);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetchRes = await window.warroom.opencaselist.fetchFileToTemp(src.url);
+        if (cancelled) return;
+        if (!fetchRes.ok) throw new Error(fetchRes.error ?? 'Could not download file.');
+        const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
+        if (cancelled) return;
+        if (!readRes.ok || !readRes.base64) throw new Error(readRes.error ?? 'Could not read file.');
+        await renderBytes(readRes.base64);
+      } catch (e: any) {
+        if (!cancelled) { setError(e.message ?? 'Unknown error'); setStep('error'); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [src.url]);
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => applySectionStyles());
+    obs.observe(document.documentElement, { attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
+  async function checkForChanges() {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const fetchRes = await window.warroom.opencaselist.fetchFileToTemp(src.url);
+      if (!fetchRes.ok) throw new Error(fetchRes.error ?? 'Could not download file.');
+      const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
+      if (!readRes.ok || !readRes.base64) throw new Error('Could not read file.');
+      const newByteLen = atob(readRes.base64).length;
+      const changed = src.byteLen !== undefined && newByteLen !== src.byteLen;
+      setCheckResult(changed ? 'changed' : 'up-to-date');
+      if (changed) {
+        await update((db) => ({
+          ...db,
+          cases: { ...db.cases, [c.id]: { ...db.cases[c.id], ocSource: { ...src, byteLen: newByteLen } } },
+        }));
+        await renderBytes(readRes.base64);
+      }
+    } catch {
+      setCheckResult(null);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function deleteCase() {
+    if (!confirm(`Delete "${c.name}"?`)) return;
+    await update((db) => { const next = { ...db }; delete next.cases[c.id]; return next; });
+    setView({ kind: 'home' });
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-4 glass-elevated flex items-start justify-between gap-4 shrink-0">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm font-medium ${c.side === 'aff' ? 'badge-aff' : 'badge-neg'}`}>
+              {c.side}
+            </span>
+          </div>
+          <h1 className="text-lg font-semibold">{c.name}</h1>
+        </div>
+        <div className="flex gap-2 pt-1 shrink-0">
+          <button
+            className="btn text-xs"
+            onClick={checkForChanges}
+            disabled={checking}
+            title="Re-fetch from OpenCaseList and check if the file changed"
+          >
+            {checking ? 'Checking…' : 'Check for changes'}
+          </button>
+          {mode === 'prep' && (
+            <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete case" onClick={deleteCase}><TrashIcon /></button>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="shrink-0 px-6 py-2 flex items-center gap-2 text-xs"
+        style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)' }}
+      >
+        <span className="text-ink/50">
+          Imported from <span className="font-medium text-ink/80">{src.teamName}</span> on OpenCaseList
+          · {new Date(src.importedAt).toLocaleDateString()}
+        </span>
+        {checkResult === 'changed' && (
+          <span className="ml-2 px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style={{ background: 'var(--warn-subtle)', color: 'var(--warn)' }}>
+            Updated — reloaded
+          </span>
+        )}
+        {checkResult === 'up-to-date' && (
+          <span className="ml-2 px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style={{ background: 'rgba(52,199,89,0.1)', color: '#34c759' }}>
+            Up to date
+          </span>
+        )}
+      </div>
+
+      {step === 'loading' && (
+        <div className="flex-1 flex items-center justify-center gap-2 text-sm text-ink/50">
+          <Spinner /> Loading file…
+        </div>
+      )}
+      {step === 'error' && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8">
+          <div className="border border-danger/30 rounded-sm bg-danger/5 p-3 text-sm text-danger max-w-md text-center">{error}</div>
+          <button className="btn text-xs" onClick={() => window.warroom.opencaselist.openFile(src.url)}>Open in browser</button>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap"
+        style={{ display: step === 'viewing' ? undefined : 'none' }}
+      />
+    </div>
+  );
+}
+
+// ─── Block-based case header ──────────────────────────────────────────────────
 
 function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; cardCount: number }) {
   const { update, setView, mode, db } = useApp();
