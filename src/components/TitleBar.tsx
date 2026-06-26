@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp, Theme, DebateEvent } from '../store/appStore';
-import { GeminiIcon } from './GeminiPanel';
+import { AIProviderIcon } from './GeminiPanel';
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
@@ -283,8 +283,8 @@ function SpeechTimer() {
 
       {/* Countdown — click minutes or seconds to edit when paused */}
       <span
-        className="font-mono font-bold tabular-nums px-1 flex items-center"
-        style={{ fontSize: 13, color: timeColor, minWidth: 38, transition: 'color 0.25s', gap: 0 }}
+        className="font-mono font-bold tabular-nums px-1 flex items-center justify-end"
+        style={{ fontSize: 13, color: timeColor, width: 44, flexShrink: 0, transition: 'color 0.25s', gap: 0 }}
       >
         {editingPart === 'min' ? (
           <input
@@ -446,6 +446,19 @@ export default function TitleBar() {
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
   const isWin = window.warroom?.platform === 'win32';
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'grok'>('gemini');
+
+  useEffect(() => {
+    window.warroom?.storage.read('app_settings').then((s: any) => {
+      if (s?.apiProvider) setAiProvider(s.apiProvider);
+    }).catch(() => {});
+    function onSettingsChange(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.apiProvider !== undefined) setAiProvider(detail.apiProvider);
+    }
+    window.addEventListener('warroom-settings-change', onSettingsChange);
+    return () => window.removeEventListener('warroom-settings-change', onSettingsChange);
+  }, []);
 
   return (
     <div
@@ -503,7 +516,7 @@ export default function TitleBar() {
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        <GeminiIcon size={16} />
+        <AIProviderIcon provider={aiProvider} size={16} />
       </button>
 
       <button
