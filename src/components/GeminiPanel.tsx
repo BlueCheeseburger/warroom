@@ -126,12 +126,12 @@ export function OpenAIIcon({ size = 13 }: { size?: number }) {
 }
 
 // ─── Anthropic (Claude) icon ──────────────────────────────────────────────────
-// Uses the Claude product mark (the distinctive starburst from claude.ai)
+// The Claude sunburst mark — an irregular, hand-drawn radiating burst.
 
 export function ClaudeIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4.255 9.155c-.05.028-.073.079-.06.133l.563 2.39c.013.055.062.094.118.094h3.47l-.998 4.232-.001.006c-.013.055.013.107.063.135l2.136 1.19c.05.028.112.019.152-.023l5.684-6.015.002-.003c.04-.041.047-.1.019-.149l-1.178-2.03a.12.12 0 0 0-.149-.05L9.22 11.093l1.037-4.447c.013-.055-.013-.107-.063-.135L8.057 5.322a.12.12 0 0 0-.152.023L4.258 9.152l-.003.003zm8.16-3.878c-.028.05-.019.112.023.152l1.907 1.798.002.002c.041.04.1.047.149.019l2.009-1.153.005-.003c.051-.028.073-.079.06-.133l-.558-2.367a.12.12 0 0 0-.118-.094H13.57a.12.12 0 0 0-.113.079l-.041.106-.001.003zm4.147 3.647-2.006 1.15c-.05.028-.073.079-.06.133l.558 2.367c.013.055.062.094.118.094h2.324c.055 0 .102-.037.115-.091l.558-2.345a.12.12 0 0 0-.06-.133l-1.39-.797-.002-.001-.155-.377zm-5.24 7.855-1.91-1.801a.12.12 0 0 0-.149-.019l-2.04 1.17c-.05.028-.073.079-.06.133l.558 2.367c.013.055.062.094.118.094h2.324c.055 0 .102-.037.115-.091l.041-.106.003-.005z" />
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M48.4 4.03 L53.88 35.51 L72.26 14.38 L61.32 40.16 L91.11 31.7 L64.84 47.78 L92.68 55.24 L63.76 55.98 L83.7 78.28 L58.17 62.58 L61.58 90.37 L50.13 65 L38.1 94.43 L41.94 62.65 L17.06 77.64 L36.41 56.34 L5.68 57.81 L35.1 48.3 L11.34 33.59 L38.43 40.46 L25.4 13.52 L45.36 35.73 Z" />
     </svg>
   );
 }
@@ -139,10 +139,14 @@ export function ClaudeIcon({ size = 13 }: { size?: number }) {
 // ─── xAI Grok icon ────────────────────────────────────────────────────────────
 
 export function GrokIcon({ size = 13, color }: { size?: number; color?: string }) {
-  // xAI brand mark: symmetric 4-arm diagonal cross, distinct from Twitter/X Corp's letterform
+  // xAI mark: a circle sliced by a diagonal — two arcs (upper-left + lower-right)
+  // split by a slash that tails out past the top-right. NOT the Twitter/X letterform.
+  const c = color ?? 'currentColor';
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={color ?? 'currentColor'} xmlns="http://www.w3.org/2000/svg">
-      <path d="M19.5 3.5L12 11 4.5 3.5 3 5l7.5 7L3 19l1.5 1.5L12 13l7.5 7.5L21 19l-7.5-7L21 5z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={c} strokeLinecap="round" xmlns="http://www.w3.org/2000/svg">
+      <path d="M15.25 6.37 A6.5 6.5 0 0 0 6.37 15.25" strokeWidth="2" />
+      <path d="M8.75 17.63 A6.5 6.5 0 0 0 17.63 8.75" strokeWidth="2" />
+      <path d="M20 4 L7.05 16.95" strokeWidth="1.8" />
     </svg>
   );
 }
