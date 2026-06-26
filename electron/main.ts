@@ -514,9 +514,10 @@ const MODEL_TIER_IDS = {
   gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.5-flash' },
   openai:    { lite: 'gpt-4.1-nano',          balanced: 'gpt-4.1-mini',      best: 'gpt-4.1' },
   anthropic: { lite: 'claude-3-5-haiku-20241022', balanced: 'claude-3-5-sonnet-20241022', best: 'claude-sonnet-4-6' },
+  grok:      { lite: 'grok-3-mini',           balanced: 'grok-3-fast',       best: 'grok-3' },
 } as const;
 
-type Provider = 'gemini' | 'openai' | 'anthropic';
+type Provider = 'gemini' | 'openai' | 'anthropic' | 'grok';
 type ModelTier = 'lite' | 'balanced' | 'best';
 
 function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
@@ -528,6 +529,11 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   if (provider === 'openai') {
     if (modelKey === 'gpt-4.1-nano') return 'lite';
     if (modelKey === 'gpt-4.1')      return 'best';
+    return 'balanced';
+  }
+  if (provider === 'grok') {
+    if (modelKey === 'grok-3-mini') return 'lite';
+    if (modelKey === 'grok-3')      return 'best';
     return 'balanced';
   }
   // anthropic
@@ -551,6 +557,7 @@ async function getProviderForTask(
   const userModelKey: string =
     provider === 'gemini'    ? (s?.geminiModel    ?? 'flash')
   : provider === 'openai'    ? (s?.openaiModel    ?? 'gpt-4.1-mini')
+  : provider === 'grok'      ? (s?.grokModel      ?? 'grok-3-mini')
   :                             (s?.anthropicModel ?? 'claude-3-5-sonnet-20241022');
 
   const userTier = resolveUserTier(provider, userModelKey);
@@ -561,7 +568,7 @@ async function getProviderForTask(
   : taskTier;
 
   const modelId = MODEL_TIER_IDS[provider][effectiveTier];
-  const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : 'gemini';
+  const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
   const apiKey = (await getSecure(secureKey)) ?? '';
   return { provider, modelId, apiKey };
 }
@@ -629,6 +636,35 @@ async function callAnthropic(apiKey: string, prompt: string, modelId: string): P
   return text;
 }
 
+// ─── xAI (Grok) ──────────────────────────────────────────────────────────────
+
+function grokHttpError(status: number, body: string): Error {
+  let detail = '';
+  try { detail = JSON.parse(body)?.error?.message ?? ''; } catch {}
+  if (detail) return new Error(detail);
+  if (status === 429) return new Error('Grok rate limit reached — wait a moment and try again.');
+  if (status === 401 || status === 403) return new Error('xAI rejected the API key — check your Grok key in Settings.');
+  return new Error(`Grok request failed (HTTP ${status}) — try again shortly.`);
+}
+
+async function callGrok(apiKey: string, prompt: string, modelId: string): Promise<string> {
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 8192,
+    }),
+  });
+  if (!res.ok) throw grokHttpError(res.status, await res.text().catch(() => ''));
+  const data = await res.json() as any;
+  const text = data?.choices?.[0]?.message?.content;
+  if (typeof text !== 'string') throw new Error('Unexpected Grok response shape');
+  return text;
+}
+
 // ─── Unified single-turn text call ───────────────────────────────────────────
 
 async function callAI(prompt: string, taskTier: ModelTier | 'user'): Promise<string> {
@@ -636,6 +672,7 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user'): Promise<str
   if (!apiKey) throw new Error('NO_KEY');
   if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId);
   if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId);
+  if (provider === 'grok')      return callGrok(apiKey, prompt, modelId);
   // Gemini
   const res = await fetch(geminiGenerateUrl(modelId), {
     method: 'POST',
@@ -5024,6 +5061,39 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
         });
       } finally { clearTimeout(timeout); }
       if (!res!.ok) throw openaiHttpError(res!.status, await res!.text().catch(() => ''));
+      const data = await res.json() as any;
+      const msg = data?.choices?.[0]?.message;
+      const modelContent = openAIMsgToGeminiContent(msg);
+      if (msg?.tool_calls?.length > 0) {
+        return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
+      }
+      const raw = msg?.content ?? '';
+      return sbOk({ type: 'text', text: raw, modelContent });
+    }
+
+    // ── Grok path (OpenAI-compatible) ────────────────────────────────────────
+    if (provider === 'grok') {
+      const { msgs: grokMessages } = geminiMsgsToOpenAI(messages);
+      const grokTools = geminiToolsToOpenAI(AGENT_TOOLS);
+      const abort = new AbortController();
+      const timeout = setTimeout(() => abort.abort(), 45_000);
+      let res: Response;
+      try {
+        res = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          signal: abort.signal,
+          body: JSON.stringify({
+            model: modelId,
+            messages: [{ role: 'system', content: systemText }, ...grokMessages],
+            tools: grokTools,
+            tool_choice: 'auto',
+            temperature: 0.4,
+            max_tokens: 8192,
+          }),
+        });
+      } finally { clearTimeout(timeout); }
+      if (!res!.ok) throw grokHttpError(res!.status, await res!.text().catch(() => ''));
       const data = await res.json() as any;
       const msg = data?.choices?.[0]?.message;
       const modelContent = openAIMsgToGeminiContent(msg);

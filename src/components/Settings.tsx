@@ -198,11 +198,11 @@ export default function Settings() {
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, []);
-  const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
+  const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'grok'>('gemini');
   const [apiKey, setApiKey] = useState('');
   const [apiKeySaved, setApiKeySaved] = useState(false);
   // saved values per provider — used to show Edit vs Save and to restore when switching tabs
-  const [savedKeys, setSavedKeys] = useState<Record<string, string>>({ gemini: '', openai: '', anthropic: '' });
+  const [savedKeys, setSavedKeys] = useState<Record<string, string>>({ gemini: '', openai: '', anthropic: '', grok: '' });
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
@@ -210,6 +210,8 @@ export default function Settings() {
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
   const [anthropicModelSaved, setAnthropicModelSaved] = useState(false);
+  const [grokModel, setGrokModel] = useState('grok-3-mini');
+  const [grokModelSaved, setGrokModelSaved] = useState(false);
   const [ocUser, setOcUser] = useState('');
   const [ocPass, setOcPass] = useState('');
   const [ocSavedUser, setOcSavedUser] = useState('');
@@ -255,21 +257,23 @@ export default function Settings() {
       window.warroom?.storage.read('app_settings'),
       window.warroom?.secure.get('openai_key'),
       window.warroom?.secure.get('anthropic_key'),
-    ]).then(([k, u, p, s, oai, ant]) => {
+      window.warroom?.secure.get('grok_key'),
+    ]).then(([k, u, p, s, oai, ant, grok]) => {
       if (u) { setOcUser(u); setOcSavedUser(u); }
       if (p) { setOcPass(p); setOcSavedPass(p); }
       if ((s as any)?.event) setSettingsEvent((s as any).event);
       if ((s as any)?.geminiModel) setGeminiModel((s as any).geminiModel);
       if ((s as any)?.openaiModel) setOpenaiModel((s as any).openaiModel);
       if ((s as any)?.anthropicModel) setAnthropicModel((s as any).anthropicModel);
+      if ((s as any)?.grokModel) setGrokModel((s as any).grokModel);
       if ((s as any)?.tokenSavingDefault !== undefined) {
         setTokenSavingDefault((s as any).tokenSavingDefault);
       } else {
         setTokenSavingDefault((s as any)?.geminiModel === 'flash-lite');
       }
-      const keys = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '' };
+      const keys = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
-      const provider: 'gemini' | 'openai' | 'anthropic' = (s as any)?.apiProvider ?? 'gemini';
+      const provider: 'gemini' | 'openai' | 'anthropic' | 'grok' = (s as any)?.apiProvider ?? 'gemini';
       setApiProvider(provider);
       setApiKey(keys[provider]);
       setLoaded(true);
@@ -288,10 +292,11 @@ export default function Settings() {
     setTimeout(() => setEventSaved(false), 2000);
   }
 
-  function detectProvider(val: string): 'gemini' | 'openai' | 'anthropic' | null {
+  function detectProvider(val: string): 'gemini' | 'openai' | 'anthropic' | 'grok' | null {
     if (val.startsWith('AIza')) return 'gemini';
     if (val.startsWith('sk-ant-')) return 'anthropic';
     if (val.startsWith('sk-')) return 'openai';
+    if (val.startsWith('xai-')) return 'grok';
     return null;
   }
 
@@ -304,9 +309,9 @@ export default function Settings() {
     }
   }
 
-  async function switchProvider(p: 'gemini' | 'openai' | 'anthropic') {
+  async function switchProvider(p: 'gemini' | 'openai' | 'anthropic' | 'grok') {
     setApiProvider(p);
-    setApiKey(savedKeys[p]);
+    setApiKey(savedKeys[p] ?? '');
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, apiProvider: p });
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiProvider: p } }));
@@ -315,13 +320,14 @@ export default function Settings() {
   async function saveApiKey() {
     const val = apiKey.trim();
     if (!val) return;
-    const secureKey = apiProvider === 'gemini' ? 'gemini' : apiProvider === 'openai' ? 'openai_key' : 'anthropic_key';
+    const secureKey = apiProvider === 'gemini' ? 'gemini' : apiProvider === 'openai' ? 'openai_key' : apiProvider === 'grok' ? 'grok_key' : 'anthropic_key';
     await window.warroom.secure.set(secureKey, val);
     setSavedKeys((prev) => ({ ...prev, [apiProvider]: val }));
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, apiProvider });
     setApiKeySaved(true);
     setTimeout(() => setApiKeySaved(false), 2000);
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiKeySaved: true } }));
   }
 
   async function saveGeminiModel(model: string) {
@@ -357,6 +363,15 @@ export default function Settings() {
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { anthropicModel: model } }));
     setAnthropicModelSaved(true);
     setTimeout(() => setAnthropicModelSaved(false), 2000);
+  }
+
+  async function saveGrokModel(model: string) {
+    setGrokModel(model);
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, grokModel: model });
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { grokModel: model } }));
+    setGrokModelSaved(true);
+    setTimeout(() => setGrokModelSaved(false), 2000);
   }
 
   async function saveOC() {
@@ -498,6 +513,7 @@ export default function Settings() {
             { value: 'gemini',    label: 'Gemini' },
             { value: 'openai',    label: 'OpenAI' },
             { value: 'anthropic', label: 'Anthropic' },
+            { value: 'grok',      label: 'Grok' },
           ] as const).map((p) => (
             <button
               key={p.value}
@@ -519,6 +535,7 @@ export default function Settings() {
               {apiProvider === 'gemini' && 'Powers card extraction and block suggestions. Stored encrypted on device.'}
               {apiProvider === 'openai' && 'OpenAI API key. Stored encrypted on device.'}
               {apiProvider === 'anthropic' && 'Anthropic API key. Stored encrypted on device.'}
+              {apiProvider === 'grok' && 'xAI Grok API key (starts with xai-). Stored encrypted on device.'}
             </p>
             <div className="flex gap-2">
               <input
@@ -526,7 +543,8 @@ export default function Settings() {
                 type="password"
                 placeholder={
                   apiProvider === 'gemini' ? 'AIza…' :
-                  apiProvider === 'openai' ? 'sk-…' : 'sk-ant-…'
+                  apiProvider === 'openai' ? 'sk-…' :
+                  apiProvider === 'grok' ? 'xai-…' : 'sk-ant-…'
                 }
                 value={apiKey}
                 onChange={(e) => handleApiKeyChange(e.target.value)}
@@ -625,6 +643,56 @@ export default function Settings() {
                 </div>
               ))}
               {anthropicModelSaved && (
+                <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Grok model selector */}
+        {apiProvider === 'grok' && loaded && (
+          <div>
+            <div className="label mb-1">Grok model</div>
+            <p className="text-xs mb-2 text-ink/50">
+              Used for scouting reports and analysis. Hover each option for details.
+            </p>
+            <div className="space-y-1.5">
+              {[
+                { value: 'grok-3-mini', label: 'Grok 3 mini', tooltip: 'Fast and cost-efficient. Good for quick analysis.', default: true },
+                { value: 'grok-3',      label: 'Grok 3',      tooltip: 'Full flagship model. Best quality for complex reasoning.' },
+                { value: 'grok-3-fast', label: 'Grok 3 fast', tooltip: 'Fast version of Grok 3 with slightly reduced quality.' },
+              ].map((o) => (
+                <div key={o.value} className="relative group">
+                  <button
+                    className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition border"
+                    style={{
+                      background: grokModel === o.value ? 'var(--item-selected-bg)' : 'var(--bg-input)',
+                      color: grokModel === o.value ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
+                      borderColor: grokModel === o.value ? 'transparent' : 'var(--border-med)',
+                    }}
+                    onClick={() => saveGrokModel(o.value)}
+                  >
+                    <span>{o.label}</span>
+                    {o.default && (
+                      <span className="ml-2 text-[10px] opacity-50 font-normal">(default)</span>
+                    )}
+                  </button>
+                  <div
+                    className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
+                      opacity-0 group-hover:opacity-100 transition-opacity duration-150
+                      w-56 rounded-sm px-3 py-2 text-xs leading-relaxed"
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border-subtle)',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                      color: 'rgb(var(--ink-rgb))',
+                    }}
+                  >
+                    {o.tooltip}
+                  </div>
+                </div>
+              ))}
+              {grokModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
             </div>

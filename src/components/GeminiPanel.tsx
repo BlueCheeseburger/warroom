@@ -34,10 +34,17 @@ const ANTHROPIC_MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6' },
   { value: 'claude-opus-4-8',           label: 'Opus 4.8' },
 ];
-function modelOptionsFor(provider: 'gemini' | 'openai' | 'anthropic') {
-  return provider === 'openai' ? OPENAI_MODEL_OPTIONS
-       : provider === 'anthropic' ? ANTHROPIC_MODEL_OPTIONS
-       : GEMINI_MODEL_OPTIONS;
+const GROK_MODEL_OPTIONS = [
+  { value: 'grok-3-mini', label: 'Grok 3 mini' },
+  { value: 'grok-3',      label: 'Grok 3' },
+  { value: 'grok-3-fast', label: 'Grok 3 fast' },
+];
+type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok';
+function modelOptionsFor(provider: AIProvider) {
+  if (provider === 'openai')    return OPENAI_MODEL_OPTIONS;
+  if (provider === 'anthropic') return ANTHROPIC_MODEL_OPTIONS;
+  if (provider === 'grok')      return GROK_MODEL_OPTIONS;
+  return GEMINI_MODEL_OPTIONS;
 }
 
 // ─── App navigation map (for the navigate_app agent tool) ─────────────────────
@@ -128,10 +135,20 @@ export function ClaudeIcon({ size = 13 }: { size?: number }) {
   );
 }
 
+// ─── xAI Grok icon ────────────────────────────────────────────────────────────
+
+export function GrokIcon({ size = 13, color }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color ?? 'currentColor'} xmlns="http://www.w3.org/2000/svg">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 // ─── Dynamic AI provider icon ─────────────────────────────────────────────────
 
 export function AIProviderIcon({ provider, size = 13, color }: {
-  provider: 'gemini' | 'openai' | 'anthropic';
+  provider: AIProvider;
   size?: number;
   color?: string;
 }) {
@@ -140,6 +157,9 @@ export function AIProviderIcon({ provider, size = 13, color }: {
   }
   if (provider === 'anthropic') {
     return <span style={{ color: color ?? '#D97757', display: 'inline-flex', alignItems: 'center' }}><ClaudeIcon size={size} /></span>;
+  }
+  if (provider === 'grok') {
+    return <span style={{ color: color ?? 'currentColor', display: 'inline-flex', alignItems: 'center' }}><GrokIcon size={size} color={color} /></span>;
   }
   return <GeminiIcon size={size} color={color} />;
 }
@@ -968,7 +988,7 @@ export default function GeminiPanel() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string>(() => loadConversations()[0]?.id ?? '');
   const [showList, setShowList] = useState(false);
-  const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
+  const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
 
   useEffect(() => {
     window.warroom?.storage.read('app_settings').then((s: any) => {
@@ -1309,7 +1329,9 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const [geminiModel, setGeminiModel] = useState('flash');
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
-  const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
+  const [grokModel, setGrokModel] = useState('grok-3-mini');
+  const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
+  const [hasApiKey, setHasApiKey] = useState(true);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -1325,7 +1347,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
   // Load token saving default and model from settings on mount, keep in sync
   useEffect(() => {
-    window.warroom?.storage.read('app_settings').then((s: any) => {
+    async function loadSettings() {
+      const s = await window.warroom?.storage.read('app_settings').catch(() => null) as any;
       if (s?.tokenSavingDefault !== undefined) {
         setTokenSaving(!!s.tokenSavingDefault);
       } else {
@@ -1334,19 +1357,41 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       if (s?.geminiModel) setGeminiModel(s.geminiModel);
       if (s?.openaiModel) setOpenaiModel(s.openaiModel);
       if (s?.anthropicModel) setAnthropicModel(s.anthropicModel);
-      if (s?.apiProvider) setApiProvider(s.apiProvider);
-    }).catch(() => {});
+      if (s?.grokModel) setGrokModel(s.grokModel);
+      const provider: AIProvider = s?.apiProvider ?? 'gemini';
+      setApiProvider(provider);
+      // Check if API key is set for current provider
+      const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
+      const key = await window.warroom?.secure.get(secureKey).catch(() => null);
+      setHasApiKey(!!(key && (key as string).trim()));
+    }
+    loadSettings();
 
-    function onSettingsChange(e: Event) {
+    async function onSettingsChange(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (detail?.tokenSavingDefault !== undefined) setTokenSaving(!!detail.tokenSavingDefault);
       if (detail?.geminiModel !== undefined) setGeminiModel(detail.geminiModel);
       if (detail?.openaiModel !== undefined) setOpenaiModel(detail.openaiModel);
       if (detail?.anthropicModel !== undefined) setAnthropicModel(detail.anthropicModel);
-      if (detail?.apiProvider !== undefined) setApiProvider(detail.apiProvider);
+      if (detail?.grokModel !== undefined) setGrokModel(detail.grokModel);
+      if (detail?.apiProvider !== undefined) {
+        const newProvider: AIProvider = detail.apiProvider;
+        setApiProvider(newProvider);
+        const secureKey = newProvider === 'openai' ? 'openai_key' : newProvider === 'anthropic' ? 'anthropic_key' : newProvider === 'grok' ? 'grok_key' : 'gemini';
+        const key = await window.warroom?.secure.get(secureKey).catch(() => null);
+        setHasApiKey(!!(key && (key as string).trim()));
+      }
+      // If an API key was saved, re-check hasApiKey
+      if (detail?.apiKeySaved) {
+        const s = await window.warroom?.storage.read('app_settings').catch(() => null) as any;
+        const provider: AIProvider = s?.apiProvider ?? 'gemini';
+        const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
+        const key = await window.warroom?.secure.get(secureKey).catch(() => null);
+        setHasApiKey(!!(key && (key as string).trim()));
+      }
     }
-    window.addEventListener('warroom-settings-change', onSettingsChange);
-    return () => window.removeEventListener('warroom-settings-change', onSettingsChange);
+    window.addEventListener('warroom-settings-change', onSettingsChange as EventListener);
+    return () => window.removeEventListener('warroom-settings-change', onSettingsChange as EventListener);
   }, []);
 
   useEffect(() => {
@@ -1373,6 +1418,10 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       setOpenaiModel(value);
       await window.warroom?.storage.write('app_settings', { ...s, openaiModel: value });
       window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { openaiModel: value } }));
+    } else if (apiProvider === 'grok') {
+      setGrokModel(value);
+      await window.warroom?.storage.write('app_settings', { ...s, grokModel: value });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { grokModel: value } }));
     } else {
       setAnthropicModel(value);
       await window.warroom?.storage.write('app_settings', { ...s, anthropicModel: value });
@@ -1380,7 +1429,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     }
   }
 
-  const activeModel = apiProvider === 'gemini' ? geminiModel : apiProvider === 'openai' ? openaiModel : anthropicModel;
+  const activeModel = apiProvider === 'gemini' ? geminiModel : apiProvider === 'openai' ? openaiModel : apiProvider === 'grok' ? grokModel : anthropicModel;
   const modelOpts = modelOptionsFor(apiProvider);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -2431,6 +2480,30 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 Debate research, argument analysis, evidence scouting. Attach cases, blocks, or images.
               </div>
             </div>
+            {!hasApiKey && (
+              <div className="w-full px-2">
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}>
+                  <span style={{ color: '#f59e0b', fontSize: 14 }}>⚠</span>
+                  <div>
+                    <div className="font-semibold mb-0.5" style={{ color: 'var(--ink)' }}>No API key set</div>
+                    <div style={{ color: 'var(--nav-inactive-color)' }}>
+                      Add a{' '}
+                      {apiProvider === 'gemini' ? 'Gemini' : apiProvider === 'openai' ? 'OpenAI' : apiProvider === 'grok' ? 'Grok' : 'Anthropic'}{' '}
+                      API key in{' '}
+                      <button
+                        className="underline font-medium"
+                        style={{ color: 'var(--nav-active-color)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                        onClick={() => setView({ kind: 'settings' })}
+                      >
+                        Settings
+                      </button>
+                      {' '}to use Warroom AI.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5 w-full px-2">
               {[
                 { icon: '🔍', label: 'Find cards on [argument]' },
