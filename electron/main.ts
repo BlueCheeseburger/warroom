@@ -2638,6 +2638,18 @@ ipcMain.handle('fs:extractDocxText', async (_e, filePath: string) => {
   }
 });
 
+// Cheap file size lookup — used as a change signature for the search keyword cache.
+ipcMain.handle('fs:fileSize', async (_e, filePath: string) => {
+  try {
+    if (typeof filePath !== 'string') return { ok: false, error: 'Invalid path' };
+    checkPath(filePath);
+    const st = await fs.stat(filePath);
+    return { ok: true, size: st.size };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
   checkPath(filePath);
   const err = await shell.openPath(filePath);

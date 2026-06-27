@@ -2587,6 +2587,15 @@ export default function SpeechDocViewer() {
           s.style.maxWidth = '860px';
           s.style.marginLeft = 'auto';
           s.style.marginRight = 'auto';
+          // Default font for theme-inherited runs. Many modern debate docs leave the
+          // latin font unset on body runs so it inherits docDefaults = the minorHAnsi
+          // THEME font (Aptos/Calibri). docx-preview does NOT resolve theme fonts, so
+          // those runs emit no inline font-family and fall through to the browser's
+          // default serif (Times New Roman) — the wrong look for a Calibri/Aptos doc.
+          // Setting the section default to the Calibri sans stack fixes that; runs that
+          // DO carry an explicit inline font (Calibri headers, real Times New Roman
+          // bodies) keep winning via inline-style specificity.
+          s.style.fontFamily = "'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif";
         });
 
         if (isDark) applyDarkModeViewerFixes(containerRef.current);

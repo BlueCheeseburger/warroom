@@ -105,8 +105,23 @@ imported speech docs (`useSpeechDocCounts` in `src/components/Home.tsx`).
 
 Debate docs are almost always **Calibri** (newer files carry the **Aptos** theme
 default). macOS ships neither, so the viewer injects `@font-face` aliases
-(`SpeechDocViewer.tsx`) mapping Office families to installed fallbacks (Calibri →
-Carlito/Helvetica Neue/Arial; Cambria → serif). Any Office font **not** aliased
-falls through to Chromium's default serif (Times New Roman), which can make
-otherwise-sans text render serif. When adding fonts/themes, extend that alias
-block rather than assuming the declared font is available.
+(`SpeechDocViewer.tsx`) mapping Office families to installed fallbacks (Calibri /
+Aptos → Carlito/Helvetica Neue/Arial; Cambria → serif).
+
+**The theme-font gap.** Modern Word docs frequently leave the latin font *unset*
+on body runs — a run carries only `w:rFonts w:cs="Calibri"` (complex-script) and
+inherits its real latin font from `docDefaults`, which points at the **theme**
+font via `w:asciiTheme="minorHAnsi"` (resolved in `theme1.xml` to Aptos/Calibri).
+docx-preview **does not resolve theme fonts**, so those runs render with *no*
+inline `font-family` and fall through to Chromium's default serif (Times New
+Roman). That's why a doc can show sans-serif headings (which set Calibri
+explicitly) but serif body text — even though the document intends one font
+throughout. An `@font-face` alias can't fix this because the string "Aptos" is
+never emitted by docx-preview.
+
+**The fix:** the post-render loop sets `section.docx { font-family: <Calibri sans
+stack> }` as the container default, so theme-inherited runs (no inline font) land
+on the sans stack, while runs that *do* carry an explicit inline font — Calibri
+headings, or a genuinely Times-New-Roman card body — keep winning via inline-style
+specificity. When touching font handling, prefer adjusting that section default
+over the `@font-face` block for theme-inheritance cases.

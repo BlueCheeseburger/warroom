@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useApp, View } from '../store/appStore';
-import { SearchEntry, buildCheapIndex, buildChatIndex, buildFlowCellIndex, buildSpeechDocIndex, buildTopicsIndex, search } from '../lib/searchIndex';
+import { SearchEntry, buildCheapIndex, buildChatIndex, buildFlowCellIndex, buildSpeechDocIndex, buildTopicsIndex, refreshSpeechDocKeywords, search } from '../lib/searchIndex';
 
 const GROUP_ORDER: SearchEntry['type'][] = ['case', 'speechdoc', 'flow', 'opponent', 'judge', 'tournament', 'topic', 'chat'];
 const GROUP_LABELS: Record<SearchEntry['type'], string> = {
@@ -64,10 +64,18 @@ export default function SearchPalette() {
         } catch {}
       }
       const topicEntries = await buildTopicsIndex().catch(() => []);
+      // Self-heal: distill keywords for any speech doc not cached yet (handles
+      // docs added since launch / first run before the startup pass finished).
+      const docsChanged = await refreshSpeechDocKeywords().catch(() => false);
+      const freshSpeechEntries = docsChanged ? buildSpeechDocIndex() : null;
       if (!aborted.current) {
         setAllEntries(prev => {
-          // Replace cheap flow entries with full-cell ones, add topics
-          const base = prev.filter(e => e.type !== 'flow' && e.type !== 'topic');
+          // Replace cheap flow entries with full-cell ones, add topics, and
+          // refresh speech-doc entries if their keywords just changed.
+          let base = prev.filter(e => e.type !== 'flow' && e.type !== 'topic');
+          if (freshSpeechEntries) {
+            base = base.filter(e => e.type !== 'speechdoc').concat(freshSpeechEntries);
+          }
           return [...base, ...cellEntries, ...topicEntries];
         });
       }

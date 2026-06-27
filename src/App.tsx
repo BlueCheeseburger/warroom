@@ -45,7 +45,7 @@ import Documentation from './components/Documentation';
 import TopicsScreen from './components/TopicsScreen';
 import ImpactCalcView from './components/ImpactCalcView';
 import SearchPalette from './components/SearchPalette';
-import { extractKeywords, SPEECHDOC_KW_KEY } from './lib/searchIndex';
+import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 
 const CHAT_MIN_W = 260;
 const CHAT_MAX_W = 600;
@@ -94,8 +94,9 @@ export default function App() {
     (async () => {
       // 1. Cases imported from OpenCaselist (docx via ocSource)
       const { db: currentDb } = useApp.getState();
+      const caseSig = (c: any) => c.ocSource.url + ':' + (c.ocSource.byteLen ?? 0) + ':v' + DOC_KEYWORD_VERSION;
       const cases = Object.values(currentDb.cases).filter(c => c.ocSource && (
-        !c.searchKeywords || c.searchSig !== (c.ocSource.url + ':' + (c.ocSource.byteLen ?? 0))
+        !c.searchKeywords || c.searchSig !== caseSig(c)
       ));
       for (const c of cases) {
         try {
@@ -104,41 +105,20 @@ export default function App() {
           if (!fetched?.ok || !fetched.tempPath) continue;
           const res = await window.warroom?.fs.extractDocxText(fetched.tempPath);
           if (!res?.ok || !res.text) continue;
-          const keywords = extractKeywords(res.text, 150);
-          const sig = c.ocSource.url + ':' + (c.ocSource.byteLen ?? 0);
+          const keywords = extractKeywords(res.text, DOC_KEYWORD_CAP);
           const { update } = useApp.getState();
           await update(db2 => ({
             ...db2,
             cases: {
               ...db2.cases,
-              [c.id]: { ...db2.cases[c.id], searchKeywords: keywords, searchSig: sig },
+              [c.id]: { ...db2.cases[c.id], searchKeywords: keywords, searchSig: caseSig(c) },
             },
           }));
         } catch { /* best-effort */ }
       }
 
-      // 2. Recent speech docs (localStorage list) → cache keywords in localStorage
-      try {
-        const recents: { path: string; name: string }[] =
-          JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]');
-        const cache: Record<string, { sig: string; keywords: string[] }> =
-          JSON.parse(localStorage.getItem(SPEECHDOC_KW_KEY) ?? '{}');
-        let changed = false;
-        for (const d of recents) {
-          // Use path as the signature — re-extract only for paths we haven't seen.
-          if (cache[d.path]?.sig === d.path) continue;
-          const res = await window.warroom?.fs.extractDocxText(d.path);
-          if (!res?.ok || !res.text) continue;
-          cache[d.path] = { sig: d.path, keywords: extractKeywords(res.text, 150) };
-          changed = true;
-        }
-        // Drop cache entries for docs no longer in recents
-        const livePaths = new Set(recents.map(r => r.path));
-        for (const k of Object.keys(cache)) {
-          if (!livePaths.has(k)) { delete cache[k]; changed = true; }
-        }
-        if (changed) localStorage.setItem(SPEECHDOC_KW_KEY, JSON.stringify(cache));
-      } catch { /* best-effort */ }
+      // 2. Recent speech docs → distill + cache keywords in localStorage
+      await refreshSpeechDocKeywords();
     })();
   }, [ready]);
 

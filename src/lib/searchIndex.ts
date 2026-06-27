@@ -12,9 +12,15 @@ export interface SearchEntry {
 }
 
 // localStorage key holding cached speech-doc keyword sets.
-// Shape: { [docPath]: { sig: string; keywords: string[] } }
+// Shape: { [docPath]: { size: number; ver: number; keywords: string[] } }
 export const SPEECHDOC_KW_KEY = 'warroom-speechdoc-keywords';
 const SPEECHDOC_RECENTS_KEY = 'warroom-speech-doc-recents';
+
+// Number of distilled keywords kept per document. Large enough that meaningful
+// but non-dominant terms (e.g. "arctic" in a domain-awareness aff) are retained.
+export const DOC_KEYWORD_CAP = 2000;
+// Bump to invalidate every cached keyword set when the extraction logic changes.
+export const DOC_KEYWORD_VERSION = 2;
 
 const STOPWORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'had', 'her',
@@ -92,10 +98,50 @@ export function opponentDisclosureText(disc: any): string {
   return parts.join(' ');
 }
 
-// Reads the cached speech-doc keyword sets written at app start (see App.tsx).
-function getSpeechDocKeywords(): Record<string, { sig: string; keywords: string[] }> {
+interface SpeechDocKwEntry { size: number; ver: number; keywords: string[] }
+
+// Reads the cached speech-doc keyword sets.
+function getSpeechDocKeywords(): Record<string, SpeechDocKwEntry> {
   try { return JSON.parse(localStorage.getItem(SPEECHDOC_KW_KEY) ?? '{}'); }
   catch { return {}; }
+}
+
+// Distills + caches keywords for every recent speech doc whose file size or
+// extraction version has changed. Returns true if the cache was modified, so
+// callers can rebuild the index. Best-effort; safe to call repeatedly.
+export async function refreshSpeechDocKeywords(): Promise<boolean> {
+  let changed = false;
+  try {
+    const recents: { path: string; name: string }[] =
+      JSON.parse(localStorage.getItem(SPEECHDOC_RECENTS_KEY) ?? '[]');
+    const cache = getSpeechDocKeywords();
+
+    for (const d of recents) {
+      try {
+        const stat = await window.warroom?.fs.fileSize(d.path);
+        const size = stat?.ok ? (stat.size ?? -1) : -1;
+        const cached = cache[d.path];
+        if (cached && cached.ver === DOC_KEYWORD_VERSION && cached.size === size) continue;
+        const res = await window.warroom?.fs.extractDocxText(d.path);
+        if (!res?.ok || !res.text) continue;
+        cache[d.path] = {
+          size,
+          ver: DOC_KEYWORD_VERSION,
+          keywords: extractKeywords(res.text, DOC_KEYWORD_CAP),
+        };
+        changed = true;
+      } catch { /* skip this doc */ }
+    }
+
+    // Drop cache entries for docs no longer in recents.
+    const livePaths = new Set(recents.map((r) => r.path));
+    for (const k of Object.keys(cache)) {
+      if (!livePaths.has(k)) { delete cache[k]; changed = true; }
+    }
+
+    if (changed) localStorage.setItem(SPEECHDOC_KW_KEY, JSON.stringify(cache));
+  } catch { /* best-effort */ }
+  return changed;
 }
 
 // Speech docs live in the recents list (localStorage), not the DB. Index each by
