@@ -1,14 +1,16 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useApp, View } from '../store/appStore';
-import { SearchEntry, buildCheapIndex, buildChatIndex, buildFlowCellIndex, search } from '../lib/searchIndex';
+import { SearchEntry, buildCheapIndex, buildChatIndex, buildFlowCellIndex, buildSpeechDocIndex, buildTopicsIndex, search } from '../lib/searchIndex';
 
-const GROUP_ORDER: SearchEntry['type'][] = ['case', 'speechdoc', 'flow', 'opponent', 'judge', 'chat'];
+const GROUP_ORDER: SearchEntry['type'][] = ['case', 'speechdoc', 'flow', 'opponent', 'judge', 'tournament', 'topic', 'chat'];
 const GROUP_LABELS: Record<SearchEntry['type'], string> = {
   case: 'Cases',
   speechdoc: 'Speech Docs',
   flow: 'Flows',
   opponent: 'Opponents',
   judge: 'Judges',
+  tournament: 'Tournaments',
+  topic: 'Topics',
   chat: 'AI Chats',
 };
 const TYPE_ICON: Record<SearchEntry['type'], string> = {
@@ -17,12 +19,14 @@ const TYPE_ICON: Record<SearchEntry['type'], string> = {
   flow: '🗂',
   opponent: '👥',
   judge: '⚖️',
+  tournament: '🏆',
+  topic: '📌',
   chat: '💬',
 };
 const MAX_PER_GROUP = 4;
 
 export default function SearchPalette() {
-  const { db, flowsIndex, setView, searchOpen, setSearchOpen, pendingSearchQuery, setPendingSearchQuery } = useApp();
+  const { db, flowsIndex, setView, searchOpen, setSearchOpen, setPendingSearchQuery, setPendingFindQuery, setPendingDisclosureQuery } = useApp();
 
   const [query, setQuery] = useState('');
   const [allEntries, setAllEntries] = useState<SearchEntry[]>([]);
@@ -41,12 +45,14 @@ export default function SearchPalette() {
     // Focus input
     setTimeout(() => inputRef.current?.focus(), 10);
 
-    // Build cheap index synchronously
+    // Build cheap index synchronously (cases, opponents, judges, flows,
+    // tournaments) + speech docs + AI chats (all from localStorage / DB).
     const cheap = buildCheapIndex(db, flowsIndex);
+    const speechEntries = buildSpeechDocIndex();
     const chatEntries = buildChatIndex();
-    setAllEntries([...cheap, ...chatEntries]);
+    setAllEntries([...cheap, ...speechEntries, ...chatEntries]);
 
-    // Build flow cell index asynchronously
+    // Build async sources: flow cells (storage) + topics (IPC)
     const aborted = { current: false };
     (async () => {
       const cellEntries: SearchEntry[] = [];
@@ -57,11 +63,12 @@ export default function SearchPalette() {
           if (entry) cellEntries.push(entry);
         } catch {}
       }
+      const topicEntries = await buildTopicsIndex().catch(() => []);
       if (!aborted.current) {
         setAllEntries(prev => {
-          // Replace cheap flow entries with full-cell ones
-          const nonFlow = prev.filter(e => e.type !== 'flow');
-          return [...nonFlow, ...cellEntries];
+          // Replace cheap flow entries with full-cell ones, add topics
+          const base = prev.filter(e => e.type !== 'flow' && e.type !== 'topic');
+          return [...base, ...cellEntries, ...topicEntries];
         });
       }
     })();
@@ -96,6 +103,12 @@ export default function SearchPalette() {
   for (const type of GROUP_ORDER) flatResults.push(...grouped[type]);
 
   function openEntry(entry: SearchEntry) {
+    const q = query.trim();
+    if (q) {
+      // Hand the matched term to the destination so it can highlight/jump to it.
+      if (entry.type === 'case' || entry.type === 'speechdoc') setPendingFindQuery(q);
+      else if (entry.type === 'opponent') setPendingDisclosureQuery(q);
+    }
     setView(entry.view);
     close();
   }

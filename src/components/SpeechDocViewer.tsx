@@ -556,6 +556,46 @@ function ToolbarToggle({ active, label, icon, onClick }: {
   );
 }
 
+// Single pill for OC-imported cases: shows "Imported from X" at rest,
+// reveals "Check for changes" action on hover.
+function OcSourcePill({ teamName, checking, checkResult, onCheck }: {
+  teamName: string;
+  checking: boolean;
+  checkResult: 'changed' | 'up-to-date' | null;
+  onCheck: () => void;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+
+  const showAction = (hovered || checkResult !== null) && !checking;
+  const label = checking
+    ? 'Checking…'
+    : checkResult === 'changed' ? 'Updated — reloaded'
+    : checkResult === 'up-to-date' ? 'Up to date'
+    : `Imported from ${teamName}`;
+  const actionLabel = 'Check for changes';
+  const color = checkResult === 'changed' ? '#34c759' : 'var(--nav-inactive-color)';
+
+  return (
+    <button
+      onClick={checking ? undefined : onCheck}
+      disabled={checking}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={hovered && !checking ? 'Re-check OpenCaseList for changes to this file' : `Imported from ${teamName} on OpenCaseList`}
+      className="text-[11px] shrink-0 px-1.5 py-0.5 rounded-md transition-all flex items-center gap-1"
+      style={{
+        color,
+        background: hovered && !checking ? 'var(--nav-hover-bg)' : 'var(--bg-elevated)',
+        border: '1px solid var(--border-subtle)',
+        cursor: checking ? 'default' : 'pointer',
+        minWidth: 0,
+      }}
+    >
+      {showAction && checkResult === null ? actionLabel : label}
+    </button>
+  );
+}
+
 // Labeled toolbar pill (icon + text). Used for the panel-opening AI tools so
 // they read as distinct actions rather than another anonymous icon.
 function ToolbarPill({ active, label, icon, onClick, title }: {
@@ -2047,6 +2087,8 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
 
 export default function SpeechDocViewer() {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
+  const pendingFindQuery = useApp((s) => s.pendingFindQuery);
+  const setPendingFindQuery = useApp((s) => s.setPendingFindQuery);
   // OpenCaseList-imported case (carries a docx via ocSource). Derived from the
   // current view + db so this single always-mounted viewer can render both
   // normal speech docs and imported cases without a second instance.
@@ -2209,6 +2251,19 @@ export default function SpeechDocViewer() {
   useEffect(() => {
     if (!findOpen) clearFindHighlights();
   }, [findOpen]);
+
+  // Global search → open this doc with the matched term: auto-open the find bar,
+  // prefill it, and jump to the first hit once the document has rendered.
+  useEffect(() => {
+    if (!pendingFindQuery || step !== 'viewing') return;
+    const q = pendingFindQuery;
+    setPendingFindQuery('');
+    setFindOpen(true);
+    setFindQuery(q);
+    // Let docx-preview finish painting before searching for ranges.
+    const t = window.setTimeout(() => runFind(q), 250);
+    return () => window.clearTimeout(t);
+  }, [pendingFindQuery, step, runFind, setPendingFindQuery]);
 
   const closeFind = useCallback(() => { setFindOpen(false); }, []);
 
@@ -2819,32 +2874,12 @@ export default function SpeechDocViewer() {
             {fileName.replace(/\.docx$/i, '')}
           </span>
           {isOc && ocCase && (
-            <>
-              <span
-                className="text-[11px] truncate shrink-0 px-1.5 py-0.5 rounded-md"
-                style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
-                title={`Imported from ${(ocCase as any).ocSource.teamName} on OpenCaseList`}
-              >
-                Imported from {(ocCase as any).ocSource.teamName}
-              </span>
-              <button
-                onClick={checkOcChanges}
-                disabled={ocChecking}
-                className="text-[11px] shrink-0 px-1.5 py-0.5 rounded-md transition flex items-center gap-1"
-                style={{
-                  color: ocCheckResult === 'changed' ? '#34c759' : 'var(--nav-inactive-color)',
-                  background: 'transparent', border: '1px solid var(--border-subtle)', cursor: ocChecking ? 'default' : 'pointer',
-                }}
-                onMouseEnter={(e) => { if (!ocChecking) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                title="Re-check OpenCaseList for changes to this file"
-              >
-                {ocChecking ? 'Checking…'
-                  : ocCheckResult === 'changed' ? 'Updated — reloaded'
-                  : ocCheckResult === 'up-to-date' ? 'Up to date'
-                  : 'Check for changes'}
-              </button>
-            </>
+            <OcSourcePill
+              teamName={(ocCase as any).ocSource.teamName}
+              checking={ocChecking}
+              checkResult={ocCheckResult}
+              onCheck={checkOcChanges}
+            />
           )}
         </div>
 

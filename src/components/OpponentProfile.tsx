@@ -14,8 +14,58 @@ function cleanCiteTitle(s: string): string {
   return s.replace(/^#+\s*/, '').trim();
 }
 
+// Wraps the first case-insensitive occurrence of `query` in the text with a <mark>.
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ background: '#facc15', color: '#1a1a1a', borderRadius: 2, padding: '0 1px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 export default function OpponentProfile() {
   const { db, update, setView, view } = useApp();
+  const pendingDisclosureQuery = useApp((s) => s.pendingDisclosureQuery);
+  const setPendingDisclosureQuery = useApp((s) => s.setPendingDisclosureQuery);
+  const [highlight, setHighlight] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const oppId = view.kind === 'opponent' ? view.opponentId : '';
+
+  // Capture the matched term handed over by global search, then clear it.
+  useEffect(() => {
+    if (pendingDisclosureQuery) {
+      setHighlight(pendingDisclosureQuery);
+      setPendingDisclosureQuery('');
+    }
+  }, [pendingDisclosureQuery, setPendingDisclosureQuery]);
+
+  // Clear the highlight when switching opponents.
+  useEffect(() => { setHighlight(''); }, [oppId]);
+
+  // After render, scroll the first matching disclosure title into view.
+  useEffect(() => {
+    if (!highlight) return;
+    const t = window.setTimeout(() => {
+      const nodes = scrollRef.current?.querySelectorAll<HTMLElement>('[data-disc-title]');
+      if (!nodes) return;
+      for (const el of Array.from(nodes)) {
+        if ((el.textContent ?? '').toLowerCase().includes(highlight.toLowerCase())) {
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          break;
+        }
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [highlight, oppId]);
+
   if (view.kind !== 'opponent') return null;
   const opp = db.opponents[view.opponentId];
   if (!opp) return <div className="p-8 text-sm text-ink/50">Opponent not found.</div>;
@@ -58,7 +108,7 @@ export default function OpponentProfile() {
         <RePullButton opp={opp} />
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll-thin p-6 space-y-5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin p-6 space-y-5">
         {/* Gemini scouting report — keyed by opponent ID so it remounts on navigation */}
         <GeminiTeamSummary key={opp.id} disc={disc} teamName={opp.teamName} oppId={opp.id} />
 
@@ -66,7 +116,9 @@ export default function OpponentProfile() {
         <Section title="Disclosed aff">
           {disc?.aff ? (
             <div>
-              <div className="text-sm font-medium">{cleanCiteTitle(disc.aff.name)}</div>
+              <div className="text-sm font-medium" data-disc-title>
+                <HighlightText text={cleanCiteTitle(disc.aff.name)} query={highlight} />
+              </div>
               {disc.aff.description && (
                 <div className="text-xs text-ink/60 mt-1">{disc.aff.description}</div>
               )}
@@ -82,7 +134,9 @@ export default function OpponentProfile() {
             <ul className="space-y-1">
               {disc.neg.map((p: any, i: number) => (
                 <li key={i} className="text-sm">
-                  <span className="font-medium">{cleanCiteTitle(p.name)}</span>
+                  <span className="font-medium" data-disc-title>
+                    <HighlightText text={cleanCiteTitle(p.name)} query={highlight} />
+                  </span>
                   {p.description && <span className="text-ink/50 ml-2">{p.description}</span>}
                 </li>
               ))}
@@ -93,7 +147,7 @@ export default function OpponentProfile() {
         </Section>
 
         {/* Disclosed files */}
-        <DisclosedFiles disc={disc} teamName={opp.teamName ?? opp.school ?? 'Opponent'} />
+        <DisclosedFiles disc={disc} teamName={opp.teamName ?? opp.school ?? 'Opponent'} highlight={highlight} />
 
         {/* Debate Land stats */}
         <DebateLandSection key={opp.id} opp={opp} />
@@ -184,7 +238,7 @@ function collectEntries(disc: any): DisclosureEntry[] {
   return entries;
 }
 
-function DisclosedFiles({ disc, teamName }: { disc: any; teamName: string }) {
+function DisclosedFiles({ disc, teamName, highlight = '' }: { disc: any; teamName: string; highlight?: string }) {
   const [viewingFile, setViewingFile] = useState<{ url: string; label: string; side: string } | null>(null);
   const [expandedText, setExpandedText] = useState<string | null>(null);
 
@@ -205,7 +259,9 @@ function DisclosedFiles({ disc, teamName }: { disc: any; teamName: string }) {
                 >
                   {e.side}
                 </span>
-                <span className="flex-1 text-xs text-ink truncate" title={e.label}>{e.label}</span>
+                <span className="flex-1 text-xs text-ink truncate" title={e.label} data-disc-title>
+                  <HighlightText text={e.label} query={highlight} />
+                </span>
                 {e.url ? (
                   <button
                     className="btn text-xs shrink-0"

@@ -112,6 +112,12 @@ interface AppState {
   setSearchOpen: (open: boolean) => void;
   pendingSearchQuery: string;
   setPendingSearchQuery: (q: string) => void;
+  // Term to auto-open the in-doc find with after navigating to a case/speech doc
+  pendingFindQuery: string;
+  setPendingFindQuery: (q: string) => void;
+  // Term to auto-scroll + highlight a matching disclosure on an opponent profile
+  pendingDisclosureQuery: string;
+  setPendingDisclosureQuery: (q: string) => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -147,6 +153,10 @@ export const useApp = create<AppState>((set, get) => ({
   setSearchOpen: (open) => set({ searchOpen: open }),
   pendingSearchQuery: '',
   setPendingSearchQuery: (q) => set({ pendingSearchQuery: q }),
+  pendingFindQuery: '',
+  setPendingFindQuery: (q) => set({ pendingFindQuery: q }),
+  pendingDisclosureQuery: '',
+  setPendingDisclosureQuery: (q) => set({ pendingDisclosureQuery: q }),
   setMode: (m) => set({ mode: m }),
   setView: (v) => set((s) => {
     const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);

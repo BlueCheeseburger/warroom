@@ -438,7 +438,12 @@ function ExpandedNav({
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
+  const { setSearchOpen, event } = useApp();
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
+
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
+  const eventTopicTab: 'policy' | 'pf' | 'ld' = event === 'pf' || event === 'ld' ? event : 'policy';
+  const eventTopicLabel = eventTopicTab === 'pf' ? 'Public Forum' : eventTopicTab === 'ld' ? 'Lincoln-Douglas' : 'Policy';
 
   // Refresh when localStorage changes (e.g. after saving in SpeechDocViewer)
   useEffect(() => {
@@ -485,6 +490,29 @@ function ExpandedNav({
           }}
         >
           <IcoSidebarCollapse />
+        </button>
+      </div>
+
+      {/* Global search — opens the command palette */}
+      <div className="px-2 pt-2">
+        <button
+          onClick={() => setSearchOpen(true)}
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition"
+          style={{
+            background: 'var(--nav-hover-bg)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--nav-inactive-color)',
+            cursor: 'text',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-med)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-subtle)'; }}
+        >
+          <span style={{ display: 'flex', flexShrink: 0, opacity: 0.7 }}><IcoSearch /></span>
+          <span className="text-xs flex-1 text-left">Search</span>
+          <span className="text-[10px] font-semibold px-1 py-0.5 rounded shrink-0"
+            style={{ background: 'var(--bg-main)', color: 'var(--nav-section-color)', border: '1px solid var(--border-subtle)' }}>
+            {isMac ? '⌘K' : 'Ctrl K'}
+          </span>
         </button>
       </div>
 
@@ -579,16 +607,13 @@ function ExpandedNav({
               </Section>
             )}
 
-            {/* NSDA Topics */}
+            {/* NSDA Topics — all events + the event the user is competing in */}
             <Section title="Topics" icon={<IcoTopics />}>
               <NavItem active={view.kind === 'topics' && !(view as any).tab} onClick={() => setView({ kind: 'topics' })}>
                 All events
               </NavItem>
-              <NavItem active={view.kind === 'topics' && (view as any).tab === 'pf'} onClick={() => setView({ kind: 'topics', tab: 'pf' })}>
-                Public Forum
-              </NavItem>
-              <NavItem active={view.kind === 'topics' && (view as any).tab === 'ld'} onClick={() => setView({ kind: 'topics', tab: 'ld' })}>
-                Lincoln-Douglas
+              <NavItem active={view.kind === 'topics' && (view as any).tab === eventTopicTab} onClick={() => setView({ kind: 'topics', tab: eventTopicTab })}>
+                {eventTopicLabel}
               </NavItem>
             </Section>
           </>

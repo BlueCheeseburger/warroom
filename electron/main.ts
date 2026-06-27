@@ -2625,6 +2625,19 @@ ipcMain.handle('fs:readDocxBytes', async (_e, filePath: string) => {
   }
 });
 
+// Extract plain text from a .docx/.pdf for the global search keyword index.
+// Uses mammoth (docx is a zip — must be parsed, not base64-decoded).
+ipcMain.handle('fs:extractDocxText', async (_e, filePath: string) => {
+  try {
+    if (typeof filePath !== 'string') return { ok: false, error: 'Invalid path' };
+    checkPath(filePath);
+    const text = await extractText(filePath);
+    return { ok: true, text };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
   checkPath(filePath);
   const err = await shell.openPath(filePath);
