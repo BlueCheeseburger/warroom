@@ -1,12 +1,120 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useApp, useDangerBtnClass } from '../store/appStore';
-import { Opponent, Round, Side, Tournament } from '../types';
+import { useApp, useDangerBtnClass, DebateEvent } from '../store/appStore';
+import { DB, Opponent, Round, Side, Tournament } from '../types';
 import { TrashIcon, Dots } from './Spinner';
 
 function seasonYearSuffix(): string {
   const now = new Date();
   const yr = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
   return yr.toString().slice(-2);
+}
+
+type UpdateFn = (fn: (db: DB) => DB) => Promise<void>;
+
+// Background: pull an opponent's disclosure (OpenCaselist), competitive stats
+// (Debate Land), and an AI scouting summary into the opponent record `id`.
+// Fire-and-forget — safe to call from any round-save path. Shared by the manual
+// Add Round form and the email-import flow.
+function researchOpponentInto(id: string, name: string, event: DebateEvent, update: UpdateFn) {
+  const yr = seasonYearSuffix();
+  const shard = event === 'pf' ? `hspf${yr}` : event === 'ld' ? `hsld${yr}` : `hspolicy${yr}`;
+  const dlEvent = event === 'pf' ? 'pf' : event === 'ld' ? 'ld' : 'policy';
+
+  // OpenCaselist: search → pull → Gemini
+  (async () => {
+    try {
+      const searchRes = await window.warroom.opencaselist.search(name, shard);
+      if (!searchRes.ok) return;
+      const list: any[] = Array.isArray(searchRes.data)
+        ? searchRes.data
+        : searchRes.data?.teams ?? searchRes.data?.results ?? searchRes.data?.data ?? [];
+      if (list.length === 0) return;
+
+      const hit = list[0];
+      const school = hit.school ?? hit.schoolSlug ?? '';
+      const team = hit.team ?? hit.teamSlug ?? name;
+      const caselist = hit.caselist ?? hit.caselistSlug ?? shard;
+      const teamName = hit.displayName ?? name;
+
+      const [roundsRes, citesRes] = await Promise.all([
+        window.warroom.opencaselist.rounds(caselist, school, team),
+        window.warroom.opencaselist.cites(caselist, school, team),
+      ]);
+
+      const rounds: any[] = roundsRes.ok
+        ? (Array.isArray(roundsRes.data) ? roundsRes.data : roundsRes.data?.rounds ?? []) : [];
+      const cites: any[] = citesRes.ok
+        ? (Array.isArray(citesRes.data) ? citesRes.data : citesRes.data?.cites ?? []) : [];
+
+      const affCites = cites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('a'));
+      const negCites = cites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('n'));
+      const affRounds = rounds.filter((r: any) => (r.side ?? '').toLowerCase().startsWith('a'));
+
+      const aff = affCites.length
+        ? { name: affCites[0].title ?? affCites[0].cites?.slice(0, 100) ?? 'Aff' }
+        : affRounds.length ? { name: 'Aff' } : undefined;
+      const neg = Array.from(new Set(
+        negCites.map((c: any) => c.title ?? c.cites?.slice(0, 100) ?? '').filter(Boolean)
+      )).map((n) => ({ name: String(n).slice(0, 200) }));
+
+      await update((db) => ({
+        ...db,
+        opponents: {
+          ...db.opponents,
+          [id]: {
+            ...db.opponents[id],
+            teamId: team, teamName, school, caselist,
+            disclosures: {
+              ...(db.opponents[id]?.disclosures ?? {}),
+              pulledAt: new Date().toISOString(),
+              roundsDisclosed: rounds.length,
+              aff, neg,
+              rawRounds: rounds.slice(0, 200),
+              rawCites: cites.slice(0, 200),
+            },
+          },
+        },
+      }));
+
+      // Gemini AI Scout
+      if (rounds.length > 0 || cites.length > 0) {
+        window.warroom.ai.teamSummary({ teamName, rawRounds: rounds, rawCites: cites })
+          .then((res) => {
+            if (!res.ok || !res.aff) return;
+            const scout = { aff: res.aff, neg: res.neg!, citations: res.citations ?? [], generatedAt: new Date().toISOString() };
+            update((db) => ({
+              ...db,
+              opponents: {
+                ...db.opponents,
+                [id]: {
+                  ...db.opponents[id],
+                  disclosures: { ...(db.opponents[id]?.disclosures ?? {}), aiScout: scout },
+                },
+              },
+            }));
+          })
+          .catch(() => {});
+      }
+    } catch {}
+  })();
+
+  // Debate Land
+  window.warroom.dl.searchTeam({ query: name, eventType: dlEvent })
+    .then(async (res) => {
+      if (!res.success || !res.results?.length) return;
+      const candidate = res.results[0];
+      const statsRes = await window.warroom.dl.getTeamStats({ teamId: candidate.teamId, eventType: candidate.event ?? dlEvent });
+      if (statsRes.success && statsRes.stats) {
+        update((db) => ({
+          ...db,
+          opponents: {
+            ...db.opponents,
+            [id]: { ...db.opponents[id], stats: statsRes.stats },
+          },
+        }));
+      }
+    })
+    .catch(() => {});
 }
 
 export default function TournamentView() {
@@ -644,105 +752,7 @@ function ImportFromEmailModal({ tournamentId, onDone }: { tournamentId: string; 
 
   // Background: pull OpenCaselist + DL + Gemini for the opponent
   function researchOpponent(id: string, name: string) {
-    const yr = seasonYearSuffix();
-    const shard = event === 'pf' ? `hspf${yr}` : event === 'ld' ? `hsld${yr}` : `hspolicy${yr}`;
-    const dlEvent = event === 'pf' ? 'pf' : event === 'ld' ? 'ld' : 'policy';
-
-    // OpenCaselist: search → pull → Gemini
-    (async () => {
-      try {
-        const searchRes = await window.warroom.opencaselist.search(name, shard);
-        if (!searchRes.ok) return;
-        const list: any[] = Array.isArray(searchRes.data)
-          ? searchRes.data
-          : searchRes.data?.teams ?? searchRes.data?.results ?? searchRes.data?.data ?? [];
-        if (list.length === 0) return;
-
-        const hit = list[0];
-        const school = hit.school ?? hit.schoolSlug ?? '';
-        const team = hit.team ?? hit.teamSlug ?? name;
-        const caselist = hit.caselist ?? hit.caselistSlug ?? shard;
-        const teamName = hit.displayName ?? name;
-
-        const [roundsRes, citesRes] = await Promise.all([
-          window.warroom.opencaselist.rounds(caselist, school, team),
-          window.warroom.opencaselist.cites(caselist, school, team),
-        ]);
-
-        const rounds: any[] = roundsRes.ok
-          ? (Array.isArray(roundsRes.data) ? roundsRes.data : roundsRes.data?.rounds ?? []) : [];
-        const cites: any[] = citesRes.ok
-          ? (Array.isArray(citesRes.data) ? citesRes.data : citesRes.data?.cites ?? []) : [];
-
-        const affCites = cites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('a'));
-        const negCites = cites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('n'));
-        const affRounds = rounds.filter((r: any) => (r.side ?? '').toLowerCase().startsWith('a'));
-
-        const aff = affCites.length
-          ? { name: affCites[0].title ?? affCites[0].cites?.slice(0, 100) ?? 'Aff' }
-          : affRounds.length ? { name: 'Aff' } : undefined;
-        const neg = Array.from(new Set(
-          negCites.map((c: any) => c.title ?? c.cites?.slice(0, 100) ?? '').filter(Boolean)
-        )).map((n) => ({ name: String(n).slice(0, 200) }));
-
-        await update((db) => ({
-          ...db,
-          opponents: {
-            ...db.opponents,
-            [id]: {
-              ...db.opponents[id],
-              teamId: team, teamName, school, caselist,
-              disclosures: {
-                ...(db.opponents[id]?.disclosures ?? {}),
-                pulledAt: new Date().toISOString(),
-                roundsDisclosed: rounds.length,
-                aff, neg,
-                rawRounds: rounds.slice(0, 200),
-                rawCites: cites.slice(0, 200),
-              },
-            },
-          },
-        }));
-
-        // Gemini AI Scout
-        if (rounds.length > 0 || cites.length > 0) {
-          window.warroom.ai.teamSummary({ teamName, rawRounds: rounds, rawCites: cites })
-            .then((res) => {
-              if (!res.ok || !res.aff) return;
-              const scout = { aff: res.aff, neg: res.neg!, citations: res.citations ?? [], generatedAt: new Date().toISOString() };
-              update((db) => ({
-                ...db,
-                opponents: {
-                  ...db.opponents,
-                  [id]: {
-                    ...db.opponents[id],
-                    disclosures: { ...(db.opponents[id]?.disclosures ?? {}), aiScout: scout },
-                  },
-                },
-              }));
-            })
-            .catch(() => {});
-        }
-      } catch {}
-    })();
-
-    // Debate Land
-    window.warroom.dl.searchTeam({ query: name, eventType: dlEvent })
-      .then(async (res) => {
-        if (!res.success || !res.results?.length) return;
-        const candidate = res.results[0];
-        const statsRes = await window.warroom.dl.getTeamStats({ teamId: candidate.teamId, eventType: candidate.event ?? dlEvent });
-        if (statsRes.success && statsRes.stats) {
-          update((db) => ({
-            ...db,
-            opponents: {
-              ...db.opponents,
-              [id]: { ...db.opponents[id], stats: statsRes.stats },
-            },
-          }));
-        }
-      })
-      .catch(() => {});
+    researchOpponentInto(id, name, event, update);
   }
 
   async function save() {
@@ -915,7 +925,7 @@ function AddRoundButton({ tournamentId }: { tournamentId: string }) {
 }
 
 function AddRoundForm({ tournamentId, onDone }: { tournamentId: string; onDone: () => void }) {
-  const { db, update, setView } = useApp();
+  const { db, update, setView, event } = useApp();
   const opponents = Object.values(db.opponents);
   const tournament = db.tournaments[tournamentId];
 
@@ -988,15 +998,21 @@ function AddRoundForm({ tournamentId, onDone }: { tournamentId: string; onDone: 
   async function save() {
     const id = crypto.randomUUID();
     let resolvedOppId = opponentId || '';
+    // Name to research on OpenCaselist, and whether this opponent still needs a pull.
+    let researchName = '';
+    let shouldResearch = false;
+    const isByeRound = opponentName.trim().toUpperCase() === 'BYE';
 
     // Auto-create opponent record when a name is typed but no profile selected
-    if (!resolvedOppId && opponentName.trim()) {
+    if (!resolvedOppId && opponentName.trim() && !isByeRound) {
       const name = opponentName.trim();
       const existing = Object.values(db.opponents).find(
         (o) => o.teamName.toLowerCase() === name.toLowerCase()
       );
       if (existing) {
         resolvedOppId = existing.id;
+        researchName = existing.teamName;
+        shouldResearch = !(existing.disclosures as any)?.pulledAt;
       } else {
         resolvedOppId = crypto.randomUUID();
         const newOpp: Opponent = {
@@ -1004,6 +1020,15 @@ function AddRoundForm({ tournamentId, onDone }: { tournamentId: string; onDone: 
           notes: '', disclosures: {}, roundsAgainst: [],
         };
         await update((db) => ({ ...db, opponents: { ...db.opponents, [resolvedOppId]: newOpp } }));
+        researchName = name;
+        shouldResearch = true;
+      }
+    } else if (resolvedOppId) {
+      // Opponent picked from existing profiles — pull only if never disclosed before.
+      const picked = db.opponents[resolvedOppId];
+      if (picked) {
+        researchName = picked.teamName;
+        shouldResearch = !(picked.disclosures as any)?.pulledAt;
       }
     }
 
@@ -1029,6 +1054,11 @@ function AddRoundForm({ tournamentId, onDone }: { tournamentId: string; onDone: 
       }
       return next;
     });
+    // Auto-populate the opponent's disclosure/scout from OpenCaselist in the
+    // background (skips BYEs and opponents already pulled).
+    if (shouldResearch && resolvedOppId && researchName) {
+      researchOpponentInto(resolvedOppId, researchName, event, update);
+    }
     onDone();
     setView({ kind: 'round', roundId: id });
   }

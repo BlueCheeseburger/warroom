@@ -72,6 +72,13 @@ function SpeechTimer() {
   const slot = slots[safeIdx];
   const display = timeLeft ?? slot.secs;
 
+  // Refs so the tick's setInterval closure can read the current slot position
+  // without being re-created (and without going stale) on every slot change.
+  const safeIdxRef = useRef(safeIdx);
+  safeIdxRef.current = safeIdx;
+  const slotsLenRef = useRef(slots.length);
+  slotsLenRef.current = slots.length;
+
   // Reset on event or level change
   useEffect(() => {
     setRunning(false);
@@ -86,7 +93,16 @@ function SpeechTimer() {
     intervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         const cur = prev ?? slot.secs;
-        if (cur <= 1) { setRunning(false); return 0; }
+        if (cur <= 1) {
+          setRunning(false);
+          // Auto-advance to the next speech slot (if any), leaving it paused at
+          // its full time. Brief 1.2s hold on 0:00 so the end is visible first.
+          const idx = safeIdxRef.current;
+          if (idx < slotsLenRef.current - 1) {
+            setTimeout(() => { setSlotIdx(idx + 1); setTimeLeft(null); setRunning(false); }, 1200);
+          }
+          return 0;
+        }
         return cur - 1;
       });
     }, 1000);

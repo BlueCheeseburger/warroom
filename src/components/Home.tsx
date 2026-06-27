@@ -24,11 +24,77 @@ function tournamentStatus(t: Tournament): TournStatus {
   return 'past';
 }
 
+// ─── Speech-doc side detection ──────────────────────────────────────────────────
+// Imported speech docs live in localStorage recents (not db.cases), so the home
+// Cases tile has to fold them in itself. We classify each as aff or neg by tallying
+// the speech labels that show up in its pockets/hats: aff speeches are 1AC/2AC/1AR/
+// 2AR, neg are 1NC/2NC/1NR/2NR. The side with more labels wins; a tie or no labels
+// falls back to the filename. Results are cached so we only extract each doc once.
+const SPEECH_RECENTS_KEY = 'warroom-speech-doc-recents';
+const SPEECH_SIDES_KEY = 'warroom-speech-doc-sides';
+
+type DocSide = 'aff' | 'neg' | 'unknown';
+
+function classifyDocSide(text: string, name: string): DocSide {
+  const hay = text.toLowerCase();
+  const tally = (terms: string[]) =>
+    terms.reduce((n, t) => n + (hay.match(new RegExp(`\\b${t}\\b`, 'g'))?.length ?? 0), 0);
+  const aff = tally(['1ac', '2ac', '1ar', '2ar']);
+  const neg = tally(['1nc', '2nc', '1nr', '2nr']);
+  if (aff > neg) return 'aff';
+  if (neg > aff) return 'neg';
+  // Tie or no speech labels — fall back to the filename's own side marker.
+  const tokens = name.toLowerCase().split(/[^a-z]+/);
+  if (tokens.some((t) => t === 'aff' || t === 'affirmative')) return 'aff';
+  if (tokens.some((t) => t === 'neg' || t === 'negative')) return 'neg';
+  return 'unknown';
+}
+
+function useSpeechDocCounts(): { count: number; aff: number; neg: number } {
+  const [sides, setSides] = useState<Record<string, DocSide>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let recents: { path: string; name: string }[] = [];
+      try { recents = JSON.parse(localStorage.getItem(SPEECH_RECENTS_KEY) ?? '[]'); } catch { /* ignore */ }
+      let cache: Record<string, DocSide> = {};
+      try { cache = JSON.parse(localStorage.getItem(SPEECH_SIDES_KEY) ?? '{}'); } catch { /* ignore */ }
+
+      const next: Record<string, DocSide> = {};
+      for (const r of recents) {
+        if (cache[r.path]) { next[r.path] = cache[r.path]; continue; }
+        try {
+          const res = await (window.warroom as any).speechdoc.extract(r.path);
+          next[r.path] = classifyDocSide(res?.ok ? (res.data?.full ?? '') : '', r.name);
+        } catch { next[r.path] = classifyDocSide('', r.name); }
+      }
+      if (cancelled) return;
+      localStorage.setItem(SPEECH_SIDES_KEY, JSON.stringify(next)); // also prunes stale paths
+      setSides(next);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const vals = Object.values(sides);
+  return {
+    count: vals.length,
+    aff: vals.filter((s) => s === 'aff').length,
+    neg: vals.filter((s) => s === 'neg').length,
+  };
+}
+
 export default function Home() {
   const { db, mode } = useApp();
 
   const cases = Object.values(db.cases);
   const cards = Object.values(db.cards);
+
+  // Imported speech docs count toward the Cases tile alongside real cases.
+  const speechDocs = useSpeechDocCounts();
+  const casesTotal = cases.length + speechDocs.count;
+  const affTotal = cases.filter((c) => c.side === 'aff').length + speechDocs.aff;
+  const negTotal = cases.filter((c) => c.side === 'neg').length + speechDocs.neg;
   const opponents = Object.values(db.opponents);
   const tournaments = Object.values(db.tournaments);
   const rounds = Object.values(db.rounds);
@@ -54,7 +120,7 @@ export default function Home() {
       <div className="flex-1 p-6 space-y-5 max-w-6xl w-full mx-auto">
         {/* Stat row */}
         <div className="grid grid-cols-4 gap-3">
-          <BigStat label="Cases" value={cases.length} sub={`${cases.filter((c) => c.side === 'aff').length} aff · ${cases.filter((c) => c.side === 'neg').length} neg`} accent="blue" />
+          <BigStat label="Cases" value={casesTotal} sub={`${affTotal} aff · ${negTotal} neg`} accent="blue" />
           <BigStat label="Cards" value={cards.length} sub={`${Object.values(db.blocks).length} blocks`} accent="purple" />
           <BigStat label="Opponents" value={opponents.length} accent="amber" sub="tracked" />
           <BigStat label="Tournaments" value={tournaments.length} sub={`${rounds.length} rounds total`} accent="emerald" />
