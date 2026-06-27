@@ -2102,6 +2102,11 @@ export default function SpeechDocViewer() {
   const ocCaseId = ocCase?.id;
   const ocUrl = (ocCase as any)?.ocSource?.url as string | undefined;
   const isOc = !!ocCase;
+  // When opening a disclosed OC file directly (before saving), the view carries
+  // an ocPreview object so we can show a "Save to Cases" action inline.
+  const ocPreview = view.kind === 'speech-doc' ? (view as any).ocPreview as
+    { url: string; teamName: string; label: string; side: string } | undefined : undefined;
+  const [ocPreviewSaved, setOcPreviewSaved] = React.useState(false);
   const ocBytesRef = useRef<string>(''); // base64 of the loaded OC docx, for export/share
   const [ocChecking, setOcChecking] = useState(false);
   const [ocCheckResult, setOcCheckResult] = useState<'changed' | 'up-to-date' | null>(null);
@@ -2534,6 +2539,9 @@ export default function SpeechDocViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.kind, docPath, ocCaseId, ocUrl]);
 
+  // Reset the preview-save confirmation when the viewed file changes.
+  React.useEffect(() => { setOcPreviewSaved(false); }, [docPath, ocCaseId]);
+
   // Reset per-document transient state (find / auto-scroll / credibility).
   function resetDocState() {
     stopAuto();
@@ -2909,6 +2917,46 @@ export default function SpeechDocViewer() {
               checkResult={ocCheckResult}
               onCheck={checkOcChanges}
             />
+          )}
+          {ocPreview && (
+            <button
+              className="text-[11px] shrink-0 px-2 py-0.5 rounded-md transition-all whitespace-nowrap"
+              style={{
+                color: ocPreviewSaved ? '#34c759' : 'var(--accent)',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                cursor: ocPreviewSaved ? 'default' : 'pointer',
+              }}
+              disabled={ocPreviewSaved}
+              title={ocPreviewSaved ? 'Saved to your Cases' : `Save this case to your sidebar`}
+              onClick={async () => {
+                if (ocPreviewSaved) return;
+                const caseSide = ocPreview.side === 'Aff' ? 'aff' : 'neg';
+                const caseName = `${ocPreview.teamName} – ${ocPreview.label}`;
+                const id = crypto.randomUUID();
+                let byteLen: number | undefined;
+                try {
+                  const readRes = await window.warroom.fs.readFileBytes(filePath);
+                  if (readRes.ok && readRes.base64) {
+                    byteLen = atob(readRes.base64).length;
+                    if (readRes.base64.length <= 2_500_000) {
+                      localStorage.setItem('warroom-oc-docx-' + ocPreview.url, readRes.base64);
+                    }
+                  }
+                } catch { /* quota */ }
+                await update((db) => ({
+                  ...db,
+                  cases: {
+                    ...db.cases,
+                    [id]: { id, name: caseName, side: caseSide as any, blocks: [], ocSource: { teamName: ocPreview.teamName, label: ocPreview.label, url: ocPreview.url, importedAt: new Date().toISOString(), byteLen } },
+                  },
+                }));
+                setOcPreviewSaved(true);
+                setTimeout(() => setView({ kind: 'case', caseId: id }), 600);
+              }}
+            >
+              {ocPreviewSaved ? 'Saved!' : `+ Save to Cases`}
+            </button>
           )}
         </div>
 

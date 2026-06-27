@@ -1,12 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { renderAsync } from 'docx-preview';
 import { useApp } from '../store/appStore';
 import { Case, OpponentStats } from '../types';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { Spinner } from './Spinner';
 import SharedNotesEditor from './SharedNotesEditor';
-import { applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 
 // OpenCaselist cite titles often arrive with markdown heading syntax (e.g. "# 1AC").
 // Strip leading ATX markers so names read cleanly in the UI.
@@ -301,39 +299,18 @@ function DisclosedFiles({ disc, teamName, highlight = '' }: { disc: any; teamNam
   );
 }
 
-// ─── In-app disclosed file viewer (docx-preview) ──────────────────────────────
+// ─── In-app disclosed file viewer ────────────────────────────────────────────
+// Downloads the docx to a temp path and opens it in the full SpeechDocViewer
+// (outline, credibility, cross-ex, focus mode, find, etc.). A lightweight
+// loading overlay is shown while the download is in progress.
 
 function DisclosedFileModal({
   url, label, side, teamName, onClose,
 }: {
   url: string; label: string; side: string; teamName: string; onClose: () => void;
 }) {
-  const { update, setView } = useApp();
-  const [step, setStep] = useState<'loading' | 'viewing' | 'error'>('loading');
+  const { setView } = useApp();
   const [error, setError] = useState('');
-  const [tempPath, setTempPath] = useState('');
-  const [filename, setFilename] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [addedToCase, setAddedToCase] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  function applySectionStyles() {
-    if (!containerRef.current) return;
-    const isDark = document.documentElement.classList.contains('dark');
-    containerRef.current.querySelectorAll<HTMLElement>('section.docx').forEach(s => {
-      s.style.background = isDark ? '#2c2c2e' : '#ffffff';
-      s.style.color = isDark ? '#e8e8ea' : '#1c1c1e';
-      s.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)';
-      s.style.borderRadius = '4px';
-      s.style.marginBottom = '24px';
-      s.style.padding = '48px 56px';
-      s.style.maxWidth = '860px';
-      s.style.marginLeft = 'auto';
-      s.style.marginRight = 'auto';
-    });
-    if (isDark) applyDarkModeViewerFixes(containerRef.current);
-    else removeDarkModeViewerFixes(containerRef.current);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -343,47 +320,28 @@ function DisclosedFileModal({
         if (cancelled) return;
         if (!fetchRes.ok) throw new Error(fetchRes.error ?? 'Could not download file.');
 
-        setTempPath(fetchRes.tempPath);
-        setFilename(fetchRes.filename);
+        // Pre-warm the OC cache so SpeechDocViewer opens instantly if the user
+        // later saves this case.
+        try {
+          const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
+          if (readRes.ok && readRes.base64 && readRes.base64.length <= 2_500_000) {
+            localStorage.setItem('warroom-oc-docx-' + url, readRes.base64);
+          }
+        } catch { /* quota — viewer will fetch on open */ }
 
-        const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
         if (cancelled) return;
-        if (!readRes.ok || !readRes.base64) throw new Error(readRes.error ?? 'Could not read file.');
-
-        const binary = atob(readRes.base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-        setStep('viewing');
-        setTimeout(async () => {
-          if (cancelled || !containerRef.current) return;
-          containerRef.current.innerHTML = '';
-          await renderAsync(bytes.buffer, containerRef.current, undefined, {
-            className: 'docx-render',
-            inWrapper: false,
-            ignoreWidth: true,
-            ignoreHeight: false,
-            breakPages: false,
-            useBase64URL: true,
-            experimental: true,
-          });
-          // Remove blank first page unconditionally
-          containerRef.current.firstElementChild?.remove();
-          applySectionStyles();
-        }, 0);
+        onClose();
+        setView({
+          kind: 'speech-doc',
+          docPath: fetchRes.tempPath,
+          ocPreview: { url, teamName, label, side },
+        } as any);
       } catch (e: any) {
-        if (!cancelled) { setError(e.message ?? 'Unknown error'); setStep('error'); }
+        if (!cancelled) setError(e.message ?? 'Unknown error');
       }
     })();
     return () => { cancelled = true; };
   }, [url]);
-
-  // React to theme changes
-  useEffect(() => {
-    const obs = new MutationObserver(() => applySectionStyles());
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
 
   // Close on Escape key
   useEffect(() => {
@@ -392,113 +350,32 @@ function DisclosedFileModal({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  async function handleDownload() {
-    setSaving(true);
-    await window.warroom.opencaselist.saveFile(tempPath, filename);
-    setSaving(false);
-  }
-
-  async function handleAddToCase() {
-    const caseSide = side === 'Aff' ? 'aff' : 'neg';
-    const caseName = `${teamName} – ${label}`;
-    const id = crypto.randomUUID();
-    let byteLen: number | undefined;
-    if (tempPath) {
-      const readRes = await window.warroom.fs.readFileBytes(tempPath);
-      if (readRes.ok && readRes.base64) {
-        byteLen = atob(readRes.base64).length;
-        // Pre-warm the SpeechDocViewer's OC cache so the first open is instant
-        // (no re-download). Same key/cap the viewer uses. Skip oversized docs.
-        try {
-          if (readRes.base64.length <= 2_500_000) {
-            localStorage.setItem('warroom-oc-docx-' + url, readRes.base64);
-          }
-        } catch { /* quota — viewer will fetch on open */ }
-      }
-    }
-    const newCase: Case = {
-      id,
-      name: caseName,
-      side: caseSide as any,
-      blocks: [],
-      ocSource: { teamName, label, url, importedAt: new Date().toISOString(), byteLen },
-    };
-    await update((db) => ({ ...db, cases: { ...db.cases, [id]: newCase } }));
-    setAddedToCase(true);
-    setTimeout(() => {
-      onClose();
-      setView({ kind: 'case', caseId: id });
-    }, 800);
-  }
-
   const modal = (
     <div
-      className="flex flex-col"
+      className="flex flex-col items-center justify-center gap-4"
       style={{
         position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, zIndex: 200,
         background: 'var(--bg-main)',
         WebkitAppRegion: 'no-drag',
       } as React.CSSProperties}
     >
-      {/* Header / toolbar */}
-      <div
-        className="shrink-0 px-4 py-2.5 flex items-center justify-between gap-3"
-        style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)' }}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onClose} className="text-xs text-ink/50 hover:text-ink shrink-0">
-            ← Back
-          </button>
-          <span className={`text-[10px] shrink-0 px-1.5 py-0.5 rounded-sm font-medium ${side === 'Aff' ? 'badge-aff' : 'badge-neg'}`}>{side}</span>
-          <span className="text-sm font-medium truncate">{label}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {step === 'viewing' && (
-            <button
-              className="btn text-xs"
-              onClick={handleAddToCase}
-              disabled={addedToCase}
-              title="Create a new case in your sidebar from this disclosed file"
-            >
-              {addedToCase ? 'Added!' : '+ Save to Cases'}
-            </button>
-          )}
-          {step === 'viewing' && tempPath && (
-            <button className="btn text-xs" onClick={handleDownload} disabled={saving}>
-              {saving ? 'Saving…' : 'Download'}
-            </button>
-          )}
-          <button className="btn text-xs" onClick={onClose}>Close</button>
-        </div>
-      </div>
-
-      {/* Body */}
-      {step === 'loading' && (
-        <div className="flex-1 flex items-center justify-center gap-2 text-sm text-ink/50">
-          <Spinner /> Loading file…
-        </div>
-      )}
-
-      {step === 'error' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8">
-          <div className="border border-danger/30 rounded-sm bg-danger/5 p-3 text-sm text-danger max-w-md text-center">
-            {error}
-          </div>
+      {!error ? (
+        <>
+          <Spinner />
+          <div className="text-sm text-ink/50">Loading {label}…</div>
+          <button className="btn text-xs mt-2" onClick={onClose}>Cancel</button>
+        </>
+      ) : (
+        <>
+          <div className="border border-danger/30 rounded-sm bg-danger/5 p-3 text-sm text-danger max-w-md text-center">{error}</div>
           <div className="flex gap-2">
             <button className="btn text-xs" onClick={onClose}>Close</button>
             <button className="btn text-xs" onClick={() => window.warroom.opencaselist.openFile(url)}>
               Open in browser
             </button>
           </div>
-        </div>
+        </>
       )}
-
-      <div
-        className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap"
-        style={{ display: step === 'viewing' ? undefined : 'none' }}
-      >
-        <div ref={containerRef} />
-      </div>
     </div>
   );
 

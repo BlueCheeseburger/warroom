@@ -33,7 +33,7 @@ export type View =
   | { kind: 'case'; caseId: string }
   | { kind: 'block'; blockId: string }
   | { kind: 'library' }
-  | { kind: 'speech-doc'; docPath?: string }
+  | { kind: 'speech-doc'; docPath?: string; ocPreview?: { url: string; teamName: string; label: string; side: string } }
   | { kind: 'tournaments' }
   | { kind: 'tournament'; tournamentId: string }
   | { kind: 'round'; roundId: string }
