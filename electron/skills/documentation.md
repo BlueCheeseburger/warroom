@@ -201,7 +201,13 @@ The `SpeechDocViewer` renders `.docx` files in-app using `docx-preview`. It is a
 
 Opening a `.docx` from Finder triggers the `onFileOpen` IPC event and navigates to the speech-doc view. Speech docs can also be attached to chat messages and shared with teammates.
 
-The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), **Find** (in-doc search), **Reading time / auto-scroll**, **Send to Flow** (push a card/heading into a flow sheet, see below), **Cross-Ex Practice**, and **Card Credibility** (see below).
+The toolbar also includes **Focus mode** (hides body text, showing only card structure and highlighted/underlined runs), **Outline** (heading navigation, see below), **Find** (in-doc search), **Reading time / auto-scroll**, **Send to Flow** (push a card/heading into a flow sheet, see below), **Cross-Ex Practice**, and **Card Credibility** (see below). The open document's name is always rendered in the toolbar between the tool cluster and the AI-tool pills (`fileName`, `.docx` stripped).
+
+**Office-font substitution.** macOS ships no Calibri, so `docx-preview`'s inline `font-family: Calibri` would fall back to the browser default serif (Times New Roman-like) — wrong for nearly all debate docs. A one-time global `@font-face` block (id `wr-docx-fonts`) redefines the Office families (`Calibri`, `Calibri Light`, `Cambria`, `Cambria Math`) with `local()`-only source chains that resolve to real Office fonts when installed, else metric-compatible open fonts (Carlito/Caladea), else a clean system sans-serif (`Helvetica Neue`/`Arial`) for the sans families. This makes Calibri docs render sans-serif everywhere.
+
+### OpenCaseList-imported cases
+
+Cases imported from an opponent's disclosure (**+ Save to Cases** in the opponent file viewer) are stored in `db.cases` with an `ocSource` object (`teamName`, `label`, `url`, `importedAt`, `byteLen`). The `Router` detects `view.kind === 'case'` with an `ocSource` present (`ocCaseActive`) and routes it to the always-mounted `SpeechDocViewer` instead of the block-based `CaseView`, so it gets the full toolset. The viewer derives the active OC case from `view` + `db` (no second instance), loads the docx via `loadOcCase`, and renders it through the shared `applyRender` path. The docx bytes are cached in `localStorage` under `warroom-oc-docx-<url>` (capped ~2.5 MB/doc), pre-warmed at import time, so reopening is instant and offline — no OpenCaseList re-fetch. The toolbar shows an "Imported from [team]" label and a **Check for changes** button (`checkOcChanges`) that re-fetches, compares byte length against the stored `byteLen`, and reloads + re-caches if it changed. Per-doc state (cross-ex, credibility, dismissed warnings, share) is keyed on a synthetic `oc:<url>` path so it works without a real local file.
 
 ### Find (in-document search)
 

@@ -26,6 +26,21 @@ function addRecent(path: string, name: string) {
   window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
 }
 
+// ── OpenCaseList-imported case docx cache ──────────────────────────────────
+// Imported cases store their docx bytes (base64) in localStorage keyed by URL so
+// reopening the case renders instantly without re-downloading from OpenCaseList.
+// Capped per-doc to stay well within the localStorage quota; oversized docs just
+// re-fetch each open (still correct, just not cached).
+const OC_CACHE_PREFIX = 'warroom-oc-docx-';
+const OC_CACHE_MAX = 2_500_000; // ~2.5MB of base64 per doc
+function getOcCached(url: string): string | null {
+  try { return localStorage.getItem(OC_CACHE_PREFIX + url); } catch { return null; }
+}
+function setOcCached(url: string, base64: string) {
+  if (!url || base64.length > OC_CACHE_MAX) return;
+  try { localStorage.setItem(OC_CACHE_PREFIX + url, base64); } catch { /* quota — skip caching */ }
+}
+
 // ── Icon buttons with tooltip ──────────────────────────────────────────────
 
 function IconBtn({ icon, label, onClick, danger, tooltipAlign = 'center' }: {
@@ -2031,7 +2046,19 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function SpeechDocViewer() {
-  const { setBusy, view, setView, event, flowsIndex } = useApp();
+  const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
+  // OpenCaseList-imported case (carries a docx via ocSource). Derived from the
+  // current view + db so this single always-mounted viewer can render both
+  // normal speech docs and imported cases without a second instance.
+  const ocCase = view.kind === 'case' && db.cases[(view as any).caseId]?.ocSource
+    ? db.cases[(view as any).caseId]
+    : null;
+  const ocCaseId = ocCase?.id;
+  const ocUrl = (ocCase as any)?.ocSource?.url as string | undefined;
+  const isOc = !!ocCase;
+  const ocBytesRef = useRef<string>(''); // base64 of the loaded OC docx, for export/share
+  const [ocChecking, setOcChecking] = useState(false);
+  const [ocCheckResult, setOcCheckResult] = useState<'changed' | 'up-to-date' | null>(null);
   const [step, setStep] = useState<Step>('idle');
   const [cxOpen, setCxOpen] = useState(false);
   const [flowSendOpen, setFlowSendOpen] = useState(false);
@@ -2102,6 +2129,27 @@ export default function SpeechDocViewer() {
     el.textContent =
       `::highlight(${FIND_HL}){background-color:rgba(255,213,0,0.40);}` +
       `::highlight(${FIND_HL_ACTIVE}){background-color:rgba(255,138,0,0.85);color:#1c1c1e;}`;
+    document.head.appendChild(el);
+  }, []);
+
+  // Office-font substitution. macOS ships no Calibri, so docx-preview's inline
+  // `font-family: Calibri` falls back to the browser default serif (Times New
+  // Roman-like) — wrong for the vast majority of debate docs, which are Calibri.
+  // These @font-face aliases redefine the Office families to resolve to the first
+  // available local font: real Calibri if Office is installed, else the metric-
+  // compatible Carlito, else a clean system sans-serif. Serif Office fonts keep a
+  // serif fallback. Injected once, globally (covers every docx the app renders).
+  useEffect(() => {
+    if (document.getElementById('wr-docx-fonts')) return;
+    const el = document.createElement('style');
+    el.id = 'wr-docx-fonts';
+    el.textContent = `
+      @font-face { font-family: 'Calibri'; src: local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
+      @font-face { font-family: 'Calibri Light'; src: local('Calibri Light'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
+      @font-face { font-family: 'Calibri'; font-weight: bold; src: local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold'); }
+      @font-face { font-family: 'Cambria'; src: local('Cambria'), local('Caladea'), local('Georgia'), local('Times New Roman'); }
+      @font-face { font-family: 'Cambria Math'; src: local('Cambria Math'), local('Caladea'), local('Georgia'); }
+    `;
     document.head.appendChild(el);
   }, []);
 
@@ -2408,46 +2456,40 @@ export default function SpeechDocViewer() {
     if (focusActive) applyFocusMode(containerRef.current, focusType);
   }, [focusActive, focusType]);
 
-  // Auto-load if view carries a docPath (from clicking a recent in the sidebar)
+  // Auto-load: a docPath (clicking a recent), an OC-imported case (carries a
+  // docx via ocSource), or nothing (show the drop zone).
   const docPath = (view as any).docPath as string | undefined;
   const loadedPath = useRef('');
   useEffect(() => {
-    if (docPath && docPath !== loadedPath.current) {
+    if (ocCase) {
+      loadOcCase(ocCase);
+    } else if (docPath && docPath !== loadedPath.current) {
       loadFile(docPath);
     } else if (view.kind === 'speech-doc' && !docPath) {
       // No specific file requested (e.g. clicked the Cases + button) — always show the drop zone.
       reset();
     }
-  }, [view.kind, docPath]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.kind, docPath, ocCaseId, ocUrl]);
 
-  async function loadFile(path: string) {
-    if (loadedPath.current === path) return;
-    loadedPath.current = path;
-    const name = path.split('/').pop() ?? path;
-    setFilePath(path);
-    setFileName(name);
-    setStep('loading');
-    setError('');
-    setBusy('speech-doc', 'Loading…');
-    try {
-      const result = await window.warroom.fs.readDocxBytes(path);
-      if (!result.ok || !result.base64) throw new Error(result.error ?? 'Could not read file');
-      const binary = atob(result.base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  // Reset per-document transient state (find / auto-scroll / credibility).
+  function resetDocState() {
+    stopAuto();
+    setFindOpen(false);
+    setFindQuery('');
+    findRangesRef.current = [];
+    clearFindHighlights();
+    setCredScores(null);
+    setCredCards([]);
+    setCredError('');
+  }
 
-      // Reset find / auto-scroll / credibility state tied to the previous document.
-      stopAuto();
-      setFindOpen(false);
-      setFindQuery('');
-      findRangesRef.current = [];
-      clearFindHighlights();
-      setCredScores(null);
-      setCredCards([]);
-      setCredError('');
-
-      setStep('viewing');
-      setTimeout(async () => {
+  // Render already-decoded docx bytes: paint the container, then build the
+  // outline, cards, highlight warnings, and reading-time word count. Shared by
+  // file loads and OC-case loads.
+  function applyRender(bytes: Uint8Array) {
+    setStep('viewing');
+    setTimeout(async () => {
         if (!containerRef.current) return;
         containerRef.current.innerHTML = '';
         await renderAsync(bytes.buffer, containerRef.current, undefined, {
@@ -2527,7 +2569,27 @@ export default function SpeechDocViewer() {
         const words = collectSpoken(containerRef.current).count;
         setDocWords(words);
         docWordsRef.current = words;
-      }, 0);
+    }, 0);
+  }
+
+  async function loadFile(path: string) {
+    if (loadedPath.current === path) return;
+    loadedPath.current = path;
+    const name = path.split('/').pop() ?? path;
+    setFilePath(path);
+    setFileName(name);
+    setStep('loading');
+    setError('');
+    setBusy('speech-doc', 'Loading…');
+    try {
+      const result = await window.warroom.fs.readDocxBytes(path);
+      if (!result.ok || !result.base64) throw new Error(result.error ?? 'Could not read file');
+      const binary = atob(result.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      resetDocState();
+      applyRender(bytes);
 
       // Auto-save to recents so it appears in the sidebar
       addRecent(path, name);
@@ -2541,6 +2603,81 @@ export default function SpeechDocViewer() {
     }
   }
 
+  // Load an OpenCaseList-imported case: render its docx from the localStorage
+  // cache when present (no network), else download once via OpenCaseList, cache
+  // the bytes, then render. Keyed in localStorage on the source URL.
+  async function loadOcCase(oc: any) {
+    const url: string = oc.ocSource.url;
+    const key = `oc:${url}`;
+    if (loadedPath.current === key) return;
+    loadedPath.current = key;
+    setFilePath(key); // synthetic key — drives per-doc cx / credibility / dismissals
+    setFileName(oc.name);
+    setStep('loading');
+    setError('');
+    setBusy('speech-doc', 'Loading…');
+    try {
+      let base64 = getOcCached(url);
+      if (!base64) {
+        const fetchRes = await window.warroom.opencaselist.fetchFileToTemp(url);
+        if (!fetchRes.ok) throw new Error(fetchRes.error ?? 'Could not download file.');
+        const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
+        if (!readRes.ok || !readRes.base64) throw new Error(readRes.error ?? 'Could not read file.');
+        base64 = readRes.base64;
+        setOcCached(url, base64);
+      }
+      ocBytesRef.current = base64;
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      resetDocState();
+      setOcCheckResult(null);
+      applyRender(bytes);
+    } catch (e: any) {
+      setError(`Failed to open imported case: ${e?.message ?? 'unknown error'}`);
+      setStep('error');
+      loadedPath.current = '';
+    } finally {
+      setBusy('speech-doc', null);
+    }
+  }
+
+  // Re-fetch an OC case from OpenCaseList (bypassing the cache) and reload it if
+  // the file changed since import. Refreshes the cached bytes + stored byteLen.
+  async function checkOcChanges() {
+    if (!ocCase) return;
+    const url: string = (ocCase as any).ocSource.url;
+    setOcChecking(true);
+    setOcCheckResult(null);
+    try {
+      const fetchRes = await window.warroom.opencaselist.fetchFileToTemp(url);
+      if (!fetchRes.ok) throw new Error(fetchRes.error ?? 'fetch failed');
+      const readRes = await window.warroom.fs.readFileBytes(fetchRes.tempPath);
+      if (!readRes.ok || !readRes.base64) throw new Error('read failed');
+      const newLen = atob(readRes.base64).length;
+      const prevLen = (ocCase as any).ocSource.byteLen as number | undefined;
+      const changed = prevLen !== undefined && newLen !== prevLen;
+      setOcCached(url, readRes.base64);
+      setOcCheckResult(changed ? 'changed' : 'up-to-date');
+      if (changed) {
+        ocBytesRef.current = readRes.base64;
+        await update((d) => ({
+          ...d,
+          cases: { ...d.cases, [ocCase.id]: { ...d.cases[ocCase.id], ocSource: { ...(ocCase as any).ocSource, byteLen: newLen } } },
+        }));
+        const binary = atob(readRes.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        applyRender(bytes);
+      }
+    } catch {
+      setOcCheckResult(null);
+    } finally {
+      setOcChecking(false);
+    }
+  }
+
   async function pickFile() {
     const path = await window.warroom.dialog.openFile(['docx']);
     if (!path) return;
@@ -2549,11 +2686,12 @@ export default function SpeechDocViewer() {
   }
 
   async function exportDocx() {
-    const res = await window.warroom.fs.readFileBytes(filePath);
-    if (!res.ok || !res.base64) return;
+    const base64 = isOc ? ocBytesRef.current : (await window.warroom.fs.readFileBytes(filePath)).base64;
+    if (!base64) return;
+    const outName = /\.docx$/i.test(fileName) ? fileName : `${fileName}.docx`;
     await window.warroom.dialog.saveBuffer(
-      res.base64,
-      fileName,
+      base64,
+      outName,
       [{ name: 'Word Document', extensions: ['docx'] }]
     );
   }
@@ -2670,7 +2808,45 @@ export default function SpeechDocViewer() {
           />
         </div>
 
-        <div className="flex-1" />
+        {/* Document title (+ import provenance) — sits between the tool cluster
+            and the AI tools so the open case / speech doc is always identified. */}
+        <div className="flex-1 flex items-center gap-2 min-w-0 px-2.5">
+          <span
+            className="text-[13px] font-semibold truncate shrink"
+            style={{ color: 'rgb(var(--ink-rgb))' }}
+            title={fileName.replace(/\.docx$/i, '')}
+          >
+            {fileName.replace(/\.docx$/i, '')}
+          </span>
+          {isOc && ocCase && (
+            <>
+              <span
+                className="text-[11px] truncate shrink-0 px-1.5 py-0.5 rounded-md"
+                style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+                title={`Imported from ${(ocCase as any).ocSource.teamName} on OpenCaseList`}
+              >
+                Imported from {(ocCase as any).ocSource.teamName}
+              </span>
+              <button
+                onClick={checkOcChanges}
+                disabled={ocChecking}
+                className="text-[11px] shrink-0 px-1.5 py-0.5 rounded-md transition flex items-center gap-1"
+                style={{
+                  color: ocCheckResult === 'changed' ? '#34c759' : 'var(--nav-inactive-color)',
+                  background: 'transparent', border: '1px solid var(--border-subtle)', cursor: ocChecking ? 'default' : 'pointer',
+                }}
+                onMouseEnter={(e) => { if (!ocChecking) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                title="Re-check OpenCaseList for changes to this file"
+              >
+                {ocChecking ? 'Checking…'
+                  : ocCheckResult === 'changed' ? 'Updated — reloaded'
+                  : ocCheckResult === 'up-to-date' ? 'Up to date'
+                  : 'Check for changes'}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* AI analysis tools — labeled so their purpose is obvious. */}
         <ToolbarPill
@@ -2705,11 +2881,12 @@ export default function SpeechDocViewer() {
           id={filePath}
           name={fileName}
           getData={async () => {
-            const res = await window.warroom.fs.readFileBytes(filePath);
-            return { filename: fileName, base64: res.base64 ?? '' };
+            // OC cases have no local file — share the cached docx bytes directly.
+            const base64 = isOc ? ocBytesRef.current : (await window.warroom.fs.readFileBytes(filePath)).base64;
+            return { filename: /\.docx$/i.test(fileName) ? fileName : `${fileName}.docx`, base64: base64 ?? '' };
           }}
           onClose={() => setShareOpen(false)}
-          onOpenInWord={() => window.warroom.shell.openPath(filePath)}
+          onOpenInWord={isOc ? undefined : () => window.warroom.shell.openPath(filePath)}
           onExportDocx={exportDocx}
         />
       )}

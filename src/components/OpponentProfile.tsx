@@ -349,7 +349,16 @@ function DisclosedFileModal({
     let byteLen: number | undefined;
     if (tempPath) {
       const readRes = await window.warroom.fs.readFileBytes(tempPath);
-      if (readRes.ok && readRes.base64) byteLen = atob(readRes.base64).length;
+      if (readRes.ok && readRes.base64) {
+        byteLen = atob(readRes.base64).length;
+        // Pre-warm the SpeechDocViewer's OC cache so the first open is instant
+        // (no re-download). Same key/cap the viewer uses. Skip oversized docs.
+        try {
+          if (readRes.base64.length <= 2_500_000) {
+            localStorage.setItem('warroom-oc-docx-' + url, readRes.base64);
+          }
+        } catch { /* quota — viewer will fetch on open */ }
+      }
     }
     const newCase: Case = {
       id,

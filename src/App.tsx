@@ -588,10 +588,15 @@ export default function App() {
 }
 
 function Router() {
-  const { view, mode } = useApp();
+  const { view, mode, db } = useApp();
+
+  // OpenCaseList-imported cases carry a docx (ocSource) and are rendered by the
+  // full SpeechDocViewer (outline, find, credibility, cross-ex, etc.), not the
+  // block-based CaseView. Route them to the always-mounted speech slot.
+  const ocCaseActive = view.kind === 'case' && !!db.cases[(view as any).caseId]?.ocSource;
 
   const isSpeech = (mode === 'round' && view.kind === 'block' && (view as any).blockId === '__speech__')
-    || view.kind === 'speech-doc';
+    || view.kind === 'speech-doc' || ocCaseActive;
   const isLogos = view.kind === 'logos';
   const isOpenEv = view.kind === 'open-ev';
   const isGoogleScholar = view.kind === 'google-scholar';

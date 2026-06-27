@@ -607,7 +607,28 @@ export default function Documentation() {
             structure and highlighted / underlined runs), <strong>Outline</strong> (heading
             navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
             auto-scroll, <strong>Send to Flow</strong>, <strong>Cross-Ex Practice</strong>, and{' '}
-            <strong>Card Credibility</strong>.
+            <strong>Card Credibility</strong>. The open document's name is always shown in the
+            toolbar between the tool cluster and the AI-tool pills.
+          </P>
+          <P>
+            <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
+            <Code>docx-preview</Code>'s inline <Code>font-family: Calibri</Code> would fall back to a
+            serif (Times New Roman-like) font — wrong for nearly all debate docs. A one-time global{' '}
+            <Code>@font-face</Code> block redefines the Office families (Calibri, Cambria, …) with{' '}
+            <Code>local()</Code> source chains that resolve to real Office fonts when installed, else
+            metric-compatible open fonts, else a clean system sans-serif — so Calibri docs render
+            sans-serif everywhere.
+          </P>
+          <H3>OpenCaseList-imported cases</H3>
+          <P>
+            Cases imported from an opponent's disclosure (<strong>+ Save to Cases</strong>) are
+            stored in <Code>db.cases</Code> with an <Code>ocSource</Code> object and routed by the{' '}
+            <Code>Router</Code> to this same <Code>SpeechDocViewer</Code> (not the block-based{' '}
+            <Code>CaseView</Code>), so they get the full toolset. The docx bytes are cached in{' '}
+            <Code>localStorage</Code> under <Code>warroom-oc-docx-&lt;url&gt;</Code> — pre-warmed at
+            import — so reopening is instant and offline with no re-fetch. The toolbar shows an{' '}
+            <strong>Imported from [team]</strong> label and a <strong>Check for changes</strong>{' '}
+            button that re-fetches, compares byte length, and reloads if the disclosure was updated.
           </P>
           <H3>Find (in-document search)</H3>
           <P>

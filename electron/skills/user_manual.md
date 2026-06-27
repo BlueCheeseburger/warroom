@@ -189,6 +189,14 @@ Opens .docx files in-app.
 - **Open**: drag .docx onto app, or File → Open
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
+- **Document title**: the name of the open case/speech doc is always shown in the toolbar (between the tool cluster and the Credibility button), so you can tell at a glance which doc you're in.
+- **Fonts**: docs written in Calibri (the debate default) render in Calibri — or a clean sans-serif stand-in on machines without it — instead of falling back to a serif font.
+
+### Cases imported from OpenCaseList
+When you click **+ Save to Cases** on an opponent's disclosed file, it's added to the **Cases** list in the sidebar and opens in this same full viewer — with the outline, find, reading time, send-to-flow, credibility, and cross-ex tools all available, exactly like one of your own speech docs.
+- The toolbar shows an **"Imported from [team]"** label next to the doc name.
+- The file is cached on your device after the first open, so reopening it is instant and works offline — no re-download from OpenCaseList.
+- A **Check for changes** button re-fetches the file from OpenCaseList; if the disclosure was updated since you imported it, the viewer reloads the new version (and refreshes the cache). Otherwise it confirms you're up to date.
 - **Focus mode** (toolbar): hides body text, showing only card tags, cites, and highlighted/underlined text
 - **Outline** (toolbar): a side panel listing every heading in the doc — pockets, hats, blocks, and card tags — indented by level. It shows automatically the first time you open a document each app launch; after that it stays in whatever state you left it. Click any entry to jump straight to it instantly; the entry for whatever you're currently reading stays highlighted as you scroll. Prev/next chevron buttons in the outline header step to the previous/next heading in one click, so you can move card-to-card without scrolling. A **layers button** (shows e.g. "2/4") in the header cycles how many heading levels are shown — collapse to just pockets/hats for fast high-level navigation in long files, then expand back to all levels. Cards that are unusually over- or under-highlighted versus the rest of the doc get a small amber warning badge; click it for an explanation and a "Dismiss permanently" option. Toggle the whole panel with the Outline button. Works on docs that use Word/Verbatim heading styles.
 - **Send to Flow** (toolbar): pushes a card or heading from your speech doc straight into a flow sheet, like Verbatim's Send-to-Flow. Select text in the doc (or just scroll so a card tag is at the top), open the popover, pick **Selection** (sends the selected/heading text) or **Tag + cite** (sends the card tag plus the author + date), choose the target flow, sheet, and column, then send — it lands in the next empty row of that column. If that flow is open in another view, it updates live.
