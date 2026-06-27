@@ -582,7 +582,7 @@ function OcSourcePill({ teamName, checking, checkResult, onCheck }: {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       title={hovered && !checking ? 'Re-check OpenCaseList for changes to this file' : `Imported from ${teamName} on OpenCaseList`}
-      className="text-[11px] shrink-0 px-1.5 py-0.5 rounded-md transition-all flex items-center gap-1"
+      className="text-[11px] shrink-0 px-1.5 py-0.5 rounded-md transition-all relative"
       style={{
         color,
         background: hovered && !checking ? 'var(--nav-hover-bg)' : 'var(--bg-elevated)',
@@ -591,7 +591,11 @@ function OcSourcePill({ teamName, checking, checkResult, onCheck }: {
         minWidth: 0,
       }}
     >
-      {showAction && checkResult === null ? actionLabel : label}
+      {/* Invisible anchor keeps the button width fixed to "Imported from X" */}
+      <span className="invisible whitespace-nowrap">{`Imported from ${teamName}`}</span>
+      <span className="absolute inset-0 flex items-center justify-center whitespace-nowrap">
+        {showAction && checkResult === null ? actionLabel : label}
+      </span>
     </button>
   );
 }
@@ -2189,6 +2193,9 @@ export default function SpeechDocViewer() {
       @font-face { font-family: 'Calibri'; src: local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
       @font-face { font-family: 'Calibri Light'; src: local('Calibri Light'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
       @font-face { font-family: 'Calibri'; font-weight: bold; src: local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold'); }
+      @font-face { font-family: 'Aptos'; src: local('Aptos'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
+      @font-face { font-family: 'Aptos Display'; src: local('Aptos Display'), local('Carlito'), local('Helvetica Neue'), local('Arial'); }
+      @font-face { font-family: 'Aptos'; font-weight: bold; src: local('Aptos Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold'); }
       @font-face { font-family: 'Cambria'; src: local('Cambria'), local('Caladea'), local('Georgia'), local('Times New Roman'); }
       @font-face { font-family: 'Cambria Math'; src: local('Cambria Math'), local('Caladea'), local('Georgia'); }
     `;
@@ -2865,11 +2872,24 @@ export default function SpeechDocViewer() {
 
         {/* Document title (+ import provenance) — sits between the tool cluster
             and the AI tools so the open case / speech doc is always identified. */}
-        <div className="flex-1 flex items-center gap-2 min-w-0 px-2.5">
+        <div className="flex-1 flex items-center gap-2 min-w-0 px-2.5 overflow-visible">
           <span
-            className="text-[13px] font-semibold truncate shrink"
-            style={{ color: 'rgb(var(--ink-rgb))' }}
-            title={fileName.replace(/\.docx$/i, '')}
+            className="text-[13px] font-semibold shrink whitespace-nowrap relative z-10"
+            style={{
+              color: 'rgb(var(--ink-rgb))',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%',
+              transition: 'max-width 0.15s ease, overflow 0s',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.overflow = 'visible';
+              (e.currentTarget as HTMLElement).style.maxWidth = 'none';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.overflow = 'hidden';
+              (e.currentTarget as HTMLElement).style.maxWidth = '100%';
+            }}
           >
             {fileName.replace(/\.docx$/i, '')}
           </span>
