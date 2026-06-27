@@ -11,6 +11,7 @@
  *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
  *   cross_ex_trap_drill   — prep a cross-ex trap drill (mirrors in-app "Harder questions")
  *   score_card_credibility — prep a credibility scoring pass for a speech doc's cards (mirrors in-app Card Credibility)
+ *   search_warroom        — search across cases, opponents, judges, tournaments, and topics
  *   search_library        — fuzzy search saved cards
  *   get_cases / get_blocks / get_cards — browse the card library
  *   get_opponents         — saved opponent scouting notes
@@ -1001,6 +1002,125 @@ server.tool(
     ].join('\n');
 
     return { content: [{ type: 'text', text: out }] };
+  }
+);
+
+// ── search_warroom ─────────────────────────────────────────────────────────────
+server.tool(
+  'search_warroom',
+  `Search across all Warroom data: cases (including keyword-indexed content), opponents, judges, tournaments, and current topics.
+Returns ranked results grouped by type. Covers everything persisted in db.json and topics.json.
+Note: speech docs, flows, and AI chat history live in the app's browser localStorage and are not accessible from here — use the in-app search palette (Cmd+K) to search those.`,
+  {
+    query: z.string().describe('Search term — can be a topic keyword, team name, case name, judge name, argument, etc.'),
+    types: z.array(z.enum(['case', 'opponent', 'judge', 'tournament', 'topic'])).optional()
+      .describe('Restrict to these types (omit for all)'),
+    limit: z.number().optional().describe('Max total results to return (default 20)'),
+  },
+  async ({ query, types, limit = 20 }) => {
+    if (!query.trim()) return { content: [{ type: 'text', text: 'Please provide a search query.' }] };
+
+    const [db, topics] = await Promise.all([readJson('db.json'), readJson('topics.json')]);
+    const q = query.toLowerCase();
+    const words = q.split(/\s+/).filter(w => w.length >= 2);
+
+    function score(text) {
+      if (!text) return 0;
+      const t = text.toLowerCase();
+      if (t.includes(q)) return 100;
+      return words.reduce((s, w) => s + (t.includes(w) ? 10 : 0), 0);
+    }
+
+    const results = [];
+    const wantAll = !types || types.length === 0;
+
+    if (db) {
+      // Cases
+      if (wantAll || types.includes('case')) {
+        for (const c of Object.values(db.cases ?? {})) {
+          const haystack = [c.name, c.ocSource?.teamName, c.ocSource?.label, ...(c.searchKeywords ?? [])].join(' ');
+          const s = score(haystack);
+          if (s > 0) results.push({ type: 'case', score: s, data: c });
+        }
+      }
+      // Opponents
+      if (wantAll || types.includes('opponent')) {
+        for (const o of Object.values(db.opponents ?? {})) {
+          const disc = o.disclosures ?? {};
+          const discParts = [
+            disc.aff?.name,
+            ...(disc.neg ?? []).map(p => p.name),
+            ...(disc.rawCites ?? []).map(c => c.title),
+            ...(disc.rawRounds ?? []).map(r => (r.tournament ?? '').replace(/^\d+---/, '')),
+          ].filter(Boolean).join(' ');
+          const haystack = [o.teamName, o.school, o.notes, discParts].join(' ');
+          const s = score(haystack);
+          if (s > 0) results.push({ type: 'opponent', score: s, data: o, discParts });
+        }
+      }
+      // Judges
+      if (wantAll || types.includes('judge')) {
+        for (const j of Object.values(db.judges ?? {})) {
+          const s = score([j.name, j.institution, j.paradigm].join(' '));
+          if (s > 0) results.push({ type: 'judge', score: s, data: j });
+        }
+      }
+      // Tournaments
+      if (wantAll || types.includes('tournament')) {
+        for (const t of Object.values(db.tournaments ?? {})) {
+          const s = score([t.name, t.location, t.event_type].join(' '));
+          if (s > 0) results.push({ type: 'tournament', score: s, data: t });
+        }
+      }
+    }
+
+    // Topics
+    if (topics && (wantAll || types.includes('topic'))) {
+      const eventMap = { policy: 'Policy', pf: 'Public Forum', ld: 'Lincoln-Douglas' };
+      for (const [key, label] of Object.entries(eventMap)) {
+        const res = topics[key]?.current;
+        if (!res || res.includes('not found')) continue;
+        const s = score(res + ' ' + label);
+        if (s > 0) results.push({ type: 'topic', score: s, label, resolution: res });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    const top = results.slice(0, limit);
+
+    if (top.length === 0) {
+      return { content: [{ type: 'text', text: `No results found for "${query}".` }] };
+    }
+
+    const lines = [`**Search results for "${query}"** (${top.length} of ${results.length} matches)\n`];
+    for (const r of top) {
+      if (r.type === 'case') {
+        const c = r.data;
+        lines.push(`📁 **Case** — ${c.name} (${(c.side ?? '').toUpperCase()})${c.ocSource ? ` · ${c.ocSource.teamName}` : ''}`);
+        if (c.searchKeywords?.length) {
+          const kws = c.searchKeywords.filter(k => k.includes(q.split(' ')[0]) || words.some(w => k.includes(w))).slice(0, 6);
+          if (kws.length) lines.push(`  Keywords: ${kws.join(', ')}`);
+        }
+      } else if (r.type === 'opponent') {
+        const o = r.data;
+        lines.push(`👥 **Opponent** — ${o.teamName}${o.school ? ` (${o.school})` : ''}`);
+        if (r.discParts) {
+          const snippet = r.discParts.slice(0, 200);
+          lines.push(`  Disclosures: ${snippet}${r.discParts.length > 200 ? '…' : ''}`);
+        }
+      } else if (r.type === 'judge') {
+        const j = r.data;
+        lines.push(`⚖️ **Judge** — ${j.name}${j.institution ? ` (${j.institution})` : ''}`);
+        if (j.paradigm) lines.push(`  Paradigm: ${j.paradigm.slice(0, 200)}${j.paradigm.length > 200 ? '…' : ''}`);
+      } else if (r.type === 'tournament') {
+        const t = r.data;
+        lines.push(`🏆 **Tournament** — ${t.name}${t.location ? ` · ${t.location}` : ''}${t.date ? ` · ${new Date(t.date).toLocaleDateString()}` : ''}`);
+      } else if (r.type === 'topic') {
+        lines.push(`📌 **Topic (${r.label})** — ${r.resolution}`);
+      }
+    }
+
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
   }
 );
 
