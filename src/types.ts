@@ -34,6 +34,8 @@ export interface Case {
     importedAt: string;
     byteLen?: number;
   };
+  searchKeywords?: string[];   // cached keyword extraction result
+  searchSig?: string;          // signature: ocSource.url + ':' + ocSource.byteLen — re-extract only when changed
 }
 
 export interface DisclosedPosition {

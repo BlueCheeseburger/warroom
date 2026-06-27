@@ -298,6 +298,7 @@ export default function Sidebar() {
 // ── Collapsed navigation (icons only) ────────────────────────────────────────
 
 function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
+  const { setSearchOpen } = useApp();
   const isHome       = view.kind === 'home';
   const isCases      = view.kind === 'case' || view.kind === 'block';
   const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'speech-doc' || view.kind === 'google-scholar';
@@ -324,6 +325,12 @@ function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount,
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2 flex flex-col items-center gap-0.5">
+        <CIcon label="Search (⌘K)" active={false} onClick={() => setSearchOpen(true)}>
+          <IcoSearch />
+        </CIcon>
+
+        <div className="w-6 my-0.5" style={{ borderTop: '1px solid var(--border-subtle)' }} />
+
         <CIcon label="Home" active={isHome} onClick={() => setView({ kind: 'home' })}>
           <IcoHome />
         </CIcon>

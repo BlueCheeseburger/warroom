@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useApp } from '../store/appStore';
 
 // CSS injected into the Logos webview to force a clean light theme
 const LOGOS_LIGHT_CSS = `
@@ -27,6 +28,47 @@ const LOGOS_LIGHT_CSS = `
 export default function FindCards() {
   const webviewRef = useRef<HTMLElement>(null);
   const [loading, setLoading] = useState(true);
+  const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
+  const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
+  const pendingSearchRef = useRef(pendingSearchQuery);
+
+  useEffect(() => {
+    if (!pendingSearchQuery) return;
+    setPendingSearchQuery(''); // consume immediately
+    pendingSearchRef.current = pendingSearchQuery;
+    const wv = webviewRef.current as any;
+    if (!wv) return;
+    const inject = () => {
+      if (!pendingSearchRef.current) return;
+      const q = pendingSearchRef.current;
+      pendingSearchRef.current = '';
+      wv.executeJavaScript(`
+        (function() {
+          const fill = (el, v) => {
+            const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (s) s.call(el, v); else el.value = v;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          const input = document.querySelector('input[type="search"], input[placeholder*="earch" i], input[name="q"], input[name="search"], input[id*="search" i], input[type="text"]');
+          if (input) {
+            fill(input, ${JSON.stringify(q)});
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+            const form = input.closest('form');
+            if (form) { try { form.requestSubmit(); } catch { form.submit(); } }
+          }
+        })();
+      `).catch(() => {});
+    };
+    if (!loading) {
+      inject();
+    } else {
+      const wv2 = webviewRef.current as any;
+      if (!wv2) return;
+      const onLoad = () => { inject(); wv2.removeEventListener('did-finish-load', onLoad); };
+      wv2.addEventListener('did-finish-load', onLoad);
+    }
+  }, [pendingSearchQuery]);
 
   useEffect(() => {
     const wv = webviewRef.current as any;

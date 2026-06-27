@@ -28,6 +28,8 @@ export default function GoogleScholarView() {
   const webviewRef = useRef<HTMLElement>(null);
   const [loading, setLoading] = useState(true);
   const { theme } = useApp();
+  const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
+  const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
 
   // True if dark mode is currently active (handles system preference)
   const effectiveDark = useCallback((): boolean => {
@@ -56,6 +58,15 @@ export default function GoogleScholarView() {
   useEffect(() => {
     applyTheme(effectiveDark());
   }, [theme, applyTheme, effectiveDark]);
+
+  useEffect(() => {
+    if (!pendingSearchQuery) return;
+    setPendingSearchQuery('');
+    const wv = webviewRef.current as any;
+    if (!wv) return;
+    const url = `https://scholar.google.com/scholar?q=${encodeURIComponent(pendingSearchQuery)}`;
+    try { wv.loadURL(url); } catch { wv.src = url; }
+  }, [pendingSearchQuery]);
 
   // Also react to OS-level dark/light changes when theme is "system"
   useEffect(() => {

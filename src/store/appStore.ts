@@ -107,6 +107,11 @@ interface AppState {
   // Agent search registry — webview components register their search fns here
   agentSearchFns: { logos: AgentSearchFn | null; openev: AgentSearchFn | null };
   registerAgentSearch: (source: 'logos' | 'openev', fn: AgentSearchFn | null) => void;
+  // Global search palette
+  searchOpen: boolean;
+  setSearchOpen: (open: boolean) => void;
+  pendingSearchQuery: string;
+  setPendingSearchQuery: (q: string) => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -138,6 +143,10 @@ export const useApp = create<AppState>((set, get) => ({
   registerAgentSearch: (source, fn) => set((s) => ({
     agentSearchFns: { ...s.agentSearchFns, [source]: fn },
   })),
+  searchOpen: false,
+  setSearchOpen: (open) => set({ searchOpen: open }),
+  pendingSearchQuery: '',
+  setPendingSearchQuery: (q) => set({ pendingSearchQuery: q }),
   setMode: (m) => set({ mode: m }),
   setView: (v) => set((s) => {
     const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);

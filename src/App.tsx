@@ -44,13 +44,15 @@ import GoogleDrivePanel from './components/GoogleDrivePanel';
 import Documentation from './components/Documentation';
 import TopicsScreen from './components/TopicsScreen';
 import ImpactCalcView from './components/ImpactCalcView';
+import SearchPalette from './components/SearchPalette';
+import { buildCheapIndex, buildChatIndex, buildFlowCellIndex } from './lib/searchIndex';
 
 const CHAT_MIN_W = 260;
 const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding } = useApp();
+  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -69,6 +71,50 @@ export default function App() {
   const startW = useRef(0);
 
   useEffect(() => { init(); }, [init]);
+
+  // ── Cmd+K global search shortcut ───────────────────────────────────────────
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setSearchOpen]);
+
+  // ── Background keyword extraction on app ready ─────────────────────────────
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      const { db: currentDb, update: currentUpdate } = useApp.getState();
+      const { extractKeywords } = await import('./lib/searchIndex');
+      const cases = Object.values(currentDb.cases).filter(c => c.ocSource && (
+        !c.searchKeywords || c.searchSig !== (c.ocSource.url + ':' + (c.ocSource.byteLen ?? 0))
+      ));
+      for (const c of cases) {
+        try {
+          if (!c.ocSource?.url) continue;
+          const fetched = await window.warroom?.opencaselist?.fetchFileToTemp(c.ocSource.url);
+          if (!fetched?.ok || !fetched.tempPath) continue;
+          const bytes = await window.warroom?.fs.readDocxBytes(fetched.tempPath);
+          if (!bytes?.ok || !bytes.base64) continue;
+          const text = atob(bytes.base64);
+          const keywords = extractKeywords(text, 150);
+          const sig = c.ocSource.url + ':' + (c.ocSource.byteLen ?? 0);
+          const { update } = useApp.getState();
+          await update(db2 => ({
+            ...db2,
+            cases: {
+              ...db2.cases,
+              [c.id]: { ...db2.cases[c.id], searchKeywords: keywords, searchSig: sig },
+            },
+          }));
+        } catch { /* best-effort */ }
+      }
+    })();
+  }, [ready]);
 
   // ── NSDA Topic Monitor event handlers ──────────────────────────────────────
   useEffect(() => {
@@ -567,6 +613,7 @@ export default function App() {
         </div>
       )}
       {showOnboarding && <Onboarding onDone={() => setShowOnboarding(false)} />}
+      {searchOpen && <SearchPalette />}
       {/* Tabroom monitor toast */}
       {monitorToast && (
         <div

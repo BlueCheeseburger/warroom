@@ -85,6 +85,8 @@ export default function OpenEvView() {
   const [loading, setLoading] = useState(true);
   const redirectedRef = useRef(false);
   const { theme } = useApp();
+  const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
+  const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
 
   const effectiveDark = useCallback((): boolean => {
     if (theme === 'dark') return true;
@@ -157,6 +159,35 @@ export default function OpenEvView() {
       wv.removeEventListener('did-navigate-in-page', enterOpenEvIfLoggedIn);
     };
   }, [applyDark, effectiveDark, enterOpenEvIfLoggedIn]);
+
+  useEffect(() => {
+    if (!pendingSearchQuery) return;
+    setPendingSearchQuery('');
+    const wv = webviewRef.current as any;
+    if (!wv) return;
+    const q = pendingSearchQuery;
+    const inject = () => {
+      wv.executeJavaScript(`
+        (function() {
+          const fill = (el, v) => {
+            const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (s) s.call(el, v); else el.value = v;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          const input = document.querySelector('input[type="search"], input[placeholder*="earch" i], input[name="q"], input[type="text"]');
+          if (input) {
+            fill(input, ${JSON.stringify(q)});
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+            const form = input.closest('form');
+            if (form) { try { form.requestSubmit(); } catch { form.submit(); } }
+          }
+        })();
+      `).catch(() => {});
+    };
+    // OpenEvView tracks loading state differently — just inject with a small delay
+    setTimeout(inject, 300);
+  }, [pendingSearchQuery]);
 
   // Re-apply dark mode when user switches theme
   useEffect(() => { applyDark(effectiveDark()); }, [theme, applyDark, effectiveDark]);
