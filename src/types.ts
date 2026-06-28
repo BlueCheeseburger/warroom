@@ -343,6 +343,7 @@ declare global {
         readFileBytes: (filePath: string) => Promise<{ ok: boolean; base64?: string; error?: string }>;
         readDocxBytes: (filePath: string) => Promise<{ ok: boolean; base64?: string; error?: string }>;
         extractDocxText: (filePath: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
+        countDocxCards: (filePath: string) => Promise<{ ok: boolean; count?: number; error?: string }>;
         fileSize: (filePath: string) => Promise<{ ok: boolean; size?: number; error?: string }>;
         writeTempFile: (base64: string, filename: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
       };

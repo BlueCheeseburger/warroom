@@ -84,6 +84,7 @@ const api = {
   speechdoc: {
     extract: (filePath: string) => ipcRenderer.invoke('speechdoc:extract', filePath),
     clearCache: (filePath?: string) => ipcRenderer.invoke('speechdoc:clearCache', filePath),
+    headingStyles: (base64: string) => ipcRenderer.invoke('speechdoc:headingStyles', base64),
   },
   dictation: {
     transcribe: (audioBase64: string, mimeType: string) =>
@@ -93,6 +94,7 @@ const api = {
     readFileBytes: (filePath: string) => ipcRenderer.invoke('fs:readFileBytes', filePath),
     readDocxBytes: (filePath: string) => ipcRenderer.invoke('fs:readDocxBytes', filePath),
     extractDocxText: (filePath: string) => ipcRenderer.invoke('fs:extractDocxText', filePath),
+    countDocxCards: (filePath: string) => ipcRenderer.invoke('fs:countDocxCards', filePath),
     fileSize: (filePath: string) => ipcRenderer.invoke('fs:fileSize', filePath),
     writeTempFile: (base64: string, filename: string) => ipcRenderer.invoke('fs:writeTempFile', base64, filename),
   },

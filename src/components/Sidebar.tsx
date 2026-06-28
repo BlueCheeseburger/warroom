@@ -4,7 +4,7 @@ import gdriveLogo from '../assets/gdrive-logo.png';
 import { importFlowFromXlsx } from '../utils/flowImport';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
-interface RecentDoc { path: string; name: string }
+interface RecentDoc { path: string; name: string; cardCount?: number }
 function getSpeechDocs(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]'); } catch { return []; }
 }

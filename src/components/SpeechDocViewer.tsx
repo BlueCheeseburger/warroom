@@ -15,13 +15,18 @@ let outlineAutoShownThisSession = false;
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 
-interface RecentDoc { path: string; name: string }
+interface RecentDoc { path: string; name: string; cardCount?: number }
 
 function getRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]'); } catch { return []; }
 }
 function addRecent(path: string, name: string) {
   const next = [{ path, name }, ...getRecents().filter(r => r.path !== path)].slice(0, 8);
+  localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+  window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
+}
+function updateRecentCardCount(path: string, count: number) {
+  const next = getRecents().map(r => r.path === path ? { ...r, cardCount: count } : r);
   localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
 }
@@ -279,15 +284,12 @@ function IcoBack({ size = 15 }: { size?: number }) {
 
 type FocusType = 'highlight' | 'highlight+underline';
 
-function applyFocusMode(container: HTMLElement, mode: FocusType) {
+function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?: HeadingClasses) {
   const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
   // Compute the deepest heading level (= tag level in Verbatim) so we can
   // identify cite paragraphs (the one right after a tag heading). Cite paragraphs
   // must always show their leading-bold author+date span even in focus mode.
-  const hlvl = (el: HTMLElement) => {
-    const m = (el.className || '').match(/heading[\s_-]?([1-9])/i);
-    return m ? parseInt(m[1], 10) : 0;
-  };
+  const hlvl = (el: HTMLElement) => headingLevelOf(el, headingClasses);
   let maxLevel = 0;
   for (const p of paras) maxLevel = Math.max(maxLevel, hlvl(p));
   let prevWasTag = false;
@@ -353,17 +355,23 @@ function removeFocusMode(container: HTMLElement) {
 // each with a stable data-outline-id, and build a clickable outline from them.
 interface OutlineItem { id: string; level: number; text: string; warn?: 'over' | 'under' }
 
-function buildOutline(container: HTMLElement): OutlineItem[] {
+// Heading-style map: docx-preview class suffix (escaped, lowercased style id) →
+// 1-based heading level. Resolved in the main process from styles.xml so we can
+// detect headings whose style ids aren't literally Heading1–9 (Google Docs
+// exports, custom Verbatim templates, etc.). Consumed by headingLevelOf below.
+type HeadingClasses = Map<string, number>;
+
+function buildOutline(container: HTMLElement, headingClasses?: HeadingClasses): OutlineItem[] {
   const items: OutlineItem[] = [];
   let counter = 0;
   container.querySelectorAll<HTMLElement>('p').forEach((p) => {
-    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
-    if (!m) return;
+    const level = headingLevelOf(p, headingClasses);
+    if (!level) return;
     const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
     if (!text) return; // skip empty heading paragraphs
     const id = `wr-h-${counter++}`;
     p.dataset.outlineId = id;
-    items.push({ id, level: parseInt(m[1], 10), text });
+    items.push({ id, level, text });
   });
   return items;
 }
@@ -1039,9 +1047,25 @@ function fmtDuration(totalSec: number): string {
 // tags), the highlighted/underlined card text, and the bold author+date at the
 // start of each cite (the bracketed full cite is NOT read). We count exactly
 // those, so the reading estimate reflects spoken words — not every word in the file.
-function headingLevelOf(el: Element | null): number {
-  const m = el && ((el as HTMLElement).className || '').match(/heading[\s_-]?([1-9])/i);
-  return m ? parseInt(m[1], 10) : 0;
+// A paragraph's heading level (0 = not a heading). Checks the built-in
+// Heading1–9 class first (fast path for standard Verbatim/Word docs), then the
+// resolved style map for headings whose style ids aren't literally Heading1–9
+// (Google Docs exports, custom Verbatim templates, etc. — resolved from
+// styles.xml in the main process; see speechdoc:headingStyles).
+function headingLevelOf(el: Element | null, headingClasses?: HeadingClasses): number {
+  if (!el) return 0;
+  const cls = (el as HTMLElement).className || '';
+  const m = cls.match(/heading[\s_-]?([1-9])/i);
+  if (m) return parseInt(m[1], 10);
+  if (headingClasses && headingClasses.size) {
+    for (const c of Array.from((el as HTMLElement).classList)) {
+      if (c.startsWith('docx-render_')) {
+        const lvl = headingClasses.get(c.slice('docx-render_'.length));
+        if (lvl) return lvl;
+      }
+    }
+  }
+  return 0;
 }
 
 function isHighlightedEl(el: HTMLElement): boolean {
@@ -1061,16 +1085,17 @@ function isBoldEl(el: HTMLElement): boolean {
 // requested, a Range per counted run (used to visually highlight what's counted).
 function collectSpoken(
   host: Node,
-  opts?: { range?: Range | null; wantRanges?: boolean; maxLevel?: number },
+  opts?: { range?: Range | null; wantRanges?: boolean; maxLevel?: number; headingClasses?: HeadingClasses },
 ): { count: number; ranges: Range[] } {
   const root = host.nodeType === Node.ELEMENT_NODE ? (host as Element) : host.parentElement;
   if (!root) return { count: 0, ranges: [] };
   const range = opts?.range ?? null;
   const wantRanges = !!opts?.wantRanges;
+  const headingClasses = opts?.headingClasses;
 
   const paras = Array.from(root.querySelectorAll<HTMLElement>('p'));
   let maxLevel = opts?.maxLevel ?? 0;
-  if (!maxLevel) for (const p of paras) maxLevel = Math.max(maxLevel, headingLevelOf(p));
+  if (!maxLevel) for (const p of paras) maxLevel = Math.max(maxLevel, headingLevelOf(p, headingClasses));
 
   let count = 0;
   const ranges: Range[] = [];
@@ -1078,7 +1103,7 @@ function collectSpoken(
 
   for (const p of paras) {
     if (range && !range.intersectsNode(p)) continue;
-    const level = headingLevelOf(p);
+    const level = headingLevelOf(p, headingClasses);
     const isHeading = level > 0;
     const isCite = !isHeading && prevWasTag;
     let citeLeadingBold = isCite; // count leading bold runs (author+date) until first non-bold
@@ -1140,11 +1165,8 @@ function saveDismissed(path: string, set: Set<string>) {
 
 // For each card, compute highlighted_words / total_body_words and flag outliers.
 // Cards more than 1.5σ above/below the mean are marked 'over' / 'under'.
-function computeHighlightWarnings(container: HTMLElement, cards: CredCard[]): void {
-  const levelOf = (p: HTMLElement) => {
-    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
-    return m ? parseInt(m[1], 10) : 0;
-  };
+function computeHighlightWarnings(container: HTMLElement, cards: CredCard[], headingClasses?: HeadingClasses): void {
+  const levelOf = (p: HTMLElement) => headingLevelOf(p, headingClasses);
   const ratioByCard: (number | null)[] = [];
   const validRatios: number[] = [];
 
@@ -1258,12 +1280,9 @@ interface CardScore { score: number; verdict: string; author: number; recency: n
 // A "card" is a tag — the deepest heading level used in the doc (Heading4 in
 // Verbatim). The cite is the text of the paragraphs after the tag, up to the next
 // heading, capped so we send the author/quals/date without the whole card body.
-function buildCards(container: HTMLElement): CredCard[] {
+function buildCards(container: HTMLElement, headingClasses?: HeadingClasses): CredCard[] {
   const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
-  const levelOf = (p: HTMLElement) => {
-    const m = (p.className || '').match(/heading[\s_-]?([1-9])/i);
-    return m ? parseInt(m[1], 10) : 0;
-  };
+  const levelOf = (p: HTMLElement) => headingLevelOf(p, headingClasses);
   const maxLevel = paras.reduce((mx, p) => Math.max(mx, levelOf(p)), 0);
   if (maxLevel === 0) return [];
 
@@ -1897,11 +1916,11 @@ function flowColumnsOf(data: StoredFlowShape | null | undefined): string[] {
 
 // The cite shorthand (author last name + date) is the leading-bold run of the
 // paragraph right after a tag. Returns '' if the next block is another heading.
-function citeShorthandAfter(tagEl: HTMLElement): string {
+function citeShorthandAfter(tagEl: HTMLElement, headingClasses?: HeadingClasses): string {
   let sib = tagEl.nextElementSibling as HTMLElement | null;
   while (sib && !(sib.textContent || '').trim()) sib = sib.nextElementSibling as HTMLElement | null;
   if (!sib) return '';
-  if ((sib.className || '').match(/heading[\s_-]?[1-9]/i)) return '';
+  if (headingLevelOf(sib, headingClasses) > 0) return '';
   let out = '';
   const walker = document.createTreeWalker(sib, NodeFilter.SHOW_TEXT);
   let node: Node | null;
@@ -1917,12 +1936,13 @@ function citeShorthandAfter(tagEl: HTMLElement): string {
 
 type FlowSendMode = 'text' | 'shorthand';
 
-function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClose }: {
+function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClose, headingClasses }: {
   container: HTMLElement | null;
   flows: FlowMeta[];
   activeHeadingId: string | null;
   anchorTop: number;
   onClose: () => void;
+  headingClasses?: HeadingClasses;
 }) {
   const [mode, setMode] = useState<FlowSendMode>('text');
   const [flowId, setFlowId] = useState<string>(flows[0]?.id ?? '');
@@ -1944,14 +1964,14 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
     if (mode === 'shorthand') {
       if (!tagEl) { setContent({ text: '', source: 'Scroll to a card first' }); return; }
       const tag = (tagEl.textContent || '').replace(/\s+/g, ' ').trim();
-      const cite = citeShorthandAfter(tagEl);
+      const cite = citeShorthandAfter(tagEl, headingClasses);
       setContent({ text: cite ? `${tag} — ${cite}` : tag, source: 'Current card (tag + cite)' });
       return;
     }
     if (hasSel) { setContent({ text: sel!.toString().replace(/\s+/g, ' ').trim(), source: 'Selected text' }); return; }
     if (tagEl) { setContent({ text: (tagEl.textContent || '').replace(/\s+/g, ' ').trim(), source: 'Current heading' }); return; }
     setContent({ text: '', source: 'Select text or scroll to a card' });
-  }, [container, activeHeadingId, mode]);
+  }, [container, activeHeadingId, mode, headingClasses]);
 
   // Recompute on open, on mode change, and as the user changes their selection.
   useEffect(() => {
@@ -2122,6 +2142,12 @@ export default function SpeechDocViewer() {
   // Refs so the loadFile closure can read latest focus state without stale capture
   const focusActiveRef = useRef(false);
   const focusTypeRef   = useRef<FocusType>('highlight');
+  // Heading-style map for the current doc, resolved from styles.xml in the main
+  // process. Lets all the structural features (outline, cards, focus mode,
+  // reading time, send-to-flow) detect headings even when the doc's heading style
+  // ids aren't literally Heading1–9. Kept in a ref so selection/focus handlers
+  // outside the load closure can read the current doc's map without re-render.
+  const headingClassesRef = useRef<HeadingClasses | undefined>(undefined);
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(true);
@@ -2333,7 +2359,7 @@ export default function SpeechDocViewer() {
       const r = sel.getRangeAt(0);
       if (!cont.contains(r.commonAncestorContainer)) { setSelWords(0); return; }
       // Count only the spoken words within the selection (same rule as the doc total).
-      setSelWords(collectSpoken(r.commonAncestorContainer, { range: r }).count);
+      setSelWords(collectSpoken(r.commonAncestorContainer, { range: r, headingClasses: headingClassesRef.current }).count);
     };
     const onChange = () => { window.clearTimeout(t); t = window.setTimeout(update, 150); };
     update();
@@ -2520,7 +2546,7 @@ export default function SpeechDocViewer() {
   useEffect(() => {
     if (!containerRef.current) return;
     removeFocusMode(containerRef.current);
-    if (focusActive) applyFocusMode(containerRef.current, focusType);
+    if (focusActive) applyFocusMode(containerRef.current, focusType, headingClassesRef.current);
   }, [focusActive, focusType]);
 
   // Auto-load: a docPath (clicking a recent), an OC-imported case (carries a
@@ -2552,14 +2578,28 @@ export default function SpeechDocViewer() {
     setCredScores(null);
     setCredCards([]);
     setCredError('');
+    // Clear outline/cards/word-count up front so a slow or failing render never
+    // leaves the previous doc's headings on screen (the new doc's outline is
+    // rebuilt once render completes below).
+    setOutline([]);
+    setActiveHeadingId(null);
+    setDocWords(0);
+    headingClassesRef.current = undefined;
   }
 
   // Render already-decoded docx bytes: paint the container, then build the
   // outline, cards, highlight warnings, and reading-time word count. Shared by
-  // file loads and OC-case loads.
-  function applyRender(bytes: Uint8Array) {
+  // file loads and OC-case loads. `base64` (when provided) is sent to the main
+  // process to resolve the doc's heading styles from styles.xml.
+  function applyRender(bytes: Uint8Array, base64?: string) {
     setStep('viewing');
+    // Clear stale structure immediately (covers callers that skip resetDocState,
+    // e.g. checkOcChanges) so the outline never lingers from the previous doc.
+    setOutline([]);
+    setActiveHeadingId(null);
+    headingClassesRef.current = undefined;
     setTimeout(async () => {
+      try {
         if (!containerRef.current) return;
         containerRef.current.innerHTML = '';
         await renderAsync(bytes.buffer, containerRef.current, undefined, {
@@ -2607,15 +2647,31 @@ export default function SpeechDocViewer() {
         });
 
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
+
+        // Resolve which paragraph styles are headings from styles.xml (handles
+        // docs whose headings aren't literally Heading1–9). Falls back to the
+        // built-in heading classes if the lookup fails or returns nothing.
+        let headingClasses: HeadingClasses | undefined;
+        if (base64) {
+          try {
+            const res = await (window.warroom as any).speechdoc.headingStyles(base64);
+            if (res?.ok && res.data && typeof res.data === 'object') {
+              const entries = Object.entries(res.data as Record<string, number>);
+              if (entries.length) headingClasses = new Map(entries);
+            }
+          } catch { /* fall back to built-in heading detection */ }
+        }
+        headingClassesRef.current = headingClasses;
+
         // Apply focus mode if it was already active when this doc loaded
-        if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current);
+        if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current, headingClasses);
 
         // Build the heading outline and extract cards; compute highlight-outlier
         // warnings (over/under-highlighted cards) and cross-reference them back
         // into the outline items so the outline can show warning badges.
-        const built = buildOutline(containerRef.current);
-        const builtCards = buildCards(containerRef.current);
-        computeHighlightWarnings(containerRef.current, builtCards);
+        const built = buildOutline(containerRef.current, headingClasses);
+        const builtCards = buildCards(containerRef.current, headingClasses);
+        computeHighlightWarnings(containerRef.current, builtCards, headingClasses);
 
         // Annotate outline items: card tag elements carry both data-outline-id
         // and data-cred-id, so we can map warnings across.
@@ -2634,6 +2690,7 @@ export default function SpeechDocViewer() {
         setOutline(annotatedOutline);
         setActiveHeadingId(built[0]?.id ?? null);
         setCredCards(builtCards);
+        if (filePath) updateRecentCardCount(filePath, builtCards.length);
 
         // Auto-show the outline only on the FIRST document opened per app session.
         // After that, leave it in whatever state the user last set.
@@ -2645,9 +2702,14 @@ export default function SpeechDocViewer() {
         // Reading-time word count for the freshly loaded doc — only words that
         // are actually read aloud (headings, tags, highlighted/underlined text,
         // and the bold author+date of cites), not every word in the file.
-        const words = collectSpoken(containerRef.current).count;
+        const words = collectSpoken(containerRef.current, { headingClasses }).count;
         setDocWords(words);
         docWordsRef.current = words;
+      } catch (err) {
+        console.error('Failed to render speech doc:', err);
+        setError('Could not display this document.');
+        setStep('error');
+      }
     }, 0);
   }
 
@@ -2668,7 +2730,7 @@ export default function SpeechDocViewer() {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
       resetDocState();
-      applyRender(bytes);
+      applyRender(bytes, result.base64);
 
       // Auto-save to recents so it appears in the sidebar
       addRecent(path, name);
@@ -2712,7 +2774,7 @@ export default function SpeechDocViewer() {
 
       resetDocState();
       setOcCheckResult(null);
-      applyRender(bytes);
+      applyRender(bytes, base64);
     } catch (e: any) {
       setError(`Failed to open imported case: ${e?.message ?? 'unknown error'}`);
       setStep('error');
@@ -2748,7 +2810,7 @@ export default function SpeechDocViewer() {
         const binary = atob(readRes.base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        applyRender(bytes);
+        applyRender(bytes, readRes.base64);
       }
     } catch {
       setOcCheckResult(null);
@@ -2802,7 +2864,15 @@ export default function SpeechDocViewer() {
         <div
           className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
           onClick={pickFile}
-          onDrop={(e) => { e.preventDefault(); pickFile(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            const path = (file as any).path as string | undefined;
+            if (path && path.toLowerCase().endsWith('.docx')) {
+              loadFile(path);
+            }
+          }}
           onDragOver={(e) => e.preventDefault()}
         >
           <div className="text-sm font-medium text-ink/60 mb-2">Drop a speech doc here (.docx)</div>
@@ -3118,6 +3188,7 @@ export default function SpeechDocViewer() {
           activeHeadingId={activeHeadingId}
           anchorTop={findOpen ? 98 : 48}
           onClose={() => setFlowSendOpen(false)}
+          headingClasses={headingClassesRef.current}
         />
       )}
 

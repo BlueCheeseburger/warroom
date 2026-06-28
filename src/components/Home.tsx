@@ -438,15 +438,53 @@ function BigStat({ label, value, sub, accent }: { label: string; value: number; 
 
 // ─── Cases panel ─────────────────────────────────────────────────────────────
 
+const RECENTS_KEY = 'warroom-speech-doc-recents';
+interface RecentDoc { path: string; name: string; cardCount?: number }
+function getSpeechDocs(): RecentDoc[] {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]'); } catch { return []; }
+}
+
 function CasesPanel() {
   const { db, update, setView, mode } = useApp();
   const cases = Object.values(db.cases);
+  const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
   const [name, setName] = useState('');
   const [side, setSide] = useState<Side>('aff');
   const [creating, setCreating] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key === RECENTS_KEY) setSpeechDocs(getSpeechDocs());
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Eagerly count cards for speech docs that don't have a cached count yet.
+  // Runs in the background so the home screen isn't blocked.
+  useEffect(() => {
+    const uncounted = speechDocs.filter(d => d.cardCount == null);
+    if (uncounted.length === 0) return;
+    (async () => {
+      for (const d of uncounted) {
+        try {
+          const res = await window.warroom?.fs.countDocxCards(d.path);
+          if (res?.ok) {
+            const count = (res as any).count as number;
+            const next = getSpeechDocs().map(r =>
+              r.path === d.path ? { ...r, cardCount: count } : r
+            );
+            localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+            window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
+          }
+        } catch { /* best-effort */ }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speechDocs.map(d => d.path).join(',')]);
 
   async function create() {
     if (!name.trim()) return;
@@ -503,15 +541,17 @@ function CasesPanel() {
         </div>
       )}
 
-      {cases.length === 0 ? (
+      {cases.length === 0 && speechDocs.length === 0 ? (
         <div className="text-sm italic text-ink/35 py-2">No cases yet.</div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {cases.map((c) => {
-            const blocks = c.blocks.length;
             const cardCount = c.blocks.reduce((acc, bid) => {
               return acc + (db.blocks[bid]?.cards.length ?? 0);
             }, 0);
+            // Match "flow", "flay", or "lay" only when not surrounded by letters
+            const styleMatch = c.name.match(/(?<![a-zA-Z])(flow|flay|lay)(?![a-zA-Z])/i);
+            const styleTag = styleMatch ? styleMatch[1].toLowerCase() : null;
 
             if (renamingId === c.id) {
               return (
@@ -549,8 +589,59 @@ function CasesPanel() {
                   <span className="text-[10px] uppercase tracking-wider font-semibold text-ink/40">{c.side}</span>
                 </div>
                 <div className="text-sm font-medium truncate text-ink">{c.name}</div>
-                <div className="text-[11px] mt-1 text-ink/40">
-                  {blocks} block{blocks !== 1 ? 's' : ''} · {cardCount} card{cardCount !== 1 ? 's' : ''}
+                <div className="text-[11px] mt-1 text-ink/40 flex items-center gap-1.5">
+                  {styleTag && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold"
+                      style={{ background: 'var(--border-subtle)', color: 'var(--placeholder)' }}
+                    >
+                      {styleTag}
+                    </span>
+                  )}
+                  {cardCount} card{cardCount !== 1 ? 's' : ''}
+                </div>
+              </button>
+            );
+          })}
+          {speechDocs.map((d) => {
+            const displayName = d.name.replace(/\.docx$/i, '');
+            const styleMatch = displayName.match(/(?<![a-zA-Z])(flow|flay|lay)(?![a-zA-Z])/i);
+            const styleTag = styleMatch ? styleMatch[1].toLowerCase() : null;
+            const isAff = /\baff\b/i.test(displayName);
+            const isNeg = /\bneg\b/i.test(displayName);
+            return (
+              <button
+                key={d.path}
+                onClick={() => setView({ kind: 'speech-doc', docPath: d.path })}
+                className="text-left rounded-lg px-3 py-2.5 group"
+                style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
+                onMouseEnter={(e) => onCardEnter(e)}
+                onMouseLeave={(e) => onCardLeave(e)}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  {(isAff || isNeg) && (
+                    <>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isAff ? 'bg-blue-500' : 'bg-rose-500'}`} />
+                      <span className="text-[10px] uppercase tracking-wider font-semibold text-ink/40">{isAff ? 'aff' : 'neg'}</span>
+                    </>
+                  )}
+                  {!isAff && !isNeg && (
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-ink/40">doc</span>
+                  )}
+                </div>
+                <div className="text-sm font-medium truncate text-ink">{displayName}</div>
+                <div className="text-[11px] mt-1 text-ink/40 flex items-center gap-1.5">
+                  {styleTag && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold"
+                      style={{ background: 'var(--border-subtle)', color: 'var(--placeholder)' }}
+                    >
+                      {styleTag}
+                    </span>
+                  )}
+                  {d.cardCount != null
+                    ? `${d.cardCount} card${d.cardCount !== 1 ? 's' : ''}`
+                    : 'speech doc'}
                 </div>
               </button>
             );

@@ -1186,9 +1186,20 @@ ipcMain.handle('speechdoc:extract', async (_e, filePath: string) => {
     const xml: string = await zip.file('word/document.xml')?.async('string') ?? '';
     if (!xml) return sbErr('Could not read document XML');
 
+    // Resolve heading styles from styles.xml so docs that don't use literal
+    // Heading1–9 ids (Google Docs exports, custom templates) still parse. Falls
+    // back to the canonical Heading1–4 ids if styles.xml is missing/empty.
+    const stylesXml: string = await zip.file('word/styles.xml')?.async('string') ?? '';
+    const headingLevels = resolveHeadingStyles(stylesXml);
+    if (headingLevels.size === 0) {
+      headingLevels.set('Heading1', 1); headingLevels.set('Heading2', 2);
+      headingLevels.set('Heading3', 3); headingLevels.set('Heading4', 4);
+    }
+
     const strip = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     const getStyle = (p: string) =>
       (p.match(/w:pStyle\s+w:val="([^"]+)"/) ?? [])[1] ?? 'Normal';
+    const levelOfStyle = (style: string) => headingLevels.get(style) ?? 0;
 
     // Collect text from runs that have underline or cyan/yellow highlight
     const extractEmphasized = (p: string): string => {
@@ -1208,6 +1219,14 @@ ipcMain.handle('speechdoc:extract', async (_e, filePath: string) => {
     };
 
     const paras = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)];
+
+    // The deepest heading level present is the TAG level (Verbatim Heading4) — the
+    // paragraph after a tag is the cite. Compute it up front; don't assume level 4.
+    let maxLevel = 0;
+    for (const paraMatch of paras) {
+      maxLevel = Math.max(maxLevel, levelOfStyle(getStyle(paraMatch[0])));
+    }
+
     const fullLines: string[] = [];
     const tokenLines: string[] = [];
     let nextIsCite = false;
@@ -1218,16 +1237,17 @@ ipcMain.handle('speechdoc:extract', async (_e, filePath: string) => {
       const text = strip(p);
       if (!text) continue;
 
-      const isHeading = ['Heading1','Heading2','Heading3','Heading4'].includes(style);
+      const level = levelOfStyle(style);
+      const isHeading = level > 0;
 
       if (isHeading) {
         fullLines.push(text);
         tokenLines.push(text);
-        nextIsCite = style === 'Heading4';
-      } else if (style === 'NormalWeb' || style === 'Normal') {
+        nextIsCite = level === maxLevel;
+      } else {
         fullLines.push(text);
         if (nextIsCite) {
-          // First NormalWeb after a Heading4 is always the cite — always include
+          // First non-heading paragraph after a tag is always the cite — always include
           tokenLines.push(text);
           nextIsCite = false;
         } else {
@@ -1248,6 +1268,84 @@ ipcMain.handle('speechdoc:clearCache', (_e, filePath?: string) => {
   if (filePath) speechDocCache.delete(filePath);
   else speechDocCache.clear();
   return sbOk(null);
+});
+
+// Resolve which paragraph styles are HEADINGS from a docx's word/styles.xml, so
+// heading detection works even when a doc's heading styles aren't literally named
+// Heading1–9 (Google Docs exports, custom Verbatim templates, etc.). Computes each
+// PARAGRAPH style's effective Word outline level via, in priority order:
+//   1. its own <w:outlineLvl>
+//   2. its <w:name> matching "heading N"
+//   3. inheritance up its <w:basedOn> chain
+// Returns Map<rawStyleId, 1-based heading level> (outlineLvl 0 ⇒ level 1), matching
+// the Heading1 = level-1 convention the rest of the app uses.
+function resolveHeadingStyles(stylesXml: string): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!stylesXml) return out;
+
+  interface RawStyle { id: string; name: string; basedOn: string; outlineLvl: number | null; isParagraph: boolean }
+  const styles = new Map<string, RawStyle>();
+  for (const m of stylesXml.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    const attrs = m[1];
+    const body = m[2];
+    const id = (attrs.match(/w:styleId="([^"]+)"/) ?? [])[1];
+    if (!id) continue;
+    const type = (attrs.match(/w:type="([^"]+)"/) ?? [])[1] ?? 'paragraph';
+    const name = (body.match(/<w:name\s+w:val="([^"]+)"/) ?? [])[1] ?? '';
+    const basedOn = (body.match(/<w:basedOn\s+w:val="([^"]+)"/) ?? [])[1] ?? '';
+    const lvlStr = (body.match(/<w:outlineLvl\s+w:val="([0-9]+)"/) ?? [])[1];
+    styles.set(id, {
+      id, name, basedOn,
+      outlineLvl: lvlStr !== undefined ? parseInt(lvlStr, 10) : null,
+      isParagraph: type === 'paragraph',
+    });
+  }
+
+  // Resolve a style's effective outline level (0-based), memoized, cycle-safe.
+  const cache = new Map<string, number | null>();
+  const levelOf = (id: string, seen = new Set<string>()): number | null => {
+    if (cache.has(id)) return cache.get(id)!;
+    if (seen.has(id)) return null;
+    seen.add(id);
+    const st = styles.get(id);
+    if (!st) return null;
+    let lvl: number | null = st.outlineLvl;
+    if (lvl === null) {
+      const nameMatch = st.name.match(/^heading\s*([1-9])/i);
+      if (nameMatch) lvl = parseInt(nameMatch[1], 10) - 1;
+    }
+    if (lvl === null && st.basedOn) lvl = levelOf(st.basedOn, seen);
+    cache.set(id, lvl);
+    return lvl;
+  };
+
+  for (const st of styles.values()) {
+    if (!st.isParagraph) continue;
+    const lvl = levelOf(st.id);
+    if (lvl !== null && lvl >= 0 && lvl <= 8) out.set(st.id, lvl + 1);
+  }
+  return out;
+}
+
+// Mirror docx-preview's escapeClassName so resolved keys line up with the classes
+// it stamps on each rendered <p> (`docx-render_<escaped-style-id>`).
+const escapeStyleClassName = (s: string) =>
+  s.replace(/[ .]+/g, '-').replace(/[&]+/g, 'and').toLowerCase();
+
+// Renderer-facing: resolve heading styles for a docx (passed as base64 bytes) and
+// return a map of docx-preview class suffix → 1-based heading level. The viewer
+// feeds this into its outline / card / focus / reading-time detection.
+ipcMain.handle('speechdoc:headingStyles', async (_e, base64: string) => {
+  try {
+    if (typeof base64 !== 'string' || !base64) return sbErr('No document bytes');
+    const JSZip = require('jszip');
+    const zip = await JSZip.loadAsync(Buffer.from(base64, 'base64'));
+    const xml: string = await zip.file('word/styles.xml')?.async('string') ?? '';
+    const resolved = resolveHeadingStyles(xml);
+    const map: Record<string, number> = {};
+    for (const [id, lvl] of resolved) map[escapeStyleClassName(id)] = lvl;
+    return sbOk(map);
+  } catch (e: any) { return sbErr(e.message); }
 });
 
 ipcMain.handle('dictation:transcribe', async (_e, audioBase64: string, mimeType: string) => {

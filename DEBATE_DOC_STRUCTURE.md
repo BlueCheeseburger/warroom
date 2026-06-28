@@ -15,6 +15,32 @@ renders every paragraph as a `<p>` and tags it with a class derived from its sty
 id (e.g. `docx-render_heading1`). In OOXML, read `w:pStyle w:val="Heading1..4"` on
 each `<w:p>`.
 
+**Non-standard heading style ids.** Not every doc uses the literal ids
+`Heading1–9` — Google Docs exports, custom Verbatim templates, and hand-built
+round reports often name their heading styles differently (so docx-preview emits a
+class like `docx-render_mytagstyle`, not `docx-render_heading4`, and the literal
+class regex misses them). docx-preview *parses* a style's `w:outlineLvl` but never
+emits it to the DOM, so DOM-only detection can't see these headings.
+
+To handle this, `resolveHeadingStyles(stylesXml)` in `electron/main.ts` reads
+`word/styles.xml` and computes each **paragraph** style's effective Word outline
+level, in priority order: (1) its own `<w:outlineLvl>`, (2) its `<w:name>` matching
+`heading N`, (3) inheritance up its `<w:basedOn>` chain. It returns
+`Map<styleId, 1-based level>` (outlineLvl 0 ⇒ level 1).
+
+- The **viewer** calls the `speechdoc:headingStyles` IPC (bytes → map keyed by
+  docx-preview's escaped class suffix). `headingLevelOf()` in `SpeechDocViewer.tsx`
+  checks the built-in `Heading1–9` class first (fast path), then this resolved map.
+  All structural features thread it through: outline, card credibility, focus mode,
+  reading-time (`collectSpoken`), and Send-to-Flow.
+- The **`speechdoc:extract`** handler (AI attach / token saving / aff-neg) uses the
+  same resolver instead of a hardcoded `Heading1–4` list, and treats the deepest
+  level present as the tag. Both fall back to `Heading1–4` if `styles.xml` is
+  missing/empty.
+
+(`fs:countDocxCards`, the Home tile badge, is a separate mammoth-based path and
+relies on mammoth's own heading mapping.)
+
 Canonical Verbatim mapping:
 
 | Word style | Verbatim term | What it is |
