@@ -765,37 +765,41 @@ export default function Documentation() {
         <section id="doc-impact-calc">
           <H2>Impact Calc</H2>
           <P>
-            Impact Calc is a pre-round prep tool that compares two speech docs (<Code>.docx</Code>{' '}
-            files) and produces an AI-powered policy debate impact calculus analysis — surfacing every
-            clash, determining a winner on each standard (magnitude, probability, timeframe,
-            reversibility), and delivering an overall verdict.
+            Impact Calc is a full-screen hub for everything impact-weighing. Open it from the{' '}
+            <strong>Impact Calc</strong> card on the home screen. It has two areas: <strong>Practice</strong>{' '}
+            (the Outweigh game) and <strong>Tools</strong> (the doc-comparison analyzer, plus Impact Library
+            and Head-to-head Matchups, which are coming soon).
           </P>
-          <H3>Opening Impact Calc</H3>
+
+          <H3>The Outweigh game</H3>
           <P>
-            Click the scale icon <strong>⚖️</strong> in the title bar to open the Impact Calc panel.
-            It slides in from the right alongside — but separate from — the Warroom AI panel and team
-            chat.
+            A practice drill where you spar with Warroom AI over impact calculus. Pick a difficulty —{' '}
+            <strong>Novice</strong> (concrete, intuitive impacts, no theory), <strong>JV</strong> (classic
+            policy impacts — engage scope, probability chains, reversibility), or <strong>Varsity</strong>{' '}
+            (extinction matchups and framework wars). The round runs in three beats:
           </P>
-          <H3>Running an analysis</H3>
           <UL>
-            <LI>Click <strong>Your Doc</strong> to pick your speech doc (<Code>.docx</Code>).</LI>
-            <LI>Click <strong>Their Doc</strong> to pick your opponent's speech doc.</LI>
-            <LI>Click <strong>Analyze</strong>. Warroom AI extracts every impact claim from both
-              docs, finds the direct clashes, and weighs them across all four impact calculus
-              dimensions.</LI>
+            <LI><strong>Your impact</strong> — Warroom AI presents its impact (a claim, a warrant, and
+              ratings on the four dimensions). You write your own impact and a short calc explaining why
+              yours outweighs.</LI>
+            <LI><strong>AI rebuttal</strong> — Warroom AI fires back a tight 1–2 minute rebuttal speech,
+              defending its impact and attacking yours on a specific dimension. You get a final shot — the
+              last word — with a 60-second pressure timer (it never auto-submits).</LI>
+            <LI><strong>Decision</strong> — a judge calls the round: who won, a 1–10 score on your calc
+              work, a written verdict, dimension-by-dimension feedback, and concrete tips for next time.</LI>
           </UL>
-          <H3>Reading the results</H3>
-          <UL>
-            <LI><strong>Clashes</strong> — each row matches one of your impacts against the opponent
-              impact it directly competes with.</LI>
-            <LI><strong>Dimension winners</strong> — for each clash, a winner is called on
-              magnitude, probability, timeframe, and reversibility separately.</LI>
-            <LI><strong>Overall verdict</strong> — a summary declaring which side wins the impact
-              calc exchange and why, suitable for use in a final rebuttal.</LI>
-          </UL>
+
+          <H3>Compare two docs (Tools)</H3>
           <P>
-            The analysis is powered by <Code>gemini:compareImpacts</Code> in the main process,
-            which uses the balanced model tier (your selected model, never Flash Lite).
+            The original analyzer compares two of your own cases, speech docs, or a flow and produces an
+            AI impact-calculus breakdown — every clash, a winner on each standard (magnitude, probability,
+            timeframe, reversibility), and an overall verdict suitable for a final rebuttal. Saved
+            comparisons are listed underneath for one-click reopening.
+          </P>
+          <P>
+            The game is powered by <Code>ai:outweighScenario</Code>, <Code>ai:outweighRebuttal</Code>, and{' '}
+            <Code>ai:outweighJudge</Code>; the comparison tool by <Code>ai:compareImpactsText</Code>. All
+            run on the best model tier (your selected model, never Flash Lite).
           </P>
         </section>
 

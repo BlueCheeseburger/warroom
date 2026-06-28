@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
 import { Case, Round, Side, Tournament } from '../types';
 import { GeminiIcon } from './GeminiPanel';
-import ImpactCalcPanel from './ImpactCalcPanel';
 
 type TournStatus = 'live' | 'upcoming' | 'past';
 
@@ -1111,9 +1110,19 @@ function QuickActions() {
 // ─── Impact Calc card ────────────────────────────────────────────────────────
 
 export function ImpactCalcCard() {
+  const { setView } = useApp();
+  const diffs: { key: 'novice' | 'jv' | 'varsity'; label: string; color: string }[] = [
+    { key: 'novice',  label: 'Novice',  color: '#16a34a' },
+    { key: 'jv',      label: 'JV',      color: '#2563eb' },
+    { key: 'varsity', label: 'Varsity', color: '#dc2626' },
+  ];
   return (
     <div className="glass-card rounded-xl overflow-hidden">
-      <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+      <button
+        onClick={() => setView({ kind: 'impact-hub' })}
+        className="w-full text-left px-4 pt-4 pb-2 flex items-center gap-2"
+        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+      >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="12" y1="3" x2="12" y2="21"/>
           <path d="M5 21h14"/>
@@ -1122,8 +1131,37 @@ export function ImpactCalcCard() {
           <path d="M19 7l-3 6h6l-3-6z"/>
         </svg>
         <span className="label">Impact Calc</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', opacity: 0.4 }}><polyline points="9 18 15 12 9 6" /></svg>
+      </button>
+      <div className="px-4 pb-4">
+        <p className="text-[11px] text-ink/45 leading-relaxed mb-3">
+          Practice impact calc live against Warroom AI, or compare impacts across your docs.
+        </p>
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-ink/35 mb-2">⚔️ Outweigh game</div>
+        <div className="grid grid-cols-3 gap-2 mb-2.5">
+          {diffs.map((d) => (
+            <button
+              key={d.key}
+              onClick={() => setView({ kind: 'outweigh-game', difficulty: d.key })}
+              className="rounded-lg py-2 text-[11px] font-semibold"
+              style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderLeft: `2.5px solid ${d.color}`, color: d.color, ...CARD_BASE }}
+              onMouseEnter={(e) => onCardEnter(e)}
+              onMouseLeave={(e) => onCardLeave(e)}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setView({ kind: 'impact-hub' })}
+          className="w-full rounded-lg py-2 text-[11px] font-medium text-ink/70"
+          style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
+          onMouseEnter={(e) => onCardEnter(e)}
+          onMouseLeave={(e) => onCardLeave(e)}
+        >
+          Compare docs & more →
+        </button>
       </div>
-      <ImpactCalcPanel />
     </div>
   );
 }

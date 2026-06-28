@@ -265,22 +265,32 @@ The panel's **Generate / Regenerate** action and the **Harder** button live in t
 
 ## Impact Calc
 
-Impact Calc is a pre-round prep tool that compares two speech docs (`.docx` files) and produces an AI-powered policy debate impact calculus analysis — surfacing every clash, determining a winner on each standard (magnitude, probability, timeframe, reversibility), and delivering an overall verdict.
+Impact Calc is a full-screen hub for everything impact-weighing. Open it from the **Impact Calc** card on the home screen. It has two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer, plus Impact Library and Head-to-head Matchups, which are coming soon).
 
-### Opening Impact Calc
-Click the scale icon **⚖️** in the title bar to open the Impact Calc panel. It slides in from the right alongside — but separate from — the Warroom AI panel and team chat.
+### The Outweigh game
+A practice drill where you spar with Warroom AI over impact calculus. Pick a difficulty:
+- **Novice** — concrete, intuitive impacts (recession, an outbreak, a regional conflict); no theory.
+- **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability chains, timeframe, reversibility.
+- **Varsity** — extinction/existential matchups and framework wars; you must win the metric before the calc resolves.
 
-### Running an analysis
-1. Click **Your Doc** to pick your speech doc (`.docx`).
-2. Click **Their Doc** to pick your opponent's speech doc.
-3. Click **Analyze**. Warroom AI extracts every impact claim from both docs, finds the direct clashes, and weighs them across all four impact calculus dimensions.
+The round runs in three beats:
+1. **Your impact** — Warroom AI presents its impact (claim, warrant, and ratings on the four dimensions). You write your own impact and a short calc explaining why yours outweighs.
+2. **AI rebuttal** — Warroom AI delivers a tight 1–2 minute rebuttal speech, defending its impact and attacking yours on a specific dimension. You get a final shot (the last word) with a 60-second pressure timer that never auto-submits.
+3. **Decision** — a judge calls the round: who won, a 1–10 score on your calc work, a written verdict, dimension-by-dimension feedback, and concrete tips.
 
-### Reading the results
+The game is powered by `ai:outweighScenario`, `ai:outweighRebuttal`, and `ai:outweighJudge` in the main process.
+
+### Compare two docs (Tools)
+The original analyzer compares two of your own cases, speech docs, or a flow:
+1. Pick **Your doc** and **Their doc** (a case, an imported speech doc, or a flow — only one flow per comparison).
+2. Click **Analyze Impact Calc**. Warroom AI extracts every impact claim from both, finds the direct clashes, and weighs them across all four dimensions.
+
+Reading the results:
 - **Clashes** — each row matches one of your impacts against the opponent impact it directly competes with.
-- **Dimension winners** — for each clash, a winner is called on magnitude, probability, timeframe, and reversibility separately.
-- **Overall verdict** — a summary declaring which side wins the impact calc exchange and why, suitable for use in a final rebuttal.
+- **Dimension winners** — for each clash, a winner is called on magnitude, probability, timeframe, and reversibility.
+- **Overall verdict** — a summary declaring which side wins the exchange and why, suitable for a final rebuttal.
 
-The analysis is powered by `gemini:compareImpacts` in the main process, which uses the balanced model tier (your selected model, never Flash Lite).
+Saved comparisons are listed for one-click reopening. The comparison tool is powered by `ai:compareImpactsText`. Everything in Impact Calc runs on the best model tier (your selected model, never Flash Lite).
 
 ---
 

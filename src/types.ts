@@ -320,6 +320,13 @@ declare global {
           scores?: { score: number; verdict: string; author: number; recency: number; source: number; claim: number; reason: string; press: string }[];
           error?: string;
         }>;
+        compareImpactsText: (textA: string, textB: string, labelA: string, labelB: string) =>
+          Promise<{ ok: true; result: ImpactCalcResult } | { ok: false; error: string }>;
+        outweighScenario: (difficulty: string) => Promise<{ ok: true; scenario: OutweighScenario } | { ok: false; error: string }>;
+        outweighRebuttal: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string }) =>
+          Promise<{ ok: true; speech: string } | { ok: false; error: string }>;
+        outweighJudge: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
+          Promise<{ ok: true; result: OutweighJudgment } | { ok: false; error: string }>;
       };
       clipboard: {
         readImage: () => Promise<{ ok: boolean; base64?: string; mimeType?: string; error?: string }>;
@@ -581,6 +588,31 @@ export interface ImpactCalcResult {
   clashes: ImpactClash[];
   verdict: 'A' | 'B' | 'even';
   verdictReason: string;
+}
+
+// ─── Outweigh game (impact-calc practice) ─────────────────────────────────────
+
+export type OutweighDifficulty = 'novice' | 'jv' | 'varsity';
+
+export interface OutweighScenario {
+  context: string;
+  side: string;
+  aiImpact: {
+    claim: string;
+    warrant: string;
+    magnitude: string;
+    probability: string;
+    timeframe: string;
+    reversibility: string;
+  };
+}
+
+export interface OutweighJudgment {
+  winner: 'user' | 'ai' | 'tie';
+  score: number;
+  verdict: string;
+  feedback: { dimension: string; note: string }[];
+  tips: string[];
 }
 
 // ─── Flow-sheet import (AI fallback) ──────────────────────────────────────────

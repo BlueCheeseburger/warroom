@@ -2463,6 +2463,134 @@ Return ONLY valid JSON — no markdown fences, no extra text, no commentary — 
   }
 });
 
+// ─── Outweigh game — impact-calc practice ──────────────────────────────────────
+// A 3-difficulty practice game: the AI presents an impact, the user writes their
+// own impact + calc, the AI fires back a short rebuttal speech, the user gets a
+// final shot, and the AI judges the exchange with dimension-by-dimension feedback.
+
+const OUTWEIGH_DIFFICULTY: Record<string, string> = {
+  novice: `NOVICE level. Use simple, concrete impacts a new debater understands (economic recession, a disease outbreak, a regional conflict, poverty). NO extinction or existential framing. Keep the calculus to plain magnitude / probability / timeframe — no framework wars, no high theory. Pick an impact that is beatable with clear, intuitive reasoning so a beginner can win if they think carefully.`,
+  jv: `JV (junior varsity) level. Use classic policy impacts (nuclear war, bioweapons/pandemics, hegemony collapse, economic depression, climate tipping points). The user should have to engage scope, probability chains, timeframe, and reversibility. Reward an answer that undermines a dimension (e.g. "their scenario needs five unlikely steps") rather than just asserting a bigger impact.`,
+  varsity: `VARSITY level. Use extinction / existential-risk matchups and framework-level clashes (util vs. structural violence, deterrence vs. rights-based framing, short-timeframe systemic harm vs. speculative catastrophe). Demand that the user win the FRAMEWORK / metric before the calc resolves. Be ruthless and round-realistic — this is the kind of impact debate that happens at a national circuit bid tournament.`,
+};
+
+ipcMain.handle('ai:outweighScenario', async (_e, difficulty: string) => {
+  try {
+    const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
+    const prompt = `You are running an impact-calculus practice drill for a competitive policy debater. Generate ONE impact scenario for them to debate against.
+
+DIFFICULTY: ${tierLine}
+
+Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card" logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "context": "<1-2 sentence setup: the topic area and who is arguing what. Address the user as 'You'.>",
+  "side": "<a short label for the side YOU (the AI) are defending, e.g. 'Neg — Deterrence DA'>",
+  "aiImpact": {
+    "claim": "<your impact in one sentence>",
+    "warrant": "<1-2 sentence justification a debater would read aloud>",
+    "magnitude": "<extinction|existential|major|moderate|minor>",
+    "probability": "<high|medium|low>",
+    "timeframe": "<immediate|short|medium|long>",
+    "reversibility": "<irreversible|difficult|reversible>"
+  }
+}`;
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let scenario: any;
+    try { scenario = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
+    return { ok: true, scenario };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to generate scenario');
+    return { ok: false, error: msg };
+  }
+});
+
+ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
+  difficulty: string;
+  scenario: any;
+  userImpact: string;
+  userCalc: string;
+}) => {
+  try {
+    const { difficulty, scenario, userImpact, userCalc } = params;
+    const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
+    const prompt = `You are an expert policy debater delivering a short impact-calculus rebuttal in a practice round. Stay in character — speak as a debater would in a rebuttal, not as a coach.
+
+DIFFICULTY (match your sophistication to this level): ${tierLine}
+
+YOUR IMPACT (defend it):
+${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}
+Your side: ${scenario?.side ?? ''}
+Context: ${scenario?.context ?? ''}
+
+THE USER'S IMPACT: ${userImpact}
+THE USER'S CALCULUS:
+${userCalc}
+
+Write a tight 1-2 minute impact-calc rebuttal (roughly 150-260 words). Do impact comparison the way it actually happens in rounds: extend and defend your impact, then attack theirs on at least one specific dimension (magnitude, probability, timeframe, reversibility, or breadth). Use real moves — "their scenario requires X then Y then Z", "timeframe outweighs — we solve before theirs triggers", "even if they win their link, magnitude controls", etc. Be persuasive but fair; do NOT invent fake evidence or misrepresent what they wrote.
+
+You MAY use light markdown emphasis (**bold** for the key outweighing claim) but keep it speech-like. Return ONLY the speech text — no headers, no JSON, no stage directions.`;
+    const raw = await callAI(prompt, 'best');
+    const speech = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    return { ok: true, speech };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to generate rebuttal');
+    return { ok: false, error: msg };
+  }
+});
+
+ipcMain.handle('ai:outweighJudge', async (_e, params: {
+  difficulty: string;
+  scenario: any;
+  userImpact: string;
+  userCalc: string;
+  rebuttal: string;
+  userFinal: string;
+}) => {
+  try {
+    const { scenario, userImpact, userCalc, rebuttal, userFinal } = params;
+    const prompt = `You are an experienced, fair policy debate judge writing a decision after an impact-calculus exchange. Decide who won the impact debate and give specific, actionable feedback.
+
+THE AI'S IMPACT + SIDE:
+${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}
+Side: ${scenario?.side ?? ''}
+Context: ${scenario?.context ?? ''}
+
+THE USER'S IMPACT: ${userImpact}
+THE USER'S OPENING CALCULUS:
+${userCalc}
+
+THE AI'S REBUTTAL:
+${rebuttal}
+
+THE USER'S FINAL SHOT (their last word):
+${userFinal || '(the user did not write a final shot)'}
+
+Judge it the way a real judge resolves impact calc: which impacts actually survived, which dimension was decisive, and whether the user gave you a reason to prefer their impact. Reward warranted comparison over assertion. Be honest — if the user lost, say so and explain why, but stay constructive and encouraging.
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "winner": "<user|ai|tie>",
+  "score": <integer 1-10 rating the quality of the USER's impact calc work>,
+  "verdict": "<2-3 sentence decision explaining who won the impact debate and on what dimension. You may use **bold**.>",
+  "feedback": [
+    { "dimension": "<magnitude|probability|timeframe|reversibility|breadth|framing>", "note": "<what the user did well or missed on this dimension>" }
+  ],
+  "tips": ["<1 concrete thing to do better next time>", "<another>"]
+}`;
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let result: any;
+    try { result = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
+    return { ok: true, result };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to judge round');
+    return { ok: false, error: msg };
+  }
+});
+
 // ─── Flow-sheet import AI fallback ─────────────────────────────────────────────
 // When the deterministic importer can't recognize a spreadsheet's layout, the
 // renderer sends the raw cell grid here and the AI maps it onto the app's fixed

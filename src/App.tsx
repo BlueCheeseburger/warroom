@@ -44,6 +44,8 @@ import GoogleDrivePanel from './components/GoogleDrivePanel';
 import Documentation from './components/Documentation';
 import TopicsScreen from './components/TopicsScreen';
 import ImpactCalcView from './components/ImpactCalcView';
+import ImpactHub from './components/ImpactHub';
+import OutweighGame from './components/OutweighGame';
 import SearchPalette from './components/SearchPalette';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 
@@ -675,6 +677,8 @@ function Router() {
       case 'docs':          regular = <Documentation />; break;
       case 'topics':        regular = <TopicsScreen />; break;
       case 'impact-calc':   regular = <ImpactCalcView />; break;
+      case 'impact-hub':    regular = <ImpactHub />; break;
+      case 'outweigh-game': regular = <OutweighGame key={(view as any).difficulty} />; break;
       default:              regular = <Home />;
     }
   }

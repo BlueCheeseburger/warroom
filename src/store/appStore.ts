@@ -49,7 +49,9 @@ export type View =
   | { kind: 'gdrive' }
   | { kind: 'docs' }
   | { kind: 'topics'; tab?: 'policy' | 'pf' | 'ld' }
-  | { kind: 'impact-calc'; result: any; labelA: string; labelB: string };
+  | { kind: 'impact-calc'; result: any; labelA: string; labelB: string }
+  | { kind: 'impact-hub' }
+  | { kind: 'outweigh-game'; difficulty: 'novice' | 'jv' | 'varsity' };
 
 export type AgentSearchFn = (query: string) => Promise<string>;
 

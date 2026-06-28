@@ -212,21 +212,33 @@ When you click **+ Save to Cases** on an opponent's disclosed file, it's added t
 ---
 
 ## Impact Calc
-⚖️ scale icon in the title bar.
+Full-screen hub — open it from the **Impact Calc** card on the home screen.
 
-Pre-round prep tool: compare two speech docs side-by-side and get a full AI impact calculus breakdown — clashes, winners per dimension, overall verdict.
+Two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer; Impact Library and Head-to-head Matchups are coming soon).
 
-**How to open**: click the ⚖️ (scale) icon in the title bar.
+### The Outweigh game (Practice)
+A live impact-calculus drill against Warroom AI. Pick a difficulty and spar:
 
-**How to use**:
-1. Click **Your Doc** → pick your speech doc (.docx)
-2. Click **Their Doc** → pick your opponent's speech doc (.docx)
-3. Click **Analyze** — Warroom AI extracts every impact claim from both docs and runs the comparison
+- **Novice** — concrete, intuitive impacts; no theory.
+- **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability, timeframe, reversibility.
+- **Varsity** — extinction matchups and framework wars; win the metric before the calc resolves.
 
-**What you see in the results**:
+**How it plays**:
+1. **Your impact** — Warroom AI reads its impact (claim + warrant + dimension ratings). You type your own impact and a short calc on why yours outweighs.
+2. **AI rebuttal** — Warroom AI fires back a 1–2 minute rebuttal speech. You get the last word (final shot) with a 60-second pressure timer — it never auto-submits, so take the time you need.
+3. **Decision** — the AI judge tells you who won, scores your calc 1–10, and gives a verdict plus dimension-by-dimension feedback and tips. Hit **Play again** for a fresh scenario.
+
+### Compare two docs (Tools)
+Compare two of your own cases, speech docs, or a flow and get a full impact breakdown:
+1. Pick **Your doc** and **Their doc** (a case, an imported speech doc, or a flow — only one flow per comparison)
+2. Click **Analyze Impact Calc**
+
+**What you see**:
 - **Clashes** — each row pairs one of your impacts against the opponent impact it directly competes with
-- **Dimension winners** — for each clash, a winner is called on: **Magnitude** (how big is the harm?), **Probability** (how likely to occur?), **Timeframe** (how soon?), and **Reversibility** (can it be undone?)
-- **Overall verdict** — a summary of who wins the impact calc exchange and why, ready to use in your final rebuttal
+- **Dimension winners** — a winner per clash on **Magnitude** (how big?), **Probability** (how likely?), **Timeframe** (how soon?), **Reversibility** (can it be undone?)
+- **Overall verdict** — who wins the exchange and why, ready for your final rebuttal
+
+Saved comparisons appear underneath for one-click reopening.
 
 ---
 
