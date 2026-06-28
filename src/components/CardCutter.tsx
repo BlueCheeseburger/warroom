@@ -44,7 +44,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
 
   // intent + color (step 3)
   const [intent, setIntent] = useState('');
-  const [color, setColor] = useState<HighlightColor>('yellow');
+  const [color, setColor] = useState<HighlightColor>('cyan');
 
   // editor (step 4)
   const [editText, setEditText] = useState('');

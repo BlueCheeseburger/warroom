@@ -4,17 +4,19 @@
 
 import { CardRun, HighlightColor } from '../types';
 
-// Background colors for the read-aloud highlight colors Warroom's parser recognizes.
+// Full-saturation highlight colors — same palette Verbatim/Word uses. Dark mode
+// readability is handled post-render by applyDarkModeViewerFixes (same as the
+// docx viewer), so we use solid colors here rather than low-opacity washes.
 export const HIGHLIGHT_CSS: Record<HighlightColor, string> = {
-  yellow: 'rgba(250, 204, 21, 0.55)',
-  cyan:   'rgba(34, 211, 238, 0.50)',
-  green:  'rgba(74, 222, 128, 0.55)',
+  yellow: '#ffff00',
+  cyan:   '#00ffff',
+  green:  '#00ff00',
 };
 
 export const HIGHLIGHT_SWATCH: Record<HighlightColor, string> = {
-  yellow: '#facc15',
-  cyan:   '#22d3ee',
-  green:  '#4ade80',
+  yellow: '#ffff00',
+  cyan:   '#00ffff',
+  green:  '#00ff00',
 };
 
 // Per-character emphasis attributes — the editable source of truth.
