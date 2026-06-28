@@ -92,9 +92,13 @@ On the Mission Brief (round view), Warroom can suggest which blocks to read agai
 
 ---
 
-## Card Library
+## Cards (Card Library)
 
-The Library view aggregates all cards across every case and block. Cards can be searched, filtered by block/case, and flagged. Flagged cards are highlighted for quick reference. Cards can be exported or shared as attachments in team chat.
+The Cards view (sidebar label "Cards", view kind `library`) aggregates all cards across every case and block. Cards can be searched, flagged, and clicked to open their block. Flagged cards are highlighted for quick reference. Cards can be exported or shared as attachments in team chat.
+
+### Cut from PDF
+
+The Cards view header has a **＋ Cut from PDF** button. It opens a file picker for a `.pdf` (e.g. a web article saved via Print → Save as PDF). The renderer calls `window.warroom.ai.cutCardsFromPdf(filePath)`, which routes to the `ai:cutCardsFromPdf` IPC handler in `electron/main.ts`. That handler extracts the PDF text with `extractText` (pdf-parse), loads the `card_cutting` skill via `readSkill`, and sends both to `callAI(prompt, 'best')` with instructions to return a JSON array of `{ tag, cite, body, year }`. The handler caps source text at 100k chars, salvages the JSON array if the model wraps it in prose, strips stray `####` from tags, and coerces the year to a 4-digit integer. The UI shows the cut cards in a review modal where each card's tag/cite/year is editable and individually selectable; saving writes them to a dedicated `__cut__` case ("Cut Cards") / `__cut_inbox__` block so they appear in the normal card library. This differs from `ai:extractCards`, which pulls already-formatted cards out of a Verbatim doc rather than cutting new ones from raw prose.
 
 ---
 

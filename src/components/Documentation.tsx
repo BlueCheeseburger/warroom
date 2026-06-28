@@ -341,9 +341,18 @@ export default function Documentation() {
         <section id="doc-library">
           <H2>Card library</H2>
           <P>
-            The Library view aggregates all cards across every case and block. Cards can be searched,
-            filtered by block/case, and flagged. Flagged cards are highlighted for quick reference.
+            The <strong>Cards</strong> view (sidebar label "Cards") aggregates all cards across every case and block.
+            Cards can be searched, flagged, and clicked to open their block. Flagged cards are highlighted for quick reference.
             Cards can be exported or shared as attachments in team chat.
+          </P>
+          <P>
+            <strong>＋ Cut from PDF.</strong> The Cards header has a button to import a PDF — for example a web article
+            saved via your browser's <em>Print → Save as PDF</em>. Warroom AI reads the PDF and cuts debate cards from it
+            using the card-cutting format: it writes a declarative tag, formats the cite (author, date, title, URL), and
+            trims each body to the verbatim sentences that prove the tag. You review the cut cards in a modal — edit the
+            tag, cite, or year inline and uncheck any you don't want — then save. Saved cards land in a <Code>Cut Cards</Code>{' '}
+            case and appear in the Cards view immediately. The PDF must contain selectable text (scanned image-only PDFs
+            can't be cut), and this requires a working AI key.
           </P>
         </section>
 

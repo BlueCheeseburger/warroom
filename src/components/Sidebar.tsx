@@ -343,7 +343,7 @@ function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount,
 
         {mode === 'prep' && (
           <>
-            <CIcon label="Library" active={isLibrary} onClick={() => setView({ kind: 'library' })}>
+            <CIcon label="Cards" active={isLibrary} onClick={() => setView({ kind: 'library' })}>
               <IcoLibrary />
             </CIcon>
             <CIcon label="Scouting" active={isOpponents} onClick={() => setView({ kind: 'opponents' })}>
@@ -596,8 +596,8 @@ function ExpandedNav({
               ))}
             </Section>
 
-            {/* Library */}
-            <Section title="Library" icon={<IcoLibrary />}>
+            {/* Cards */}
+            <Section title="Cards" icon={<IcoLibrary />}>
               <NavItem active={view.kind === 'library'} onClick={() => setView({ kind: 'library' })}>All cards</NavItem>
               <NavItem active={view.kind === 'logos'} onClick={() => setView({ kind: 'logos' })}>Logos</NavItem>
               <NavItem active={view.kind === 'open-ev'} onClick={() => setView({ kind: 'open-ev' })}>Open Ev</NavItem>
@@ -664,10 +664,8 @@ function ExpandedNav({
             </NavItem>
           </Section>
         )}
-      </nav>
 
-      {/* Bottom bar: Topics + Settings */}
-      <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
+        {/* NSDA Topics — at the bottom of the nav */}
         <Section title="Topics" icon={<IcoTopics />}>
           <NavItem active={view.kind === 'topics' && !(view as any).tab} onClick={() => setView({ kind: 'topics' })}>
             All events
@@ -676,15 +674,19 @@ function ExpandedNav({
             {eventTopicLabel}
           </NavItem>
         </Section>
-        {mode === 'prep' && (
+      </nav>
+
+      {/* Bottom bar: Settings */}
+      {mode === 'prep' && (
+        <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
           <NavRowPrimary
             active={view.kind === 'settings'}
             onClick={() => setView({ kind: 'settings' })}
             icon={<IcoSettings />}
             label="Settings"
           />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

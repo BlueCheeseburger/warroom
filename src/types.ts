@@ -245,6 +245,7 @@ declare global {
       };
       ai: {
         extractCards: (filePath: string) => Promise<ExtractedCard[]>;
+        cutCardsFromPdf: (filePath: string) => Promise<ExtractedCard[]>;
         suggestBlocks: (
           opponentPositions: string,
           blockList: { id: string; title: string }[]

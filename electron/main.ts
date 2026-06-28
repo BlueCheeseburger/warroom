@@ -1455,6 +1455,79 @@ ${text.slice(0, 60000)}`;
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
 
+// Cut NEW debate cards from a raw source (e.g. a website saved as PDF) using the
+// card_cutting skill as the system prompt. Unlike ai:extractCards (which pulls
+// already-formatted cards out of a Verbatim doc), this CUTS cards from raw prose:
+// it writes the tag, formats the cite, and trims the body to what proves the tag.
+ipcMain.handle('ai:cutCardsFromPdf', async (_e, filePath: string) => {
+  checkPath(filePath);
+  const text = (await extractText(filePath)).trim();
+  if (!text) throw new Error('Could not extract any text from this PDF. If it is a scanned image, it has no selectable text to cut.');
+  if (text.length < 80) throw new Error('This PDF has too little text to cut cards from.');
+
+  const skill = (await readSkill('card_cutting')) ?? '';
+  const today = new Date();
+  const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Cap the source text so we stay within the model context window. ~100k chars
+  // (~25k tokens) leaves plenty of room for the skill + instructions + output.
+  const source = text.slice(0, 100000);
+  const truncatedNote = text.length > 100000 ? '\n\n[Source truncated to first 100,000 characters.]' : '';
+
+  const prompt = `You are Warroom AI, an expert policy debate evidence cutter. Follow the card-cutting skill below EXACTLY.
+
+${skill}
+
+---
+
+TODAY'S DATE: ${todayStr}. Use this when deciding short-cite format (current-year sources use month-day, e.g. "Brady 3-15").
+
+TASK: The text below was extracted from a PDF of a web article/source. Read it and CUT every debate card worth cutting from it. Find the passages that most directly prove a debate argument. Write a strong declarative tag for each, format the cite per the skill's exact rules, and trim the body to only the verbatim sentences that prove the tag.
+
+Return ONLY a valid JSON array. No markdown, no code fences, no preamble, no trailing commentary. Each element MUST have exactly these fields:
+- "tag": the declarative claim the card proves (plain text, NO "####", under ~25 words)
+- "cite": the full citation string per the skill's cite format (short cite + credentials + full names + full date + "title" + [URL])
+- "body": the relevant excerpt VERBATIM from the source — clean plain text only, NO underscores, NO asterisks, NO markdown. Trim aggressively to what proves the tag.
+- "year": the 4-digit integer publication year (e.g. 2025). If unknown, use ${today.getFullYear()}.
+
+Rules:
+- Quote the body verbatim from the source — never paraphrase, summarize, or invent text.
+- If credentials or author names are not in the source, write "quals unknown" in the cite rather than fabricating them.
+- Cut multiple cards if the source supports multiple distinct arguments. Aim for the strongest 1–8 cards.
+- If the source contains no usable evidence, return an empty array [].
+
+SOURCE TEXT:
+${source}${truncatedNote}`;
+
+  const raw = await callAI(prompt, 'best');
+  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/m, '').trim();
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // Salvage: grab the outermost JSON array if the model wrapped it in prose.
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    if (start !== -1 && end > start) {
+      try { parsed = JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+    }
+  }
+  if (!Array.isArray(parsed)) throw new Error('Warroom AI did not return cards in the expected format. Try again.');
+
+  const cards = parsed
+    .filter((c: any) => c && typeof c.body === 'string' && c.body.trim())
+    .map((c: any) => {
+      const year = Number(String(c.year).match(/\d{4}/)?.[0]) || today.getFullYear();
+      return {
+        tag: String(c.tag ?? 'Untitled card').replace(/^#+\s*/, '').trim() || 'Untitled card',
+        cite: String(c.cite ?? '').trim(),
+        body: String(c.body).trim(),
+        year,
+      };
+    });
+  return cards;
+});
+
 ipcMain.handle('ai:teamSummary', async (_e, {
   teamName,
   rawRounds,

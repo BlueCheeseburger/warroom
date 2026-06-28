@@ -20,8 +20,19 @@ Cases are top-level positions (Aff or Neg). Each holds blocks (e.g. "T – Topic
 
 ---
 
-## Card Library
-All cards across every case and block in one view. Search by tag, citation, or body text. Filter by case or block using dropdowns. Flag/unflag cards with the flag icon.
+## Cards
+(Called "Cards" in the sidebar — the Library/All cards view.) All cards across every case and block in one view. Search by tag, citation, or body text. Flag/unflag cards with the flag icon. Click any card to jump to the block it lives in.
+
+### Cut cards from a PDF with Warroom AI
+At the top-right of the **Cards** view there's a **＋ Cut from PDF** button.
+
+1. Save a web article as a PDF first — in your browser, choose **Print → Save as PDF**.
+2. In Cards, click **＋ Cut from PDF** and pick the saved PDF.
+3. Warroom AI reads the PDF and cuts debate cards from it using the card-cutting format — it writes a declarative **tag**, formats the **cite** (author, date, title, URL), and trims the **body** to the verbatim sentences that prove the tag.
+4. Review the cut cards: edit the tag, cite, or year inline, expand the body to read it, and uncheck any you don't want.
+5. Click **Save … cards to library**. Saved cards land in a case called **"Cut Cards"** and immediately appear in the Cards view.
+
+Notes: the PDF must contain selectable text — scanned/image-only PDFs have nothing to cut. Long sources can take up to a minute. This needs a working AI key (Settings → API Keys).
 
 ---
 
