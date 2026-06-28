@@ -4786,7 +4786,12 @@ Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in
 - **list_flows** — list the user's flow sheets. Call before reading/editing a flow.
 - **read_flow** — read a flow's sheets, columns, and filled cells. ALWAYS call before edit_flow_cell so you target the right cell.
 - **edit_flow_cell** — set one cell in a flow sheet (by flow name, column header, and 1-based row). Use to fill in arguments/responses on the user's flow. The edit shows live if the flow is open.
-- **search_warroom** — search across the user's saved Warroom data: cases (including keyword-indexed content), opponents (disclosure titles/aff/neg names), judges (paradigms), tournaments, speech docs, and current topics. Use whenever the user asks to "search for X in my files/cases/data", "do I have anything on X", "find X in my speech docs", "what cases mention X", or any similar lookup across their prep materials. Returns ranked results by type. Do NOT use this for finding debate evidence cards — use search_logos for that.
+- **search_warroom** — the app's GLOBAL SEARCH (the Cmd+K command palette). Searches the user's OWN saved Warroom data: cases (including keyword-indexed content), opponents (disclosure titles/aff/neg names), judges (paradigms), tournaments, speech docs, and current topics. Use whenever the user says "global search", "search tool", "the search bar/palette", "search for X in my files/cases/data/docs", "do I have anything on X", "find X in my speech docs", or "what cases mention X". Returns ranked results by type. This searches THEIR data, not the internet.
+
+## Which search tool to use — DO NOT confuse these
+- **search_warroom** = the user's OWN saved stuff (their cases, docs, opponents, judges, topics). This IS the "global search" / "search tool" / "search palette" the user refers to.
+- **search_logos** / **search_openevidence** = the INTERNET evidence databases for finding NEW debate cards to cut.
+If the user says "global search", "the search tool", or "search my <anything>", that is ALWAYS search_warroom — never Logos or Open Ev. Only use Logos/Open Ev when the user wants to FIND or CUT new evidence cards from outside their app.
 
 ## Editing flows
 Vocabulary: a "flow" is what the user calls a "sheet" or "flow sheet". Its sections are called "sheets" or "tabs" (e.g. "Off 1", "On Case"). Columns are debate speeches (e.g. "1AC", "2NR"). The user may say "edit my sheet", "add to my tabs", or "edit across tabs" — this always means edit_flow_cell, never write_skill.

@@ -2482,6 +2482,11 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       // result (and discarding the work silently).
       if (!producedText && !finalText) {
         finalText = "I ran out of steps before I could finish this. The work above is what I gathered — try narrowing the request or asking me to continue.";
+      } else if (producedText && !finalText) {
+        // The model returned a text turn but the text was empty (e.g. it burned its
+        // output budget on internal reasoning, or returned nothing). Don't fake a
+        // confident "Done." — tell the user what actually happened.
+        finalText = "The model returned an empty response — it didn't write an answer back. This can happen when it uses up its output budget mid-thought. Please try again or rephrase.";
       }
 
       // Determine title before touching history state so it travels with the correct snapshot.
