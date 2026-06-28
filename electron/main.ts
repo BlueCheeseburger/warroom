@@ -2638,6 +2638,38 @@ ipcMain.handle('fs:extractDocxText', async (_e, filePath: string) => {
   }
 });
 
+// Count debate cards in a docx by converting to HTML and counting the deepest heading level
+// that has citation text after it — matches the same logic as buildCards() in SpeechDocViewer.
+ipcMain.handle('fs:countDocxCards', async (_e, filePath: string) => {
+  try {
+    if (typeof filePath !== 'string' || !filePath.toLowerCase().endsWith('.docx')) {
+      return { ok: false, error: 'Only .docx files are allowed' };
+    }
+    checkPath(filePath);
+    const mammoth = require('mammoth');
+    const result = await mammoth.convertToHtml({ path: filePath });
+    const html: string = result.value;
+    // Find the deepest heading level present
+    let maxLevel = 0;
+    for (let lvl = 6; lvl >= 1; lvl--) {
+      if (html.includes(`<h${lvl}`)) { maxLevel = lvl; break; }
+    }
+    if (maxLevel === 0) return { ok: true, count: 0 };
+    // Count headings at that level that are followed by non-heading content
+    const re = new RegExp(`<h${maxLevel}[^>]*>[\\s\\S]*?</h${maxLevel}>([\\s\\S]*?)(?=<h[1-6]|$)`, 'gi');
+    let count = 0;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      // Only count if there's actual text content after the heading (the cite)
+      const after = m[1].replace(/<[^>]+>/g, '').trim();
+      if (after.length > 0) count++;
+    }
+    return { ok: true, count };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // Cheap file size lookup — used as a change signature for the search keyword cache.
 ipcMain.handle('fs:fileSize', async (_e, filePath: string) => {
   try {
@@ -4656,6 +4688,7 @@ Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in
 - **list_flows** — list the user's flow sheets. Call before reading/editing a flow.
 - **read_flow** — read a flow's sheets, columns, and filled cells. ALWAYS call before edit_flow_cell so you target the right cell.
 - **edit_flow_cell** — set one cell in a flow sheet (by flow name, column header, and 1-based row). Use to fill in arguments/responses on the user's flow. The edit shows live if the flow is open.
+- **search_warroom** — search across the user's saved Warroom data: cases (including keyword-indexed content), opponents (disclosure titles/aff/neg names), judges (paradigms), tournaments, speech docs, and current topics. Use whenever the user asks to "search for X in my files/cases/data", "do I have anything on X", "find X in my speech docs", "what cases mention X", or any similar lookup across their prep materials. Returns ranked results by type. Do NOT use this for finding debate evidence cards — use search_logos for that.
 
 ## Editing flows
 Vocabulary: a "flow" is what the user calls a "sheet" or "flow sheet". Its sections are called "sheets" or "tabs" (e.g. "Off 1", "On Case"). Columns are debate speeches (e.g. "1AC", "2NR"). The user may say "edit my sheet", "add to my tabs", or "edit across tabs" — this always means edit_flow_cell, never write_skill.
@@ -4931,6 +4964,17 @@ const AGENT_TOOLS = [{
           doc_b: { type: 'STRING', description: "Name of the second document — a case name or speech doc filename" },
         },
         required: ['doc_a', 'doc_b'],
+      },
+    },
+    {
+      name: 'search_warroom',
+      description: "Search across all of the user's saved Warroom data: cases (with keyword-indexed content), opponents (disclosure titles, aff/neg position names), judges (paradigm text), tournaments, speech docs, and current topics. Use when the user asks to search their files/cases/prep materials, wants to know if they have anything on a topic, or asks to find something in their saved data. Do NOT use for finding external evidence cards — use search_logos for that.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          query: { type: 'STRING', description: 'Search term — can be a topic keyword, team name, case name, judge name, argument, or any word from debate content' },
+        },
+        required: ['query'],
       },
     },
   ],

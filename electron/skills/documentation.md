@@ -327,6 +327,7 @@ Warroom AI can call the following tools during a conversation:
 - `search_openevidence` — searches the Open Evidence Project via a second hidden webview in `AgentSearchViews`
 - `save_card_to_library` — saves a card with full verbatim body text to the `__agent_inbox__` block inside the `__agent__` case ("Agent Saves")
 - `fetch_article` — fetches and extracts text content from a URL (for cutting cards from web sources)
+- `search_warroom` — searches the user's saved Warroom data: cases (with extracted content keywords), opponents (disclosure titles, aff/neg names), judges (paradigm), tournaments, speech docs, and current topics. Use when the user asks to find something in their prep files. Returns ranked results grouped by type.
 - `search_tabroom_tournament` — searches Tabroom for tournaments by name
 - `get_tournament_details` — fetches full info for a Tabroom tournament by numeric ID
 - `save_tournament_to_app` — saves a Tabroom tournament to the user's tournament list

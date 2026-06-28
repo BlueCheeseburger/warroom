@@ -531,7 +531,8 @@ type ToolName =
   | 'read_speech_doc'
   | 'control_timer'
   | 'get_case_synopses'
-  | 'compare_impacts';
+  | 'compare_impacts'
+  | 'search_warroom';
 
 interface ToolStep {
   id: string;
@@ -2359,6 +2360,104 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               steps = steps.map((s) => s.id === stepId ? { ...s, label: `Flow edit failed — ${e.message.slice(0, 60)}`, status: 'error' } : s);
               syncSteps(steps);
               return { name, functionResult: `Could not edit flow cell: ${e.message}` };
+            }
+
+          } else if (name === 'search_warroom') {
+            const stepId = crypto.randomUUID();
+            const q = String(args.query ?? '').trim().toLowerCase();
+            steps = [...steps, { id: stepId, tool: 'search_warroom', label: `Searching Warroom for "${args.query}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              const words = q.split(/\s+/).filter((w) => w.length >= 2);
+              function scoreText(text: string): number {
+                if (!text) return 0;
+                const t = text.toLowerCase();
+                if (t.includes(q)) return 100;
+                return words.reduce((s, w) => s + (t.includes(w) ? 10 : 0), 0);
+              }
+
+              const results: { type: string; score: number; line: string }[] = [];
+
+              // Cases (uses pre-extracted searchKeywords)
+              for (const c of Object.values(db.cases) as any[]) {
+                const haystack = [c.name, c.ocSource?.teamName, c.ocSource?.label, ...(c.searchKeywords ?? [])].join(' ');
+                const s = scoreText(haystack);
+                if (s > 0) {
+                  const kwMatches = (c.searchKeywords ?? []).filter((k: string) =>
+                    words.some((w) => k.toLowerCase().includes(w)) || k.toLowerCase().includes(q)
+                  ).slice(0, 5).join(', ');
+                  results.push({ type: 'case', score: s, line: `📁 **Case** — ${c.name} (${(c.side ?? '').toUpperCase()})${c.ocSource ? ` · ${c.ocSource.teamName}` : ''}${kwMatches ? `\n   Keywords: ${kwMatches}` : ''}` });
+                }
+              }
+
+              // Opponents
+              for (const o of Object.values(db.opponents) as any[]) {
+                const disc = o.disclosures ?? {};
+                const discParts = [
+                  disc.aff?.name,
+                  ...(disc.neg ?? []).map((p: any) => p.name),
+                  ...(disc.rawCites ?? []).map((c: any) => c.title),
+                  ...(disc.rawRounds ?? []).map((r: any) => (r.tournament ?? '').replace(/^\d+---/, '')),
+                ].filter(Boolean).join(' ');
+                const s = scoreText([o.teamName, o.school, o.notes, discParts].join(' '));
+                if (s > 0) results.push({ type: 'opponent', score: s, line: `👥 **Opponent** — ${o.teamName}${o.school ? ` (${o.school})` : ''}${discParts ? `\n   Disclosures: ${discParts.slice(0, 180)}` : ''}` });
+              }
+
+              // Judges
+              for (const j of Object.values(db.judges) as any[]) {
+                const s = scoreText([j.name, j.institution, j.paradigm].join(' '));
+                if (s > 0) results.push({ type: 'judge', score: s, line: `⚖️ **Judge** — ${j.name}${j.institution ? ` (${j.institution})` : ''}${j.paradigm ? `\n   Paradigm: ${j.paradigm.slice(0, 200)}` : ''}` });
+              }
+
+              // Tournaments
+              for (const t of Object.values(db.tournaments) as any[]) {
+                const s = scoreText([t.name, t.location, t.event_type].join(' '));
+                if (s > 0) results.push({ type: 'tournament', score: s, line: `🏆 **Tournament** — ${t.name}${t.location ? ` · ${t.location}` : ''}` });
+              }
+
+              // Speech docs (using localStorage keyword cache)
+              try {
+                const recents: { path: string; name: string }[] = JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]');
+                const kwCache: Record<string, { keywords: string[] }> = JSON.parse(localStorage.getItem('warroom-speechdoc-keywords') ?? '{}');
+                for (const d of recents) {
+                  const name = d.name.replace(/\.docx$/i, '');
+                  const keywords = (kwCache[d.path]?.keywords ?? []).join(' ');
+                  const s = scoreText(name + ' ' + keywords);
+                  if (s > 0) {
+                    const kwMatches = (kwCache[d.path]?.keywords ?? []).filter((k: string) =>
+                      words.some((w) => k.toLowerCase().includes(w)) || k.toLowerCase().includes(q)
+                    ).slice(0, 5).join(', ');
+                    results.push({ type: 'speechdoc', score: s, line: `📄 **Speech Doc** — ${name}${kwMatches ? `\n   Keywords: ${kwMatches}` : ''}` });
+                  }
+                }
+              } catch {}
+
+              // Topics
+              try {
+                const stored = await (window.warroom as any)?.topics?.getStored?.();
+                if (stored) {
+                  const eventMap: Record<string, string> = { policy: 'Policy', pf: 'Public Forum', ld: 'Lincoln-Douglas' };
+                  for (const [key, label] of Object.entries(eventMap)) {
+                    const res: string | undefined = stored[key]?.current;
+                    if (!res || res.includes('not found')) continue;
+                    const s = scoreText(res + ' ' + label);
+                    if (s > 0) results.push({ type: 'topic', score: s, line: `📌 **Topic (${label})** — ${res}` });
+                  }
+                }
+              } catch {}
+
+              results.sort((a, b) => b.score - a.score);
+              const top = results.slice(0, 20);
+
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Found ${top.length} result${top.length !== 1 ? 's' : ''} for "${args.query}"`, status: 'done' } : s);
+              syncSteps(steps);
+
+              if (top.length === 0) return { name, functionResult: `No results found for "${args.query}" across cases, opponents, judges, tournaments, speech docs, or topics.` };
+              return { name, functionResult: `**Search results for "${args.query}"** (${top.length} of ${results.length} matches)\n\n${top.map((r) => r.line).join('\n\n')}` };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Search failed: ${e.message}` };
             }
 
           } else {
