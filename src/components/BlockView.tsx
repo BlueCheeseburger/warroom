@@ -4,6 +4,7 @@ import { Card } from '../types';
 import ImportCards from './ImportCards';
 import { EditIcon, TrashIcon } from './Spinner';
 import { linkifyText } from '../lib/linkify';
+import { FormattedBody, CardImages } from './CardBody';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const OUTDATED_THRESHOLD = 4;
@@ -164,6 +165,7 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
   }
 
   const bodyPreview = card.body.length > 280 ? card.body.slice(0, 280) + '…' : card.body;
+  const hasRuns = Array.isArray(card.bodyRuns) && card.bodyRuns.length > 0;
 
   return (
     <div className="glass-card rounded-sm p-3 group">
@@ -178,10 +180,13 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
             )}
           </div>
           <div className="text-xs text-ink/50 font-medium mb-2">{card.cite}</div>
-          <div className="text-xs text-ink/70 leading-relaxed whitespace-pre-wrap">
-            {linkifyText(expanded ? card.body : bodyPreview, card.id)}
+          <div className="text-xs text-ink/70">
+            {expanded
+              ? (hasRuns ? <FormattedBody runs={card.bodyRuns!} /> : <div className="leading-relaxed whitespace-pre-wrap">{linkifyText(card.body, card.id)}</div>)
+              : <div className="leading-relaxed whitespace-pre-wrap">{linkifyText(bodyPreview, card.id)}</div>}
           </div>
-          {card.body.length > 280 && (
+          {expanded && card.images && card.images.length > 0 && <CardImages images={card.images} />}
+          {(card.body.length > 280 || hasRuns || (card.images && card.images.length > 0)) && (
             <button
               onClick={() => setExpanded(!expanded)}
               className="text-[11px] text-ink/40 hover:text-ink mt-1"

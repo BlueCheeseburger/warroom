@@ -23,16 +23,23 @@ Cases are top-level positions (Aff or Neg). Each holds blocks (e.g. "T – Topic
 ## Cards
 (Called "Cards" in the sidebar — the Library/All cards view.) All cards across every case and block in one view. Search by tag, citation, or body text. Flag/unflag cards with the flag icon. Click any card to jump to the block it lives in.
 
-### Cut cards from a PDF with Warroom AI
-At the top-right of the **Cards** view there's a **＋ Cut from PDF** button.
+### Cut a card with Warroom AI (guided)
+There's a **＋** button next to **Cards** in the sidebar (just like the one next to Cases). It opens a guided card cutter where Warroom AI does the repetitive highlighting/underlining and you steer what the card is about.
 
-1. Save a web article as a PDF first — in your browser, choose **Print → Save as PDF**.
-2. In Cards, click **＋ Cut from PDF** and pick the saved PDF.
-3. Warroom AI reads the PDF and cuts debate cards from it using the card-cutting format — it writes a declarative **tag**, formats the **cite** (author, date, title, URL), and trims the **body** to the verbatim sentences that prove the tag.
-4. Review the cut cards: edit the tag, cite, or year inline, expand the body to read it, and uncheck any you don't want.
-5. Click **Save … cards to library**. Saved cards land in a case called **"Cut Cards"** and immediately appear in the Cards view.
+**First, save the article:**
+- **Press ⌘S / Ctrl+S and save it as a Webpage (HTML)** — recommended, because the **images come with it**.
+- Or **Print → Save as PDF** for **text only** (no images).
 
-Notes: the PDF must contain selectable text — scanned/image-only PDFs have nothing to cut. Long sources can take up to a minute. This needs a working AI key (Settings → API Keys).
+**Then cut:**
+1. Click **＋** next to Cards and pick the saved `.html` page (or `.pdf`).
+2. **Warroom AI reads the source** — it pulls the cite (author, quals, date, title, URL), strips the page down to the real article body, and gathers the article's images (using alt text, ignoring ads/logos).
+3. **Choose the body.** Highlight the passages you want in the card and release — selections stack. Hover any selection and click **✕** to remove it. Open the **Pictures** dropdown to add any images (the ones Warroom AI thinks belong to the article are marked "suggested").
+4. **Tell Warroom AI the plan.** Type what you're using the card for and pick a **highlight color (yellow / cyan / neon green)**, then click **Cut card**.
+5. **Warroom AI cuts it** — it decides what to **underline** (read aloud), **highlight** (most important), and shrink to **small text** (kept for context, not read), and proposes **one or two taglines**.
+6. **Review & fix.** Pick a tagline or write your own, edit the cite/year, and use the mini editor to fix the emphasis: select text and hit **Underline / Highlight / Small / Clear**. You can't change the words (the body stays verbatim) — only the formatting.
+7. Click **Save card**. It lands in the **"Cut Cards"** case and shows up in the Cards view with its formatting intact.
+
+Notes: HTML keeps images, PDF is text-only. Scanned/image-only PDFs have no selectable text to cut. Neon green highlight counts as "read aloud" everywhere in Warroom, alongside yellow and cyan. This needs a working AI key (Settings → API Keys).
 
 ---
 

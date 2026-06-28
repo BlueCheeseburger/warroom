@@ -346,13 +346,18 @@ export default function Documentation() {
             Cards can be exported or shared as attachments in team chat.
           </P>
           <P>
-            <strong>＋ Cut from PDF.</strong> The Cards header has a button to import a PDF — for example a web article
-            saved via your browser's <em>Print → Save as PDF</em>. Warroom AI reads the PDF and cuts debate cards from it
-            using the card-cutting format: it writes a declarative tag, formats the cite (author, date, title, URL), and
-            trims each body to the verbatim sentences that prove the tag. You review the cut cards in a modal — edit the
-            tag, cite, or year inline and uncheck any you don't want — then save. Saved cards land in a <Code>Cut Cards</Code>{' '}
-            case and appear in the Cards view immediately. The PDF must contain selectable text (scanned image-only PDFs
-            can't be cut), and this requires a working AI key.
+            <strong>＋ Cut a card with Warroom AI.</strong> The <Code>＋</Code> next to “Cards” in the sidebar opens a guided
+            cutter where Warroom AI does the repetitive highlighting and underlining while you steer the card. First save the
+            article: press <em>⌘S / Ctrl+S → save as a Webpage (HTML)</em> to include images, or <em>Print → Save as PDF</em>{' '}
+            for text only. Then Warroom AI reads the source — pulling the cite, the real article body, and the images
+            (alt-text aware, ads/logos filtered). You <strong>highlight the passages you want</strong> (selections stack;
+            hover and ✕ to remove one), optionally add pictures from the dropdown, type what you're using the card for, and
+            pick a highlight color (<strong>yellow / cyan / neon green</strong>). Warroom AI then decides what to underline
+            (read aloud), highlight (most important), and shrink to small text (context), and proposes one or two taglines.
+            A mini editor lets you fix the emphasis — select text and hit Underline / Highlight / Small / Clear — without
+            changing the words (the body stays verbatim). Saved cards land in the <Code>Cut Cards</Code> case and render with
+            their formatting everywhere a card appears. Neon green highlight counts as “read aloud” across Warroom, alongside
+            yellow and cyan.
           </P>
         </section>
 

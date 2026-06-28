@@ -438,7 +438,7 @@ function ExpandedNav({
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
-  const { setSearchOpen, event } = useApp();
+  const { setSearchOpen, event, openCardCutter } = useApp();
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
 
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
@@ -597,7 +597,8 @@ function ExpandedNav({
             </Section>
 
             {/* Cards */}
-            <Section title="Cards" icon={<IcoLibrary />}>
+            <Section title="Cards" icon={<IcoLibrary />}
+              action={mode === 'prep' ? openCardCutter : undefined} actionLabel="+">
               <NavItem active={view.kind === 'library'} onClick={() => setView({ kind: 'library' })}>All cards</NavItem>
               <NavItem active={view.kind === 'logos'} onClick={() => setView({ kind: 'logos' })}>Logos</NavItem>
               <NavItem active={view.kind === 'open-ev'} onClick={() => setView({ kind: 'open-ev' })}>Open Ev</NavItem>

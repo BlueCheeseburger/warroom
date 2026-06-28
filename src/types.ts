@@ -1,11 +1,30 @@
 export type Side = 'aff' | 'neg';
 
+// A formatted run of card body text. `text` is always verbatim source text;
+// the flags carry debate emphasis. highlight color must be one of the read-aloud
+// colors Warroom's parser recognizes (yellow / cyan / green).
+export type HighlightColor = 'yellow' | 'cyan' | 'green';
+
+export interface CardRun {
+  text: string;
+  underline?: boolean;          // the "cut" — read aloud
+  highlight?: HighlightColor;   // emphasis on top of underline — most important read words
+  small?: boolean;              // shrunk context, NOT read aloud
+}
+
+export interface CardImage {
+  src: string;   // data: URL (inlined) or remote http(s) URL
+  alt?: string;
+}
+
 export interface Card {
   id: string;
   blockId: string;
   tag: string;
   cite: string;
-  body: string;
+  body: string;                 // plain verbatim text (always kept in sync for search/preview)
+  bodyRuns?: CardRun[];         // formatted version of body (underline/highlight/small); body = runs joined
+  images?: CardImage[];         // optional figures pulled from the source
   year: number;
   flagged: boolean;
   createdAt: string;
@@ -245,7 +264,13 @@ declare global {
       };
       ai: {
         extractCards: (filePath: string) => Promise<ExtractedCard[]>;
-        cutCardsFromPdf: (filePath: string) => Promise<ExtractedCard[]>;
+        cutterReadSource: (filePath: string) => Promise<CutterSource>;
+        cutterEmphasize: (params: {
+          body: string;
+          intent: string;
+          highlightColor: HighlightColor;
+          cite?: string;
+        }) => Promise<CutterEmphasis>;
         suggestBlocks: (
           opponentPositions: string,
           blockList: { id: string; title: string }[]
@@ -562,6 +587,36 @@ export interface ExtractedCard {
   cite: string;
   body: string;
   year: number;
+}
+
+// ─── Card cutter (guided cut from PDF / saved HTML) ─────────────────────────────
+
+export interface CutterImage {
+  src: string;        // data: URL (inlined) or remote http(s) URL
+  alt?: string;
+  suggested?: boolean; // Warroom AI thinks this image is genuinely part of the article
+}
+
+export interface CutterSource {
+  ok: boolean;
+  error?: string;
+  kind: 'pdf' | 'html';
+  cite: string;        // full formatted cite string (Warroom AI)
+  author: string;
+  title: string;
+  year: number;
+  url: string;
+  paragraphs: string[]; // verbatim article body paragraphs (boilerplate filtered)
+  images: CutterImage[];
+}
+
+export interface CutterEmphasis {
+  ok: boolean;
+  error?: string;
+  taglines: string[];   // 1–2 declarative tag options
+  underline: string[];  // verbatim substrings to read aloud
+  highlight: string[];  // verbatim substrings to emphasize
+  small: string[];      // verbatim substrings to keep but shrink (not read)
 }
 
 // ─── Impact calculus ──────────────────────────────────────────────────────────

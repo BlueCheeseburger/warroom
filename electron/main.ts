@@ -1209,8 +1209,8 @@ ipcMain.handle('speechdoc:extract', async (_e, filePath: string) => {
           const s = r[0];
           // Any underline style (single, double, words, dotted, etc.) — not "none"
           const hasUnderline = /<w:u\b[^>]*w:val="(?!none)[^"]*"/.test(s);
-          // Cyan or yellow highlight (common debate doc styles)
-          const hasHighlight = /w:val="cyan"|w:val="yellow"/.test(s);
+          // Cyan, yellow, or green highlight (the read-aloud debate doc colors)
+          const hasHighlight = /w:val="cyan"|w:val="yellow"|w:val="green"/.test(s);
           return hasUnderline || hasHighlight;
         })
         .map((r) => strip(r[0]))
@@ -1455,77 +1455,202 @@ ${text.slice(0, 60000)}`;
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
 
-// Cut NEW debate cards from a raw source (e.g. a website saved as PDF) using the
-// card_cutting skill as the system prompt. Unlike ai:extractCards (which pulls
-// already-formatted cards out of a Verbatim doc), this CUTS cards from raw prose:
-// it writes the tag, formats the cite, and trims the body to what proves the tag.
-ipcMain.handle('ai:cutCardsFromPdf', async (_e, filePath: string) => {
+// Tolerant JSON parser for model output that may be fenced or wrapped in prose.
+function parseJsonLoose(raw: string): any {
+  const cleaned = (raw ?? '').replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/m, '').trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const os = cleaned.indexOf('{'), oe = cleaned.lastIndexOf('}');
+  if (os !== -1 && oe > os) { try { return JSON.parse(cleaned.slice(os, oe + 1)); } catch {} }
+  const as = cleaned.indexOf('['), ae = cleaned.lastIndexOf(']');
+  if (as !== -1 && ae > as) { try { return JSON.parse(cleaned.slice(as, ae + 1)); } catch {} }
+  return null;
+}
+
+// ─── Card cutter (guided cut from a PDF or a saved web page) ────────────────────
+// STEP 1: read the source. For HTML we parse with cheerio to pull verbatim body
+// paragraphs + article images (alt text preferred, ads/logos filtered). For PDF we
+// extract text only (no images). Warroom AI then identifies the cite, the real
+// article body paragraphs, and which images are genuinely part of the article.
+ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
   checkPath(filePath);
-  const text = (await extractText(filePath)).trim();
-  if (!text) throw new Error('Could not extract any text from this PDF. If it is a scanned image, it has no selectable text to cut.');
-  if (text.length < 80) throw new Error('This PDF has too little text to cut cards from.');
+  const path = require('path');
+  const ext = (filePath.toLowerCase().split('.').pop() || '');
+  const today = new Date();
+  let kind: 'pdf' | 'html' = 'html';
+  let rawParagraphs: string[] = [];
+  const images: { src: string; alt: string }[] = [];
+  let metaUrl = '';
+  let metaTitle = '';
+
+  if (ext === 'html' || ext === 'htm' || ext === 'xhtml' || ext === 'mhtml' || ext === 'mht') {
+    kind = 'html';
+    const html = await fs.readFile(filePath, 'utf8');
+    const cheerio = require('cheerio');
+    const $ = cheerio.load(html);
+    metaUrl = $('link[rel="canonical"]').attr('href') || $('meta[property="og:url"]').attr('content') || '';
+    metaTitle = ($('meta[property="og:title"]').attr('content') || $('title').first().text() || '').trim();
+
+    // Strip non-content chrome before reading paragraphs/images.
+    $('script,style,noscript,nav,header,footer,aside,form,iframe,svg,button,figcaption').remove();
+    $('[class*="ad-"],[id*="ad-"],[class*="advert"],[class*="newsletter"],[class*="related"],[class*="share"],[class*="social"],[class*="comment"],[class*="promo"],[role="navigation"]').remove();
+
+    let $main = $('article').first();
+    if (!$main.length) $main = $('main').first();
+    if (!$main.length) $main = $('body');
+
+    $main.find('p,li,blockquote,h2,h3').each((_i: number, el: any) => {
+      const t = $(el).text().replace(/\s+/g, ' ').trim();
+      if (t && t.split(' ').length >= 3) rawParagraphs.push(t);
+    });
+    if (rawParagraphs.length === 0) {
+      rawParagraphs = $('body').text().split(/\n{2,}/).map((s: string) => s.replace(/\s+/g, ' ').trim()).filter((s: string) => s.split(' ').length >= 4);
+    }
+
+    // Images — alt-text aware, ads/logos/icons filtered, relative paths inlined.
+    const dir = path.dirname(filePath);
+    const seen = new Set<string>();
+    for (const el of $main.find('img').toArray() as any[]) {
+      if (images.length >= 24) break;
+      const $img = $(el);
+      const src = ($img.attr('src') || $img.attr('data-src') || $img.attr('data-lazy-src') || '').trim();
+      const alt = ($img.attr('alt') || '').trim();
+      if (!src) continue;
+      const w = parseInt($img.attr('width') || '0', 10);
+      const h = parseInt($img.attr('height') || '0', 10);
+      const meta = `${src} ${alt} ${$img.attr('class') || ''} ${$img.attr('id') || ''}`.toLowerCase();
+      if (/logo|icon|avatar|sprite|spacer|pixel|tracking|advert|sponsor|banner|emoji|share|social|thumb-|favicon/.test(meta)) continue;
+      if ((w && w < 100) || (h && h < 100)) continue;
+      let resolved: string | null = null;
+      if (/^https?:\/\//i.test(src)) resolved = src;
+      else if (/^data:image\//i.test(src)) { if (src.length > 256) resolved = src; }
+      else {
+        try {
+          const rel = decodeURIComponent(src.replace(/^\.?\//, '').split('?')[0].split('#')[0]);
+          const p = path.resolve(dir, rel);
+          if (p.startsWith(dir)) {
+            const buf = await fs.readFile(p);
+            if (buf.length <= 4_000_000) {
+              const lower = rel.toLowerCase();
+              const mime = lower.endsWith('.png') ? 'image/png'
+                : lower.endsWith('.gif') ? 'image/gif'
+                : lower.endsWith('.webp') ? 'image/webp'
+                : lower.endsWith('.svg') ? 'image/svg+xml'
+                : 'image/jpeg';
+              resolved = `data:${mime};base64,${buf.toString('base64')}`;
+            }
+          }
+        } catch {}
+      }
+      if (!resolved || seen.has(resolved)) continue;
+      seen.add(resolved);
+      images.push({ src: resolved, alt });
+    }
+  } else if (ext === 'pdf') {
+    kind = 'pdf';
+    const text = (await extractText(filePath)).trim();
+    if (!text) throw new Error('Could not extract text from this PDF. If it is a scanned image, it has no selectable text.');
+    rawParagraphs = text.split(/\n{2,}/).map((s) => s.replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
+    if (rawParagraphs.length < 3) rawParagraphs = text.split(/\n/).map((s) => s.trim()).filter(Boolean);
+  } else {
+    throw new Error(`Unsupported file type: .${ext}. Import a saved web page (.html) or a .pdf.`);
+  }
+
+  rawParagraphs = Array.from(new Set(rawParagraphs)).slice(0, 400);
+  if (!rawParagraphs.join('').trim()) throw new Error('No readable article text found in this file.');
 
   const skill = (await readSkill('card_cutting')) ?? '';
-  const today = new Date();
   const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const numbered = rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n').slice(0, 90000);
+  const imgList = images.length ? images.map((im, i) => `[${i}] ${im.alt ? 'alt: ' + im.alt : '(no alt text)'}`).join('\n') : '(none)';
 
-  // Cap the source text so we stay within the model context window. ~100k chars
-  // (~25k tokens) leaves plenty of room for the skill + instructions + output.
-  const source = text.slice(0, 100000);
-  const truncatedNote = text.length > 100000 ? '\n\n[Source truncated to first 100,000 characters.]' : '';
+  const prompt = `You are Warroom AI, a policy debate evidence assistant. Below are numbered paragraphs extracted from a saved web article or PDF${images.length ? ', plus a list of its images' : ''}.
 
-  const prompt = `You are Warroom AI, an expert policy debate evidence cutter. Follow the card-cutting skill below EXACTLY.
+TODAY'S DATE: ${todayStr}. Current-year sources use a month-day short cite (e.g. "Brady 3-15"); past years use a two-digit year.
 
+Use these CITE RULES from the card-cutting skill:
 ${skill}
 
 ---
 
-TODAY'S DATE: ${todayStr}. Use this when deciding short-cite format (current-year sources use month-day, e.g. "Brady 3-15").
+TASKS — return ONLY one JSON object (no markdown, no prose) with these fields:
+- "author": author last name(s) (e.g. "Borsari and Davis"), or "quals unknown" if not findable.
+- "year": 4-digit publication year integer. If unknown use ${today.getFullYear()}.
+- "title": the article title.
+- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}.
+- "bodyIndices": array of the paragraph indices that are the ACTUAL ARTICLE BODY in reading order. EXCLUDE navigation, standalone bylines, related-article lists, newsletter/subscribe prompts, ads, photo captions, and comments. Keep only the author's prose/evidence.
+- "imageIndices": array of image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Use [] if none or no images.
 
-TASK: The text below was extracted from a PDF of a web article/source. Read it and CUT every debate card worth cutting from it. Find the passages that most directly prove a debate argument. Write a strong declarative tag for each, format the cite per the skill's exact rules, and trim the body to only the verbatim sentences that prove the tag.
+PARAGRAPHS:
+${numbered}
 
-Return ONLY a valid JSON array. No markdown, no code fences, no preamble, no trailing commentary. Each element MUST have exactly these fields:
-- "tag": the declarative claim the card proves (plain text, NO "####", under ~25 words)
-- "cite": the full citation string per the skill's cite format (short cite + credentials + full names + full date + "title" + [URL])
-- "body": the relevant excerpt VERBATIM from the source — clean plain text only, NO underscores, NO asterisks, NO markdown. Trim aggressively to what proves the tag.
-- "year": the 4-digit integer publication year (e.g. 2025). If unknown, use ${today.getFullYear()}.
+IMAGES:
+${imgList}`;
 
-Rules:
-- Quote the body verbatim from the source — never paraphrase, summarize, or invent text.
-- If credentials or author names are not in the source, write "quals unknown" in the cite rather than fabricating them.
-- Cut multiple cards if the source supports multiple distinct arguments. Aim for the strongest 1–8 cards.
-- If the source contains no usable evidence, return an empty array [].
+  const parsed = parseJsonLoose(await callAI(prompt, 'balanced')) || {};
+  const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
+    ? parsed.bodyIndices.filter((n: any) => Number.isInteger(n) && n >= 0 && n < rawParagraphs.length)
+    : [];
+  const paragraphs = bodyIndices.length ? bodyIndices.map((i) => rawParagraphs[i]) : rawParagraphs;
+  const imgIdx = new Set<number>(Array.isArray(parsed.imageIndices) ? parsed.imageIndices : []);
+  const outImages = images.map((im, i) => ({ src: im.src, alt: im.alt, suggested: imgIdx.has(i) }));
+  const year = Number(String(parsed.year).match(/\d{4}/)?.[0]) || today.getFullYear();
 
-SOURCE TEXT:
-${source}${truncatedNote}`;
+  return {
+    ok: true,
+    kind,
+    cite: String(parsed.cite ?? '').trim(),
+    author: String(parsed.author ?? '').trim(),
+    title: String(parsed.title ?? metaTitle ?? '').trim(),
+    year,
+    url: String(parsed.url ?? metaUrl ?? '').trim(),
+    paragraphs,
+    images: outImages,
+  };
+});
 
-  const raw = await callAI(prompt, 'best');
-  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/m, '').trim();
-  let parsed: any;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    // Salvage: grab the outermost JSON array if the model wrapped it in prose.
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-    if (start !== -1 && end > start) {
-      try { parsed = JSON.parse(cleaned.slice(start, end + 1)); } catch {}
-    }
-  }
-  if (!Array.isArray(parsed)) throw new Error('Warroom AI did not return cards in the expected format. Try again.');
+// STEP 2: given the body the debater selected + what they're using the card for,
+// decide emphasis (underline = read aloud, highlight = most important, small =
+// kept-but-unread context) and propose 1–2 taglines. Emphasis is returned as EXACT
+// verbatim substrings so the renderer can apply it without altering the body text.
+ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite }: {
+  body: string; intent: string; highlightColor: string; cite?: string;
+}) => {
+  const text = String(body ?? '').trim();
+  if (!text) throw new Error('No card body text to cut.');
+  const skill = (await readSkill('card_cutting')) ?? '';
 
-  const cards = parsed
-    .filter((c: any) => c && typeof c.body === 'string' && c.body.trim())
-    .map((c: any) => {
-      const year = Number(String(c.year).match(/\d{4}/)?.[0]) || today.getFullYear();
-      return {
-        tag: String(c.tag ?? 'Untitled card').replace(/^#+\s*/, '').trim() || 'Untitled card',
-        cite: String(c.cite ?? '').trim(),
-        body: String(c.body).trim(),
-        year,
-      };
-    });
-  return cards;
+  const prompt = `You are Warroom AI, an expert policy debate card cutter. Follow the card-cutting skill:
+${skill}
+
+---
+
+The debater has selected the VERBATIM body text below for a card${cite ? ` (cite: ${cite})` : ''}.
+What they intend to use this card for: ${intent ? `"${intent}"` : '(not specified — infer the strongest argument)'}.
+
+Decide the emphasis a skilled debater would apply, then propose taglines.
+
+Return ONLY one JSON object (no markdown, no prose) with these fields:
+- "taglines": array of 1 OR 2 strong, declarative tag options (what the card PROVES, not a description). 2 only if there are two genuinely distinct framings worth offering.
+- "underline": array of the EXACT verbatim substrings the debater should READ ALOUD (the "cut"). Copy them character-for-character from the body. This should be a meaningful, readable cut — not the entire body, not one fragment.
+- "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize.
+- "small": array of the EXACT verbatim substrings that should be KEPT for context but NOT read aloud (shrunk to small text). These must not overlap the underlined text.
+
+CRITICAL: every string in underline/highlight/small MUST be copied verbatim from the body text below — do not paraphrase, reword, or invent text. If unsure, include less.
+
+BODY TEXT:
+${text.slice(0, 40000)}`;
+
+  const parsed = parseJsonLoose(await callAI(prompt, 'best')) || {};
+  const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
+  let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
+  if (taglines.length === 0) taglines = ['Untitled card'];
+  return {
+    ok: true,
+    taglines,
+    underline: arr(parsed.underline),
+    highlight: arr(parsed.highlight),
+    small: arr(parsed.small),
+  };
 });
 
 ipcMain.handle('ai:teamSummary', async (_e, {

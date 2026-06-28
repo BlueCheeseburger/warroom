@@ -82,16 +82,19 @@ Only some words in a card are spoken in-round. By OOXML marker:
 | Element | OOXML | Parsed today? | Meaning |
 |---|---|---|---|
 | **Underlined** | `<w:u w:val="…">` (any value ≠ `none`) | ✅ yes | The "cut" — the words the debater reads. Primary read-aloud signal. |
-| **Highlighted** | `<w:highlight w:val="cyan">` or `"yellow"` | ✅ yes | Emphasis on top of underline; the most important read words. |
+| **Highlighted** | `<w:highlight w:val="cyan">`, `"yellow"`, or `"green"` | ✅ yes | Emphasis on top of underline; the most important read words. |
 | **Bold** | `<w:b/>` | ❌ no | Tags are bold; in-body bold+underline marks "power-tagged" words. |
 | **Italic** | `<w:i/>` | ❌ no | Usually the source/publication title in a cite, or analytics. |
 | **Boxed** | `<w:pBdr>` / `<w:bdr>` | ❌ no | A box around a paragraph/run — often an analytic or "must-read" callout. |
 | **Small text (e.g. font 8)** | `<w:sz w:val="16">` (half-points → 16 = 8pt) | ❌ no | The shrunk, un-underlined remainder of the body: the "small text" that is NOT read aloud, kept for context/quals. |
 
-Warroom treats **underline OR cyan/yellow highlight** as "read." Bold, italic,
-box, and font size are present in the XML but **not currently parsed** — only
-headings, cite position, underline, and cyan/yellow highlight drive behavior. If a
-feature needs bold/italic/box/size, it has to add that parsing.
+Warroom treats **underline OR cyan/yellow/green highlight** as "read." (Green was
+added as a read-aloud color for the in-app card cutter, which offers yellow / cyan /
+green highlighters; the token-saving regex in `speechdoc:extract` matches all three,
+and the viewer's luminance-based `isBrightHighlight` already accepts green.) Bold,
+italic, box, and font size are present in the XML but **not currently parsed** — only
+headings, cite position, underline, and cyan/yellow/green highlight drive behavior.
+If a feature needs bold/italic/box/size, it has to add that parsing.
 
 ---
 
@@ -102,7 +105,7 @@ NOT get the whole document — it gets the `tokenSaving` extraction:
 
 - all headings (pockets, hats, blocks, tags),
 - the cite line after each tag,
-- ONLY the underlined / cyan-or-yellow-highlighted runs from each body,
+- ONLY the underlined / cyan-, yellow-, or green-highlighted runs from each body,
 - everything else (un-highlighted body, font-8 small text, bold-not-underlined,
   italics, boxed analytics) is **dropped**.
 

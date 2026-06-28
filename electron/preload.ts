@@ -45,7 +45,8 @@ const api = {
   },
   ai: {
     extractCards: (filePath: string) => ipcRenderer.invoke('ai:extractCards', filePath),
-    cutCardsFromPdf: (filePath: string) => ipcRenderer.invoke('ai:cutCardsFromPdf', filePath),
+    cutterReadSource: (filePath: string) => ipcRenderer.invoke('ai:cutterReadSource', filePath),
+    cutterEmphasize: (params: any) => ipcRenderer.invoke('ai:cutterEmphasize', params),
     suggestBlocks: (positions: string, blocks: { id: string; title: string }[]) =>
       ipcRenderer.invoke('ai:suggestBlocks', positions, blocks),
     teamSummary: (params: { teamName: string; rawRounds: any[]; rawCites: any[] }) =>

@@ -106,6 +106,10 @@ interface AppState {
   // Impact Calc
   impactCalcOpen: boolean;
   setImpactCalcOpen: (open: boolean) => void;
+  // Card cutter (guided cut from PDF / saved HTML), opened from the Cards section
+  cardCutterOpen: boolean;
+  setCardCutterOpen: (open: boolean) => void;
+  openCardCutter: () => void;
   // Agent search registry — webview components register their search fns here
   agentSearchFns: { logos: AgentSearchFn | null; openev: AgentSearchFn | null };
   registerAgentSearch: (source: 'logos' | 'openev', fn: AgentSearchFn | null) => void;
@@ -141,6 +145,14 @@ export const useApp = create<AppState>((set, get) => ({
   geminiActiveId: null,
   impactCalcOpen: false,
   setImpactCalcOpen: (open) => set({ impactCalcOpen: open }),
+  cardCutterOpen: false,
+  setCardCutterOpen: (open) => set({ cardCutterOpen: open }),
+  openCardCutter: () => set((s) => {
+    const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);
+    const v: View = { kind: 'library' };
+    const newHistory = [...trimmed, v].slice(-60);
+    return { view: v, navHistory: newHistory, navHistoryIndex: newHistory.length - 1, cardCutterOpen: true };
+  }),
   unreadCount: 0,
   currentUser: null,
   currentTeam: null,
