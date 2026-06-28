@@ -106,6 +106,16 @@ function IcoShare() {
   );
 }
 
+// Reveal-in-folder: an open folder with an arrow, for "show this file in Finder".
+function IcoReveal() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.2 1.4h5.6a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1V4.5Z"/>
+      <path d="M8 6.5v3.2M8 9.7l-1.3-1.3M8 9.7l1.3-1.3"/>
+    </svg>
+  );
+}
+
 // Outline / table-of-contents: stacked lines with leading bullets
 function IcoOutline({ active }: { active?: boolean }) {
   return (
@@ -373,6 +383,51 @@ function buildOutline(container: HTMLElement, headingClasses?: HeadingClasses): 
     p.dataset.outlineId = id;
     items.push({ id, level, text });
   });
+  return items;
+}
+
+// Fallback outline for docs with NO Word/Verbatim heading styles — hand-made
+// round reports and Google Docs exports that format their section headers
+// manually instead of with heading styles. We detect structural headers by their
+// rendered formatting: short paragraphs that are either BOXED (a paragraph border
+// — pockets/speech dividers) or BOLD + CENTERED (hats/blocks). Left-aligned bold
+// taglines above cards are deliberately NOT matched here — they're hard to tell
+// apart from bolded body lead-ins, and the goal is a usable navigation outline of
+// the big sections, not card-level detection.
+function buildOutlineHeuristic(container: HTMLElement): OutlineItem[] {
+  const items: OutlineItem[] = [];
+  let counter = 0;
+  const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
+  for (const p of paras) {
+    const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    if (text.split(/\s+/).length > 25) continue; // section headers are short
+
+    const cs = window.getComputedStyle(p);
+    const boxed =
+      (cs.borderTopStyle !== 'none' && parseFloat(cs.borderTopWidth || '0') > 0) ||
+      (cs.borderBottomStyle !== 'none' && parseFloat(cs.borderBottomWidth || '0') > 0) ||
+      (cs.borderLeftStyle !== 'none' && parseFloat(cs.borderLeftWidth || '0') > 0);
+    const centered = cs.textAlign === 'center';
+
+    // Is the paragraph predominantly bold? (Most of its visible text is bold.)
+    let boldChars = 0, totalChars = 0;
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = (node.nodeValue || '').trim();
+      if (!t) continue;
+      totalChars += t.length;
+      const parent = node.parentElement;
+      if (parent && isBoldEl(parent)) boldChars += t.length;
+    }
+    const bold = totalChars > 0 && boldChars / totalChars >= 0.6;
+
+    if (!(boxed || (bold && centered))) continue;
+    const id = `wr-h-${counter++}`;
+    p.dataset.outlineId = id;
+    items.push({ id, level: boxed ? 1 : 2, text });
+  }
   return items;
 }
 
@@ -2136,6 +2191,11 @@ export default function SpeechDocViewer() {
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState('');
   const [fileName, setFileName] = useState('');
+  // A real on-disk path to reveal in Finder/Explorer: local docs and OC previews
+  // (which load from a temp file) qualify; saved OC cases use a synthetic `oc:`
+  // key with no local file, so they can't be revealed.
+  const revealPath = !isOc && filePath && !filePath.startsWith('oc:') ? filePath : '';
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const [shareOpen, setShareOpen] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
   const [focusType, setFocusType] = useState<FocusType>('highlight');
@@ -2669,7 +2729,11 @@ export default function SpeechDocViewer() {
         // Build the heading outline and extract cards; compute highlight-outlier
         // warnings (over/under-highlighted cards) and cross-reference them back
         // into the outline items so the outline can show warning badges.
-        const built = buildOutline(containerRef.current, headingClasses);
+        // If the doc has no Word/Verbatim heading styles, fall back to detecting
+        // section headers by their formatting (boxed / bold-centered) so the
+        // outline still works for hand-made round reports and Google Docs exports.
+        let built = buildOutline(containerRef.current, headingClasses);
+        if (built.length === 0) built = buildOutlineHeuristic(containerRef.current);
         const builtCards = buildCards(containerRef.current, headingClasses);
         computeHighlightWarnings(containerRef.current, builtCards, headingClasses);
 
@@ -2959,7 +3023,7 @@ export default function SpeechDocViewer() {
 
         {/* Document title (+ import provenance) — sits between the tool cluster
             and the AI tools so the open case / speech doc is always identified. */}
-        <div className="flex-1 flex items-center gap-2 min-w-0 px-2.5 overflow-visible">
+        <div className="group flex-1 flex items-center gap-2 min-w-0 px-2.5 overflow-visible">
           <span
             className="text-[13px] font-semibold shrink whitespace-nowrap relative z-10"
             style={{
@@ -2980,6 +3044,21 @@ export default function SpeechDocViewer() {
           >
             {fileName.replace(/\.docx$/i, '')}
           </span>
+          {revealPath && (
+            <button
+              className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover:opacity-100 transition"
+              style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              title={`Reveal in ${isMac ? 'Finder' : 'File Explorer'}`}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              onClick={async () => {
+                const res = await (window.warroom as any).shell.showItemInFolder(revealPath);
+                if (res && res.ok === false && res.error) alert(res.error);
+              }}
+            >
+              <IcoReveal />
+            </button>
+          )}
           {isOc && ocCase && (
             <OcSourcePill
               teamName={(ocCase as any).ocSource.teamName}

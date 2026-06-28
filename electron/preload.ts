@@ -78,6 +78,7 @@ const api = {
   },
   shell: {
     openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
+    showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
     openBuffer: (base64: string, filename: string) => ipcRenderer.invoke('shell:openBuffer', base64, filename),
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },

@@ -577,7 +577,10 @@ function ExpandedNav({
                   active={view.kind === 'opponent' && (view as any).opponentId === o.id}
                   onClick={() => setView({ kind: 'opponent', opponentId: o.id })}
                   itemId={o.id} itemType="opponent" itemName={o.teamName}>
-                  <span className="truncate">👥 {o.teamName}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{o.teamName}</span>
+                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(59,130,246,0.12)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(59,130,246,0.2)' }}>Team</span>
+                  </span>
                 </NavItem>
               ))}
               {judges.slice(0, 4).map((j: any) => (
@@ -585,7 +588,10 @@ function ExpandedNav({
                   active={view.kind === 'judge' && (view as any).judgeId === j.id}
                   onClick={() => setView({ kind: 'judge', judgeId: j.id })}
                   itemId={j.id} itemType="judge" itemName={j.name}>
-                  <span className="truncate">⚖️ {j.name}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{j.name}</span>
+                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(168,85,247,0.12)', color: 'rgba(192,132,252,0.9)', border: '1px solid rgba(168,85,247,0.2)' }}>Judge</span>
+                  </span>
                 </NavItem>
               ))}
             </Section>
@@ -607,15 +613,6 @@ function ExpandedNav({
               </Section>
             )}
 
-            {/* NSDA Topics — all events + the event the user is competing in */}
-            <Section title="Topics" icon={<IcoTopics />}>
-              <NavItem active={view.kind === 'topics' && !(view as any).tab} onClick={() => setView({ kind: 'topics' })}>
-                All events
-              </NavItem>
-              <NavItem active={view.kind === 'topics' && (view as any).tab === eventTopicTab} onClick={() => setView({ kind: 'topics', tab: eventTopicTab })}>
-                {eventTopicLabel}
-              </NavItem>
-            </Section>
           </>
         )}
 
@@ -669,17 +666,25 @@ function ExpandedNav({
         )}
       </nav>
 
-      {/* Bottom bar: Settings */}
-      {mode === 'prep' && (
-        <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
+      {/* Bottom bar: Topics + Settings */}
+      <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
+        <Section title="Topics" icon={<IcoTopics />}>
+          <NavItem active={view.kind === 'topics' && !(view as any).tab} onClick={() => setView({ kind: 'topics' })}>
+            All events
+          </NavItem>
+          <NavItem active={view.kind === 'topics' && (view as any).tab === eventTopicTab} onClick={() => setView({ kind: 'topics', tab: eventTopicTab })}>
+            {eventTopicLabel}
+          </NavItem>
+        </Section>
+        {mode === 'prep' && (
           <NavRowPrimary
             active={view.kind === 'settings'}
             onClick={() => setView({ kind: 'settings' })}
             icon={<IcoSettings />}
             label="Settings"
           />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

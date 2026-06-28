@@ -2786,6 +2786,16 @@ ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
   return { ok: !err, error: err || undefined };
 });
 
+// Reveal a file in Finder / File Explorer (highlights the item in its folder).
+ipcMain.handle('shell:showItemInFolder', async (_e, filePath: string) => {
+  try {
+    checkPath(filePath);
+    if (!existsSync(filePath)) return { ok: false, error: 'File no longer exists at that location' };
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  } catch (e: any) { return { ok: false, error: e?.message ?? 'Could not reveal file' }; }
+});
+
 ipcMain.handle('shell:openExternal', async (_e, url: string) => {
   // Only allow http/https URLs
   if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Invalid URL' };
