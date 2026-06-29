@@ -1,13 +1,14 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
-import { Card, CutterSource, HighlightColor } from '../types';
+import { Card, CutterSource, FontSize, HighlightColor } from '../types';
 import { Dots } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { FormattedBody } from './CardBody';
 import {
   CharAttr, buildAttrsFromSpans, runsFromAttrs, selectionOffsets,
-  HIGHLIGHT_SWATCH, HIGHLIGHT_CSS,
+  HIGHLIGHT_SWATCH, HIGHLIGHT_CSS, HIGHLIGHT_RGB,
 } from '../utils/cardFormat';
+import { dimHighlightToHsl } from '../utils/docxViewerUtils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const CUT_CASE_ID = '__cut__';
@@ -16,6 +17,7 @@ const CUT_BLOCK_ID = '__cut_inbox__';
 type Step = 'pick' | 'reading' | 'select' | 'cutting' | 'edit';
 
 const COLORS: HighlightColor[] = ['yellow', 'cyan', 'green'];
+const FONT_SIZES: FontSize[] = [11, 8, 6, 3];
 
 function mergeRanges(ranges: [number, number][]): [number, number][] {
   const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
@@ -35,6 +37,14 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   const [fileName, setFileName] = useState('');
   const [source, setSource] = useState<CutterSource | null>(null);
 
+  // dark mode state — for highlight button swatch readability
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() => setIsDark(document.documentElement.classList.contains('dark')));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
   // selection (step 2)
   const fullText = useMemo(() => (source ? source.paragraphs.join('\n\n') : ''), [source]);
   const [includedRanges, setIncludedRanges] = useState<[number, number][]>([]);
@@ -42,7 +52,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   const [showPics, setShowPics] = useState(false);
   const selRef = useRef<HTMLDivElement>(null);
 
-  // intent + color (step 3)
+  // intent + color (step 3 = inside select step)
   const [intent, setIntent] = useState('');
   const [color, setColor] = useState<HighlightColor>('cyan');
 
@@ -55,6 +65,10 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   const [year, setYear] = useState<number>(CURRENT_YEAR);
   const [saving, setSaving] = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
+
+  // manually-added images (file input)
+  const [extraImages, setExtraImages] = useState<{ src: string; alt: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function pickFile() {
     let filePath: string | null = null;
@@ -117,7 +131,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     }
   }
 
-  function applyFormat(kind: 'underline' | 'highlight' | 'small' | 'clear') {
+  function applyFormat(kind: 'underline' | 'highlight' | 'fontSize' | 'clear', fs?: FontSize) {
     if (!editRef.current) return;
     const off = selectionOffsets(editRef.current);
     if (!off) return;
@@ -125,13 +139,24 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
       const next = prev.map((a) => ({ ...a }));
       for (let i = off.start; i < off.end && i < next.length; i++) {
         if (kind === 'underline') next[i].u = true;
-        else if (kind === 'highlight') { next[i].hl = color; next[i].u = true; next[i].sm = false; }
-        else if (kind === 'small') { next[i].sm = true; next[i].u = false; next[i].hl = null; }
-        else { next[i].u = false; next[i].hl = null; next[i].sm = false; }
+        else if (kind === 'highlight') { next[i].hl = color; next[i].u = true; next[i].fs = 11; }
+        else if (kind === 'fontSize') { next[i].fs = fs!; next[i].u = false; next[i].hl = null; }
+        else { next[i].u = false; next[i].hl = null; next[i].fs = 11; }
       }
       return next;
     });
     window.getSelection()?.removeAllRanges();
+  }
+
+  function addImageFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setExtraImages((prev) => [...prev, { src: reader.result as string, alt: file.name }]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   }
 
   async function save() {
@@ -140,14 +165,17 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     setSaving(true);
     const now = new Date().toISOString();
     const runs = runsFromAttrs(editText, editAttrs);
-    const imgs = source ? [...pickedImages].sort((a, b) => a - b).map((i) => ({ src: source.images[i].src, alt: source.images[i].alt })) : [];
+    const sourceImgs = source
+      ? [...pickedImages].sort((a, b) => a - b).map((i) => ({ src: source.images[i].src, alt: source.images[i].alt }))
+      : [];
+    const allImgs = [...sourceImgs, ...extraImages];
     const yr = Number(year) || CURRENT_YEAR;
     try {
       await update((db) => {
         const id = crypto.randomUUID();
         const newCard: Card = {
           id, blockId: CUT_BLOCK_ID, tag, cite: cite.trim(), body: editText.trim(),
-          bodyRuns: runs, images: imgs.length ? imgs : undefined,
+          bodyRuns: runs, images: allImgs.length ? allImgs : undefined,
           year: yr, flagged: CURRENT_YEAR - yr > 4, createdAt: now,
         };
         const existingCase = db.cases[CUT_CASE_ID];
@@ -172,6 +200,13 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // Highlight background for the toolbar button — dimmed in dark mode to match FormattedBody readability
+  function hlButtonBg(c: HighlightColor): string {
+    if (!isDark) return HIGHLIGHT_CSS[c];
+    const [r, g, b] = HIGHLIGHT_RGB[c];
+    return dimHighlightToHsl(r, g, b, 30);
+  }
+
   // Build display segments for the selection step.
   const selSegments = useMemo(() => {
     const merged = mergeRanges(includedRanges);
@@ -185,6 +220,16 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     if (cursor < fullText.length) segs.push({ text: fullText.slice(cursor), rangeIdx: null });
     return segs;
   }, [includedRanges, fullText]);
+
+  // Combined image list for the edit step
+  type EditImg = { key: string; src: string; alt: string; isSource: boolean; srcIdx: number; extraIdx: number };
+  const editImages = useMemo<EditImg[]>(() => {
+    const sourceImgs: EditImg[] = source
+      ? [...pickedImages].sort((a, b) => a - b).map((i) => ({ key: `s${i}`, isSource: true, srcIdx: i, extraIdx: -1, src: source.images[i].src, alt: source.images[i].alt || '' }))
+      : [];
+    const extra: EditImg[] = extraImages.map((img, ei) => ({ key: `e${ei}`, isSource: false, srcIdx: -1, extraIdx: ei, src: img.src, alt: img.alt }));
+    return [...sourceImgs, ...extra];
+  }, [pickedImages, extraImages, source]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
@@ -207,9 +252,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           {step === 'pick' && (
             <div className="text-center py-10 space-y-4">
               <div className="text-sm text-ink/60 max-w-lg mx-auto space-y-2">
-                <p>
-                  Save the article first, then import it:
-                </p>
+                <p>Save the article first, then import it:</p>
                 <p className="text-ink/80">
                   <strong>Press ⌘S / Ctrl+S → save as a Webpage (HTML)</strong> so the images come too,
                   or <strong>Print → Save as PDF</strong> for text only.
@@ -261,7 +304,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                 )}
               </div>
 
-              {/* Pictures */}
+              {/* Pictures — from source */}
               {source.images.length > 0 && (
                 <div className="border border-line rounded-sm">
                   <button className="w-full px-3 py-2 flex items-center justify-between text-xs text-ink/60 hover:text-ink" onClick={() => setShowPics((v) => !v)}>
@@ -291,7 +334,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
-              {/* Intent + color (step 3) */}
+              {/* Intent + color */}
               <div className="space-y-2 pt-1">
                 <label className="text-xs text-ink/55 font-medium">What are you using this card for? <span className="text-ink/35 font-normal">(helps Warroom AI cut it well — optional)</span></label>
                 <textarea
@@ -355,32 +398,68 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
 
               {/* Editor toolbar */}
               <div>
-                <label className="text-xs text-ink/55 font-medium">Card body <span className="text-ink/35 font-normal">— select text, then format. Words can't be changed (stays verbatim).</span></label>
+                <label className="text-xs text-ink/55 font-medium">Card body <span className="text-ink/35 font-normal">— select text, then format. Words can't be changed (verbatim).</span></label>
                 <div className="flex items-center gap-1.5 my-1.5 flex-wrap">
                   <button className="btn text-xs underline" onClick={() => applyFormat('underline')} title="Underline (read aloud)">Underline</button>
                   <button className="btn text-xs" onClick={() => applyFormat('highlight')} title="Highlight (most important)">
-                    <span className="px-1 rounded-sm" style={{ backgroundColor: HIGHLIGHT_CSS[color] }}>Highlight</span>
+                    <span className="px-1 rounded-sm transition-colors" style={{ backgroundColor: hlButtonBg(color), color: isDark ? '#e8e8ea' : '#111' }}>Highlight</span>
                   </button>
                   {COLORS.map((c) => (
                     <button key={c} onClick={() => setColor(c)}
                       className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-ink' : 'border-transparent'}`}
                       style={{ backgroundColor: HIGHLIGHT_SWATCH[c] }} title={c} />
                   ))}
-                  <button className="btn text-xs opacity-70" style={{ fontSize: '10px' }} onClick={() => applyFormat('small')} title="Shrink to small text (not read)">Small</button>
-                  <button className="btn text-xs" onClick={() => applyFormat('clear')} title="Remove formatting">Clear</button>
+                  <span className="mx-0.5 text-ink/20 select-none">|</span>
+                  {FONT_SIZES.map((fs) => (
+                    <button
+                      key={fs}
+                      className="btn text-[11px] tabular-nums px-1.5"
+                      onClick={() => applyFormat('fontSize', fs)}
+                      title={fs === 11 ? 'Normal text (11pt)' : `Shrink to ${fs}pt — not read aloud`}
+                    >
+                      {fs === 11 ? 'Normal' : `${fs}pt`}
+                    </button>
+                  ))}
+                  <span className="mx-0.5 text-ink/20 select-none">|</span>
+                  <button className="btn text-xs" onClick={() => applyFormat('clear')} title="Remove all formatting from selection">Clear</button>
                 </div>
                 <div ref={editRef} className="text-sm text-ink/80 rounded-sm border border-line p-3 max-h-[34vh] overflow-y-auto scroll-thin select-text">
                   <FormattedBody runs={runsFromAttrs(editText, editAttrs)} />
                 </div>
               </div>
 
-              {pickedImages.size > 0 && source && (
-                <div className="flex flex-wrap gap-2">
-                  {[...pickedImages].sort((a, b) => a - b).map((i) => (
-                    <img key={i} src={source.images[i].src} alt={source.images[i].alt || ''} className="max-h-24 rounded-sm border border-line object-contain bg-white" />
-                  ))}
+              {/* Images — individual removal + add from file */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-ink/55 font-medium">Images</label>
+                  <button className="btn text-[11px]" onClick={() => fileInputRef.current?.click()} title="Add an image from your files">
+                    + Add image…
+                  </button>
                 </div>
-              )}
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={addImageFromFile} />
+                {editImages.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {editImages.map((img) => (
+                      <div key={img.key} className="relative group/img">
+                        <img src={img.src} alt={img.alt} className="max-h-24 rounded-sm border border-line object-contain bg-white" />
+                        <button
+                          className="absolute -top-1.5 -right-1.5 opacity-0 group-hover/img:opacity-100 transition text-[10px] bg-danger text-white w-4 h-4 rounded-full flex items-center justify-center"
+                          title="Remove image"
+                          onClick={() => {
+                            if (img.isSource) {
+                              setPickedImages((prev) => { const n = new Set(prev); n.delete(img.srcIdx); return n; });
+                            } else {
+                              setExtraImages((prev) => prev.filter((_, i) => i !== img.extraIdx));
+                            }
+                          }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-ink/35">No images — click "+ Add image…" to attach one from your files.</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -396,9 +475,9 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           )}
           {step === 'edit' && (
             <>
-              <button className="btn-primary text-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save card'}</button>
-              <button className="btn text-sm" onClick={() => setStep('select')} disabled={saving}>← Back to selection</button>
-              <span className="text-xs text-ink/40 ml-auto">Saves to the “Cut Cards” case.</span>
+              <button className="btn-primary text-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save to All Cards'}</button>
+              <button className="btn text-sm" onClick={() => setStep('select')} disabled={saving}>← Back</button>
+              <span className="text-xs text-ink/40 ml-auto">Saved cards appear in All Cards.</span>
             </>
           )}
           {(step === 'pick' || step === 'reading' || step === 'cutting') && (

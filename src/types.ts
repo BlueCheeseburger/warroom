@@ -5,11 +5,15 @@ export type Side = 'aff' | 'neg';
 // colors Warroom's parser recognizes (yellow / cyan / green).
 export type HighlightColor = 'yellow' | 'cyan' | 'green';
 
+// Debate font sizes: 11 = normal card body, 8 = standard Verbatim "small text"
+// (kept for context, not read), 6 = smaller, 3 = smallest/nearly invisible.
+export type FontSize = 11 | 8 | 6 | 3;
+
 export interface CardRun {
   text: string;
   underline?: boolean;          // the "cut" — read aloud
   highlight?: HighlightColor;   // emphasis on top of underline — most important read words
-  small?: boolean;              // shrunk context, NOT read aloud
+  fontSize?: FontSize;          // omit/11 = normal; 8/6/3 = shrunk context NOT read aloud
 }
 
 export interface CardImage {
@@ -271,6 +275,7 @@ declare global {
           highlightColor: HighlightColor;
           cite?: string;
         }) => Promise<CutterEmphasis>;
+        readImageAsDataUrl: (filePath: string) => Promise<string>;
         suggestBlocks: (
           opponentPositions: string,
           blockList: { id: string; title: string }[]

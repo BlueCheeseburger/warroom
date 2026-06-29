@@ -1630,7 +1630,7 @@ What they intend to use this card for: ${intent ? `"${intent}"` : '(not specifie
 Decide the emphasis a skilled debater would apply, then propose taglines.
 
 Return ONLY one JSON object (no markdown, no prose) with these fields:
-- "taglines": array of 1 OR 2 strong, declarative tag options (what the card PROVES, not a description). 2 only if there are two genuinely distinct framings worth offering.
+- "taglines": array of 1 OR 2 debate flow tags in FULL CAPS with em dashes (—) for structure. Maximum 10 words. Examples: "IRAN THREATENS HALT — DEAL COLLAPSE INEVITABLE" or "DRONES KEY — ARCTIC SURVEILLANCE DETERS RUSSIA". Strong declarative claim stating what the card PROVES, not a description of what it says. Offer 2 only if two genuinely distinct framings exist.
 - "underline": array of the EXACT verbatim substrings the debater should READ ALOUD (the "cut"). Copy them character-for-character from the body. This should be a meaningful, readable cut — not the entire body, not one fragment.
 - "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize.
 - "small": array of the EXACT verbatim substrings that should be KEPT for context but NOT read aloud (shrunk to small text). These must not overlap the underlined text.
@@ -3104,6 +3104,22 @@ ipcMain.handle('fs:fileSize', async (_e, filePath: string) => {
   } catch (e: any) {
     return { ok: false, error: e.message };
   }
+});
+
+// Read an image file and return it as a data URL for embedding in a saved card.
+ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath: string) => {
+  if (typeof filePath !== 'string') throw new Error('Invalid path');
+  checkPath(filePath);
+  const path = require('path');
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  const mime = ext === 'png' ? 'image/png'
+    : ext === 'gif' ? 'image/gif'
+    : ext === 'webp' ? 'image/webp'
+    : ext === 'svg' ? 'image/svg+xml'
+    : 'image/jpeg';
+  const buf = await fs.readFile(filePath);
+  if (buf.length > 10_000_000) throw new Error('Image is too large (max 10 MB).');
+  return `data:${mime};base64,${buf.toString('base64')}`;
 });
 
 ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
