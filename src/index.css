@@ -396,8 +396,27 @@ body {
 
 /* ── Surfaces ────────────────────────────────────────────────────────────── */
 
-.glass-dark {
-  background: var(--bg-sidebar);
+/* In-app translucency (glass). Surfaces float over the app's OWN content with a
+   real backdrop blur — the window background stays opaque, so the desktop never
+   shows through. Each surface tint is derived from the active theme's solid
+   var via color-mix, so all six themes adapt automatically. Honors the OS
+   "Reduce transparency" accessibility setting (see media query below). */
+:root {
+  --glass-blur:     22px;
+  --glass-saturate: 1.6;
+  /* Per-surface opacity of the underlying solid color (rest is see-through). */
+  --glass-card-op:     74%;
+  --glass-elevated-op: 80%;
+  --glass-sidebar-op:  82%;
+  --glass-titlebar-op: 70%;
+  --glass-popover-op:  88%;
+}
+
+.glass-dark,
+.glass-sidebar {
+  background: color-mix(in srgb, var(--bg-sidebar) var(--glass-sidebar-op), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .glass-main {
@@ -405,17 +424,48 @@ body {
 }
 
 .glass-card {
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--bg-card) var(--glass-card-op), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 
 .glass-elevated {
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-elevated) var(--glass-elevated-op), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-side);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-elevated);
+}
+
+/* Inline-styled panels (titlebar, panel headers, popovers/menus) opt in via
+   these helpers — same translucency treatment without an inline background. */
+.glass-titlebar {
+  background: color-mix(in srgb, var(--bg-titlebar) var(--glass-titlebar-op), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+.glass-popover {
+  background: color-mix(in srgb, var(--bg-popover, var(--bg-sidebar)) var(--glass-popover-op), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Accessibility: when the user asks the OS to reduce transparency, fall back to
+   the fully opaque surfaces and drop the blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-dark, .glass-sidebar { background: var(--bg-sidebar); }
+  .glass-card     { background: var(--bg-card); }
+  .glass-elevated { background: var(--bg-elevated); }
+  .glass-titlebar { background: var(--bg-titlebar); }
+  .glass-popover  { background: var(--bg-popover, var(--bg-sidebar)); }
+  .glass-dark, .glass-sidebar, .glass-card, .glass-elevated, .glass-titlebar, .glass-popover {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 .glass-input {

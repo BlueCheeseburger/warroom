@@ -1073,8 +1073,8 @@ export default function GeminiPanel() {
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
       {/* Header */}
-      <div className="h-10 flex items-center gap-1.5 px-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--border-side)', background: 'var(--bg-titlebar)' }}>
+      <div className="glass-titlebar h-10 flex items-center gap-1.5 px-3 shrink-0"
+        style={{ borderBottom: '1px solid var(--border-side)' }}>
         {/* Chat list toggle */}
         <PanelBtn title="Chat history" onClick={() => setShowList((v) => !v)} active={showList}>
           <ListIcon />

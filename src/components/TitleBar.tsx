@@ -269,9 +269,8 @@ function SpeechTimer() {
 
         {dropdownOpen && (
           <div
-            className="absolute top-full mt-1 left-0 z-[9999] rounded-lg py-1 shadow-xl"
+            className="glass-popover absolute top-full mt-1 left-0 z-[9999] rounded-lg py-1 shadow-xl"
             style={{
-              background: 'var(--bg-popover, var(--bg-sidebar))',
               border: '1px solid var(--border-subtle)',
               minWidth: 148,
             }}
@@ -478,9 +477,8 @@ export default function TitleBar() {
 
   return (
     <div
-      className="titlebar h-9 flex items-center select-none"
+      className="titlebar glass-titlebar h-9 flex items-center select-none"
       style={{
-        background: 'var(--bg-titlebar)',
         borderBottom: '1px solid var(--border-side)',
         paddingLeft: isMac ? 80 : 12,
         // Windows draws the min/max/close caption buttons over the top-right

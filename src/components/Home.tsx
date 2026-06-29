@@ -169,8 +169,8 @@ function StatusBar({ wins, losses, pending, tournament, isLive }: {
 
   return (
     <div
-      className="shrink-0 px-6 py-3 flex items-center justify-between gap-6 select-none"
-      style={{ background: 'var(--bg-titlebar)', borderBottom: '1px solid var(--border-subtle)' }}
+      className="glass-titlebar shrink-0 px-6 py-3 flex items-center justify-between gap-6 select-none"
+      style={{ borderBottom: '1px solid var(--border-subtle)' }}
     >
       <div className="flex items-center gap-5">
         {tournament && (
@@ -340,7 +340,9 @@ function Tooltip({ text, children, up = false }: {
             padding: '5px 10px',
             fontSize: 11,
             pointerEvents: 'none',
-            background: 'var(--bg-popover, var(--bg-sidebar))',
+            background: 'color-mix(in srgb, var(--bg-popover, var(--bg-sidebar)) 88%, transparent)',
+            backdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
+            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
             border: '1px solid var(--border-subtle)',
             color: 'var(--ink)',
             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
@@ -379,10 +381,9 @@ function FloatingMenu({ x, y, items, onClose }: {
   return (
     <div
       ref={ref}
-      className="fixed z-[9999] rounded-lg py-1 text-xs shadow-xl"
+      className="glass-popover fixed z-[9999] rounded-lg py-1 text-xs shadow-xl"
       style={{
         left, top, minWidth: 136,
-        background: 'var(--bg-popover, var(--bg-sidebar))',
         border: '1px solid var(--border-subtle)',
       }}
     >
@@ -1024,10 +1025,9 @@ function GeminiConvRow({ conv, onOpen, onRename, onDelete }: {
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-0 z-50 rounded-lg py-1 text-xs shadow-xl"
+          className="glass-popover absolute right-0 z-50 rounded-lg py-1 text-xs shadow-xl"
           style={{
             top: '100%', minWidth: 120, marginTop: 2,
-            background: 'var(--bg-popover, var(--bg-sidebar))',
             border: '1px solid var(--border-subtle)',
           }}
         >

@@ -65,8 +65,8 @@ export default function RoomSettings({ onClose }: Props) {
   return (
     <div className="absolute inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-main)' }}>
       {/* Header */}
-      <div className="h-10 flex items-center gap-2 px-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--border-side)', background: 'var(--bg-titlebar)' }}>
+      <div className="glass-titlebar h-10 flex items-center gap-2 px-3 shrink-0"
+        style={{ borderBottom: '1px solid var(--border-side)' }}>
         <button onClick={onClose} className="text-xs mr-1" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}>
           ←
         </button>

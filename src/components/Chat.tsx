@@ -207,8 +207,8 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onSignOut
   if (inDM) title = (chatView as any).channel.name ?? dmChannelTitle((chatView as any).channel);
 
   return (
-    <div className="h-10 flex items-center gap-2 px-3 shrink-0"
-      style={{ borderBottom: '1px solid var(--border-side)', background: 'var(--bg-titlebar)' }}>
+    <div className="glass-titlebar h-10 flex items-center gap-2 px-3 shrink-0"
+      style={{ borderBottom: '1px solid var(--border-side)' }}>
       {(inDM || inDMList) && (
         <button onClick={onBack} className="text-sm mr-0.5 shrink-0"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}>

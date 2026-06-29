@@ -263,12 +263,11 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="shrink-0 flex flex-col select-none"
+      className="glass-sidebar shrink-0 flex flex-col select-none"
       style={{
         width: collapsed ? COLLAPSED : EXPANDED,
         transition: 'width 0.2s cubic-bezier(0.4,0,0.2,1)',
         minWidth: collapsed ? COLLAPSED : EXPANDED,
-        background: 'var(--bg-sidebar)',
         borderRight: '1px solid var(--border-side)',
         overflow: 'hidden',
       }}
@@ -951,8 +950,8 @@ function NavItem({
       )}
 
       {menuOpen && (
-        <div ref={menuRef} className="absolute left-2 z-50 rounded-lg py-1 text-xs shadow-xl"
-          style={{ top: '100%', minWidth: '120px', background: 'var(--bg-popover, var(--bg-sidebar))', border: '1px solid var(--border-subtle)' }}>
+        <div ref={menuRef} className="glass-popover absolute left-2 z-50 rounded-lg py-1 text-xs shadow-xl"
+          style={{ top: '100%', minWidth: '120px', border: '1px solid var(--border-subtle)' }}>
           <button onClick={startRename} className="w-full text-left px-3 py-1.5 transition"
             style={{ color: 'var(--nav-active-color)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
