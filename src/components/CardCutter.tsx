@@ -19,17 +19,6 @@ type Step = 'pick' | 'reading' | 'select' | 'cutting' | 'edit';
 const COLORS: HighlightColor[] = ['yellow', 'cyan', 'green'];
 const FONT_SIZES: FontSize[] = [11, 8, 6, 3];
 
-function mergeRanges(ranges: [number, number][]): [number, number][] {
-  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
-  const out: [number, number][] = [];
-  for (const r of sorted) {
-    const last = out[out.length - 1];
-    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
-    else out.push([r[0], r[1]]);
-  }
-  return out;
-}
-
 export default function CardCutter({ onClose }: { onClose: () => void }) {
   const { update } = useApp();
   const [step, setStep] = useState<Step>('pick');
@@ -45,12 +34,10 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     return () => obs.disconnect();
   }, []);
 
-  // selection (step 2)
-  const fullText = useMemo(() => (source ? source.paragraphs.join('\n\n') : ''), [source]);
-  const [includedRanges, setIncludedRanges] = useState<[number, number][]>([]);
+  // selection (step 2) — paragraph-granularity: click to toggle whole paragraphs
+  const [includedParas, setIncludedParas] = useState<Set<number>>(new Set());
   const [pickedImages, setPickedImages] = useState<Set<number>>(new Set());
   const [showPics, setShowPics] = useState(false);
-  const selRef = useRef<HTMLDivElement>(null);
 
   // intent + color (step 3 = inside select step)
   const [intent, setIntent] = useState('');
@@ -87,8 +74,8 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
       setSource(src);
       setCite(src.cite || '');
       setYear(src.year || CURRENT_YEAR);
-      setIncludedRanges([]);
-      setPickedImages(new Set(src.images.map((im, i) => (im.suggested ? i : -1)).filter((i) => i >= 0)));
+      setIncludedParas(new Set());
+      setPickedImages(new Set());
       setStep('select');
     } catch (e: any) {
       setError(humanizeGeminiError(e?.message) || e?.message || 'Could not read this file.');
@@ -96,22 +83,18 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     }
   }
 
-  function captureSelection() {
-    if (!selRef.current) return;
-    const off = selectionOffsets(selRef.current);
-    if (!off) return;
-    setIncludedRanges((prev) => mergeRanges([...prev, [off.start, off.end]]));
-    window.getSelection()?.removeAllRanges();
-  }
-
-  function removeRange(idx: number) {
-    setIncludedRanges((prev) => prev.filter((_, i) => i !== idx));
+  function togglePara(idx: number) {
+    setIncludedParas((prev) => {
+      const n = new Set(prev);
+      n.has(idx) ? n.delete(idx) : n.add(idx);
+      return n;
+    });
   }
 
   const selectedBody = useMemo(() => {
-    if (!includedRanges.length) return '';
-    return mergeRanges(includedRanges).map(([a, b]) => fullText.slice(a, b).trim()).filter(Boolean).join('\n\n');
-  }, [includedRanges, fullText]);
+    if (!source || !includedParas.size) return '';
+    return [...includedParas].sort((a, b) => a - b).map((i) => source.paragraphs[i]).filter(Boolean).join('\n\n');
+  }, [includedParas, source]);
 
   async function cut() {
     if (!selectedBody.trim()) return;
@@ -207,19 +190,6 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     return dimHighlightToHsl(r, g, b, 30);
   }
 
-  // Build display segments for the selection step.
-  const selSegments = useMemo(() => {
-    const merged = mergeRanges(includedRanges);
-    const segs: { text: string; rangeIdx: number | null }[] = [];
-    let cursor = 0;
-    merged.forEach(([a, b], idx) => {
-      if (a > cursor) segs.push({ text: fullText.slice(cursor, a), rangeIdx: null });
-      segs.push({ text: fullText.slice(a, b), rangeIdx: idx });
-      cursor = b;
-    });
-    if (cursor < fullText.length) segs.push({ text: fullText.slice(cursor), rangeIdx: null });
-    return segs;
-  }, [includedRanges, fullText]);
 
   // Combined image list for the edit step
   type EditImg = { key: string; src: string; alt: string; isSource: boolean; srcIdx: number; extraIdx: number };
@@ -275,33 +245,28 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           {step === 'select' && source && (
             <div className="space-y-3">
               <div className="text-xs text-ink/50">
-                <span className="text-ink/70 font-medium">Highlight the text you want in the card.</span>{' '}
-                Select a passage and release — selections stack. Hover a selection and click ✕ to remove it.
+                <span className="text-ink/70 font-medium">Click paragraphs to include them in the card.</span>{' '}
+                You must include the full paragraph — irrelevant parts can be shrunk to small text after cutting.
               </div>
               {source.cite && (
                 <div className="text-[11px] text-ink/40 border border-line rounded-sm px-2 py-1.5">
                   <span className="text-ink/55 font-medium">Cite: </span>{source.cite}
                 </div>
               )}
-              <div
-                ref={selRef}
-                onMouseUp={captureSelection}
-                className="text-sm text-ink/70 leading-relaxed whitespace-pre-wrap select-text rounded-sm border border-line p-3 max-h-[34vh] overflow-y-auto scroll-thin"
-              >
-                {selSegments.map((seg, i) =>
-                  seg.rangeIdx === null ? (
-                    <span key={i}>{seg.text}</span>
-                  ) : (
-                    <span key={i} className="relative group/inc rounded-sm" style={{ backgroundColor: 'var(--accent-soft)', boxShadow: 'inset 0 -2px 0 var(--accent)' }}>
-                      {seg.text}
-                      <button
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeRange(seg.rangeIdx!); }}
-                        className="opacity-0 group-hover/inc:opacity-100 transition align-super text-[10px] ml-0.5 px-1 rounded-full bg-danger text-white"
-                        title="Remove this selection"
-                      >✕</button>
-                    </span>
-                  )
-                )}
+              <div className="rounded-sm border border-line max-h-[34vh] overflow-y-auto scroll-thin divide-y divide-line">
+                {source.paragraphs.map((para, i) => {
+                  const on = includedParas.has(i);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => togglePara(i)}
+                      className="w-full text-left px-3 py-2 text-sm leading-relaxed transition"
+                      style={on ? { backgroundColor: 'var(--accent-soft)', boxShadow: 'inset 3px 0 0 var(--accent)', color: 'var(--ink)' } : { color: 'var(--ink)', opacity: 0.55 }}
+                    >
+                      {para}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Pictures — from source */}
@@ -469,8 +434,8 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           {step === 'select' && (
             <>
               <button className="btn-primary text-sm" disabled={!selectedBody.trim()} onClick={cut}>Cut card →</button>
-              <button className="btn text-sm" onClick={() => setIncludedRanges([])} disabled={!includedRanges.length}>Clear selection</button>
-              <span className="text-xs text-ink/40 ml-auto">{includedRanges.length} selection{includedRanges.length !== 1 ? 's' : ''}</span>
+              <button className="btn text-sm" onClick={() => setIncludedParas(new Set())} disabled={!includedParas.size}>Clear</button>
+              <span className="text-xs text-ink/40 ml-auto">{includedParas.size} paragraph{includedParas.size !== 1 ? 's' : ''} selected</span>
             </>
           )}
           {step === 'edit' && (

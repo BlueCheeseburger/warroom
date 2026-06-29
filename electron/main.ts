@@ -1578,7 +1578,7 @@ TASKS — return ONLY one JSON object (no markdown, no prose) with these fields:
 - "title": the article title.
 - "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}.
 - "bodyIndices": array of the paragraph indices that are the ACTUAL ARTICLE BODY in reading order. EXCLUDE navigation, standalone bylines, related-article lists, newsletter/subscribe prompts, ads, photo captions, and comments. Keep only the author's prose/evidence.
-- "imageIndices": array of image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Use [] if none or no images.
+- "imageIndices": array of up to 3 image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Max 3 — pick only the most substantive ones. Use [] if none or no images.
 
 PARAGRAPHS:
 ${numbered}
