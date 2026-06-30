@@ -326,6 +326,7 @@ const api = {
     ipcRenderer.on('file:open', handler);
     return () => ipcRenderer.removeListener('file:open', handler);
   },
+  exportCardsToDocx: (cards: any[]) => ipcRenderer.invoke('export:cardsToDocx', cards),
 };
 
 contextBridge.exposeInMainWorld('warroom', api);

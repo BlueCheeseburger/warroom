@@ -5,6 +5,7 @@ import ImportCards from './ImportCards';
 import { EditIcon, TrashIcon } from './Spinner';
 import { linkifyText } from '../lib/linkify';
 import { FormattedBody, CardImages } from './CardBody';
+import { copyCardToClipboard } from './Library';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const OUTDATED_THRESHOLD = 4;
@@ -145,7 +146,15 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
   const dangerCls = useDangerBtnClass();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const outdated = isOutdated(card.year);
+
+  async function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    await copyCardToClipboard(card);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   async function deleteCard() {
     await update((db) => {
@@ -196,6 +205,7 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
           )}
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+          <button className="btn btn-icon w-7 h-7 text-[11px]" title="Copy card to clipboard (paste into Word with formatting)" onClick={handleCopy}>{copied ? '✓' : '⎘'}</button>
           <button className="btn btn-icon w-7 h-7" title="Edit" onClick={() => setEditing(true)}><EditIcon /></button>
           <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={deleteCard}><TrashIcon /></button>
         </div>

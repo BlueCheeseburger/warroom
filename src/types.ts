@@ -507,6 +507,10 @@ declare global {
       platform: string;
       setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => Promise<boolean>;
       onFileOpen: (cb: (filePath: string) => void) => () => void;
+      exportCardsToDocx: (cards: Array<{
+        tag: string; cite: string; body: string;
+        bodyRuns?: CardRun[];
+      }>) => Promise<{ ok: boolean; canceled?: boolean; error?: string }>;
     };
   }
 }

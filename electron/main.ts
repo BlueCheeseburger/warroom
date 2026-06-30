@@ -9,6 +9,7 @@ import os from 'os';
 import dns from 'dns';
 import net2 from 'net';
 import Fuse from 'fuse.js';
+import { Document, Packer, Paragraph, TextRun, UnderlineType, AlignmentType, BorderStyle } from 'docx';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
@@ -3126,6 +3127,71 @@ ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
   checkPath(filePath);
   const err = await shell.openPath(filePath);
   return { ok: !err, error: err || undefined };
+});
+
+// Build a .docx from an array of cards and save it to a user-chosen location.
+// Preserves debate card formatting: bold tag, 8pt cite, 11pt body with
+// underline/highlight/font-size runs matching what was cut.
+ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
+  tag: string;
+  cite: string;
+  body: string;
+  bodyRuns?: Array<{ text: string; underline?: boolean; highlight?: 'yellow' | 'cyan' | 'green'; fontSize?: number }>;
+}>) => {
+  const { filePath: savePath, canceled } = await dialog.showSaveDialog({
+    title: 'Export cards to Word',
+    defaultPath: 'warroom-cards.docx',
+    filters: [{ name: 'Word Document', extensions: ['docx'] }],
+  });
+  if (canceled || !savePath) return { ok: false, canceled: true };
+
+  const HL_MAP: Record<string, string> = { yellow: 'yellow', cyan: 'cyan', green: 'green' };
+  // half-points: 11pt = 22, 8pt = 16, 6pt = 12, 3pt = 6
+  const FS_MAP: Record<number, number> = { 11: 22, 8: 16, 6: 12, 3: 6 };
+
+  const children: Paragraph[] = [];
+
+  for (let ci = 0; ci < cards.length; ci++) {
+    const card = cards[ci];
+
+    // Separator between cards
+    if (ci > 0) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '', size: 6 })],
+        border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC', space: 4 } },
+        spacing: { after: 120 },
+      }));
+    }
+
+    // Tag line — 12pt bold
+    children.push(new Paragraph({
+      children: [new TextRun({ text: card.tag, bold: true, size: 24 })],
+      spacing: { after: 40 },
+    }));
+
+    // Cite — 8pt
+    children.push(new Paragraph({
+      children: [new TextRun({ text: card.cite, size: 16 })],
+      spacing: { after: 80 },
+    }));
+
+    // Body — runs with emphasis, or plain text
+    const runs: TextRun[] = (card.bodyRuns && card.bodyRuns.length > 0 ? card.bodyRuns : [{ text: card.body }]).map((r) => {
+      const halfPt = FS_MAP[(r.fontSize as number) || 11] ?? 22;
+      const opts: Record<string, any> = { text: r.text, size: halfPt };
+      if (r.underline) opts['underline'] = { type: UnderlineType.SINGLE };
+      if (r.highlight && HL_MAP[r.highlight]) opts['highlight'] = HL_MAP[r.highlight];
+      return new TextRun(opts);
+    });
+
+    children.push(new Paragraph({ children: runs, spacing: { after: 80 } }));
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  const buffer = await Packer.toBuffer(doc);
+  await fs.writeFile(savePath, buffer);
+  await shell.openPath(savePath);
+  return { ok: true };
 });
 
 // Reveal a file in Finder / File Explorer (highlights the item in its folder).
