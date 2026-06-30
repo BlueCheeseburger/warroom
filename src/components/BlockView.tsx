@@ -8,6 +8,15 @@ import { FormattedBody, CardImages } from './CardBody';
 import { copyCardToClipboard } from './Library';
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+function shortCite(cite: string): string {
+  const comma = cite.indexOf(',');
+  return (comma > 0 ? cite.slice(0, comma) : cite).trim();
+}
+function longCite(cite: string): string {
+  const comma = cite.indexOf(',');
+  return comma > 0 ? cite.slice(comma + 1).trim() : '';
+}
 const OUTDATED_THRESHOLD = 4;
 
 function isOutdated(year: number) {
@@ -127,8 +136,11 @@ function RoundCardList({ cards }: { cards: Card[] }) {
       {cards.length === 0 && <div className="text-base text-ink/40 italic">No cards in this block.</div>}
       {cards.map((card) => (
         <div key={card.id} className="space-y-2">
-          <div className="text-base font-semibold leading-snug">{card.tag}</div>
-          <div className="text-sm text-ink/60 font-medium">{card.cite}</div>
+          <div className="flex items-baseline gap-2 flex-wrap leading-snug">
+            <span className="text-base font-semibold">{card.tag}</span>
+            <span className="text-base text-ink/80">{shortCite(card.cite)}</span>
+          </div>
+          {longCite(card.cite) && <div className="text-xs text-ink/45">{longCite(card.cite)}</div>}
           <div className="text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">{card.body}</div>
           {isOutdated(card.year) && (
             <span className="inline-block text-[11px] px-1.5 py-0.5 bg-warn/10 text-warn rounded-sm">
@@ -180,15 +192,16 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
     <div className="glass-card rounded-sm p-3 group">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <span className="text-sm font-semibold">{card.tag}</span>
+            <span className="text-sm text-ink/80">{shortCite(card.cite)}</span>
             {outdated && (
               <span className="text-[10px] px-1.5 py-0 bg-warn/10 text-warn rounded-sm shrink-0">
                 Outdated — {card.year}
               </span>
             )}
           </div>
-          <div className="text-xs text-ink/50 font-medium mb-2">{card.cite}</div>
+          {longCite(card.cite) && <div className="text-xs text-ink/45 mb-2">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/70">
             {expanded
               ? (hasRuns ? <FormattedBody runs={card.bodyRuns!} /> : <div className="leading-relaxed whitespace-pre-wrap">{linkifyText(card.body, card.id)}</div>)

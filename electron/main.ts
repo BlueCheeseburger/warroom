@@ -1631,7 +1631,7 @@ What they intend to use this card for: ${intent ? `"${intent}"` : '(not specifie
 Decide the emphasis a skilled debater would apply, then propose taglines.
 
 Return ONLY one JSON object (no markdown, no prose) with these fields:
-- "taglines": array of 1 OR 2 debate flow tags in FULL CAPS with em dashes (—) for structure. Maximum 10 words. Examples: "IRAN THREATENS HALT — DEAL COLLAPSE INEVITABLE" or "DRONES KEY — ARCTIC SURVEILLANCE DETERS RUSSIA". Strong declarative claim stating what the card PROVES, not a description of what it says. Offer 2 only if two genuinely distinct framings exist.
+- "taglines": array of 1 OR 2 debate flow tags using em dashes (—) for structure. Maximum 10 words. Use CAPS selectively to stress the most important nouns/verbs — not every word, just the key ones that a debater would shout on a flow. Examples: "Iran attacks threaten deal — Hormuz CLOSURE INEVITABLE" or "Surveillance DETERS — detection forces restraint" or "INTERIM DEAL collapses — fighting spreads regionally". The style is mixed case with a few caps for emphasis, not shouting. Strong declarative claim (what the card PROVES), not a description. Offer 2 only if two genuinely distinct framings exist.
 - "underline": array of the EXACT verbatim substrings the debater should READ ALOUD (the "cut"). Copy them character-for-character from the body. This should be a meaningful, readable cut — not the entire body, not one fragment.
 - "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize.
 - "small": array of the EXACT verbatim substrings that should be KEPT for context but NOT read aloud (shrunk to small text). These must not overlap the underlined text.
@@ -3136,7 +3136,7 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
   tag: string;
   cite: string;
   body: string;
-  bodyRuns?: Array<{ text: string; underline?: boolean; highlight?: 'yellow' | 'cyan' | 'green'; fontSize?: number }>;
+  bodyRuns?: Array<{ text: string; underline?: boolean; highlight?: 'yellow' | 'cyan' | 'green'; fontSize?: number; small?: boolean }>;
 }>) => {
   const { filePath: savePath, canceled } = await dialog.showSaveDialog({
     title: 'Export cards to Word',
@@ -3177,9 +3177,11 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
 
     // Body — runs with emphasis, or plain text
     const runs: TextRun[] = (card.bodyRuns && card.bodyRuns.length > 0 ? card.bodyRuns : [{ text: card.body }]).map((r) => {
-      const halfPt = FS_MAP[(r.fontSize as number) || 11] ?? 22;
+      // fontSize field (new) or legacy small:boolean fallback
+      const effectiveFontSize = r.fontSize ?? (r.small ? 8 : 11);
+      const halfPt = FS_MAP[effectiveFontSize] ?? 22;
       const opts: Record<string, any> = { text: r.text, size: halfPt };
-      if (r.underline) opts['underline'] = { type: UnderlineType.SINGLE };
+      if (r.underline && !r.small && effectiveFontSize >= 8) opts['underline'] = { type: UnderlineType.SINGLE };
       if (r.highlight && HL_MAP[r.highlight]) opts['highlight'] = HL_MAP[r.highlight];
       return new TextRun(opts);
     });

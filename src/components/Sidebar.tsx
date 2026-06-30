@@ -199,7 +199,7 @@ export default function Sidebar() {
   const [driveConfigured, setDriveConfigured] = useState(false);
   const [importing, setImporting] = useState(false);
   const { db, view, setView, mode, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
-  const cases = Object.values(db.cases);
+  const cases = Object.values(db.cases).filter((c: any) => !c.id.startsWith('__'));
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});

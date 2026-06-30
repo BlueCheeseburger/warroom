@@ -13,6 +13,12 @@ function shortCite(cite: string): string {
   return (comma > 0 ? cite.slice(0, comma) : cite).trim();
 }
 
+// Everything after the first comma — the full credentials/publication/URL portion.
+function longCite(cite: string): string {
+  const comma = cite.indexOf(',');
+  return comma > 0 ? cite.slice(comma + 1).trim() : '';
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -242,7 +248,7 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
             <span className="text-sm font-semibold truncate">{card.tag}</span>
             {outdated && <span className="text-[10px] px-1.5 bg-warn/10 text-warn rounded-sm shrink-0">{card.year}</span>}
           </div>
-          <div className="text-[11px] text-ink/45 truncate">{shortCite(card.cite)}</div>
+          <div className="text-[11px] text-ink/55 truncate">{shortCite(card.cite)}</div>
         </div>
         {!selectMode && (
           <button
@@ -276,9 +282,10 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <span className="text-sm font-semibold">{card.tag}</span>
+            <span className="text-sm text-ink/80">{shortCite(card.cite)}</span>
             {outdated && <span className="text-[10px] px-1.5 py-0 bg-warn/10 text-warn rounded-sm">Outdated — {card.year}</span>}
           </div>
-          <div className="text-xs text-ink/50 font-medium mb-1.5">{card.cite}</div>
+          {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1.5">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/60">
             {expanded
               ? (hasRuns ? <FormattedBody runs={card.bodyRuns!} /> : <div className="leading-relaxed whitespace-pre-wrap">{linkifyText(card.body, card.id)}</div>)
