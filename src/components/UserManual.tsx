@@ -111,14 +111,16 @@ export default function UserManual() {
         <FindBar query={find.query} setQuery={find.setQuery} idx={find.idx} count={find.count} step={find.step} close={find.close} />
       )}
 
-      {/* "Ask Warroom AI" hint — points up toward the AI sparkle in the title bar. */}
-      {!hintDismissed && (
+      {/* "Ask Warroom AI" hint — points up toward the AI sparkle in the title bar
+          (~52px from the window's right edge). Hidden while the find bar is open
+          so the two top-right overlays never collide. */}
+      {!hintDismissed && !find.open && (
         <div
           className="absolute z-40 flex items-center gap-2 rounded-lg px-3 py-2 shadow-xl"
-          style={{ top: 14, right: 110, background: 'var(--bg-popover, var(--bg-elevated))', border: '1px solid var(--border-med)', maxWidth: 230 }}
+          style={{ top: 14, right: 12, background: 'var(--bg-popover, var(--bg-elevated))', border: '1px solid var(--border-med)', maxWidth: 240 }}
         >
-          {/* upward arrow toward the AI button */}
-          <div style={{ position: 'absolute', top: -6, right: 18, width: 10, height: 10, transform: 'rotate(45deg)', background: 'var(--bg-popover, var(--bg-elevated))', borderTop: '1px solid var(--border-med)', borderLeft: '1px solid var(--border-med)' }} />
+          {/* upward arrow aligned under the AI button */}
+          <div style={{ position: 'absolute', top: -6, right: 34, width: 10, height: 10, transform: 'rotate(45deg)', background: 'var(--bg-popover, var(--bg-elevated))', borderTop: '1px solid var(--border-med)', borderLeft: '1px solid var(--border-med)' }} />
           <span style={{ fontSize: 16, lineHeight: 1 }}>✦</span>
           <span className="text-xs text-ink/80 leading-snug">Need help? Ask <strong>Warroom AI</strong> — the sparkle up there.</span>
           <button onClick={dismissHint} title="Dismiss"
