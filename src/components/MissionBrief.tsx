@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../store/appStore';
 import { Block, Round } from '../types';
-import { Dots } from './Spinner';
+import { Dots, LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -566,7 +566,12 @@ function MissionBriefAI({ round, opponent }: { round: Round; opponent: any }) {
       {error && <div className="text-xs text-danger mb-2">{error}</div>}
 
       {loading && (
-        <div className="text-xs text-ink/40 italic">Analyzing opponent and judge…</div>
+        <LoadingState className="py-3" messages={[
+          'Analyzing opponent and judge…',
+          'Reviewing the disclosure…',
+          'Reading the judge’s paradigm…',
+          'Building your strategy brief…',
+        ]} />
       )}
 
       {storedBrief && !loading && (

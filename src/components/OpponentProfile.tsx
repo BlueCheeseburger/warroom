@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../store/appStore';
 import { Case, OpponentStats } from '../types';
 import { humanizeGeminiError } from '../utils/geminiError';
-import { Spinner } from './Spinner';
+import { Spinner, LoadingState, CyclingText } from './Spinner';
 import SharedNotesEditor from './SharedNotesEditor';
 
 // OpenCaselist cite titles often arrive with markdown heading syntax (e.g. "# 1AC").
@@ -362,7 +362,12 @@ function DisclosedFileModal({
       {!error ? (
         <>
           <Spinner />
-          <div className="text-sm text-ink/50">Loading {label}…</div>
+          <CyclingText className="text-sm text-ink/50" messages={[
+            `Loading ${label}…`,
+            'Fetching disclosure from OpenCaselist…',
+            'Downloading the file…',
+            'Almost there…',
+          ]} />
           <button className="btn text-xs mt-2" onClick={onClose}>Cancel</button>
         </>
       ) : (
@@ -645,10 +650,12 @@ function GeminiTeamSummary({ disc, teamName, oppId }: { disc: any; teamName: str
 
       {/* Loading */}
       {status === 'loading' && (
-        <div className="flex items-center gap-2 text-xs text-ink/50 py-2">
-          <Spinner />
-          Analyzing {rawRounds.length} rounds and {rawCites.length} cites…
-        </div>
+        <LoadingState className="py-3" messages={[
+          `Analyzing ${rawRounds.length} rounds and ${rawCites.length} cites…`,
+          'Spotting their go-to arguments…',
+          'Profiling aff and neg tendencies…',
+          'Writing the scouting report…',
+        ]} />
       )}
 
       {/* No Gemini key */}

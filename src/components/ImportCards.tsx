@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/appStore';
 import { Card, ExtractedCard } from '../types';
-import { Dots } from './Spinner';
+import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 
 interface Props {
@@ -94,8 +94,13 @@ export default function ImportCards({ blockId, onDone }: Props) {
 
   if (step === 'loading') {
     return (
-      <div className="border border-line rounded-sm glass-card p-3 text-sm text-ink/50 flex items-center gap-2">
-        Extracting cards with AI <Dots />
+      <div className="border border-line rounded-sm glass-card p-4">
+        <LoadingState messages={[
+          'Extracting cards with AI…',
+          'Reading the document…',
+          'Detecting tags, cites, and card bodies…',
+          'Structuring the cards…',
+        ]} />
       </div>
     );
   }

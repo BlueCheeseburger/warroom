@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 const DELAYS = [0, 150, 300];
 
@@ -64,6 +64,52 @@ export function CopyIcon({ size = 13 }: { size?: number }) {
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
+  );
+}
+
+/** Cycles through `messages`, fading between them every `intervalMs`. Place
+ *  beneath a spinner to narrate progress during slow async work (API/LLM calls).
+ *  Resets to the first message whenever the message set changes. */
+export function CyclingText({
+  messages,
+  intervalMs = 2600,
+  className = '',
+}: { messages: string[]; intervalMs?: number; className?: string }) {
+  const [idx, setIdx] = useState(0);
+  // Re-key the effect on the joined messages so a new set restarts from the top.
+  const key = messages.join('|');
+  useEffect(() => {
+    setIdx(0);
+    if (messages.length <= 1) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % messages.length), intervalMs);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, intervalMs]);
+  if (messages.length === 0) return null;
+  return (
+    <span key={idx} className={className} style={{ animation: 'lm-fade 0.45s ease' }}>
+      {messages[Math.min(idx, messages.length - 1)]}
+    </span>
+  );
+}
+
+/** Inline loading: an arc spinner with descriptive, dynamically-changing text
+ *  beneath it. Use for operations you know will take time — AI/LLM calls,
+ *  remote fetches — so the wait is narrated instead of a bare spinner. */
+export function LoadingState({
+  messages,
+  className = '',
+  spinnerClassName = 'w-5 h-5',
+  intervalMs,
+}: { messages: string[]; className?: string; spinnerClassName?: string; intervalMs?: number }) {
+  return (
+    <div
+      className={`flex flex-col items-center gap-2 text-center ${className}`}
+      style={{ color: 'var(--nav-inactive-color)' }}
+    >
+      <Spinner className={spinnerClassName} />
+      <CyclingText messages={messages} intervalMs={intervalMs} className="text-[12px]" />
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { Card, CutterSource, FontSize, HighlightColor } from '../types';
-import { Dots } from './Spinner';
+import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { FormattedBody } from './CardBody';
 import {
@@ -257,9 +257,13 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
 
           {/* STEP: reading */}
           {step === 'reading' && (
-            <div className="text-center py-14 text-sm text-ink/60 flex flex-col items-center gap-3">
-              <div className="flex items-center gap-2">Reading {fileName} <Dots /></div>
-              <div className="text-xs text-ink/40">Pulling the cite, article body, and images.</div>
+            <div className="py-14">
+              <LoadingState messages={[
+                `Reading ${fileName}…`,
+                'Pulling the cite and article body…',
+                'Extracting images…',
+                'Cleaning up the text…',
+              ]} />
             </div>
           )}
 
@@ -348,9 +352,13 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
 
           {/* STEP: cutting */}
           {step === 'cutting' && (
-            <div className="text-center py-14 text-sm text-ink/60 flex flex-col items-center gap-3">
-              <div className="flex items-center gap-2">Warroom AI is cutting the card <Dots /></div>
-              <div className="text-xs text-ink/40">Deciding what to underline, highlight, and shrink.</div>
+            <div className="py-14">
+              <LoadingState messages={[
+                'Warroom AI is cutting the card…',
+                'Selecting the most important sentences…',
+                'Deciding what to underline and highlight…',
+                'Shrinking the rest…',
+              ]} />
             </div>
           )}
 

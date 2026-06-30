@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { renderAsync } from 'docx-preview';
-import { LoadingPanel, Spinner } from './Spinner';
+import { LoadingPanel, LoadingState, Spinner } from './Spinner';
 import { useApp } from '../store/appStore';
 import type { DebateEvent, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
@@ -1449,10 +1449,13 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
         )}
 
         {loading && (
-          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
-            <Spinner className="w-5 h-5" />
-            <div className="text-[12px]">Scoring {cards.length} cards…</div>
-          </div>
+          <LoadingState className="mt-8" messages={[
+            `Scoring ${cards.length} cards…`,
+            'Checking each source for credibility…',
+            'Weighing author expertise and recency…',
+            'Flagging weak or dated evidence…',
+            'Finishing up…',
+          ]} />
         )}
 
         {!loading && cards.length === 0 && !error && (
@@ -1661,10 +1664,12 @@ function TrapDrill({ event, highlighted, full, docKey, onExit }: {
 
       <div className="flex-1 overflow-y-auto scroll-thin px-3.5 py-3">
         {loading && (
-          <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
-            <Spinner className="w-5 h-5" />
-            <div className="text-[12px]">Setting traps…</div>
-          </div>
+          <LoadingState className="mt-8" messages={[
+            'Setting traps…',
+            'Reading the doc for weak links…',
+            'Designing questions that corner the answer…',
+            'Sharpening the follow-ups…',
+          ]} />
         )}
 
         {error && (
@@ -1883,10 +1888,12 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
             )}
 
             {loading && totalQuestions === 0 && (
-              <div className="flex flex-col items-center gap-2 mt-8" style={{ color: 'var(--nav-inactive-color)' }}>
-                <Spinner className="w-5 h-5" />
-                <div className="text-[12px]">Reading the doc & writing questions…</div>
-              </div>
+              <LoadingState className="mt-8" messages={[
+                'Reading the doc & writing questions…',
+                'Finding the strongest lines of attack…',
+                'Drafting model answers…',
+                'Polishing the question set…',
+              ]} />
             )}
 
             {error && (
