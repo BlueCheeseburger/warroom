@@ -185,7 +185,7 @@ export default function Library() {
             disabled={!selected.size || exporting}
             onClick={exportSelected}
           >
-            {exporting ? 'Exporting…' : `Export ${selected.size} card${selected.size !== 1 ? 's' : ''} to Word`}
+            {exporting ? 'Exporting…' : `Export ${selected.size} card${selected.size !== 1 ? 's' : ''} to new Word doc`}
           </button>
           <button className="btn text-sm" onClick={selectAll} disabled={exporting}>
             Select all ({results.length})
@@ -283,9 +283,9 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <span className="text-sm font-semibold">{card.tag}</span>
-            <span className="text-sm text-ink/80">{shortCite(card.cite)}</span>
             {outdated && <span className="text-[10px] px-1.5 py-0 bg-warn/10 text-warn rounded-sm">Outdated — {card.year}</span>}
           </div>
+          <div className="text-sm text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
           {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1.5">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/60">
             {expanded

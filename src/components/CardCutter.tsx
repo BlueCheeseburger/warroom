@@ -466,9 +466,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
             <>
               <button className="btn-primary text-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save to All Cards'}</button>
               <button className="btn text-sm" onClick={() => setStep('select')} disabled={saving}>← Back</button>
-              <button className="btn text-sm ml-auto opacity-60 hover:opacity-100" disabled={saving} onClick={save}>
-                Skip — save as-is
-              </button>
+              <span className="text-xs text-ink/40 ml-auto">Saved cards appear in All Cards.</span>
             </>
           )}
           {(step === 'pick' || step === 'reading' || step === 'cutting') && (

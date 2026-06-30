@@ -668,7 +668,7 @@ async function callGrok(apiKey: string, prompt: string, modelId: string): Promis
 
 // ─── Unified single-turn text call ───────────────────────────────────────────
 
-async function callAI(prompt: string, taskTier: ModelTier | 'user'): Promise<string> {
+async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask(taskTier);
   if (!apiKey) throw new Error('NO_KEY');
   if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId);
@@ -680,13 +680,37 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user'): Promise<str
     headers: geminiHeaders(apiKey),
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: extraConfig?.maxOutputTokens ?? 8192 },
     }),
   });
   if (!res.ok) throw geminiHttpError(res.status, await res.text().catch(() => ''));
   const data = await res.json() as any;
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (typeof text !== 'string') throw new Error('Unexpected Gemini response shape');
+  return text;
+}
+
+// Gemini-specific call with Google Search grounding enabled. Used to look up
+// author credentials when they aren't in the article HTML itself. Falls back to
+// standard callAI if the user's provider isn't Gemini.
+async function callGeminiWithSearch(prompt: string): Promise<string> {
+  const { provider, modelId, apiKey } = await getProviderForTask('balanced');
+  if (provider !== 'gemini') return callAI(prompt, 'balanced'); // non-Gemini: no search tool
+  const res = await fetch(geminiGenerateUrl(modelId), {
+    method: 'POST',
+    headers: geminiHeaders(apiKey),
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 4096 },
+    }),
+  });
+  if (!res.ok) throw geminiHttpError(res.status, await res.text().catch(() => ''));
+  const data = await res.json() as any;
+  // Search grounding can return multiple text parts — concatenate them all.
+  const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.filter((p: any) => typeof p.text === 'string').map((p: any) => p.text).join('');
+  if (!text) throw new Error('Unexpected Gemini response shape');
   return text;
 }
 
@@ -1577,7 +1601,7 @@ TASKS — return ONLY one JSON object (no markdown, no prose) with these fields:
 - "author": author last name(s) (e.g. "Borsari and Davis"), or "quals unknown" if not findable.
 - "year": 4-digit publication year integer. If unknown use ${today.getFullYear()}.
 - "title": the article title.
-- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}.
+- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}. IMPORTANT: if the author's credentials (title, affiliation, expertise) are not present in the article text, use Google Search to look them up by name and publication — a cite without credentials is incomplete.
 - "bodyIndices": array of the paragraph indices that are the ACTUAL ARTICLE BODY in reading order. EXCLUDE navigation, standalone bylines, related-article lists, newsletter/subscribe prompts, ads, photo captions, and comments. Keep only the author's prose/evidence.
 - "imageIndices": array of up to 3 image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Max 3 — pick only the most substantive ones. Use [] if none or no images.
 
@@ -1587,7 +1611,7 @@ ${numbered}
 IMAGES:
 ${imgList}`;
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'balanced')) || {};
+  const parsed = parseJsonLoose(await callGeminiWithSearch(prompt)) || {};
   const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
     ? parsed.bodyIndices.filter((n: any) => Number.isInteger(n) && n >= 0 && n < rawParagraphs.length)
     : [];
@@ -1638,10 +1662,12 @@ Return ONLY one JSON object (no markdown, no prose) with these fields:
 
 CRITICAL: every string in underline/highlight/small MUST be copied verbatim from the body text below — do not paraphrase, reword, or invent text. If unsure, include less.
 
+COVERAGE: you MUST process the ENTIRE body text from start to finish. Do not stop after the first few paragraphs. Apply emphasis throughout — the last paragraph deserves the same treatment as the first. If you run out of space, compress the JSON (no extra whitespace) so everything fits.
+
 BODY TEXT:
 ${text.slice(0, 40000)}`;
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'best')) || {};
+  const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
   const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
   let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
   if (taglines.length === 0) taglines = ['Untitled card'];

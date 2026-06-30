@@ -137,11 +137,9 @@ function RoundCardList({ cards }: { cards: Card[] }) {
       {cards.length === 0 && <div className="text-base text-ink/40 italic">No cards in this block.</div>}
       {cards.map((card) => (
         <div key={card.id} className="space-y-2">
-          <div className="flex items-baseline gap-2 flex-wrap leading-snug">
-            <span className="text-base font-semibold">{card.tag}</span>
-            <span className="text-base text-ink/80">{shortCite(card.cite)}</span>
-          </div>
-          {longCite(card.cite) && <div className="text-xs text-ink/45">{longCite(card.cite)}</div>}
+          <div className="text-base font-semibold leading-snug mb-0.5">{card.tag}</div>
+          <div className="text-base text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
+          {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1">{longCite(card.cite)}</div>}
           <div className="text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">{card.body}</div>
           {isOutdated(card.year) && (
             <span className="inline-block text-[11px] px-1.5 py-0.5 bg-warn/10 text-warn rounded-sm">
@@ -195,13 +193,13 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <span className="text-sm font-semibold">{card.tag}</span>
-            <span className="text-sm text-ink/80">{shortCite(card.cite)}</span>
             {outdated && (
               <span className="text-[10px] px-1.5 py-0 bg-warn/10 text-warn rounded-sm shrink-0">
                 Outdated — {card.year}
               </span>
             )}
           </div>
+          <div className="text-sm text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
           {longCite(card.cite) && <div className="text-xs text-ink/45 mb-2">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/70">
             {expanded
