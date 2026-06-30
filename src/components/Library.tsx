@@ -5,6 +5,7 @@ import { linkifyText } from '../lib/linkify';
 import { FormattedBody, CardImages } from './CardBody';
 import CardCutter from './CardCutter';
 import { HIGHLIGHT_CSS } from '../utils/cardFormat';
+import { CopyIcon } from './Spinner';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -253,10 +254,10 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
         {!selectMode && (
           <button
             onClick={handleCopy}
-            className="text-[11px] text-ink/30 hover:text-ink/70 shrink-0 transition"
+            className="text-ink/30 hover:text-ink/70 shrink-0 transition"
             title="Copy card to clipboard (paste into Word with formatting)"
           >
-            {copied ? '✓' : '⎘'}
+            {copied ? <span className="text-[10px]">✓</span> : <CopyIcon size={12} />}
           </button>
         )}
         <div className="text-[10px] text-ink/30 shrink-0 text-right truncate max-w-[120px]">{card.caseName}</div>
@@ -301,10 +302,10 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
             {!selectMode && (
               <button
                 onClick={handleCopy}
-                className="text-[11px] text-ink/30 hover:text-ink/70 transition ml-auto"
+                className="text-ink/30 hover:text-ink/70 transition ml-auto"
                 title="Copy card to clipboard (paste into Word with formatting)"
               >
-                {copied ? '✓ Copied' : '⎘ Copy'}
+                {copied ? <span className="text-[10px]">✓</span> : <CopyIcon size={13} />}
               </button>
             )}
           </div>

@@ -96,6 +96,28 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     return [...includedParas].sort((a, b) => a - b).map((i) => source.paragraphs[i]).filter(Boolean).join('\n\n');
   }, [includedParas, source]);
 
+  // Skip step 2 entirely — select all paragraphs and let AI decide everything.
+  async function skipToAI() {
+    if (!source) return;
+    const allIdxs = new Set(source.paragraphs.map((_, i) => i));
+    setIncludedParas(allIdxs);
+    const fullBody = source.paragraphs.join('\n\n');
+    setStep('cutting');
+    setError('');
+    try {
+      const res = await window.warroom.ai.cutterEmphasize({ body: fullBody, intent: '', highlightColor: color, cite });
+      const attrs = buildAttrsFromSpans(fullBody, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
+      setEditText(fullBody);
+      setEditAttrs(attrs);
+      setTaglines(res.taglines || []);
+      setChosenTag((res.taglines && res.taglines[0]) || '');
+      setStep('edit');
+    } catch (e: any) {
+      setError(humanizeGeminiError(e?.message) || e?.message || 'Could not cut the card.');
+      setStep('select');
+    }
+  }
+
   async function cut() {
     if (!selectedBody.trim()) return;
     setStep('cutting');
@@ -435,14 +457,18 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
             <>
               <button className="btn-primary text-sm" disabled={!selectedBody.trim()} onClick={cut}>Cut card →</button>
               <button className="btn text-sm" onClick={() => setIncludedParas(new Set())} disabled={!includedParas.size}>Clear</button>
-              <span className="text-xs text-ink/40 ml-auto">{includedParas.size} paragraph{includedParas.size !== 1 ? 's' : ''} selected</span>
+              <button className="btn text-sm ml-auto opacity-60 hover:opacity-100" onClick={skipToAI} title="Let Warroom AI pick everything — selects the full article and cuts with no guidance">
+                Skip — AI decides →
+              </button>
             </>
           )}
           {step === 'edit' && (
             <>
               <button className="btn-primary text-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save to All Cards'}</button>
               <button className="btn text-sm" onClick={() => setStep('select')} disabled={saving}>← Back</button>
-              <span className="text-xs text-ink/40 ml-auto">Saved cards appear in All Cards.</span>
+              <button className="btn text-sm ml-auto opacity-60 hover:opacity-100" disabled={saving} onClick={save}>
+                Skip — save as-is
+              </button>
             </>
           )}
           {(step === 'pick' || step === 'reading' || step === 'cutting') && (
