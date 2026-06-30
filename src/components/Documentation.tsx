@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
+import { useInPageFind, FindBar } from './useInPageFind';
 
 // ─── Section helpers ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ const TOC_SECTIONS = [
   { id: 'stack',       label: 'Tech stack' },
   { id: 'data-model',  label: 'Data model' },
   { id: 'navigation',  label: 'Navigation & modes' },
+  { id: 'global-search', label: 'Global search (⌘K)' },
   { id: 'cases',       label: 'Cases & blocks' },
   { id: 'library',     label: 'Card library' },
   { id: 'opponents',   label: 'Opponents' },
@@ -105,6 +107,7 @@ export default function Documentation() {
   const { setView } = useApp();
   const [activeSection, setActiveSection] = useState('overview');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const find = useInPageFind(scrollRef);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -134,7 +137,10 @@ export default function Documentation() {
   const activeSectionLabel = TOC_SECTIONS.find((s) => s.id === activeSection)?.label ?? '';
 
   return (
-    <div className="flex h-full min-h-0" style={{ background: 'var(--bg-main)' }}>
+    <div className="relative flex h-full min-h-0" style={{ background: 'var(--bg-main)' }}>
+      {find.open && (
+        <FindBar query={find.query} setQuery={find.setQuery} idx={find.idx} count={find.count} step={find.step} close={find.close} />
+      )}
       {/* Sidebar TOC */}
       <div
         className="w-44 shrink-0 flex flex-col py-6 px-3 overflow-y-auto scroll-thin"
@@ -178,8 +184,11 @@ export default function Documentation() {
         <p className="text-sm font-medium mb-1" style={{ color: '#4285F4' }}>
           {activeSectionLabel}
         </p>
-        <p className="text-xs mb-8" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: May 2026
+        <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
+          Last updated: 6/29/26
+        </p>
+        <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
+          Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
         </p>
 
         {/* ── Overview ──────────────────────────────────────────────── */}
@@ -310,6 +319,48 @@ export default function Documentation() {
             Two modes toggled in the sidebar: <strong>Prep</strong> (default, for case building and
             scouting) and <strong>Round</strong> (tournament day, streamlined view focused on current
             round). The mode is persisted per session.
+          </P>
+        </section>
+
+        {/* ── Global search ──────────────────────────────────────────── */}
+        <section id="doc-global-search">
+          <H2>Global search <Badge color="blue">⌘K</Badge></H2>
+          <P>
+            Press <Code>⌘K</Code> (<Code>Ctrl K</Code> on Windows) anywhere — or click the search bar
+            below Home in the sidebar — to open a command-palette search across everything in the app.
+            Results are grouped by type and ranked with fuzzy matching (Fuse.js).
+          </P>
+          <H3>What it searches</H3>
+          <UL>
+            <LI><strong>Cases</strong> — name, OpenCaseList source, and the document's distilled content keywords.</LI>
+            <LI><strong>Speech docs</strong> — file name plus content keywords extracted from the .docx.</LI>
+            <LI><strong>Flows</strong> — name and every filled-in cell across all sheets.</LI>
+            <LI><strong>Opponents</strong> — team, school, notes, and disclosure titles (aff/neg position names + cite titles). File names only — never file contents.</LI>
+            <LI><strong>Judges</strong> — name, institution, and paradigm text.</LI>
+            <LI><strong>Tournaments</strong> — name, location, and event.</LI>
+            <LI><strong>Topics</strong> — the current resolution for each event.</LI>
+            <LI><strong>AI chats</strong> — full conversation history.</LI>
+          </UL>
+          <H3>How keywords are built</H3>
+          <P>
+            On launch, Warroom distills the top content keywords from each case and speech doc (up to
+            2,000 per document, stopwords and 1–10 numbers removed) and caches them. Pure numbers above
+            10 stay searchable (e.g. a <Code>$1,500,000</Code> plan figure). Opening a matched case or
+            speech doc auto-opens the in-document find on the searched term; matched opponent disclosures
+            auto-scroll and highlight the term in the title.
+          </P>
+          <H3>External & AI search</H3>
+          <P>
+            The palette footer offers one-click external searches — <strong>Logos</strong>,
+            <strong> Google Scholar</strong>, and <strong>Open Evidence</strong> — for the current query.
+            Warroom AI can also run the same data search itself via its <Code>search_warroom</Code> tool
+            (e.g. "find arctic in my files"); speech docs, flows, and chat history are renderer-only, so
+            for those use this palette directly.
+          </P>
+          <H3>Searching this documentation</H3>
+          <P>
+            Press <Code>⌘F</Code> / <Code>Ctrl F</Code> on the Documentation and User Manual pages to find
+            text on the page — Enter / Shift+Enter jump between matches, Esc closes.
           </P>
         </section>
 

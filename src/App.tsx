@@ -42,6 +42,7 @@ import Chat from './components/Chat';
 import GeminiPanel from './components/GeminiPanel';
 import GoogleDrivePanel from './components/GoogleDrivePanel';
 import Documentation from './components/Documentation';
+import UserManual from './components/UserManual';
 import TopicsScreen from './components/TopicsScreen';
 import ImpactCalcView from './components/ImpactCalcView';
 import ImpactHub from './components/ImpactHub';
@@ -675,6 +676,7 @@ function Router() {
       case 'flow':        regular = <FlowView />; break;
       case 'gdrive':        regular = <GoogleDrivePanel />; break;
       case 'docs':          regular = <Documentation />; break;
+      case 'user-manual':   regular = <UserManual />; break;
       case 'topics':        regular = <TopicsScreen />; break;
       case 'impact-calc':   regular = <ImpactCalcView />; break;
       case 'impact-hub':    regular = <ImpactHub />; break;

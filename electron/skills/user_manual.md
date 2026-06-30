@@ -8,6 +8,20 @@ Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments,
 
 ---
 
+## Global Search
+Press **⌘K** (Ctrl K on Windows), or click the **Search** bar below Home in the sidebar, to open a command-palette search across your whole app.
+
+- **Searches everything**: cases (name + extracted content keywords), speech docs (file name + content keywords), flows (every cell), opponents (team, school, notes, disclosure titles — file names only, never file contents), judges (paradigm), tournaments, current topics, and your AI chat history.
+- **Ranked, grouped results** with fuzzy matching — type a word or phrase and pick a result to jump straight to it.
+- Opening a matched case or speech doc **auto-opens the in-document find** on your search term; a matched opponent disclosure **auto-scrolls and highlights** the term in its title.
+- **Numbers above 10 are searchable** (e.g. a `$1,500,000` plan figure); the tiny words and 1–10 are filtered out as noise.
+- The footer has one-click **external searches** for your query: Logos, Google Scholar, and Open Evidence.
+- You can also just ask **Warroom AI** to "search my files/cases for X" — it runs the same search via its `search_warroom` tool (speech docs, flows, and chat history are app-only, so use ⌘K directly for those).
+
+**Searching the docs:** on the Documentation and User Manual pages, press **⌘F** (Ctrl F) to find text on the page — Enter / Shift+Enter move between matches, Esc closes.
+
+---
+
 ## Cases & Blocks
 Cases are top-level positions (Aff or Neg). Each holds blocks (e.g. "T – Topicality", "2AC vs Heg DA"). Blocks hold evidence cards (tag + citation + body text + year).
 

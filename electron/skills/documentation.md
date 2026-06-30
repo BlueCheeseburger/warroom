@@ -80,6 +80,19 @@ Two modes toggled in the sidebar: **Prep** (default, for case building and scout
 
 ---
 
+## Global Search (⌘K)
+A command-palette search (`SearchPalette.tsx`) opens on **⌘K / Ctrl K** or via the Search bar below Home in the expanded sidebar. State lives in `useApp` (`searchOpen`, plus handoff fields `pendingSearchQuery`, `pendingFindQuery`, `pendingDisclosureQuery`). The index and search live in `src/lib/searchIndex.ts` using Fuse.js (title weight 0.7, haystack 0.3, threshold 0.38).
+
+**Indexed entry types**: cases (name + OC source + `searchKeywords`), speech docs (file name + cached keywords), flows (name + every cell), opponents (team/school/notes + disclosure titles — file names only, never contents), judges (name/institution/paradigm), tournaments, current topics, and AI chats (full history). Results are grouped by type, max 4 per group.
+
+**Keyword distillation**: on launch, `extractKeywords(text, DOC_KEYWORD_CAP)` distills up to `DOC_KEYWORD_CAP = 2000` content keywords per case and speech doc (stopwords + 1–10 filtered; numbers >10 kept). Cases cache to the DB `Case.searchKeywords`/`searchSig`; speech docs cache to localStorage (`warroom-speechdoc-keywords`) keyed by `{ size, ver }`. `DOC_KEYWORD_VERSION` bumps invalidate all caches. The palette self-heals via `refreshSpeechDocKeywords()` on open.
+
+**Handoff**: opening a case/speech-doc result sets `pendingFindQuery` (auto-opens the in-doc find on the term); an opponent result sets `pendingDisclosureQuery` (auto-scrolls + highlights the disclosure title). The footer runs external searches (Logos / Google Scholar / Open Evidence) by setting `pendingSearchQuery` and navigating. Warroom AI exposes the same data search via the `search_warroom` agent tool (see AI Help Guide).
+
+**In-page find**: the Documentation and User Manual pages use a shared `useInPageFind` hook (`useInPageFind.tsx`) — ⌘F / Ctrl F opens a find bar that paints matches via the CSS Custom Highlight API (no DOM mutation). The User Manual view (`UserManual.tsx`) renders `electron/skills/user_manual.md` with `react-markdown`, builds its TOC from `##` headings, and shows an "Ask Warroom AI" hint pointing at the title-bar AI button.
+
+---
+
 ## Cases & Blocks
 
 Cases are the top-level unit of prep — an aff or neg position. Each case contains **blocks** (e.g. "T-Topicality", "Heg DA", "2AC vs DA"). Blocks hold individual evidence **cards** (tag + cite + body text + year).

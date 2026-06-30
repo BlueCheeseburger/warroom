@@ -957,6 +957,20 @@ export default function Settings() {
         </button>
       </div>
 
+      {/* User Manual */}
+      <div className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
+        <div>
+          <div className="label mb-1">User Manual</div>
+          <p className="text-xs text-ink/50">Step-by-step guide to using every feature — navigation, cases, flows, the speech timer, AI tools, and more. Searchable with ⌘F.</p>
+        </div>
+        <button
+          className="btn shrink-0"
+          onClick={() => setView({ kind: 'user-manual' })}
+        >
+          Open manual
+        </button>
+      </div>
+
       {/* More settings */}
       <div className="mb-4">
         <button
