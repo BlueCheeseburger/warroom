@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp, Theme, DebateEvent } from '../store/appStore';
 import { AIProviderIcon } from './GeminiPanel';
+import { PixelCoinFace, PixelCoinIcon } from './PixelCoin';
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
@@ -447,11 +448,7 @@ function CoinFlip() {
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9 9.5c0-1 .8-1.8 1.8-1.8h.4c1 0 1.8.8 1.8 1.8 0 .8-.5 1.3-1.2 1.7l-.8.5c-.6.35-1 .8-1 1.5" />
-          <circle cx="12" cy="16" r="0.4" fill="currentColor" />
-        </svg>
+        <PixelCoinIcon size={15} />
       </button>
 
       {open && (
@@ -473,33 +470,12 @@ function CoinFlip() {
               }}
             >
               {/* Heads face */}
-              <div
-                style={{
-                  position: 'absolute', inset: 0, borderRadius: '50%',
-                  backfaceVisibility: 'hidden',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #fde68a, #f59e0b)',
-                  border: '2px solid #b45309',
-                  color: '#78350f', fontWeight: 800, fontSize: 10, letterSpacing: '0.06em',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-                }}
-              >
-                H
+              <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
+                <PixelCoinFace variant="heads" size={60} />
               </div>
               {/* Tails face */}
-              <div
-                style={{
-                  position: 'absolute', inset: 0, borderRadius: '50%',
-                  backfaceVisibility: 'hidden',
-                  transform: 'rotateY(180deg)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #e5e7eb, #9ca3af)',
-                  border: '2px solid #6b7280',
-                  color: '#374151', fontWeight: 800, fontSize: 10, letterSpacing: '0.06em',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-                }}
-              >
-                T
+              <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+                <PixelCoinFace variant="tails" size={60} />
               </div>
             </div>
           </div>
