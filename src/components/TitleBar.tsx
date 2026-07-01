@@ -573,7 +573,7 @@ function NavArrow({ direction, enabled, onClick, title }: {
 // ─── TitleBar ─────────────────────────────────────────────────────────────────
 
 export default function TitleBar() {
-  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
+  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, navHistory, navHistoryIndex, goBack, goForward, event } = useApp();
   const canGoBack = navHistoryIndex > 0;
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
@@ -632,11 +632,13 @@ export default function TitleBar() {
       {/* Divider */}
       <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
 
-      {/* Coin flip */}
-      <CoinFlip />
-
-      {/* Divider */}
-      <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
+      {/* Coin flip — PF only (the coin toss that decides sides/speaking order) */}
+      {event === 'pf' && (
+        <>
+          <CoinFlip />
+          <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
+        </>
+      )}
 
       {/* Speech timer */}
       <SpeechTimer />

@@ -553,8 +553,10 @@ export default function Documentation() {
 
           <H3>Coin Flip</H3>
           <P>
-            A coin-flip icon sits just to the left of the timer. Click it to open a small popup with
-            an animated flip, then click <strong>Flip</strong> — the coin spins and lands on heads or tails.
+            Visible only when your event is set to <strong>Public Forum</strong> (PF uses a coin toss
+            to decide sides/speaking order, so it's hidden for Policy and LD). A coin-flip icon sits
+            just to the left of the timer. Click it to open a small popup with an animated flip, then
+            click <strong>Flip</strong> — the coin spins and lands on heads or tails.
           </P>
           <P>
             <strong>It is a genuine 50/50 flip.</strong> The outcome is decided the instant you click

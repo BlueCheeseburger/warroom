@@ -154,7 +154,7 @@ The timer turns amber in the last 30 seconds and red when time is up (overtime c
 - "What's the timer at?" / "How much time is left?"
 
 ### Coin Flip
-A pixel-art coin icon sits just left of the timer. Click it, then click **Flip** — the coin spins and lands on heads or tails.
+Only shows up if your event is set to **PF** (Public Forum rounds start with a coin toss for sides/speaking order — Policy and LD don't use one). When visible, a pixel-art coin icon sits just left of the timer. Click it, then click **Flip** — the coin spins and lands on heads or tails.
 
 **It's a genuine 50/50 flip.** The result is chosen randomly the instant you click, before the animation even starts — the spin you watch is just for show and never influences which side it lands on.
 
