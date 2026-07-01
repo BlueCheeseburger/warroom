@@ -4,13 +4,13 @@ Warroom is a desktop app for competitive policy debaters. It's built around the 
 
 At a glance it looks like a case organizer, which, fair, it mostly is. But a few things under the hood aren't what you'd expect from that description:
 
-## A few things worth knowing about
+## What makes it stand out
 
 **It keeps working after you close it.** There's a background daemon that watches for judge paradigm updates, opponent disclosure changes, live Tabroom pairings, ballot results, and new topic drops — and it keeps notifying you even with Warroom fully quit. To pull this off it relaunches the same Electron binary headless (a separate process wouldn't have access to the credentials Warroom already decrypted and stored via the OS keychain), and it's registered as a real OS-level scheduled task — `launchd` on macOS, Task Scheduler on Windows — so it's not something you have to remember to start. It's careful not to step on the running app: a small heartbeat file tells the daemon whether Warroom is already open, so you never get double notifications. During an active tournament it stays resident and checks every 60 seconds instead of the usual 10 minutes. Clicking one of its notifications reopens the app straight to the relevant judge, opponent, or round, even from a cold start.
 
 **Flowing is actually collaborative, not just shared.** If you and a teammate open the same flow, you're not looking at "a shared file" — you're both editing the same live document, and it merges your keystrokes character by character as you type, even in the same cell at the same time, with no locking and no "someone else has this open" conflicts. That's a CRDT (Yjs) under the hood, syncing over a realtime channel rather than writing to a database on every keystroke. If someone joins late or their connection drops and comes back, they just catch up to the current state. It also keeps a local copy on each device, so a shaky connection at a tournament doesn't mean losing your flow.
 
-**The AI actually does things, not just answers.** Warroom AI isn't a chat window bolted onto your data — it can search Logos and Open Evidence for you, cut and save evidence cards, look up judge paradigms and pull opponent disclosures, edit your flow sheets directly, navigate you around the app, and search across everything you've saved. It plans, calls tools, looks at what came back, and keeps going — a real multi-step agent, not a single autocomplete.
+**The AI actually does things agentically, not just answers.** Warroom AI isn't a chat window bolted onto your data — it can search Logos and Open Evidence for you, cut and save evidence cards, look up judge paradigms and pull opponent disclosures, edit your flow sheets directly, navigate you around the app, and search across everything you've saved. It plans, calls tools, looks at what came back, and keeps going — a real multi-step agent, not a single autocomplete.
 
 ## Everything else it does
 
