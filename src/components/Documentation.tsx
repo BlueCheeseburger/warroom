@@ -185,7 +185,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 6/29/26
+          Last updated: 6/30/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -549,6 +549,19 @@ export default function Documentation() {
             Warroom AI can fully control the timer — start, pause, reset, select a speech type, or
             switch HS/CLG — by asking in plain language (e.g. "start the timer", "set it to 1AR",
             "switch to college times", "how much time is left?").
+          </P>
+
+          <H3>Coin Flip</H3>
+          <P>
+            A coin-flip icon sits just to the left of the timer. Click it to open a small popup with
+            an animated flip, then click <strong>Flip</strong> — the coin spins and lands on heads or tails.
+          </P>
+          <P>
+            <strong>It is a genuine 50/50 flip.</strong> The outcome is decided the instant you click
+            — via <Code>Math.random() &lt; 0.5</Code> — before any animation runs. The spin you see
+            (a random 4–7 extra full turns) is purely cosmetic; the coin is then told to land at the
+            rotation angle that matches the result already chosen. Nothing about the visual weights
+            the outcome toward either side.
           </P>
         </section>
 

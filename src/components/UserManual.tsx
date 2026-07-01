@@ -165,7 +165,7 @@ export default function UserManual() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-8 max-w-3xl">
         <div className="label mb-1">Warroom</div>
         <h1 className="text-xl font-bold text-ink mb-0.5">User Manual</h1>
-        <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Last updated: 6/29/26</p>
+        <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>Last updated: 6/30/26</p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <code className="px-1 py-0.5 rounded text-xs font-mono" style={{ background: 'var(--bg-elevated)' }}>⌘F</code> / <code className="px-1 py-0.5 rounded text-xs font-mono" style={{ background: 'var(--bg-elevated)' }}>Ctrl F</code> to search this page.
         </p>

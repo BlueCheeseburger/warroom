@@ -153,6 +153,11 @@ The timer turns amber in the last 30 seconds and red when time is up (overtime c
 - "Switch to college times" (policy only)
 - "What's the timer at?" / "How much time is left?"
 
+### Coin Flip
+A pixel-art coin icon sits just left of the timer. Click it, then click **Flip** — the coin spins and lands on heads or tails.
+
+**It's a genuine 50/50 flip.** The result is chosen randomly the instant you click, before the animation even starts — the spin you watch is just for show and never influences which side it lands on.
+
 ---
 
 ## Flows

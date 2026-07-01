@@ -182,6 +182,18 @@ Warroom's five watchers — followed-judge paradigm updates, opponent disclosure
 
 ---
 
+## Speech Timer
+
+A countdown timer (`SpeechTimer` in `TitleBar.tsx`) lives in the title bar, always visible. A dropdown selects the speech type (auto-matched to the active debate event — Policy/PF/LD); clicking the time display starts/pauses it. For Policy, an `HS`/`CLG` pill switches speech lengths. Turns amber inside the last 30 seconds, red and counts up once time expires. Warroom AI can fully control it (start/pause/reset/select/switch level) via the `control_timer` agent tool.
+
+### Coin Flip
+
+A pixel-art coin-flip icon (`CoinFlip` in `TitleBar.tsx`, faces rendered by `PixelCoin.tsx`) sits immediately to the left of the timer. Clicking it opens a popup with an animated 3D coin (CSS `rotateY` on a two-sided element, `backfaceVisibility: hidden`); clicking **Flip** spins and lands on heads or tails.
+
+**It is a genuine, unweighted 50/50 flip.** The result is decided synchronously the instant Flip is clicked — `const landsOnTails = Math.random() < 0.5` — *before* any animation starts. A second `Math.random()` call picks a random 4–7 extra full spins for visual variety. The rotation is then computed to land the coin at the angle (0° = heads face-out, 180° = tails face-out) matching the already-decided outcome — the spin is cosmetic dressing on a decision already made, never a driver of it. `Math.random()` (not a CSPRNG) is intentional here — it's the right tool for a coin flip, no adversarial-unpredictability requirement applies.
+
+---
+
 ## Flows
 
 Flows are `.xlsx` spreadsheets opened in-app using SheetJS. They appear in the sidebar under a "Flows" section. Opening a `.xlsx` file from Finder/Explorer registers it in the flows index and opens the flow view automatically. Flows can be shared via team chat with view or edit permissions.
