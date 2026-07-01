@@ -9,7 +9,7 @@ import os from 'os';
 import dns from 'dns';
 import net2 from 'net';
 import Fuse from 'fuse.js';
-import { Document, Packer, Paragraph, TextRun, UnderlineType, AlignmentType, BorderStyle } from 'docx';
+import { Document, Packer, Paragraph, TextRun, UnderlineType, BorderStyle } from 'docx';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
@@ -1588,6 +1588,11 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
   const numbered = rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n').slice(0, 90000);
   const imgList = images.length ? images.map((im, i) => `[${i}] ${im.alt ? 'alt: ' + im.alt : '(no alt text)'}`).join('\n') : '(none)';
 
+  const { provider: balancedProvider } = await getProviderForTask('balanced');
+  const credentialsInstruction = balancedProvider === 'gemini'
+    ? 'IMPORTANT: if the author\'s credentials (title, affiliation, expertise) are not present in the article text, use Google Search to look them up by name and publication — a cite without credentials is incomplete.'
+    : 'IMPORTANT: if the author\'s credentials are not present in the article text, make your best effort from context clues, or write "credentials not found" in that position.';
+
   const prompt = `You are Warroom AI, a policy debate evidence assistant. Below are numbered paragraphs extracted from a saved web article or PDF${images.length ? ', plus a list of its images' : ''}.
 
 TODAY'S DATE: ${todayStr}. Current-year sources use a month-day short cite (e.g. "Brady 3-15"); past years use a two-digit year.
@@ -1601,7 +1606,7 @@ TASKS — return ONLY one JSON object (no markdown, no prose) with these fields:
 - "author": author last name(s) (e.g. "Borsari and Davis"), or "quals unknown" if not findable.
 - "year": 4-digit publication year integer. If unknown use ${today.getFullYear()}.
 - "title": the article title.
-- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}. IMPORTANT: if the author's credentials (title, affiliation, expertise) are not present in the article text, use Google Search to look them up by name and publication — a cite without credentials is incomplete.
+- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}. ${credentialsInstruction}
 - "bodyIndices": array of the paragraph indices that are the ACTUAL ARTICLE BODY in reading order. EXCLUDE navigation, standalone bylines, related-article lists, newsletter/subscribe prompts, ads, photo captions, and comments. Keep only the author's prose/evidence.
 - "imageIndices": array of up to 3 image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Max 3 — pick only the most substantive ones. Use [] if none or no images.
 

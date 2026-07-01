@@ -249,7 +249,7 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
             <span className="text-sm font-semibold truncate">{card.tag}</span>
             {outdated && <span className="text-[10px] px-1.5 bg-warn/10 text-warn rounded-sm shrink-0">{card.year}</span>}
           </div>
-          <div className="text-[11px] text-ink/55 truncate">{shortCite(card.cite)}</div>
+          <div className="text-sm text-ink/80 truncate">{shortCite(card.cite)}</div>
         </div>
         {!selectMode && (
           <button
