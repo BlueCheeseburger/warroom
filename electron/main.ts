@@ -2426,10 +2426,8 @@ ipcMain.handle('gemini:compareImpacts', async (
 ) => {
   try {
     const mammoth = require('mammoth');
-    const rawA = (await mammoth.extractRawText({ path: pathA })).value as string;
-    const rawB = (await mammoth.extractRawText({ path: pathB })).value as string;
-    const textA = rawA.slice(0, 40000);
-    const textB = rawB.slice(0, 40000);
+    const textA = (await mammoth.extractRawText({ path: pathA })).value as string;
+    const textB = (await mammoth.extractRawText({ path: pathB })).value as string;
 
     const prompt = `You are an expert policy debate judge performing impact calculus — the process of comparing the relative importance of harms from two opposing sides.
 
@@ -2521,9 +2519,8 @@ ipcMain.handle('ai:compareImpactsText', async (
   labelB: string,
 ) => {
   try {
-    const truncA = textA.slice(0, 40000);
-    const truncB = textB.slice(0, 40000);
-
+    // No truncation — the user's own docs are sent in full. Long docs cost more in
+    // API usage, but that's the user's call, not ours to make by silently cutting content.
     const prompt = `You are an expert policy debate coach and judge with deep knowledge of how impact calculus actually plays out in competitive rounds. Your job is to perform a rigorous, round-realistic impact comparison between two debate documents.
 
 ═══════════════════════════════════════════════════════════
@@ -2628,12 +2625,12 @@ Below are two debate documents. Extract every distinct impact claim from each. F
 
 DOC A: ${labelA}
 ---
-${truncA}
+${textA}
 ---
 
 DOC B: ${labelB}
 ---
-${truncB}
+${textB}
 ---
 
 Return ONLY valid JSON — no markdown fences, no extra text, no commentary — matching this exact shape:
@@ -2737,8 +2734,8 @@ ipcMain.handle('ai:outweighScenario', async (_e, params: {
     if (hasCustom) {
       customBlock = `\n═══════════════════════════════════════════════════════════\nTHE USER PICKED THEIR OWN TOPIC — GROUND THE SCENARIO IN THIS, DON'T INVENT AN UNRELATED ONE\n═══════════════════════════════════════════════════════════\n`;
       if (custom?.resolutionText) customBlock += `\nTHE OFFICIAL CURRENT RESOLUTION FOR THIS EVENT — ground the scenario in this real, actual topic verbatim, do not invent a different resolution:\n"${custom.resolutionText}"\n`;
-      if (custom?.yourDoc?.text) customBlock += `\nTHE USER'S CASE/DOC ("${custom.yourDoc.label}"):\n${custom.yourDoc.text.slice(0, 20000)}\n`;
-      if (custom?.oppDoc?.text) customBlock += `\nAN OPPONENT DOC ON THE SAME TOPIC ("${custom.oppDoc.label}"):\n${custom.oppDoc.text.slice(0, 20000)}\n`;
+      if (custom?.yourDoc?.text) customBlock += `\nTHE USER'S CASE/DOC ("${custom.yourDoc.label}"):\n${custom.yourDoc.text}\n`;
+      if (custom?.oppDoc?.text) customBlock += `\nAN OPPONENT DOC ON THE SAME TOPIC ("${custom.oppDoc.label}"):\n${custom.oppDoc.text}\n`;
       if (custom?.sidePreference) customBlock += `\nThe user wants to argue: ${custom.sidePreference}. Take the side that actually clashes with that, and pick an impact that competes with it directly.\n`;
       if (custom?.userNotes) customBlock += `\nAdditional notes from the user: ${custom.userNotes}\n`;
       customBlock += `\nUse this material to pick a specific, realistic topic and impact that plausibly comes from these docs/notes/resolution.\n`;
