@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../store/appStore';
 import type { OutweighDifficulty } from '../types';
 import ImpactCalcPanel from './ImpactCalcPanel';
+import { ImpactScaleIcon } from './Home';
 
 // ─── The Impact Calc hub ───────────────────────────────────────────────────────
 // A roomy home for everything impact-calc: the Outweigh practice game plus the
@@ -42,10 +43,8 @@ export default function ImpactHub() {
 
         {/* Title */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="3" x2="12" y2="21"/><path d="M5 21h14"/><path d="M5 7l7-4 7 4"/><path d="M5 7l-3 6h6l-3-6z"/><path d="M19 7l-3 6h6l-3-6z"/>
-            </svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, color: 'var(--ink)' }}>
+            <ImpactScaleIcon size={24} />
             <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0, letterSpacing: '-0.02em' }}>Impact Calc</h1>
           </div>
           <p style={{ fontSize: 13, color: 'var(--nav-inactive-color)', margin: 0, lineHeight: 1.6, maxWidth: 560 }}>
