@@ -67,16 +67,18 @@ const api = {
       ipcRenderer.invoke('ai:compareImpactsText', textA, textB, labelA, labelB),
     outweighScenario: (params: {
       difficulty: string;
+      event?: 'policy' | 'pf';
       custom?: {
         yourDoc?: { label: string; text: string } | null;
         oppDoc?: { label: string; text: string } | null;
         sidePreference?: string;
         userNotes?: string;
+        resolutionText?: string;
       };
     }) => ipcRenderer.invoke('ai:outweighScenario', params),
-    outweighRebuttal: (params: { difficulty: string; scenario: any; userImpact: string; userCalc: string }) =>
+    outweighRebuttal: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: any; userImpact: string; userCalc: string }) =>
       ipcRenderer.invoke('ai:outweighRebuttal', params),
-    outweighJudge: (params: { difficulty: string; scenario: any; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
+    outweighJudge: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: any; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
       ipcRenderer.invoke('ai:outweighJudge', params),
   },
   clipboard: {

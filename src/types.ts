@@ -355,16 +355,18 @@ declare global {
           Promise<{ ok: true; result: ImpactCalcResult } | { ok: false; error: string }>;
         outweighScenario: (params: {
           difficulty: string;
+          event?: 'policy' | 'pf';
           custom?: {
             yourDoc?: { label: string; text: string } | null;
             oppDoc?: { label: string; text: string } | null;
             sidePreference?: string;
             userNotes?: string;
+            resolutionText?: string;
           };
         }) => Promise<{ ok: true; scenario: OutweighScenario } | { ok: false; error: string }>;
-        outweighRebuttal: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string }) =>
+        outweighRebuttal: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: OutweighScenario; userImpact: string; userCalc: string }) =>
           Promise<{ ok: true; speech: string } | { ok: false; error: string }>;
-        outweighJudge: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
+        outweighJudge: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: OutweighScenario; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
           Promise<{ ok: true; result: OutweighJudgment } | { ok: false; error: string }>;
       };
       clipboard: {

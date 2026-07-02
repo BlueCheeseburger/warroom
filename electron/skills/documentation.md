@@ -305,14 +305,20 @@ The panel's **Generate / Regenerate** action and the **Harder** button live in t
 Impact Calc is a full-screen hub for everything impact-weighing. Open it from the **Impact Calc** card on the home screen. It has two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer, plus Impact Library and Head-to-head Matchups, which are coming soon).
 
 ### The Outweigh game
-A practice drill where you spar with Warroom AI over impact calculus. Pick a difficulty:
+A practice drill where you spar with Warroom AI over impact calculus. It follows the app's active event setting:
+- **Policy** — Aff/Neg terminology, impacts tied to the plan/counterplan action.
+- **Public Forum** — Pro/Con terminology, no plan/counterplan; weighing is framed the way it actually reads in Summary/Final Focus (accessible register, avoids policy jargon like "solvency" or "the DA").
+- LD currently falls back to the Policy framing (not built out separately yet).
+
+A badge in the game header shows which event is active. Pick a difficulty:
 - **Novice** — concrete, intuitive impacts (recession, an outbreak, a regional conflict); no theory.
-- **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability chains, timeframe, reversibility.
+- **JV** — classic impacts (nuclear war, bioweapons, hegemony); engage scope, probability chains, timeframe, reversibility.
 - **Varsity** — extinction/existential matchups and framework wars; you must win the metric before the calc resolves.
 
 Then choose how to start:
 - **Surprise me** — Warroom AI invents a topic and takes a side against you.
 - **Pick my own topic** — optionally attach one of your imported cases or speech docs for your side and/or the opponent's, say which side you want to argue, and add any notes. The generated scenario is grounded in that material instead of an unrelated invented one. No docs yet? Drag a `.docx` onto the app, or use the **Import doc** quick action on the home screen — or just skip docs and use the side/notes fields.
+- **Use current topic** — pulls the current resolution for the active event straight from the Topics feature (`topics:getStored`) and grounds the scenario in it. If no current topic has been fetched yet for that event, it tells you to open Topics first instead of silently falling back to an invented one.
 
 The round runs in three beats:
 1. **Your impact** — Warroom AI presents its impact (claim, warrant, and ratings on the four dimensions). You write your own impact and a short calc explaining why yours outweighs.

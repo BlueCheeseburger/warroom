@@ -254,15 +254,17 @@ Full-screen hub — open it from the **Impact Calc** card on the home screen.
 Two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer; Impact Library and Head-to-head Matchups are coming soon).
 
 ### The Outweigh game (Practice)
-A live impact-calculus drill against Warroom AI. Pick a difficulty and spar:
+A live impact-calculus drill against Warroom AI. It automatically matches your event: **Policy** (Aff/Neg, plan/DA framing) or **Public Forum** (Pro/Con, no plan — weighing framed the way it reads in Summary/Final Focus). A badge next to the difficulty tag in the header shows which one is active. LD currently plays like Policy (not built out separately yet).
 
+Pick a difficulty and spar:
 - **Novice** — concrete, intuitive impacts; no theory.
-- **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability, timeframe, reversibility.
+- **JV** — classic impacts (nuclear war, bioweapons, hegemony); engage scope, probability, timeframe, reversibility.
 - **Varsity** — extinction matchups and framework wars; win the metric before the calc resolves.
 
-**Starting a round** — you're offered two options first:
+**Starting a round** — you're offered three options:
 - **🎲 Surprise me** — Warroom AI invents a topic on the spot.
 - **📝 Pick my own topic** — attach one of your imported cases or speech docs (one for your side, one for the opponent's — both optional), tell it which side you want to argue, and add any notes ("focus on a specific DA", "assume a flow judge", etc.). No docs imported yet? Drag a `.docx` onto the app, or use **Import doc** from the home screen's quick actions — or just skip the doc pickers and fill in the text fields.
+- **📰 Use current topic** — pulls whatever resolution is currently stored for your active event from the Topics feature and builds the scenario around it. If nothing's been fetched yet for that event, it tells you to open Topics first rather than quietly making something up.
 
 **How it plays**:
 1. **Your impact** — Warroom AI reads its impact (claim + warrant + dimension ratings). You type your own impact and a short calc on why yours outweighs.

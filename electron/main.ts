@@ -2697,48 +2697,65 @@ Return ONLY valid JSON — no markdown fences, no extra text, no commentary — 
 // A 3-difficulty practice game: the AI presents an impact, the user writes their
 // own impact + calc, the AI fires back a short rebuttal speech, the user gets a
 // final shot, and the AI judges the exchange with dimension-by-dimension feedback.
+// Supports both Policy (CX) and Public Forum — LD falls back to the Policy framing
+// since the game isn't built for value/criterion debate yet.
 
 const OUTWEIGH_DIFFICULTY: Record<string, string> = {
   novice: `NOVICE level. Use simple, concrete impacts a new debater understands (economic recession, a disease outbreak, a regional conflict, poverty). NO extinction or existential framing. Keep the calculus to plain magnitude / probability / timeframe — no framework wars, no high theory. Pick an impact that is beatable with clear, intuitive reasoning so a beginner can win if they think carefully.`,
-  jv: `JV (junior varsity) level. Use classic policy impacts (nuclear war, bioweapons/pandemics, hegemony collapse, economic depression, climate tipping points). The user should have to engage scope, probability chains, timeframe, and reversibility. Reward an answer that undermines a dimension (e.g. "their scenario needs five unlikely steps") rather than just asserting a bigger impact.`,
+  jv: `JV (junior varsity) level. Use classic impacts (nuclear war, bioweapons/pandemics, hegemony collapse, economic depression, climate tipping points). The user should have to engage scope, probability chains, timeframe, and reversibility. Reward an answer that undermines a dimension (e.g. "their scenario needs five unlikely steps") rather than just asserting a bigger impact.`,
   varsity: `VARSITY level. Use extinction / existential-risk matchups and framework-level clashes (util vs. structural violence, deterrence vs. rights-based framing, short-timeframe systemic harm vs. speculative catastrophe). Demand that the user win the FRAMEWORK / metric before the calc resolves. Be ruthless and round-realistic — this is the kind of impact debate that happens at a national circuit bid tournament.`,
 };
 
+const OUTWEIGH_EVENT: Record<'policy' | 'pf', string> = {
+  policy: `This is POLICY (CX) debate. Use Aff/Neg terminology, never Pro/Con. Impacts are typically tied to the plan/counterplan action (a DA the plan triggers, or a case impact the plan solves). Standard vocabulary: "the plan," "the DA," "solvency," "the link," "the impact." Impact calc is usually resolved in the 2NR/2AR.`,
+  pf: `This is PUBLIC FORUM (PF) debate. Use Pro/Con terminology, never Aff/Neg. There is no plan or counterplan — arguments are about whether the resolution is true/desirable on balance, and impacts come from case-side contentions, not a fiated policy action. Impact calc ("weighing") happens explicitly in the Summary and Final Focus speeches and should read as clear, efficient weighing — avoid policy jargon like "solvency," "the DA," or "the link," and keep the register accessible to a lay-adjacent judge while staying substantively rigorous on magnitude/probability/timeframe/reversibility.`,
+};
+
+function outweighEventLine(event?: string): string {
+  return OUTWEIGH_EVENT[event === 'pf' ? 'pf' : 'policy'];
+}
+
 ipcMain.handle('ai:outweighScenario', async (_e, params: {
   difficulty: string;
+  event?: 'policy' | 'pf';
   custom?: {
     yourDoc?: { label: string; text: string } | null;
     oppDoc?: { label: string; text: string } | null;
     sidePreference?: string;
     userNotes?: string;
+    resolutionText?: string;
   };
 }) => {
   try {
     const difficulty = params?.difficulty ?? 'jv';
     const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
+    const eventLine = outweighEventLine(params?.event);
     const custom = params?.custom;
-    const hasCustom = !!(custom?.yourDoc || custom?.oppDoc || custom?.sidePreference || custom?.userNotes);
+    const hasCustom = !!(custom?.yourDoc || custom?.oppDoc || custom?.sidePreference || custom?.userNotes || custom?.resolutionText);
 
     let customBlock = '';
     if (hasCustom) {
       customBlock = `\n═══════════════════════════════════════════════════════════\nTHE USER PICKED THEIR OWN TOPIC — GROUND THE SCENARIO IN THIS, DON'T INVENT AN UNRELATED ONE\n═══════════════════════════════════════════════════════════\n`;
+      if (custom?.resolutionText) customBlock += `\nTHE OFFICIAL CURRENT RESOLUTION FOR THIS EVENT — ground the scenario in this real, actual topic verbatim, do not invent a different resolution:\n"${custom.resolutionText}"\n`;
       if (custom?.yourDoc?.text) customBlock += `\nTHE USER'S CASE/DOC ("${custom.yourDoc.label}"):\n${custom.yourDoc.text.slice(0, 20000)}\n`;
       if (custom?.oppDoc?.text) customBlock += `\nAN OPPONENT DOC ON THE SAME TOPIC ("${custom.oppDoc.label}"):\n${custom.oppDoc.text.slice(0, 20000)}\n`;
       if (custom?.sidePreference) customBlock += `\nThe user wants to argue: ${custom.sidePreference}. Take the side that actually clashes with that, and pick an impact that competes with it directly.\n`;
       if (custom?.userNotes) customBlock += `\nAdditional notes from the user: ${custom.userNotes}\n`;
-      customBlock += `\nUse this material to pick a specific, realistic topic and impact that plausibly comes from these docs/notes.\n`;
+      customBlock += `\nUse this material to pick a specific, realistic topic and impact that plausibly comes from these docs/notes/resolution.\n`;
     }
 
-    const prompt = `You are running an impact-calculus practice drill for a competitive policy debater. Generate ONE impact scenario for them to debate against.
+    const prompt = `You are running an impact-calculus practice drill for a competitive debater. Generate ONE impact scenario for them to debate against.
+
+EVENT: ${eventLine}
 
 DIFFICULTY: ${tierLine}
 ${customBlock}
-Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card" logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
+Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on, using the correct side terms for the event above — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card"/contention logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
 
 Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
 {
-  "context": "<1-2 sentence setup: the topic area and who is arguing what. Address the user as 'You'.>",
-  "side": "<a short label for the side YOU (the AI) are defending, e.g. 'Neg — Deterrence DA'>",
+  "context": "<1-2 sentence setup: the topic area and who is arguing what, using the correct side terms for the event. Address the user as 'You'.>",
+  "side": "<a short label for the side YOU (the AI) are defending, using the event's real side terms, e.g. 'Neg — Deterrence DA' for policy or 'Con — Economic Harm' for PF>",
   "aiImpact": {
     "claim": "<your impact in one sentence>",
     "warrant": "<1-2 sentence justification a debater would read aloud>",
@@ -2761,6 +2778,7 @@ Return ONLY valid JSON — no markdown fences, no commentary — matching this e
 
 ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
   difficulty: string;
+  event?: 'policy' | 'pf';
   scenario: any;
   userImpact: string;
   userCalc: string;
@@ -2768,7 +2786,10 @@ ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
   try {
     const { difficulty, scenario, userImpact, userCalc } = params;
     const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
-    const prompt = `You are an expert policy debater delivering a short impact-calculus rebuttal in a practice round. Stay in character — speak as a debater would in a rebuttal, not as a coach.
+    const eventLine = outweighEventLine(params?.event);
+    const prompt = `You are an expert competitive debater delivering a short impact-calculus rebuttal in a practice round. Stay in character — speak as a debater would in a rebuttal, not as a coach.
+
+EVENT: ${eventLine}
 
 DIFFICULTY (match your sophistication to this level): ${tierLine}
 
@@ -2799,6 +2820,7 @@ You MAY use light markdown emphasis (**bold** for the key outweighing claim) but
 // opponent," a third party, so grading it can't be biased by self-recognition.
 ipcMain.handle('ai:outweighJudge', async (_e, params: {
   difficulty: string;
+  event?: 'policy' | 'pf';
   scenario: any;
   userImpact: string;
   userCalc: string;
@@ -2807,7 +2829,10 @@ ipcMain.handle('ai:outweighJudge', async (_e, params: {
 }) => {
   try {
     const { scenario, userImpact, userCalc, rebuttal, userFinal } = params;
-    const prompt = `You are an experienced, fair policy debate judge writing a decision after an impact-calculus exchange between two debaters, "You" (the user) and "the Opponent." You did not write either side's arguments — judge them cold, on the merits, as an independent third party would.
+    const eventLine = outweighEventLine(params?.event);
+    const prompt = `You are an experienced, fair debate judge writing a decision after an impact-calculus exchange between two debaters, "You" (the user) and "the Opponent." You did not write either side's arguments — judge them cold, on the merits, as an independent third party would.
+
+EVENT: ${eventLine}
 
 THE OPPONENT'S IMPACT + SIDE:
 ${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}

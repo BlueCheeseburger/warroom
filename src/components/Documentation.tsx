@@ -851,9 +851,12 @@ export default function Documentation() {
 
           <H3>The Outweigh game</H3>
           <P>
-            A practice drill where you spar with Warroom AI over impact calculus. Pick a difficulty —{' '}
-            <strong>Novice</strong> (concrete, intuitive impacts, no theory), <strong>JV</strong> (classic
-            policy impacts — engage scope, probability chains, reversibility), or <strong>Varsity</strong>{' '}
+            A practice drill where you spar with Warroom AI over impact calculus. It follows your event
+            setting: <strong>Policy</strong> (Aff/Neg, plans/DAs — LD currently falls back to this framing
+            too) or <strong>Public Forum</strong> (Pro/Con, no plan — weighing framed the way it actually
+            happens in Summary and Final Focus). A badge in the header shows which one is active. Pick a
+            difficulty — <strong>Novice</strong> (concrete, intuitive impacts, no theory), <strong>JV</strong>{' '}
+            (classic impacts — engage scope, probability chains, reversibility), or <strong>Varsity</strong>{' '}
             (extinction matchups and framework wars). Then choose how to start:
           </P>
           <UL>
@@ -864,6 +867,9 @@ export default function Documentation() {
               unrelated one. (No cases or speech docs yet? Drag a <Code>.docx</Code> onto the app, or use
               the <strong>Import doc</strong> quick action on the home screen — you can also skip docs
               entirely and just use the side/notes fields.)</LI>
+            <LI><strong>Use current topic</strong> — pulls the current resolution for your active event
+              straight from the Topics feature and grounds the scenario in that real, live topic. If no
+              current topic has been fetched yet, it tells you to open Topics first.</LI>
           </UL>
           <P>The round then runs in three beats:</P>
           <UL>

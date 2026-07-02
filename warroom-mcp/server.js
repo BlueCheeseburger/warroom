@@ -957,23 +957,28 @@ Pass the absolute paths to both .docx files (or their extracted plain text) and 
 // it authored the rebuttal — here, the calling model should apply the same discipline).
 server.tool(
   'outweigh_practice_round',
-  `Run one round of Warroom's "Outweigh" impact-calculus practice game for a policy debater. Returns a brief telling the calling model how to invent an opposing impact, react to the user's impact + calc, deliver a short rebuttal, and then judge the exchange — including a separate, blind grade of its own rebuttal so the score isn't biased by self-recognition.
-Pass a difficulty and, optionally, topic material (pasted case/card text, a side preference, or notes) to ground the scenario in something real instead of leaving it fully improvised.`,
+  `Run one round of Warroom's "Outweigh" impact-calculus practice game for a policy or Public Forum debater. Returns a brief telling the calling model how to invent an opposing impact, react to the user's impact + calc, deliver a short rebuttal, and then judge the exchange — including a separate, blind grade of its own rebuttal so the score isn't biased by self-recognition.
+Pass a difficulty, an event (policy or pf), and optionally topic material (pasted case/card text, the current resolution, a side preference, or notes) to ground the scenario in something real instead of leaving it fully improvised.`,
   {
-    difficulty: z.enum(['novice', 'jv', 'varsity']).describe('Novice = concrete impacts, no theory. JV = classic policy impacts (nuclear war, bioweapons, hegemony). Varsity = extinction/existential impacts and framework wars.'),
-    topicMaterial: z.string().optional().describe('Optional: pasted case/card text, a side preference (e.g. "I want to argue Aff"), or any notes to ground the scenario in a real topic instead of an invented one.'),
+    difficulty: z.enum(['novice', 'jv', 'varsity']).describe('Novice = concrete impacts, no theory. JV = classic impacts (nuclear war, bioweapons, hegemony). Varsity = extinction/existential impacts and framework wars.'),
+    event: z.enum(['policy', 'pf']).default('policy').describe('policy = CX/policy debate (Aff/Neg, plans/DAs/CPs). pf = Public Forum (Pro/Con, no plan — weighing happens in Summary/Final Focus).'),
+    topicMaterial: z.string().optional().describe('Optional: pasted case/card text, the current resolution for this event, a side preference (e.g. "I want to argue Aff" or "Pro"), or any notes to ground the scenario in a real topic instead of an invented one.'),
   },
-  async ({ difficulty, topicMaterial }) => {
+  async ({ difficulty, event, topicMaterial }) => {
     const tierLine = {
       novice: 'NOVICE: simple, concrete impacts (recession, an outbreak, a regional conflict). No extinction/existential framing, no framework wars — just magnitude/probability/timeframe.',
-      jv: 'JV: classic policy impacts (nuclear war, bioweapons, hegemony, economic collapse). Engage scope, probability chains, timeframe, reversibility.',
+      jv: 'JV: classic impacts (nuclear war, bioweapons, hegemony, economic collapse). Engage scope, probability chains, timeframe, reversibility.',
       varsity: 'VARSITY: extinction/existential matchups and framework-level clashes. Win the metric before the calc resolves.',
     }[difficulty];
 
+    const eventLine = event === 'pf'
+      ? 'PUBLIC FORUM: use Pro/Con terminology, never Aff/Neg. No plan or counterplan — arguments are about whether the resolution is true/desirable on balance. Weighing should read as clear, efficient Summary/Final Focus-style comparison — avoid policy jargon ("solvency," "the DA," "the link") and keep the register accessible while staying substantively rigorous.'
+      : 'POLICY (CX): use Aff/Neg terminology, never Pro/Con. Impacts are typically tied to the plan/counterplan action (a DA the plan triggers, or a case impact the plan solves).';
+
     const out = [
-      `# Outweigh — impact-calculus practice round (${difficulty})`,
+      `# Outweigh — impact-calculus practice round (${difficulty}, ${event})`,
       ``,
-      `You are running a live impact-calculus drill against a competitive policy debater. Play the OPPONENT across the exchange, then judge it. Difficulty: ${tierLine}`,
+      `You are running a live impact-calculus drill against a competitive debater. Play the OPPONENT across the exchange, then judge it. Event: ${eventLine} Difficulty: ${tierLine}`,
       topicMaterial ? `\nGround the scenario in this material instead of inventing an unrelated topic:\n${topicMaterial}\n` : '',
       `## Steps`,
       `1. **Present your impact** — invent a brief realistic round context (topic + who's arguing what), then give YOUR impact: a claim + a 1-2 sentence warrant, rated on magnitude/probability/timeframe/reversibility.`,

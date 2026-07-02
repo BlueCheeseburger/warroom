@@ -59,6 +59,12 @@ const DIFF_META: Record<OutweighDifficulty, { label: string; color: string }> = 
   varsity: { label: 'Varsity', color: '#dc2626' },
 };
 
+type GameEvent = 'policy' | 'pf';
+const EVENT_META: Record<GameEvent, { label: string }> = {
+  policy: { label: 'Policy' },
+  pf:     { label: 'PF' },
+};
+
 const FINAL_SHOT_SECONDS = 60;
 
 type Phase = 'setup' | 'loading-scenario' | 'your-impact' | 'loading-rebuttal' | 'rebuttal' | 'loading-judge' | 'result' | 'error';
@@ -84,12 +90,17 @@ function Spinner({ label }: { label: string }) {
 }
 
 export default function OutweighGame() {
-  const { view, setView, db } = useApp();
+  const { view, setView, db, event } = useApp();
   const difficulty: OutweighDifficulty = view.kind === 'outweigh-game' ? view.difficulty : 'jv';
   const meta = DIFF_META[difficulty];
+  // LD isn't built out for this game yet — it falls back to the Policy framing.
+  const gameEvent: GameEvent = event === 'pf' ? 'pf' : 'policy';
+  const eventMeta = EVENT_META[gameEvent];
 
   const [phase, setPhase] = useState<Phase>('setup');
   const [customOpen, setCustomOpen] = useState(false);
+  const [topicError, setTopicError] = useState<string | null>(null);
+  const [loadingTopic, setLoadingTopic] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<OutweighScenario | null>(null);
 
@@ -109,12 +120,12 @@ export default function OutweighGame() {
   const ai = (window.warroom as any).ai;
 
   const loadScenario = useCallback(async (custom?: {
-    yourDoc?: CustomDoc | null; oppDoc?: CustomDoc | null; sidePreference?: string; userNotes?: string;
+    yourDoc?: CustomDoc | null; oppDoc?: CustomDoc | null; sidePreference?: string; userNotes?: string; resolutionText?: string;
   }) => {
     setPhase('loading-scenario');
     setError(null);
     try {
-      const res = await ai.outweighScenario({ difficulty, custom });
+      const res = await ai.outweighScenario({ difficulty, event: gameEvent, custom });
       if (res?.ok && res.scenario?.aiImpact) {
         setScenario(res.scenario);
         setPhase('your-impact');
@@ -126,7 +137,7 @@ export default function OutweighGame() {
       setError(e?.message ?? 'Unknown error.');
       setPhase('error');
     }
-  }, [difficulty]);
+  }, [difficulty, gameEvent]);
 
   async function startCustomRound(input: { yourDocValue: string; oppDocValue: string; sidePreference: string; userNotes: string }) {
     const [yourDoc, oppDoc] = await Promise.all([
@@ -139,6 +150,24 @@ export default function OutweighGame() {
       sidePreference: input.sidePreference.trim() || undefined,
       userNotes: input.userNotes.trim() || undefined,
     });
+  }
+
+  async function startCurrentTopicRound() {
+    setLoadingTopic(true);
+    setTopicError(null);
+    try {
+      const stored = await (window.warroom as any).topics.getStored();
+      const resolution: string | undefined = stored?.[gameEvent]?.current;
+      if (!resolution || resolution.toLowerCase().includes('not found')) {
+        setTopicError(`No current ${eventMeta.label} topic found yet. Open Topics to fetch the latest resolution, then come back here.`);
+        return;
+      }
+      loadScenario({ resolutionText: resolution });
+    } catch (e: any) {
+      setTopicError(e?.message ?? `Could not load the current ${eventMeta.label} topic.`);
+    } finally {
+      setLoadingTopic(false);
+    }
   }
 
   // Run the countdown only while writing the final shot. It never stops the user —
@@ -162,7 +191,7 @@ export default function OutweighGame() {
     setPhase('loading-rebuttal');
     setError(null);
     try {
-      const res = await ai.outweighRebuttal({ difficulty, scenario, userImpact, userCalc });
+      const res = await ai.outweighRebuttal({ difficulty, event: gameEvent, scenario, userImpact, userCalc });
       if (res?.ok && res.speech) {
         setRebuttal(res.speech);
         setPhase('rebuttal');
@@ -182,7 +211,7 @@ export default function OutweighGame() {
     setPhase('loading-judge');
     setError(null);
     try {
-      const res = await ai.outweighJudge({ difficulty, scenario, userImpact, userCalc, rebuttal, userFinal });
+      const res = await ai.outweighJudge({ difficulty, event: gameEvent, scenario, userImpact, userCalc, rebuttal, userFinal });
       if (res?.ok && res.result) {
         setJudgment(res.result);
         setPhase('result');
@@ -202,6 +231,7 @@ export default function OutweighGame() {
     setJudgment(null);
     setOvertimeSeconds(0);
     setCustomOpen(false);
+    setTopicError(null);
     setPhase('setup');
   }
 
@@ -222,6 +252,7 @@ export default function OutweighGame() {
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--nav-inactive-color)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>The Outweigh Game</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--nav-active-bg)', borderRadius: 5, padding: '3px 9px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{eventMeta.label}</span>
             <span style={{ fontSize: 10, fontWeight: 700, color: meta.color, background: `${meta.color}18`, borderRadius: 5, padding: '3px 9px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{meta.label}</span>
           </div>
         </div>
@@ -240,7 +271,15 @@ export default function OutweighGame() {
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => loadScenario()} className="btn-primary" style={{ fontSize: 13, padding: '11px 22px' }}>🎲 Surprise me</button>
               <button onClick={() => setCustomOpen(true)} className="btn" style={{ fontSize: 13, padding: '11px 22px' }}>📝 Pick my own topic</button>
+              <button onClick={startCurrentTopicRound} disabled={loadingTopic} className="btn" style={{ fontSize: 13, padding: '11px 22px' }}>
+                {loadingTopic ? 'Loading topic…' : `📰 Use current ${eventMeta.label} topic`}
+              </button>
             </div>
+            {topicError && (
+              <div style={{ marginTop: 16, fontSize: 12, color: 'var(--danger-color, #c0392b)', maxWidth: 420, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+                {topicError}
+              </div>
+            )}
           </div>
         )}
 
