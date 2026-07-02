@@ -199,7 +199,7 @@ export default function SearchPalette() {
           }}
         >
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"
-            stroke="var(--ink-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+            stroke="var(--nav-inactive-color)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
             style={{ flexShrink: 0 }}>
             <circle cx="8.5" cy="8.5" r="5"/>
             <path d="M12.5 12.5L17 17"/>
