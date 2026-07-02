@@ -81,19 +81,36 @@ function buildFace(variant: 'heads' | 'tails') {
 
 const FACES = { heads: buildFace('heads'), tails: buildFace('tails') };
 
-/** A single pixel-art coin face (heads or tails), scalable to any size. */
+/**
+ * A single pixel-art coin face (heads or tails), scalable to any size.
+ *
+ * Rendered as plain <div> cells rather than an <svg>: SVG content inside a
+ * `transform-style: preserve-3d` ancestor that's mid-animating a `rotateY`
+ * (the flip) can rasterize incorrectly in Chromium/Electron — it composites
+ * as a warped, glowing blob instead of the flat coin. Regular DOM boxes
+ * don't have that failure mode under 3D transforms.
+ */
 export function PixelCoinFace({ variant, size = 60 }: { variant: 'heads' | 'tails'; size?: number }) {
   const cells = FACES[variant];
+  const cell = size / GRID;
   return (
-    <svg
-      width={size} height={size} viewBox={`0 0 ${GRID} ${GRID}`}
-      shapeRendering="crispEdges"
-      style={{ display: 'block' }}
-    >
+    <div style={{ position: 'relative', width: size, height: size }}>
       {cells.map(({ x, y, color }) => (
-        <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={color} />
+        <div
+          key={`${x}-${y}`}
+          style={{
+            position: 'absolute',
+            left: x * cell,
+            top: y * cell,
+            // Slight overlap so fractional cell sizes don't leave hairline
+            // gaps between adjacent pixels at non-multiple-of-16 sizes.
+            width: cell + 0.6,
+            height: cell + 0.6,
+            background: color,
+          }}
+        />
       ))}
-    </svg>
+    </div>
   );
 }
 

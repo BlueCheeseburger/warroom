@@ -391,7 +391,12 @@ body {
 }
 
 /* ── Titlebar drag region ────────────────────────────────────────────────── */
-.titlebar { -webkit-app-region: drag; }
+/* z-index + explicit position so the titlebar's own stacking context (created
+   by .glass-titlebar's backdrop-filter) wins over the main content area
+   below it — otherwise popovers that overflow the titlebar's box (coin flip,
+   speech-type dropdown) paint underneath sibling content instead of above it,
+   since DOM order alone would let the later `<main>` sibling win. */
+.titlebar { -webkit-app-region: drag; position: relative; z-index: 40; }
 .titlebar button, .titlebar input, .titlebar a, .titlebar select { -webkit-app-region: no-drag; }
 
 /* ── Surfaces ────────────────────────────────────────────────────────────── */
