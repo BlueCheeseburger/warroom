@@ -947,6 +947,49 @@ Pass the absolute paths to both .docx files (or their extracted plain text) and 
   }
 );
 
+// ── outweigh_practice_round ──────────────────────────────────────────────────────
+// Mirrors the in-app "Outweigh" game: the server has no LLM, so it returns a brief
+// telling the calling model how to run one full round of the impact-calc drill —
+// present an opposing impact, react to the user's impact + calc, deliver a short
+// rebuttal, then judge the exchange. Includes an explicit instruction to grade its
+// own rebuttal independently and blind, mirroring the app's bias-avoidance design
+// (in-app, that grading is a separate stateless callAI() request that's never told
+// it authored the rebuttal — here, the calling model should apply the same discipline).
+server.tool(
+  'outweigh_practice_round',
+  `Run one round of Warroom's "Outweigh" impact-calculus practice game for a policy debater. Returns a brief telling the calling model how to invent an opposing impact, react to the user's impact + calc, deliver a short rebuttal, and then judge the exchange — including a separate, blind grade of its own rebuttal so the score isn't biased by self-recognition.
+Pass a difficulty and, optionally, topic material (pasted case/card text, a side preference, or notes) to ground the scenario in something real instead of leaving it fully improvised.`,
+  {
+    difficulty: z.enum(['novice', 'jv', 'varsity']).describe('Novice = concrete impacts, no theory. JV = classic policy impacts (nuclear war, bioweapons, hegemony). Varsity = extinction/existential impacts and framework wars.'),
+    topicMaterial: z.string().optional().describe('Optional: pasted case/card text, a side preference (e.g. "I want to argue Aff"), or any notes to ground the scenario in a real topic instead of an invented one.'),
+  },
+  async ({ difficulty, topicMaterial }) => {
+    const tierLine = {
+      novice: 'NOVICE: simple, concrete impacts (recession, an outbreak, a regional conflict). No extinction/existential framing, no framework wars — just magnitude/probability/timeframe.',
+      jv: 'JV: classic policy impacts (nuclear war, bioweapons, hegemony, economic collapse). Engage scope, probability chains, timeframe, reversibility.',
+      varsity: 'VARSITY: extinction/existential matchups and framework-level clashes. Win the metric before the calc resolves.',
+    }[difficulty];
+
+    const out = [
+      `# Outweigh — impact-calculus practice round (${difficulty})`,
+      ``,
+      `You are running a live impact-calculus drill against a competitive policy debater. Play the OPPONENT across the exchange, then judge it. Difficulty: ${tierLine}`,
+      topicMaterial ? `\nGround the scenario in this material instead of inventing an unrelated topic:\n${topicMaterial}\n` : '',
+      `## Steps`,
+      `1. **Present your impact** — invent a brief realistic round context (topic + who's arguing what), then give YOUR impact: a claim + a 1-2 sentence warrant, rated on magnitude/probability/timeframe/reversibility.`,
+      `2. **Wait for the user's impact + calculus** — they'll give their own impact and explain why it outweighs yours. Don't invent their answer for them.`,
+      `3. **Deliver a rebuttal** — a tight 1-2 minute speech (150-260 words) defending your impact and attacking theirs on a specific dimension (magnitude, probability, timeframe, reversibility, or breadth). Use real in-round moves ("their scenario requires X then Y then Z", "timeframe outweighs — we solve before theirs triggers"). Don't invent fake evidence or misrepresent what they wrote.`,
+      `4. **Take the user's final shot** (their last word), then judge the round:`,
+      `   - Decide the winner (user / you / tie) and score the user's calc work 1-10 with a written verdict, dimension-by-dimension feedback, and concrete tips.`,
+      `   - IMPORTANT — separately and independently grade YOUR OWN rebuttal from step 3 on its argumentative merits (1-10 + a short critique), as if a neutral third party were grading it cold. Don't let recognizing it as your own writing bias the score, and don't let the round's overall winner influence it — a losing debater can still have delivered a sharp, well-warranted rebuttal, and a winning one can have been sloppy.`,
+      ``,
+      `Do all four steps in order, pausing for the user's actual input at steps 2 and 4 rather than inventing what they'd say.`,
+    ].filter(Boolean).join('\n');
+
+    return { content: [{ type: 'text', text: out }] };
+  }
+);
+
 // ── import_flow ────────────────────────────────────────────────────────────────
 // Mirrors the in-app "Import Flow" button next to the + in the Flow sidebar
 // section: read a flow spreadsheet (.xlsx) and create a new flow from it. The app

@@ -353,7 +353,15 @@ declare global {
         }>;
         compareImpactsText: (textA: string, textB: string, labelA: string, labelB: string) =>
           Promise<{ ok: true; result: ImpactCalcResult } | { ok: false; error: string }>;
-        outweighScenario: (difficulty: string) => Promise<{ ok: true; scenario: OutweighScenario } | { ok: false; error: string }>;
+        outweighScenario: (params: {
+          difficulty: string;
+          custom?: {
+            yourDoc?: { label: string; text: string } | null;
+            oppDoc?: { label: string; text: string } | null;
+            sidePreference?: string;
+            userNotes?: string;
+          };
+        }) => Promise<{ ok: true; scenario: OutweighScenario } | { ok: false; error: string }>;
         outweighRebuttal: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string }) =>
           Promise<{ ok: true; speech: string } | { ok: false; error: string }>;
         outweighJudge: (params: { difficulty: string; scenario: OutweighScenario; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
@@ -674,7 +682,11 @@ export interface OutweighScenario {
 
 export interface OutweighJudgment {
   winner: 'user' | 'ai' | 'tie';
-  score: number;
+  userScore: number;
+  // Graded independently by the same judge call — see ai:outweighJudge in main.ts
+  // for why this can't be biased by the model recognizing its own rebuttal.
+  opponentScore: number;
+  opponentNotes: string;
   verdict: string;
   feedback: { dimension: string; note: string }[];
   tips: string[];

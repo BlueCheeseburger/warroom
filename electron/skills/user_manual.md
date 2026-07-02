@@ -260,10 +260,14 @@ A live impact-calculus drill against Warroom AI. Pick a difficulty and spar:
 - **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability, timeframe, reversibility.
 - **Varsity** — extinction matchups and framework wars; win the metric before the calc resolves.
 
+**Starting a round** — you're offered two options first:
+- **🎲 Surprise me** — Warroom AI invents a topic on the spot.
+- **📝 Pick my own topic** — attach one of your imported cases or speech docs (one for your side, one for the opponent's — both optional), tell it which side you want to argue, and add any notes ("focus on a specific DA", "assume a flow judge", etc.). No docs imported yet? Drag a `.docx` onto the app, or use **Import doc** from the home screen's quick actions — or just skip the doc pickers and fill in the text fields.
+
 **How it plays**:
 1. **Your impact** — Warroom AI reads its impact (claim + warrant + dimension ratings). You type your own impact and a short calc on why yours outweighs.
-2. **AI rebuttal** — Warroom AI fires back a 1–2 minute rebuttal speech. You get the last word (final shot) with a 60-second pressure timer — it never auto-submits, so take the time you need.
-3. **Decision** — the AI judge tells you who won, scores your calc 1–10, and gives a verdict plus dimension-by-dimension feedback and tips. Hit **Play again** for a fresh scenario.
+2. **AI rebuttal** — Warroom AI fires back a 1–2 minute rebuttal speech. You get the last word (final shot) with a 60-second pressure timer — it never auto-submits or locks you out; once it hits zero it just counts overtime, and the result screen tells you if you went over.
+3. **Decision** — a banner announces the winner the instant the round ends (no need to scroll for it), with your score out of 10. Below that: the judge's reasoning, an independent grade of the **opponent's rebuttal** (its own score + a short critique — judged blind, in a separate call from the one that wrote the rebuttal, so it can't be biased toward or against itself), dimension-by-dimension feedback, and concrete tips. Hit **Play again** to choose a fresh start (surprise or custom) again.
 
 ### Compare two docs (Tools)
 Compare two of your own cases, speech docs, or a flow and get a full impact breakdown:

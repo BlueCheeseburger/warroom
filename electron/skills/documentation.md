@@ -310,10 +310,16 @@ A practice drill where you spar with Warroom AI over impact calculus. Pick a dif
 - **JV** — classic policy impacts (nuclear war, bioweapons, hegemony); engage scope, probability chains, timeframe, reversibility.
 - **Varsity** — extinction/existential matchups and framework wars; you must win the metric before the calc resolves.
 
+Then choose how to start:
+- **Surprise me** — Warroom AI invents a topic and takes a side against you.
+- **Pick my own topic** — optionally attach one of your imported cases or speech docs for your side and/or the opponent's, say which side you want to argue, and add any notes. The generated scenario is grounded in that material instead of an unrelated invented one. No docs yet? Drag a `.docx` onto the app, or use the **Import doc** quick action on the home screen — or just skip docs and use the side/notes fields.
+
 The round runs in three beats:
 1. **Your impact** — Warroom AI presents its impact (claim, warrant, and ratings on the four dimensions). You write your own impact and a short calc explaining why yours outweighs.
-2. **AI rebuttal** — Warroom AI delivers a tight 1–2 minute rebuttal speech, defending its impact and attacking yours on a specific dimension. You get a final shot (the last word) with a 60-second pressure timer that never auto-submits.
-3. **Decision** — a judge calls the round: who won, a 1–10 score on your calc work, a written verdict, dimension-by-dimension feedback, and concrete tips.
+2. **AI rebuttal** — Warroom AI delivers a tight 1–2 minute rebuttal speech, defending its impact and attacking yours on a specific dimension. You get a final shot (the last word) with a 60-second pressure timer that never blocks you — once it hits zero it counts overtime instead, and the result screen flags if you went over.
+3. **Decision** — a judge calls the round: who won, a 1–10 score on your calc work, a written verdict, dimension-by-dimension feedback, and concrete tips. It also independently grades the opponent's rebuttal (its own 1–10 score + a short critique).
+
+The judge call (`ai:outweighJudge`) is a fully separate, stateless request from the one that wrote the rebuttal (`ai:outweighRebuttal`) — it's never told it authored that speech, so grading the opponent's rebuttal can't be biased by the model recognizing its own writing.
 
 The game is powered by `ai:outweighScenario`, `ai:outweighRebuttal`, and `ai:outweighJudge` in the main process.
 

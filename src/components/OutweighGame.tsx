@@ -1,6 +1,36 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import type { OutweighDifficulty, OutweighScenario, OutweighJudgment } from '../types';
+import type { OutweighDifficulty, OutweighScenario, OutweighJudgment, DB } from '../types';
+
+interface CustomDoc { label: string; text: string; }
+
+// Pulls the same source text ImpactCalcPanel uses (case blocks/cards, or an
+// imported speech doc) so a custom Outweigh topic can be grounded in it.
+async function extractCustomDoc(value: string, db: DB): Promise<CustomDoc | null> {
+  if (!value) return null;
+  if (value.startsWith('case:')) {
+    const c = db.cases[value.slice(5)];
+    if (!c) return null;
+    let text = `Case: ${c.name}\n\n`;
+    for (const bid of c.blocks) {
+      const b = db.blocks[bid]; if (!b) continue;
+      text += `[${b.title}]\n`;
+      for (const cid of b.cards) {
+        const card = db.cards[cid]; if (!card) continue;
+        text += `${card.tag}\n${card.cite}\n${card.body}\n\n`;
+      }
+    }
+    return { text, label: c.name };
+  }
+  if (value.startsWith('speechdoc:')) {
+    const path = decodeURIComponent(value.slice(10));
+    const res = await (window.warroom as any).speechdoc.extract(path);
+    if (!res?.ok) return null;
+    const label = path.split('/').pop()?.replace(/\.docx$/i, '') ?? path;
+    return { text: res.data.full, label };
+  }
+  return null;
+}
 
 // ─── Markdown emphasis renderer (mirrors ImpactCalcView's RichText) ────────────
 function RichText({ text, style }: { text: string; style?: React.CSSProperties }) {
@@ -31,7 +61,7 @@ const DIFF_META: Record<OutweighDifficulty, { label: string; color: string }> = 
 
 const FINAL_SHOT_SECONDS = 60;
 
-type Phase = 'loading-scenario' | 'your-impact' | 'loading-rebuttal' | 'rebuttal' | 'loading-judge' | 'result' | 'error';
+type Phase = 'setup' | 'loading-scenario' | 'your-impact' | 'loading-rebuttal' | 'rebuttal' | 'loading-judge' | 'result' | 'error';
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
@@ -54,11 +84,12 @@ function Spinner({ label }: { label: string }) {
 }
 
 export default function OutweighGame() {
-  const { view, setView } = useApp();
+  const { view, setView, db } = useApp();
   const difficulty: OutweighDifficulty = view.kind === 'outweigh-game' ? view.difficulty : 'jv';
   const meta = DIFF_META[difficulty];
 
-  const [phase, setPhase] = useState<Phase>('loading-scenario');
+  const [phase, setPhase] = useState<Phase>('setup');
+  const [customOpen, setCustomOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<OutweighScenario | null>(null);
 
@@ -77,11 +108,13 @@ export default function OutweighGame() {
 
   const ai = (window.warroom as any).ai;
 
-  const loadScenario = useCallback(async () => {
+  const loadScenario = useCallback(async (custom?: {
+    yourDoc?: CustomDoc | null; oppDoc?: CustomDoc | null; sidePreference?: string; userNotes?: string;
+  }) => {
     setPhase('loading-scenario');
     setError(null);
     try {
-      const res = await ai.outweighScenario(difficulty);
+      const res = await ai.outweighScenario({ difficulty, custom });
       if (res?.ok && res.scenario?.aiImpact) {
         setScenario(res.scenario);
         setPhase('your-impact');
@@ -95,7 +128,18 @@ export default function OutweighGame() {
     }
   }, [difficulty]);
 
-  useEffect(() => { loadScenario(); }, [loadScenario]);
+  async function startCustomRound(input: { yourDocValue: string; oppDocValue: string; sidePreference: string; userNotes: string }) {
+    const [yourDoc, oppDoc] = await Promise.all([
+      extractCustomDoc(input.yourDocValue, db),
+      extractCustomDoc(input.oppDocValue, db),
+    ]);
+    setCustomOpen(false);
+    loadScenario({
+      yourDoc, oppDoc,
+      sidePreference: input.sidePreference.trim() || undefined,
+      userNotes: input.userNotes.trim() || undefined,
+    });
+  }
 
   // Run the countdown only while writing the final shot. It never stops the user —
   // once it bottoms out it flips into counting overtime seconds instead.
@@ -157,7 +201,8 @@ export default function OutweighGame() {
     setUserImpact(''); setUserCalc(''); setRebuttal(''); setUserFinal('');
     setJudgment(null);
     setOvertimeSeconds(0);
-    loadScenario();
+    setCustomOpen(false);
+    setPhase('setup');
   }
 
   return (
@@ -182,11 +227,25 @@ export default function OutweighGame() {
         </div>
 
         {/* Progress steps */}
-        {phase !== 'error' && <StepBar phase={phase} />}
+        {phase !== 'error' && phase !== 'setup' && <StepBar phase={phase} />}
 
         {/* Verdict — front and center, above the fold, the moment the round ends */}
         {phase === 'result' && judgment && (
           <VerdictBanner judgment={judgment} overtimeSeconds={overtimeSeconds} />
+        )}
+
+        {phase === 'setup' && !customOpen && (
+          <div style={{ textAlign: 'center', padding: '52px 0 20px' }}>
+            <div style={{ fontSize: 14, color: 'var(--nav-inactive-color)', marginBottom: 22 }}>Ready to spar? Choose how to start.</div>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => loadScenario()} className="btn-primary" style={{ fontSize: 13, padding: '11px 22px' }}>🎲 Surprise me</button>
+              <button onClick={() => setCustomOpen(true)} className="btn" style={{ fontSize: 13, padding: '11px 22px' }}>📝 Pick my own topic</button>
+            </div>
+          </div>
+        )}
+
+        {phase === 'setup' && customOpen && (
+          <CustomSetupForm db={db} onBack={() => setCustomOpen(false)} onStart={startCustomRound} />
         )}
 
         {phase === 'loading-scenario' && <Spinner label="Warroom AI is drawing an impact…" />}
@@ -196,7 +255,7 @@ export default function OutweighGame() {
         {phase === 'error' && (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 13, color: 'var(--danger-color, #c0392b)', marginBottom: 16, lineHeight: 1.6 }}>{error}</div>
-            <button onClick={loadScenario} className="btn-primary" style={{ fontSize: 13, padding: '8px 18px' }}>Try again</button>
+            <button onClick={() => setPhase('setup')} className="btn-primary" style={{ fontSize: 13, padding: '8px 18px' }}>Try again</button>
           </div>
         )}
 
@@ -408,7 +467,7 @@ function winnerStyle(winner: OutweighJudgment['winner']) {
 // any of the detailed feedback, so the outcome is never buried by scrolling.
 function VerdictBanner({ judgment, overtimeSeconds }: { judgment: OutweighJudgment; overtimeSeconds: number }) {
   const ws = winnerStyle(judgment.winner);
-  const score = Math.max(0, Math.min(10, Number(judgment.score) || 0));
+  const score = Math.max(0, Math.min(10, Number(judgment.userScore) || 0));
   return (
     <div style={{
       background: `${ws.color}12`, border: `2px solid ${ws.color}55`,
@@ -465,6 +524,26 @@ function ResultCard({ judgment, userFinal, overtimeSeconds, onPlayAgain, onHub }
         </div>
       </div>
 
+      {judgment.opponentScore != null && (
+        <div style={{ marginTop: 22 }}>
+          <FieldLabel>Grading the opponent's rebuttal <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— judged independently, blind to who wins</span></FieldLabel>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 10,
+            padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 14,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, flexShrink: 0 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{Math.max(0, Math.min(10, Number(judgment.opponentScore) || 0))}</span>
+              <span style={{ fontSize: 11, color: 'var(--nav-inactive-color)', fontWeight: 600 }}>/10</span>
+            </div>
+            {judgment.opponentNotes && (
+              <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.6, borderLeft: '1px solid var(--border-subtle)', paddingLeft: 14 }}>
+                <RichText text={judgment.opponentNotes} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {Array.isArray(judgment.feedback) && judgment.feedback.length > 0 && (
         <div style={{ marginTop: 22 }}>
           <FieldLabel>Dimension feedback</FieldLabel>
@@ -495,5 +574,105 @@ function ResultCard({ judgment, userFinal, overtimeSeconds, onPlayAgain, onHub }
         <button onClick={onHub} className="btn" style={{ fontSize: 13, padding: '9px 22px' }}>Back to Impact Calc</button>
       </div>
     </>
+  );
+}
+
+// ─── Custom topic setup ─────────────────────────────────────────────────────────
+
+interface SpeechDocRecent { path: string; name: string; }
+
+// A trimmed doc picker (case or imported speech doc only — no flows, no blocks)
+// for grounding a custom Outweigh scenario in the user's own prep.
+function MiniDocPicker({ label, value, onChange, db }: {
+  label: string; value: string; onChange: (v: string) => void; db: DB;
+}) {
+  const cases = Object.values(db.cases);
+  const recents: SpeechDocRecent[] = (() => {
+    try { return JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]'); } catch { return []; }
+  })();
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <FieldLabel>{label}</FieldLabel>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...inputStyle, cursor: 'pointer', color: value ? 'var(--ink)' : 'var(--nav-inactive-color)' }}
+      >
+        <option value="">None — skip this</option>
+        {cases.length > 0 && (
+          <optgroup label="Cases">
+            {cases.map((c) => <option key={c.id} value={`case:${c.id}`}>📁 {c.name}</option>)}
+          </optgroup>
+        )}
+        {recents.length > 0 && (
+          <optgroup label="Speech Docs">
+            {recents.map((r) => <option key={r.path} value={`speechdoc:${encodeURIComponent(r.path)}`}>📝 {r.name.replace(/\.docx$/i, '')}</option>)}
+          </optgroup>
+        )}
+      </select>
+      {cases.length === 0 && recents.length === 0 && (
+        <div style={{ fontSize: 11, color: 'var(--nav-inactive-color)', marginTop: 5, lineHeight: 1.5 }}>
+          No cases or speech docs yet. Drag a <code>.docx</code> onto the app, or use the <strong>Import doc</strong> quick
+          action on the home screen, to bring one in — then it'll show up here. You can also skip this and just use the
+          fields below.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomSetupForm({ db, onBack, onStart }: {
+  db: DB;
+  onBack: () => void;
+  onStart: (input: { yourDocValue: string; oppDocValue: string; sidePreference: string; userNotes: string }) => void;
+}) {
+  const [yourDocValue, setYourDocValue] = useState('');
+  const [oppDocValue, setOppDocValue] = useState('');
+  const [sidePreference, setSidePreference] = useState('');
+  const [userNotes, setUserNotes] = useState('');
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={onBack}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', fontSize: 12, padding: 0, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 16 }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+        Back
+      </button>
+
+      <MiniDocPicker label="Your doc (optional)" value={yourDocValue} onChange={setYourDocValue} db={db} />
+      <MiniDocPicker label="Opponent's doc (optional)" value={oppDocValue} onChange={setOppDocValue} db={db} />
+
+      <FieldLabel>Which side do you want to argue? <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></FieldLabel>
+      <input
+        value={sidePreference}
+        onChange={(e) => setSidePreference(e.target.value)}
+        placeholder="e.g. Aff, Neg, Pro, Con — or a specific position"
+        style={{ ...inputStyle, marginBottom: 14 }}
+      />
+
+      <FieldLabel>Anything else Warroom AI should know? <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></FieldLabel>
+      <textarea
+        value={userNotes}
+        onChange={(e) => setUserNotes(e.target.value)}
+        placeholder="Topic angle, a specific argument you want to practice against, judge type, anything else."
+        rows={4}
+        style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.55 }}
+      />
+
+      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => onStart({ yourDocValue, oppDocValue, sidePreference, userNotes })}
+          className="btn-primary"
+          style={{ fontSize: 13, padding: '9px 20px' }}
+        >
+          Start round →
+        </button>
+      </div>
+    </div>
   );
 }

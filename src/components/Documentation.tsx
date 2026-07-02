@@ -854,17 +854,32 @@ export default function Documentation() {
             A practice drill where you spar with Warroom AI over impact calculus. Pick a difficulty —{' '}
             <strong>Novice</strong> (concrete, intuitive impacts, no theory), <strong>JV</strong> (classic
             policy impacts — engage scope, probability chains, reversibility), or <strong>Varsity</strong>{' '}
-            (extinction matchups and framework wars). The round runs in three beats:
+            (extinction matchups and framework wars). Then choose how to start:
           </P>
+          <UL>
+            <LI><strong>Surprise me</strong> — Warroom AI invents a topic and takes a side against you.</LI>
+            <LI><strong>Pick my own topic</strong> — optionally attach one of your imported cases or speech
+              docs for your side and/or the opponent's, say which side you want to argue, and add any notes
+              for the AI. It grounds the generated scenario in your real material instead of inventing an
+              unrelated one. (No cases or speech docs yet? Drag a <Code>.docx</Code> onto the app, or use
+              the <strong>Import doc</strong> quick action on the home screen — you can also skip docs
+              entirely and just use the side/notes fields.)</LI>
+          </UL>
+          <P>The round then runs in three beats:</P>
           <UL>
             <LI><strong>Your impact</strong> — Warroom AI presents its impact (a claim, a warrant, and
               ratings on the four dimensions). You write your own impact and a short calc explaining why
               yours outweighs.</LI>
             <LI><strong>AI rebuttal</strong> — Warroom AI fires back a tight 1–2 minute rebuttal speech,
               defending its impact and attacking yours on a specific dimension. You get a final shot — the
-              last word — with a 60-second pressure timer (it never auto-submits).</LI>
+              last word — with a 60-second pressure timer that never blocks you: once it hits zero it just
+              starts counting overtime instead, and the result screen notes if you went over.</LI>
             <LI><strong>Decision</strong> — a judge calls the round: who won, a 1–10 score on your calc
-              work, a written verdict, dimension-by-dimension feedback, and concrete tips for next time.</LI>
+              work, a written verdict, dimension-by-dimension feedback, and concrete tips. It also grades
+              the opponent's rebuttal independently (its own 1–10 score plus a short critique) — that
+              grading call is a separate, fresh request from the one that generated the rebuttal, and the
+              prompt never tells the model it wrote that speech, so the score can't be biased by
+              self-recognition.</LI>
           </UL>
 
           <H3>Compare two docs (Tools)</H3>

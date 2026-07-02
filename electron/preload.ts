@@ -65,8 +65,15 @@ const api = {
       ipcRenderer.invoke('ai:scoreCards', params),
     compareImpactsText: (textA: string, textB: string, labelA: string, labelB: string) =>
       ipcRenderer.invoke('ai:compareImpactsText', textA, textB, labelA, labelB),
-    outweighScenario: (difficulty: string) =>
-      ipcRenderer.invoke('ai:outweighScenario', difficulty),
+    outweighScenario: (params: {
+      difficulty: string;
+      custom?: {
+        yourDoc?: { label: string; text: string } | null;
+        oppDoc?: { label: string; text: string } | null;
+        sidePreference?: string;
+        userNotes?: string;
+      };
+    }) => ipcRenderer.invoke('ai:outweighScenario', params),
     outweighRebuttal: (params: { difficulty: string; scenario: any; userImpact: string; userCalc: string }) =>
       ipcRenderer.invoke('ai:outweighRebuttal', params),
     outweighJudge: (params: { difficulty: string; scenario: any; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>

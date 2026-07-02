@@ -2704,13 +2704,35 @@ const OUTWEIGH_DIFFICULTY: Record<string, string> = {
   varsity: `VARSITY level. Use extinction / existential-risk matchups and framework-level clashes (util vs. structural violence, deterrence vs. rights-based framing, short-timeframe systemic harm vs. speculative catastrophe). Demand that the user win the FRAMEWORK / metric before the calc resolves. Be ruthless and round-realistic — this is the kind of impact debate that happens at a national circuit bid tournament.`,
 };
 
-ipcMain.handle('ai:outweighScenario', async (_e, difficulty: string) => {
+ipcMain.handle('ai:outweighScenario', async (_e, params: {
+  difficulty: string;
+  custom?: {
+    yourDoc?: { label: string; text: string } | null;
+    oppDoc?: { label: string; text: string } | null;
+    sidePreference?: string;
+    userNotes?: string;
+  };
+}) => {
   try {
+    const difficulty = params?.difficulty ?? 'jv';
     const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
+    const custom = params?.custom;
+    const hasCustom = !!(custom?.yourDoc || custom?.oppDoc || custom?.sidePreference || custom?.userNotes);
+
+    let customBlock = '';
+    if (hasCustom) {
+      customBlock = `\n═══════════════════════════════════════════════════════════\nTHE USER PICKED THEIR OWN TOPIC — GROUND THE SCENARIO IN THIS, DON'T INVENT AN UNRELATED ONE\n═══════════════════════════════════════════════════════════\n`;
+      if (custom?.yourDoc?.text) customBlock += `\nTHE USER'S CASE/DOC ("${custom.yourDoc.label}"):\n${custom.yourDoc.text.slice(0, 20000)}\n`;
+      if (custom?.oppDoc?.text) customBlock += `\nAN OPPONENT DOC ON THE SAME TOPIC ("${custom.oppDoc.label}"):\n${custom.oppDoc.text.slice(0, 20000)}\n`;
+      if (custom?.sidePreference) customBlock += `\nThe user wants to argue: ${custom.sidePreference}. Take the side that actually clashes with that, and pick an impact that competes with it directly.\n`;
+      if (custom?.userNotes) customBlock += `\nAdditional notes from the user: ${custom.userNotes}\n`;
+      customBlock += `\nUse this material to pick a specific, realistic topic and impact that plausibly comes from these docs/notes.\n`;
+    }
+
     const prompt = `You are running an impact-calculus practice drill for a competitive policy debater. Generate ONE impact scenario for them to debate against.
 
 DIFFICULTY: ${tierLine}
-
+${customBlock}
 Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card" logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
 
 Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
@@ -2771,6 +2793,10 @@ You MAY use light markdown emphasis (**bold** for the key outweighing claim) but
   }
 });
 
+// The judge call is deliberately its own fresh, stateless callAI() invocation —
+// no shared conversation with ai:outweighRebuttal — and the prompt never tells
+// the model "you" wrote the opponent's speech. It's framed purely as "the
+// opponent," a third party, so grading it can't be biased by self-recognition.
 ipcMain.handle('ai:outweighJudge', async (_e, params: {
   difficulty: string;
   scenario: any;
@@ -2781,29 +2807,33 @@ ipcMain.handle('ai:outweighJudge', async (_e, params: {
 }) => {
   try {
     const { scenario, userImpact, userCalc, rebuttal, userFinal } = params;
-    const prompt = `You are an experienced, fair policy debate judge writing a decision after an impact-calculus exchange. Decide who won the impact debate and give specific, actionable feedback.
+    const prompt = `You are an experienced, fair policy debate judge writing a decision after an impact-calculus exchange between two debaters, "You" (the user) and "the Opponent." You did not write either side's arguments — judge them cold, on the merits, as an independent third party would.
 
-THE AI'S IMPACT + SIDE:
+THE OPPONENT'S IMPACT + SIDE:
 ${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}
 Side: ${scenario?.side ?? ''}
 Context: ${scenario?.context ?? ''}
 
-THE USER'S IMPACT: ${userImpact}
-THE USER'S OPENING CALCULUS:
+YOUR (THE USER'S) IMPACT: ${userImpact}
+YOUR OPENING CALCULUS:
 ${userCalc}
 
-THE AI'S REBUTTAL:
+THE OPPONENT'S REBUTTAL:
 ${rebuttal}
 
-THE USER'S FINAL SHOT (their last word):
+YOUR FINAL SHOT (your last word):
 ${userFinal || '(the user did not write a final shot)'}
 
 Judge it the way a real judge resolves impact calc: which impacts actually survived, which dimension was decisive, and whether the user gave you a reason to prefer their impact. Reward warranted comparison over assertion. Be honest — if the user lost, say so and explain why, but stay constructive and encouraging.
 
+Separately and independently, grade the Opponent's rebuttal on its own argumentative merits — was it well warranted, did it actually engage the user's specific claims, did it invent unsupported assertions or misrepresent what the user wrote? Grade it critically and objectively; do not assume it's good just because it's the "other side," and do not let the round's overall winner bias this score — a losing debater can still have delivered a sharp, well-warranted rebuttal, and a winning one can have been sloppy.
+
 Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
 {
   "winner": "<user|ai|tie>",
-  "score": <integer 1-10 rating the quality of the USER's impact calc work>,
+  "userScore": <integer 1-10 rating the quality of the USER's impact calc work>,
+  "opponentScore": <integer 1-10 rating the quality of the OPPONENT's rebuttal, graded independently on its own merits>,
+  "opponentNotes": "<1-2 sentence honest critique of the Opponent's rebuttal — what was strong or weak about its argumentation>",
   "verdict": "<2-3 sentence decision explaining who won the impact debate and on what dimension. You may use **bold**.>",
   "feedback": [
     { "dimension": "<magnitude|probability|timeframe|reversibility|breadth|framing>", "note": "<what the user did well or missed on this dimension>" }
