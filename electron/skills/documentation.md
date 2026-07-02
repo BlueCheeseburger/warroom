@@ -188,7 +188,7 @@ A countdown timer (`SpeechTimer` in `TitleBar.tsx`) lives in the title bar, alwa
 
 ### Coin Flip
 
-A pixel-art coin-flip icon (`CoinFlip` in `TitleBar.tsx`, faces rendered by `PixelCoin.tsx`) sits immediately to the left of the timer. Clicking it opens a popup with an animated 3D coin (CSS `rotateY` on a two-sided element, `backfaceVisibility: hidden`); clicking **Flip** spins and lands on heads or tails.
+A photorealistic minted-coin icon (`CoinFlip` in `TitleBar.tsx`, faces rendered by `Coin.tsx`) sits immediately to the left of the timer. Each face is SVG with a radial metal gradient, beveled/reeded rim, and an engraved `H`/`T` letter built from offset light+dark copies for a relief effect. Clicking it opens a popup with an animated 3D coin (CSS `rotateY` on a two-sided element, `backfaceVisibility: hidden`); clicking **Flip** spins and lands on heads or tails.
 
 **It is a genuine, unweighted 50/50 flip.** The result is decided synchronously the instant Flip is clicked — `const landsOnTails = Math.random() < 0.5` — *before* any animation starts. A second `Math.random()` call picks a random 4–7 extra full spins for visual variety. The rotation is then computed to land the coin at the angle (0° = heads face-out, 180° = tails face-out) matching the already-decided outcome — the spin is cosmetic dressing on a decision already made, never a driver of it. `Math.random()` (not a CSPRNG) is intentional here — it's the right tool for a coin flip, no adversarial-unpredictability requirement applies.
 

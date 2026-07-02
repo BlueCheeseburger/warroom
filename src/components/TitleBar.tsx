@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp, Theme, DebateEvent } from '../store/appStore';
 import { AIProviderIcon } from './GeminiPanel';
-import { PixelCoinFace, PixelCoinIcon } from './PixelCoin';
+import { CoinFace, CoinIcon } from './Coin';
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
@@ -448,7 +448,7 @@ function CoinFlip() {
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        <PixelCoinIcon size={15} />
+        <CoinIcon size={15} />
       </button>
 
       {open && (
@@ -471,11 +471,11 @@ function CoinFlip() {
             >
               {/* Heads face */}
               <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
-                <PixelCoinFace variant="heads" size={60} />
+                <CoinFace variant="heads" size={60} />
               </div>
               {/* Tails face */}
               <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                <PixelCoinFace variant="tails" size={60} />
+                <CoinFace variant="tails" size={60} />
               </div>
             </div>
           </div>
