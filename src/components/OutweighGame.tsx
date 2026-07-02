@@ -68,8 +68,11 @@ export default function OutweighGame() {
   const [userFinal, setUserFinal] = useState('');
   const [judgment, setJudgment] = useState<OutweighJudgment | null>(null);
 
-  // Final-shot countdown (visual urgency, not auto-submit)
+  // Final-shot countdown (visual urgency, not auto-submit). Once it hits 0 it keeps
+  // counting *up* as overtime instead of stopping — the game never blocks the user,
+  // it just remembers how far over they went so the result screen can flag it.
   const [secondsLeft, setSecondsLeft] = useState(FINAL_SHOT_SECONDS);
+  const [overtimeSeconds, setOvertimeSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ai = (window.warroom as any).ai;
@@ -94,12 +97,17 @@ export default function OutweighGame() {
 
   useEffect(() => { loadScenario(); }, [loadScenario]);
 
-  // Run the countdown only while writing the final shot.
+  // Run the countdown only while writing the final shot. It never stops the user —
+  // once it bottoms out it flips into counting overtime seconds instead.
   useEffect(() => {
     if (phase === 'rebuttal') {
       setSecondsLeft(FINAL_SHOT_SECONDS);
+      setOvertimeSeconds(0);
       timerRef.current = setInterval(() => {
-        setSecondsLeft((s) => (s <= 1 ? 0 : s - 1));
+        setSecondsLeft((s) => {
+          if (s <= 1) { setOvertimeSeconds((o) => o + 1); return 0; }
+          return s - 1;
+        });
       }, 1000);
     }
     return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
@@ -148,6 +156,7 @@ export default function OutweighGame() {
     setScenario(null);
     setUserImpact(''); setUserCalc(''); setRebuttal(''); setUserFinal('');
     setJudgment(null);
+    setOvertimeSeconds(0);
     loadScenario();
   }
 
@@ -174,6 +183,11 @@ export default function OutweighGame() {
 
         {/* Progress steps */}
         {phase !== 'error' && <StepBar phase={phase} />}
+
+        {/* Verdict — front and center, above the fold, the moment the round ends */}
+        {phase === 'result' && judgment && (
+          <VerdictBanner judgment={judgment} overtimeSeconds={overtimeSeconds} />
+        )}
 
         {phase === 'loading-scenario' && <Spinner label="Warroom AI is drawing an impact…" />}
         {phase === 'loading-rebuttal' && <Spinner label="Warroom AI is writing its rebuttal…" />}
@@ -243,9 +257,9 @@ export default function OutweighGame() {
               <FieldLabel style={{ marginBottom: 0 }}>Your final shot <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— the last word</span></FieldLabel>
               <span style={{
                 fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-                color: secondsLeft <= 10 ? '#dc2626' : 'var(--nav-inactive-color)',
+                color: overtimeSeconds > 0 ? '#dc2626' : secondsLeft <= 10 ? '#dc2626' : 'var(--nav-inactive-color)',
               }}>
-                ⏱ 0:{String(secondsLeft).padStart(2, '0')}
+                {overtimeSeconds > 0 ? `⏱ +0:${String(overtimeSeconds).padStart(2, '0')} over` : `⏱ 0:${String(secondsLeft).padStart(2, '0')}`}
               </span>
             </div>
             <textarea
@@ -276,6 +290,7 @@ export default function OutweighGame() {
           <ResultCard
             judgment={judgment}
             userFinal={userFinal}
+            overtimeSeconds={overtimeSeconds}
             onPlayAgain={playAgain}
             onHub={() => setView({ kind: 'impact-hub' })}
           />
@@ -384,21 +399,55 @@ function YourTurnRecap({ impact, calc }: { impact: string; calc: string }) {
 }
 
 function winnerStyle(winner: OutweighJudgment['winner']) {
-  if (winner === 'user') return { label: 'You win the impact debate', color: '#16a34a' };
-  if (winner === 'ai') return { label: 'Warroom AI wins this one', color: '#dc2626' };
-  return { label: "It's a wash", color: 'var(--nav-inactive-color)' };
+  if (winner === 'user') return { label: 'You win the impact debate', icon: '🏆', color: '#16a34a' };
+  if (winner === 'ai') return { label: 'Warroom AI wins this one', icon: '❌', color: '#dc2626' };
+  return { label: "It's a wash", icon: '🤝', color: 'var(--nav-inactive-color)' };
 }
 
-function ResultCard({ judgment, userFinal, onPlayAgain, onHub }: {
-  judgment: OutweighJudgment; userFinal: string; onPlayAgain: () => void; onHub: () => void;
-}) {
+// A big, unmissable win/loss/tie readout shown the instant the round ends — before
+// any of the detailed feedback, so the outcome is never buried by scrolling.
+function VerdictBanner({ judgment, overtimeSeconds }: { judgment: OutweighJudgment; overtimeSeconds: number }) {
   const ws = winnerStyle(judgment.winner);
   const score = Math.max(0, Math.min(10, Number(judgment.score) || 0));
+  return (
+    <div style={{
+      background: `${ws.color}12`, border: `2px solid ${ws.color}55`,
+      borderRadius: 14, padding: '18px 22px', marginBottom: 22,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 24, lineHeight: 1 }}>{ws.icon}</span>
+        <span style={{ fontSize: 19, fontWeight: 800, color: ws.color, letterSpacing: '-0.01em' }}>{ws.label}</span>
+        {overtimeSeconds > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, color: '#d97706', background: 'rgba(217,119,6,0.12)',
+            borderRadius: 5, padding: '3px 8px', textTransform: 'uppercase', letterSpacing: '0.05em',
+          }}>
+            ⏱ went {overtimeSeconds}s over time
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 30, fontWeight: 800, color: ws.color, fontVariantNumeric: 'tabular-nums' }}>{score}</span>
+        <span style={{ fontSize: 12, color: 'var(--nav-inactive-color)', fontWeight: 600 }}>/ 10</span>
+      </div>
+    </div>
+  );
+}
+
+function ResultCard({ judgment, userFinal, overtimeSeconds, onPlayAgain, onHub }: {
+  judgment: OutweighJudgment; userFinal: string; overtimeSeconds: number; onPlayAgain: () => void; onHub: () => void;
+}) {
   return (
     <>
       {userFinal && (
         <div style={{ marginTop: 18 }}>
-          <FieldLabel>Your final shot</FieldLabel>
+          <FieldLabel style={{ marginBottom: overtimeSeconds > 0 ? 8 : 6 }}>Your final shot</FieldLabel>
+          {overtimeSeconds > 0 && (
+            <div style={{ fontSize: 11, color: '#d97706', marginBottom: 6 }}>
+              Submitted {overtimeSeconds}s after the 60-second timer ran out.
+            </div>
+          )}
           <div style={{
             background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderLeft: '3px solid var(--accent)',
             borderRadius: 10, padding: '14px 16px', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap',
@@ -407,16 +456,10 @@ function ResultCard({ judgment, userFinal, onPlayAgain, onHub }: {
       )}
 
       <div style={{
-        marginTop: 22, background: `${ws.color}0e`, border: `1.5px solid ${ws.color}40`,
-        borderRadius: 12, padding: '20px 22px',
+        marginTop: 22, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+        borderRadius: 12, padding: '18px 20px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 20, fontWeight: 800, color: ws.color, letterSpacing: '-0.01em' }}>{ws.label}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 26, fontWeight: 800, color: ws.color, fontVariantNumeric: 'tabular-nums' }}>{score}</span>
-            <span style={{ fontSize: 12, color: 'var(--nav-inactive-color)', fontWeight: 600 }}>/ 10</span>
-          </div>
-        </div>
+        <FieldLabel>Why</FieldLabel>
         <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.7 }}>
           <RichText text={judgment.verdict} />
         </div>
