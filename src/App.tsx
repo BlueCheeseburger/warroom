@@ -47,6 +47,7 @@ import TopicsScreen from './components/TopicsScreen';
 import ImpactCalcView from './components/ImpactCalcView';
 import ImpactHub from './components/ImpactHub';
 import OutweighGame from './components/OutweighGame';
+import ImpactLibrary from './components/ImpactLibrary';
 import SearchPalette from './components/SearchPalette';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 
@@ -681,6 +682,7 @@ function Router() {
       case 'impact-calc':   regular = <ImpactCalcView />; break;
       case 'impact-hub':    regular = <ImpactHub />; break;
       case 'outweigh-game': regular = <OutweighGame key={(view as any).difficulty} />; break;
+      case 'impact-library': regular = <ImpactLibrary />; break;
       default:              regular = <Home />;
     }
   }

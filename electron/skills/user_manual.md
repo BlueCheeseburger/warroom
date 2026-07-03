@@ -251,7 +251,7 @@ When you click **+ Save to Cases** on an opponent's disclosed file, it's added t
 ## Impact Calc
 Full-screen hub — open it from the **Impact Calc** card on the home screen.
 
-Two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer; Impact Library and Head-to-head Matchups are coming soon).
+Two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer and the Impact Library; Head-to-head Matchups is coming soon).
 
 ### The Outweigh game (Practice)
 A live impact-calculus drill against Warroom AI. It automatically matches your event: **Policy** (Aff/Neg, plan/DA framing) or **Public Forum** (Pro/Con, no plan — weighing framed the way it reads in Summary/Final Focus). A badge next to the difficulty tag in the header shows which one is active. LD currently plays like Policy (not built out separately yet).
@@ -282,6 +282,20 @@ Compare two of your own cases, speech docs, or a flow and get a full impact brea
 - **Overall verdict** — who wins the exchange and why, ready for your final rebuttal
 
 Saved comparisons appear underneath for one-click reopening.
+
+### Impact Library (Tools)
+A **shared library of impacts that everyone using Warroom contributes to** — not just your team, the whole app. It uses your **chat account** (it's stored in the cloud), so you'll sign in through the chat panel the first time; if you're not signed in the screen shows a sign-in prompt.
+
+Every entry is AI-structured: the impact broken out by **magnitude / probability / timeframe / reversibility** (each with a one-line reason), plus the standard **answers** for beating it and search tags.
+
+**To contribute** (the **+ Contribute** button):
+1. **Source** — pick one of your cases or speech docs, and/or paste a card or just describe the impact in your own words; choose the event; hit **Draft with AI**.
+2. **Edit draft** — the AI hands back a structured impact. Fix anything it got wrong (ratings, wording, etc.).
+3. **Review & submit** — the AI passes over your edited version to rewrite the answers/tags, **check your edit against the original source** (it warns you if you've overstated something the source doesn't back), and **flag anything already in the library that looks like a duplicate**. Then choose whether to stay **anonymous** (the default) or **credit yourself** by your chat name, and add it.
+
+**To browse**: search by keyword, filter by event, and sort by **Top** (most-liked), **Newest**, **Saved** (your bookmarks), or **Mine**. Each entry has **👍 like / 👎 dislike / 🔖 save** — after you like or dislike, you can attach a quick reason tag (dislike reasons include **AI error**). You can delete entries you contributed.
+
+> Setup note: the library needs its cloud tables. If it errors on first use, an admin needs to re-run `supabase/schema.sql` in the Supabase project.
 
 ---
 

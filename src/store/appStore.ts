@@ -52,7 +52,8 @@ export type View =
   | { kind: 'topics'; tab?: 'policy' | 'pf' | 'ld' }
   | { kind: 'impact-calc'; result: any; labelA: string; labelB: string }
   | { kind: 'impact-hub' }
-  | { kind: 'outweigh-game'; difficulty: 'novice' | 'jv' | 'varsity' };
+  | { kind: 'outweigh-game'; difficulty: 'novice' | 'jv' | 'varsity' }
+  | { kind: 'impact-library' };
 
 export type AgentSearchFn = (query: string) => Promise<string>;
 

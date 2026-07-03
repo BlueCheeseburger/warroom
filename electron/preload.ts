@@ -80,6 +80,18 @@ const api = {
       ipcRenderer.invoke('ai:outweighRebuttal', params),
     outweighJudge: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: any; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
       ipcRenderer.invoke('ai:outweighJudge', params),
+    impactLibraryDraft: (params: { source: string; event?: string }) =>
+      ipcRenderer.invoke('ai:impactLibraryDraft', params),
+    impactLibraryReview: (params: { entry: any; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
+      ipcRenderer.invoke('ai:impactLibraryReview', params),
+  },
+  impactlib: {
+    list: () => ipcRenderer.invoke('impactlib:list'),
+    submit: (entry: any) => ipcRenderer.invoke('impactlib:submit', entry),
+    update: (entryId: string, patch: any) => ipcRenderer.invoke('impactlib:update', entryId, patch),
+    delete: (entryId: string) => ipcRenderer.invoke('impactlib:delete', entryId),
+    vote: (entryId: string, vote: number, reason?: string | null) => ipcRenderer.invoke('impactlib:vote', entryId, vote, reason),
+    save: (entryId: string, saved: boolean) => ipcRenderer.invoke('impactlib:save', entryId, saved),
   },
   clipboard: {
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),

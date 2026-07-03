@@ -302,7 +302,7 @@ The panel's **Generate / Regenerate** action and the **Harder** button live in t
 
 ## Impact Calc
 
-Impact Calc is a full-screen hub for everything impact-weighing. Open it from the **Impact Calc** card on the home screen. It has two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer, plus Impact Library and Head-to-head Matchups, which are coming soon).
+Impact Calc is a full-screen hub for everything impact-weighing. Open it from the **Impact Calc** card on the home screen. It has two areas: **Practice** (the Outweigh game) and **Tools** (the doc-comparison analyzer and the Impact Library; Head-to-head Matchups is still coming soon).
 
 ### The Outweigh game
 A practice drill where you spar with Warroom AI over impact calculus. It follows the app's active event setting:
@@ -340,6 +340,18 @@ Reading the results:
 - **Overall verdict** — a summary declaring which side wins the exchange and why, suitable for a final rebuttal.
 
 Saved comparisons are listed for one-click reopening. The comparison tool is powered by `ai:compareImpactsText`. Everything in Impact Calc runs on the best model tier (your selected model, never Flash Lite).
+
+### Impact Library (Tools)
+A **shared, community-built** database of impacts. Unlike the rest of the app it is **not team-scoped** — every signed-in user reads and contributes to the same global pool. It lives in Supabase and uses the user's **chat account**, so they sign in through the chat panel to browse or contribute (the screen shows a sign-in prompt otherwise). Each entry is an AI-structured impact: the four dimensions broken out separately (each with a one-line warrant), a set of standard **answers** (how to beat it), and search tags.
+
+**Contributing** is a three-step wizard:
+1. **Source** — pick one of the user's cases/speech docs and/or paste a card or describe the impact, choose the event, hit **Draft with AI**.
+2. **Edit draft** — the AI returns a structured impact (title, claim, four dimensions each with rating + note, answers, tags); the user corrects anything wrong.
+3. **Review & submit** — the AI re-runs on the *edited* version to (a) regenerate answers/tags, (b) drift-check the edit against the source and flag unsupported claims, and (c) flag likely duplicates already in the library. The user picks attribution — **anonymous by default**, or opt in to credit by chat display name — then submits.
+
+**Browsing**: search (title/claim/tags/answers), event filter, and sort by **Top** (net likes), **Newest**, **Saved** (personal bookmarks), or **Mine**. Each entry has **like**, **dislike**, and **save** buttons; likes/dislikes take an optional quick reason tag (dislike reasons include "AI error"). Users can delete their own entries.
+
+Powered by `ai:impactLibraryDraft` and `ai:impactLibraryReview` (AI structuring) plus the `impactlib:*` Supabase handlers (`impactlib:list` / `submit` / `update` / `delete` / `vote` / `save`). Tables: `impact_library`, `impact_library_votes`, `impact_library_saves` — **re-run `supabase/schema.sql`** to create them. Like/dislike counts are denormalized on `impact_library` and kept in sync by a trigger on the votes table.
 
 ---
 

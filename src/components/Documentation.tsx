@@ -845,8 +845,8 @@ export default function Documentation() {
           <P>
             Impact Calc is a full-screen hub for everything impact-weighing. Open it from the{' '}
             <strong>Impact Calc</strong> card on the home screen. It has two areas: <strong>Practice</strong>{' '}
-            (the Outweigh game) and <strong>Tools</strong> (the doc-comparison analyzer, plus Impact Library
-            and Head-to-head Matchups, which are coming soon).
+            (the Outweigh game) and <strong>Tools</strong> (the doc-comparison analyzer and the Impact
+            Library; Head-to-head Matchups is still coming soon).
           </P>
 
           <H3>The Outweigh game</H3>
@@ -895,10 +895,43 @@ export default function Documentation() {
             timeframe, reversibility), and an overall verdict suitable for a final rebuttal. Saved
             comparisons are listed underneath for one-click reopening.
           </P>
+
+          <H3>Impact Library (Tools)</H3>
+          <P>
+            A <strong>shared, community-built</strong> database of impacts — everyone using Warroom reads
+            and contributes to the same pool. It's <strong>not team-scoped</strong>; it lives in Supabase
+            and uses your chat account, so you sign in through the chat panel to browse or contribute. Each
+            entry is an AI-structured impact: the four dimensions broken out separately (each with a
+            one-line warrant), a set of standard <strong>answers</strong> (how to beat it), and search
+            tags.
+          </P>
+          <P><strong>Contributing</strong> is a three-step wizard:</P>
+          <UL>
+            <LI><strong>Source</strong> — pick one of your cases/speech docs and/or paste a card or just
+              describe the impact, choose the event, and hit <strong>Draft with AI</strong>.</LI>
+            <LI><strong>Edit draft</strong> — the AI returns a structured impact (title, claim, four
+              dimensions, answers, tags); you fix anything it got wrong.</LI>
+            <LI><strong>Review &amp; submit</strong> — the AI re-runs on your edited version to regenerate
+              the answers/tags, <strong>sanity-check your edit against the source</strong> (flags claims
+              the source doesn't support), and <strong>flag likely duplicates</strong> already in the
+              library. You choose attribution — <strong>anonymous by default</strong>, or opt in to credit
+              by your chat display name — then add it.</LI>
+          </UL>
+          <P>
+            <strong>Browsing</strong> supports search (title/claim/tags/answers), an event filter, and
+            sort by <strong>Top</strong> (net likes), <strong>Newest</strong>, <strong>Saved</strong>
+            {' '}(your bookmarks), or <strong>Mine</strong>. Each entry has <strong>like</strong>,
+            {' '}<strong>dislike</strong>, and <strong>save</strong> buttons; likes and dislikes take an
+            optional quick reason tag (dislike reasons include “AI error”). You can delete your own
+            entries.
+          </P>
           <P>
             The game is powered by <Code>ai:outweighScenario</Code>, <Code>ai:outweighRebuttal</Code>, and{' '}
-            <Code>ai:outweighJudge</Code>; the comparison tool by <Code>ai:compareImpactsText</Code>. All
-            run on the best model tier (your selected model, never Flash Lite).
+            <Code>ai:outweighJudge</Code>; the comparison tool by <Code>ai:compareImpactsText</Code>; the
+            library by <Code>ai:impactLibraryDraft</Code> / <Code>ai:impactLibraryReview</Code> plus the{' '}
+            <Code>impactlib:*</Code> Supabase handlers (tables <Code>impact_library</Code>,{' '}
+            <Code>impact_library_votes</Code>, <Code>impact_library_saves</Code> — re-run{' '}
+            <Code>supabase/schema.sql</Code>). All AI runs on the best model tier.
           </P>
         </section>
 

@@ -465,3 +465,137 @@ create policy "team_members_can_update_flows" on flows
 drop policy if exists "flow_owner_can_delete" on flows;
 create policy "flow_owner_can_delete" on flows
   for delete using (owner_id = auth.uid());
+
+-- ─── Impact Library (global shared library) ───────────────────────────────────
+-- A cross-user, app-wide library of debate impacts. Unlike everything above this
+-- is NOT team-scoped — every signed-in user reads the same pool and can contribute
+-- to it. Each entry is an AI-structured impact (magnitude/probability/timeframe/
+-- reversibility broken out separately, plus generated answers and tags). Authors
+-- are anonymous by default and may opt into showing their chat display name.
+
+create table if not exists impact_library (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid references auth.users(id) on delete set null,
+  author_name text not null default 'Anonymous', -- chat display name captured at submit
+  anonymous boolean not null default true,        -- when true, hide author_name in the UI
+  event text check (event in ('policy', 'pf', 'ld', 'general')) not null default 'general',
+  title text not null,
+  claim text not null default '',
+  magnitude text not null default '',
+  magnitude_note text not null default '',
+  probability text not null default '',
+  probability_note text not null default '',
+  timeframe text not null default '',
+  timeframe_note text not null default '',
+  reversibility text not null default '',
+  reversibility_note text not null default '',
+  answers text[] not null default '{}',           -- standard ways to beat this impact
+  tags text[] not null default '{}',              -- topic / position tags for search
+  like_count integer not null default 0,          -- denormalized, maintained by trigger
+  dislike_count integer not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists impact_library_created_idx on impact_library(created_at desc);
+create index if not exists impact_library_score_idx on impact_library(like_count desc);
+create index if not exists impact_library_event_idx on impact_library(event);
+create index if not exists impact_library_tags_idx on impact_library using gin(tags);
+
+-- One like/dislike per user per entry. vote = 1 (like) or -1 (dislike).
+create table if not exists impact_library_votes (
+  entry_id uuid references impact_library(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  vote smallint not null check (vote in (1, -1)),
+  reason text,                                    -- optional quick reason tag
+  created_at timestamptz default now(),
+  primary key (entry_id, user_id)
+);
+
+-- Personal saves (a user's own bookmark list, separate from the shared library).
+create table if not exists impact_library_saves (
+  entry_id uuid references impact_library(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (entry_id, user_id)
+);
+
+-- Keep like_count / dislike_count on impact_library in sync with the votes table.
+create or replace function refresh_impact_vote_counts(p_entry uuid)
+returns void language sql security definer set search_path = '' as $$
+  update public.impact_library il set
+    like_count    = (select count(*) from public.impact_library_votes v where v.entry_id = p_entry and v.vote = 1),
+    dislike_count = (select count(*) from public.impact_library_votes v where v.entry_id = p_entry and v.vote = -1)
+  where il.id = p_entry;
+$$;
+
+create or replace function impact_vote_counts_trigger()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if (tg_op = 'DELETE') then
+    perform public.refresh_impact_vote_counts(old.entry_id);
+    return old;
+  else
+    perform public.refresh_impact_vote_counts(new.entry_id);
+    return new;
+  end if;
+end;
+$$;
+
+drop trigger if exists impact_votes_count_trigger on impact_library_votes;
+create trigger impact_votes_count_trigger
+  after insert or update or delete on impact_library_votes
+  for each row execute function impact_vote_counts_trigger();
+
+alter table impact_library enable row level security;
+alter table impact_library_votes enable row level security;
+alter table impact_library_saves enable row level security;
+
+-- Any authenticated user may read the whole library and everyone's vote tallies.
+drop policy if exists "impact_library_read" on impact_library;
+create policy "impact_library_read" on impact_library
+  for select using (auth.uid() is not null);
+
+-- Contribute: insert only as yourself.
+drop policy if exists "impact_library_insert" on impact_library;
+create policy "impact_library_insert" on impact_library
+  for insert with check (author_id = auth.uid());
+
+-- Edit / delete only your own entries.
+drop policy if exists "impact_library_update_own" on impact_library;
+create policy "impact_library_update_own" on impact_library
+  for update using (author_id = auth.uid()) with check (author_id = auth.uid());
+
+drop policy if exists "impact_library_delete_own" on impact_library;
+create policy "impact_library_delete_own" on impact_library
+  for delete using (author_id = auth.uid());
+
+-- Votes: everyone authenticated can read (for counts/aggregation); write only your own.
+drop policy if exists "impact_votes_read" on impact_library_votes;
+create policy "impact_votes_read" on impact_library_votes
+  for select using (auth.uid() is not null);
+
+drop policy if exists "impact_votes_upsert" on impact_library_votes;
+create policy "impact_votes_upsert" on impact_library_votes
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "impact_votes_update_own" on impact_library_votes;
+create policy "impact_votes_update_own" on impact_library_votes
+  for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "impact_votes_delete_own" on impact_library_votes;
+create policy "impact_votes_delete_own" on impact_library_votes
+  for delete using (user_id = auth.uid());
+
+-- Saves are private: you only ever see and manage your own.
+drop policy if exists "impact_saves_read_own" on impact_library_saves;
+create policy "impact_saves_read_own" on impact_library_saves
+  for select using (user_id = auth.uid());
+
+drop policy if exists "impact_saves_insert_own" on impact_library_saves;
+create policy "impact_saves_insert_own" on impact_library_saves
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "impact_saves_delete_own" on impact_library_saves;
+create policy "impact_saves_delete_own" on impact_library_saves
+  for delete using (user_id = auth.uid());

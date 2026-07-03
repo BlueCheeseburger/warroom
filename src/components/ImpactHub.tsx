@@ -108,13 +108,26 @@ export default function ImpactHub() {
             <ImpactCalcPanel />
           </div>
 
-          {/* Coming-soon stubs */}
+          {/* Impact Library (live) + coming-soon stub */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <ComingSoon
-              icon="📚"
-              title="Impact Library"
-              desc="A searchable database of common impacts — magnitude, probability, timeframe, the standard block, and cards."
-            />
+            <button
+              onClick={() => setView({ kind: 'impact-library' })}
+              style={{
+                textAlign: 'left', cursor: 'pointer',
+                background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                borderRadius: 14, padding: '18px 20px', transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-subtle)'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>📚 Impact Library</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', opacity: 0.4 }}><polyline points="9 18 15 12 9 6" /></svg>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--nav-inactive-color)', margin: 0, lineHeight: 1.55 }}>
+                A shared, community-built database of impacts — each broken out by dimension with the standard answers. Contribute yours or browse others'.
+              </p>
+            </button>
             <ComingSoon
               icon="🥊"
               title="Head-to-head Matchups"

@@ -368,6 +368,19 @@ declare global {
           Promise<{ ok: true; speech: string } | { ok: false; error: string }>;
         outweighJudge: (params: { difficulty: string; event?: 'policy' | 'pf'; scenario: OutweighScenario; userImpact: string; userCalc: string; rebuttal: string; userFinal: string }) =>
           Promise<{ ok: true; result: OutweighJudgment } | { ok: false; error: string }>;
+        impactLibraryDraft: (params: { source: string; event?: string }) =>
+          Promise<{ ok: true; draft: ImpactLibraryDraft } | { ok: false; error: string }>;
+        impactLibraryReview: (params: { entry: ImpactLibraryDraft; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
+          Promise<{ ok: true; review: ImpactLibraryReview } | { ok: false; error: string }>;
+      };
+      impactlib: {
+        list: () => Promise<{ ok: true; data: { entries: ImpactLibraryEntry[]; uid: string } } | { ok: false; error: string }>;
+        submit: (entry: Partial<ImpactLibraryEntry>) => Promise<{ ok: true; data: ImpactLibraryEntry } | { ok: false; error: string }>;
+        update: (entryId: string, patch: Partial<ImpactLibraryEntry>) => Promise<{ ok: true; data: ImpactLibraryEntry } | { ok: false; error: string }>;
+        delete: (entryId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+        vote: (entryId: string, vote: number, reason?: string | null) =>
+          Promise<{ ok: true; data: { like_count: number; dislike_count: number } | null } | { ok: false; error: string }>;
+        save: (entryId: string, saved: boolean) => Promise<{ ok: true } | { ok: false; error: string }>;
       };
       clipboard: {
         readImage: () => Promise<{ ok: boolean; base64?: string; mimeType?: string; error?: string }>;
@@ -680,6 +693,52 @@ export interface OutweighScenario {
     timeframe: string;
     reversibility: string;
   };
+}
+
+// ─── Impact Library (global shared library) ───────────────────────────────────
+
+export type ImpactLibraryEvent = 'policy' | 'pf' | 'ld' | 'general';
+
+// The AI-structured draft shape (also the editable form shape before submit).
+export interface ImpactLibraryDraft {
+  title: string;
+  claim: string;
+  magnitude: string;
+  magnitude_note: string;
+  probability: string;
+  probability_note: string;
+  timeframe: string;
+  timeframe_note: string;
+  reversibility: string;
+  reversibility_note: string;
+  answers: string[];
+  tags: string[];
+  event?: ImpactLibraryEvent;
+  anonymous?: boolean;
+}
+
+export interface ImpactLibraryReview {
+  answers: string[];
+  tags: string[];
+  driftWarnings: string[];
+  duplicates: { id: string; title: string; why: string }[];
+}
+
+// A stored library entry (draft fields + author + counts + the caller's own state).
+export interface ImpactLibraryEntry extends ImpactLibraryDraft {
+  id: string;
+  author_id: string | null;
+  author_name: string;
+  anonymous: boolean;
+  event: ImpactLibraryEvent;
+  like_count: number;
+  dislike_count: number;
+  created_at: string;
+  updated_at: string;
+  // Merged client-side for the current user:
+  my_vote?: 1 | -1 | 0;
+  my_vote_reason?: string | null;
+  saved?: boolean;
 }
 
 export interface OutweighJudgment {

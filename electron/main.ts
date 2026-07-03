@@ -1903,7 +1903,7 @@ ipcMain.handle('clipboard:readImage', async () => {
 ipcMain.handle('ai:suggestBlocks', async (_e, opponentPositions: string, blockList: { id: string; title: string }[]) => {
   const raw = await callAI(
     `You are a policy debate assistant. Given an opponent's disclosed positions and a list of available blocks, return the IDs of the 4 most relevant blocks the debater should review before this round.\n\nOpponent positions:\n${opponentPositions}\n\nAvailable blocks (id: title):\n${blockList.map(b => `${b.id}: ${b.title}`).join('\n')}\n\nReturn ONLY a JSON array of exactly 4 block ID strings. No explanation, no markdown, no preamble. Example: ["id1","id2","id3","id4"]`,
-    'balanced',
+    'user',
   );
   const ids = JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
   if (!Array.isArray(ids)) throw new Error('Unexpected AI response');
@@ -2869,6 +2869,100 @@ Return ONLY valid JSON — no markdown fences, no commentary — matching this e
     return { ok: true, result };
   } catch (e: any) {
     const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to judge round');
+    return { ok: false, error: msg };
+  }
+});
+
+// ─── Impact Library — AI structuring pipeline ──────────────────────────────────
+// Step 1 (draft): turn a speech doc / raw idea into a structured impact — the four
+// dimensions broken out separately, plus generated answers and tags. Step 2 (review,
+// below): after the user edits the draft, regenerate answers/tags on their edited
+// version, sanity-check it against the source, and flag likely duplicates.
+
+const IMPACT_LIB_EVENT: Record<string, string> = {
+  policy: 'Policy (CX) debate — Aff/Neg, plan-based.',
+  pf: 'Public Forum — Pro/Con, resolution weighed on balance, no plan.',
+  ld: 'Lincoln-Douglas — value/criterion framing.',
+  general: 'General / cross-event — keep it event-agnostic.',
+};
+
+ipcMain.handle('ai:impactLibraryDraft', async (_e, params: { source: string; event?: string }) => {
+  try {
+    const source = (params?.source ?? '').slice(0, 60000);
+    const eventLine = IMPACT_LIB_EVENT[params?.event ?? 'general'] ?? IMPACT_LIB_EVENT.general;
+    const prompt = `You are an expert debate coach building an entry for a shared IMPACT LIBRARY. Read the material below (it may be a full speech doc / card, or just a rough idea) and distill it into ONE clean, structured impact entry that any debater could pick up and use.
+
+EVENT CONTEXT: ${eventLine}
+
+Break the impact out across the four standard impact-calculus dimensions SEPARATELY, each with a one-sentence warranted note (not just a rating word). Then generate the standard ANSWERS — the moves a good debater reads to beat this impact — and TAGS for search (topics/positions this impact shows up in). Be rigorous and honest: if the source overstates the impact, rate it realistically, don't inflate it.
+
+SOURCE MATERIAL:
+---
+${source || '(no source provided — the user only gave an idea; infer a sensible impact)'}
+---
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "title": "<short label for this impact, e.g. 'US-China war' or 'Dedev / degrowth'>",
+  "claim": "<the impact claim in 1-2 sentences — what the harm is and its terminal>",
+  "magnitude": "<extinction|existential|major|moderate|minor>",
+  "magnitude_note": "<one sentence justifying the magnitude rating>",
+  "probability": "<high|medium|low>",
+  "probability_note": "<one sentence on the link/probability — how many steps, empirical support>",
+  "timeframe": "<immediate|short|medium|long>",
+  "timeframe_note": "<one sentence on when the impact materializes>",
+  "reversibility": "<irreversible|difficult|reversible>",
+  "reversibility_note": "<one sentence on whether the harm can be undone>",
+  "answers": ["<a standard way to beat this impact>", "<another>", "<another>"],
+  "tags": ["<topic/position tag>", "<another>"]
+}`;
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let draft: any;
+    try { draft = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
+    return { ok: true, draft };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to draft impact');
+    return { ok: false, error: msg };
+  }
+});
+
+ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
+  entry: any;
+  source?: string;
+  existing?: { id: string; title: string; claim: string }[];
+}) => {
+  try {
+    const entry = params?.entry ?? {};
+    const source = (params?.source ?? '').slice(0, 60000);
+    const existing = Array.isArray(params?.existing) ? params!.existing!.slice(0, 60) : [];
+    const prompt = `You are finalizing a user's edited entry for a shared debate IMPACT LIBRARY. Do four things and return them as JSON.
+
+1. REGENERATE the "answers" (standard ways to beat this impact) so they match the user's EDITED entry, not any earlier version.
+2. REGENERATE concise "tags" (topics/positions) for search based on the edited entry.
+3. DRIFT CHECK: ${source ? 'compare the edited entry against the SOURCE MATERIAL and flag any claim the source does not actually support (overstated magnitude, invented mechanism, etc.). If it all checks out, return an empty array.' : 'no source was provided, so only flag internal problems — e.g. dimension ratings that contradict the claim. If none, return an empty array.'}
+4. DUPLICATE CHECK: compare against the EXISTING LIBRARY TITLES/CLAIMS and list any that look like the same impact (so it can be merged instead of duplicated). If none are close, return an empty array.
+
+THE USER'S EDITED ENTRY:
+${JSON.stringify(entry, null, 2)}
+${source ? `\nSOURCE MATERIAL:\n---\n${source}\n---\n` : ''}
+EXISTING LIBRARY ENTRIES:
+${existing.length ? existing.map((x) => `- id=${x.id} | ${x.title}: ${x.claim}`).join('\n') : '(the library is empty)'}
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "answers": ["<regenerated answer>", "..."],
+  "tags": ["<regenerated tag>", "..."],
+  "driftWarnings": ["<a specific claim not supported by the source, or omit if none>"],
+  "duplicates": [ { "id": "<existing entry id>", "title": "<its title>", "why": "<why it's likely the same impact>" } ]
+}`;
+    const raw = await callAI(prompt, 'best');
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
+    let review: any;
+    try { review = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
+    return { ok: true, review };
+  } catch (e: any) {
+    const msg = e?.message === 'NO_KEY' ? 'No AI API key configured — add one in Settings.' : (e?.message ?? 'Failed to review impact');
     return { ok: false, error: msg };
   }
 });
@@ -5918,6 +6012,133 @@ ipcMain.handle('chat:subscribeDM', async (_e, dmChannelId: string) => {
 ipcMain.handle('chat:unsubscribeDM', async () => {
   dmChannel?.unsubscribe();
   dmChannel = null;
+});
+
+// ─── Impact Library (global shared library) — Supabase CRUD ────────────────────
+// Not team-scoped: every signed-in user reads the same pool and can contribute.
+// RLS (see supabase/schema.sql) enforces "insert/edit/delete only your own" and
+// "one vote per user"; these handlers just marshal the calls. Vote/save state for
+// the *current* user is fetched separately (their own rows only) and merged in.
+
+ipcMain.handle('impactlib:list', async () => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return sbErr('Sign in to use the Impact Library.');
+    const { data: entries, error } = await sb
+      .from('impact_library')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) return sbErr(error);
+    // Merge in the caller's own vote + save state (their rows only).
+    const [{ data: votes }, { data: saves }] = await Promise.all([
+      sb.from('impact_library_votes').select('entry_id, vote, reason').eq('user_id', uid),
+      sb.from('impact_library_saves').select('entry_id').eq('user_id', uid),
+    ]);
+    const voteMap = new Map((votes ?? []).map((v: any) => [v.entry_id, v]));
+    const saveSet = new Set((saves ?? []).map((s: any) => s.entry_id));
+    const merged = (entries ?? []).map((e: any) => ({
+      ...e,
+      my_vote: voteMap.get(e.id)?.vote ?? 0,
+      my_vote_reason: voteMap.get(e.id)?.reason ?? null,
+      saved: saveSet.has(e.id),
+    }));
+    return sbOk({ entries: merged, uid });
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('impactlib:submit', async (_e, entry: any) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return sbErr('Sign in to contribute.');
+    const displayName = (session!.user.user_metadata?.display_name as string) || session!.user.email?.split('@')[0] || 'Anonymous';
+    const row = {
+      author_id: uid,
+      author_name: displayName,
+      anonymous: entry?.anonymous !== false,
+      event: ['policy', 'pf', 'ld', 'general'].includes(entry?.event) ? entry.event : 'general',
+      title: String(entry?.title ?? '').slice(0, 200) || 'Untitled impact',
+      claim: String(entry?.claim ?? ''),
+      magnitude: String(entry?.magnitude ?? ''),
+      magnitude_note: String(entry?.magnitude_note ?? ''),
+      probability: String(entry?.probability ?? ''),
+      probability_note: String(entry?.probability_note ?? ''),
+      timeframe: String(entry?.timeframe ?? ''),
+      timeframe_note: String(entry?.timeframe_note ?? ''),
+      reversibility: String(entry?.reversibility ?? ''),
+      reversibility_note: String(entry?.reversibility_note ?? ''),
+      answers: Array.isArray(entry?.answers) ? entry.answers.map((a: any) => String(a)).slice(0, 20) : [],
+      tags: Array.isArray(entry?.tags) ? entry.tags.map((t: any) => String(t)).slice(0, 20) : [],
+    };
+    const { data, error } = await sb.from('impact_library').insert(row).select().single();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('impactlib:update', async (_e, entryId: string, patch: any) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const allowed: Record<string, any> = {};
+    for (const k of ['anonymous', 'event', 'title', 'claim', 'magnitude', 'magnitude_note', 'probability', 'probability_note', 'timeframe', 'timeframe_note', 'reversibility', 'reversibility_note', 'answers', 'tags']) {
+      if (k in (patch ?? {})) allowed[k] = patch[k];
+    }
+    allowed.updated_at = new Date().toISOString();
+    const { data, error } = await sb.from('impact_library').update(allowed).eq('id', entryId).select().single();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('impactlib:delete', async (_e, entryId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('impact_library').delete().eq('id', entryId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// vote: 1 (like), -1 (dislike), or 0 (clear). reason is an optional quick tag.
+ipcMain.handle('impactlib:vote', async (_e, entryId: string, vote: number, reason?: string | null) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return sbErr('Sign in to vote.');
+    if (vote === 0) {
+      const { error } = await sb.from('impact_library_votes').delete().eq('entry_id', entryId).eq('user_id', uid);
+      if (error) return sbErr(error);
+    } else {
+      const { error } = await sb.from('impact_library_votes')
+        .upsert({ entry_id: entryId, user_id: uid, vote: vote > 0 ? 1 : -1, reason: reason ?? null }, { onConflict: 'entry_id,user_id' });
+      if (error) return sbErr(error);
+    }
+    // Return fresh counts for this entry (trigger has updated them).
+    const { data } = await sb.from('impact_library').select('like_count, dislike_count').eq('id', entryId).single();
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('impactlib:save', async (_e, entryId: string, saved: boolean) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return sbErr('Sign in to save.');
+    if (saved) {
+      const { error } = await sb.from('impact_library_saves').upsert({ entry_id: entryId, user_id: uid }, { onConflict: 'entry_id,user_id' });
+      if (error) return sbErr(error);
+    } else {
+      const { error } = await sb.from('impact_library_saves').delete().eq('entry_id', entryId).eq('user_id', uid);
+      if (error) return sbErr(error);
+    }
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
 });
 
 // ─── Collaborative flows (Yjs over Supabase Realtime broadcast) ────────────────
