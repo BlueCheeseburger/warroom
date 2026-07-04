@@ -574,6 +574,63 @@ async function getProviderForTask(
   return { provider, modelId, apiKey };
 }
 
+// ─── Retry helper for AI provider calls ──────────────────────────────────────
+// Transient failures (rate limits, momentary overload, dropped connections)
+// are common with these APIs and usually succeed on a second try — but a bad
+// API key or malformed request never will, so only retry the failure modes
+// that retrying can actually fix.
+
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 529]);
+const MAX_RETRIES = 2; // up to 3 attempts total
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Reads a `Retry-After` header (seconds or HTTP-date) into a millisecond delay. */
+function retryAfterMs(res: Response): number | null {
+  const header = res.headers.get('retry-after');
+  if (!header) return null;
+  const asSeconds = Number(header);
+  if (!Number.isNaN(asSeconds)) return asSeconds * 1000;
+  const asDate = Date.parse(header);
+  return Number.isNaN(asDate) ? null : Math.max(0, asDate - Date.now());
+}
+
+/**
+ * fetch() with retry-on-transient-failure: retries HTTP 429/5xx responses and
+ * network-level errors (dropped connection, DNS hiccup, timeout) with
+ * exponential backoff + jitter, honoring `Retry-After` when the server sends
+ * one. Does NOT retry 4xx errors like 400/401/403 — those need a different
+ * API key or request, not a second attempt.
+ *
+ * If `timeoutMs` is given, each attempt gets its own fresh `AbortController`
+ * (a signal that already fired can't be reused across retries) — pass it
+ * instead of building your own abort/timeout wrapper around this call.
+ */
+async function fetchWithRetry(url: string, init: RequestInit, opts?: { timeoutMs?: number }): Promise<Response> {
+  const timeoutMs = opts?.timeoutMs;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const abort = timeoutMs ? new AbortController() : undefined;
+    const timer = abort ? setTimeout(() => abort.abort(), timeoutMs) : undefined;
+    try {
+      const res = await fetch(url, abort ? { ...init, signal: abort.signal } : init);
+      if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt === MAX_RETRIES) return res;
+      const delay = retryAfterMs(res) ?? (500 * 2 ** attempt + Math.random() * 250);
+      await sleep(delay);
+      continue;
+    } catch (e) {
+      lastErr = e;
+      if (attempt === MAX_RETRIES) throw e;
+      await sleep(500 * 2 ** attempt + Math.random() * 250);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 // ─── OpenAI ───────────────────────────────────────────────────────────────────
 
 function openaiHttpError(status: number, body: string): Error {
@@ -587,7 +644,7 @@ function openaiHttpError(status: number, body: string): Error {
 }
 
 async function callOpenAI(apiKey: string, prompt: string, modelId: string): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
@@ -617,7 +674,7 @@ function anthropicHttpError(status: number, body: string): Error {
 }
 
 async function callAnthropic(apiKey: string, prompt: string, modelId: string): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -649,7 +706,7 @@ function grokHttpError(status: number, body: string): Error {
 }
 
 async function callGrok(apiKey: string, prompt: string, modelId: string): Promise<string> {
-  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+  const res = await fetchWithRetry('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
@@ -675,7 +732,7 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?
   if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId);
   if (provider === 'grok')      return callGrok(apiKey, prompt, modelId);
   // Gemini
-  const res = await fetch(geminiGenerateUrl(modelId), {
+  const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
     method: 'POST',
     headers: geminiHeaders(apiKey),
     body: JSON.stringify({
@@ -696,7 +753,7 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?
 async function callGeminiWithSearch(prompt: string): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask('balanced');
   if (provider !== 'gemini') return callAI(prompt, 'balanced'); // non-Gemini: no search tool
-  const res = await fetch(geminiGenerateUrl(modelId), {
+  const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
     method: 'POST',
     headers: geminiHeaders(apiKey),
     body: JSON.stringify({
@@ -878,7 +935,7 @@ function geminiHttpError(status: number, body: string): Error {
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
   const modelId = await getGeminiModelId();
-  const res = await fetch(geminiGenerateUrl(modelId), {
+  const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
     method: 'POST',
     headers: geminiHeaders(apiKey),
     body: JSON.stringify({
@@ -895,7 +952,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
 
 async function callGeminiVision(apiKey: string, imageBase64: string, mimeType: string, prompt: string): Promise<string> {
   const modelId = await getGeminiModelId();
-  const res = await fetch(geminiGenerateUrl(modelId), {
+  const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
     method: 'POST',
     headers: geminiHeaders(apiKey),
     body: JSON.stringify({
@@ -5765,28 +5822,23 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
 
     // ── Gemini path ──────────────────────────────────────────────────────────
     if (provider === 'gemini') {
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), 45_000);
-      let res: Response;
-      try {
-        res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
-          {
-            method: 'POST',
-            headers: geminiHeaders(apiKey),
-            signal: abort.signal,
-            body: JSON.stringify({
-              contents: messages,
-              tools: AGENT_TOOLS,
-              generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
-              system_instruction: { parts: [{ text: systemText }] },
-            }),
-          }
-        );
-      } finally { clearTimeout(timeout); }
-      if (!res!.ok) {
-        const errText = await res!.text().catch(() => String(res!.status));
-        return sbErr(`Gemini ${res!.status}: ${errText}`);
+      const res = await fetchWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+        {
+          method: 'POST',
+          headers: geminiHeaders(apiKey),
+          body: JSON.stringify({
+            contents: messages,
+            tools: AGENT_TOOLS,
+            generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
+            system_instruction: { parts: [{ text: systemText }] },
+          }),
+        },
+        { timeoutMs: 45_000 }
+      );
+      if (!res.ok) {
+        const errText = await res.text().catch(() => String(res.status));
+        return sbErr(`Gemini ${res.status}: ${errText}`);
       }
       const data = await res.json() as any;
       void logGeminiTurn(systemText, messages, data);
@@ -5811,14 +5863,11 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     if (provider === 'openai') {
       const { msgs: oaiMessages } = geminiMsgsToOpenAI(messages);
       const oaiTools = geminiToolsToOpenAI(AGENT_TOOLS);
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), 45_000);
-      let res: Response;
-      try {
-        res = await fetch('https://api.openai.com/v1/chat/completions', {
+      const res = await fetchWithRetry(
+        'https://api.openai.com/v1/chat/completions',
+        {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          signal: abort.signal,
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: 'system', content: systemText }, ...oaiMessages],
@@ -5827,9 +5876,10 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             temperature: 0.4,
             max_tokens: 8192,
           }),
-        });
-      } finally { clearTimeout(timeout); }
-      if (!res!.ok) throw openaiHttpError(res!.status, await res!.text().catch(() => ''));
+        },
+        { timeoutMs: 45_000 }
+      );
+      if (!res.ok) throw openaiHttpError(res.status, await res.text().catch(() => ''));
       const data = await res.json() as any;
       const msg = data?.choices?.[0]?.message;
       const modelContent = openAIMsgToGeminiContent(msg);
@@ -5844,14 +5894,11 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     if (provider === 'grok') {
       const { msgs: grokMessages } = geminiMsgsToOpenAI(messages);
       const grokTools = geminiToolsToOpenAI(AGENT_TOOLS);
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), 45_000);
-      let res: Response;
-      try {
-        res = await fetch('https://api.x.ai/v1/chat/completions', {
+      const res = await fetchWithRetry(
+        'https://api.x.ai/v1/chat/completions',
+        {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          signal: abort.signal,
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: 'system', content: systemText }, ...grokMessages],
@@ -5860,9 +5907,10 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             temperature: 0.4,
             max_tokens: 8192,
           }),
-        });
-      } finally { clearTimeout(timeout); }
-      if (!res!.ok) throw grokHttpError(res!.status, await res!.text().catch(() => ''));
+        },
+        { timeoutMs: 45_000 }
+      );
+      if (!res.ok) throw grokHttpError(res.status, await res.text().catch(() => ''));
       const data = await res.json() as any;
       const msg = data?.choices?.[0]?.message;
       const modelContent = openAIMsgToGeminiContent(msg);
@@ -5877,14 +5925,11 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     {
       const antMessages = geminiMsgsToAnthropic(messages);
       const antTools = geminiToolsToAnthropic(AGENT_TOOLS);
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), 45_000);
-      let res: Response;
-      try {
-        res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetchWithRetry(
+        'https://api.anthropic.com/v1/messages',
+        {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          signal: abort.signal,
           body: JSON.stringify({
             model: modelId,
             system: systemText,
@@ -5892,9 +5937,10 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             tools: antTools,
             max_tokens: 8192,
           }),
-        });
-      } finally { clearTimeout(timeout); }
-      if (!res!.ok) throw anthropicHttpError(res!.status, await res!.text().catch(() => ''));
+        },
+        { timeoutMs: 45_000 }
+      );
+      if (!res.ok) throw anthropicHttpError(res.status, await res.text().catch(() => ''));
       const data = await res.json() as any;
       const content: any[] = data?.content ?? [];
       const modelContent = anthropicContentToGeminiContent(content);

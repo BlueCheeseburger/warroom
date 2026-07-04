@@ -413,6 +413,9 @@ The agent runs 3–5 searches per evidence request in parallel. Saved cards alwa
 ### Chat sessions
 Each conversation has an auto-generated title (generated after the first exchange). Sessions are stored locally. The active session ID is tracked in Zustand as `geminiActiveId`.
 
+### Retry on transient failures
+Every AI provider call (Gemini, OpenAI, Anthropic, Grok — both single-turn helper calls and the multi-turn agent tool-calling loop) goes through `fetchWithRetry` in `electron/main.ts`. It retries HTTP 429/500/502/503/504/529 and network-level errors (dropped connection, timeout) up to twice with exponential backoff + jitter, honoring a `Retry-After` header when the provider sends one. It does **not** retry 400/401/403 — a bad API key or malformed request won't succeed on a second try. For the agent loop specifically, `fetchWithRetry`'s `timeoutMs` option gives each retry attempt a fresh 45s `AbortController` rather than reusing one that already fired.
+
 ---
 
 ## Team Chat

@@ -1017,6 +1017,13 @@ export default function Documentation() {
             exchange). Sessions are stored locally. The active session ID is tracked in Zustand
             as <Code>geminiActiveId</Code>.
           </P>
+          <H3>Retrying on errors</H3>
+          <P>
+            Every AI request Warroom makes — whether to Gemini, OpenAI, Anthropic, or Grok — automatically
+            retries up to twice if it hits a rate limit or a momentary server hiccup, with a short
+            increasing delay between tries. A bad API key or malformed request won't retry (it can't
+            succeed on a second try), but a busy or momentarily overloaded provider usually will.
+          </P>
         </section>
 
         {/* ── Team Chat ──────────────────────────────────────────────── */}
