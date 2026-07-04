@@ -1572,13 +1572,21 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     metaUrl = $('link[rel="canonical"]').attr('href') || $('meta[property="og:url"]').attr('content') || '';
     metaTitle = ($('meta[property="og:title"]').attr('content') || $('title').first().text() || '').trim();
 
-    // Strip non-content chrome before reading paragraphs/images.
-    $('script,style,noscript,nav,header,footer,aside,form,iframe,svg,button,figcaption').remove();
+    // Strip non-content chrome before reading paragraphs/images. Note: <header> is NOT
+    // blanket-removed here — many article templates wrap the headline + lead photo in
+    // <article><header>...<img>...</header>, and stripping it globally deletes that image.
+    $('script,style,noscript,iframe,svg,button,figcaption').remove();
     $('[class*="ad-"],[id*="ad-"],[class*="advert"],[class*="newsletter"],[class*="related"],[class*="share"],[class*="social"],[class*="comment"],[class*="promo"],[role="navigation"]').remove();
 
     let $main = $('article').first();
     if (!$main.length) $main = $('main').first();
     if (!$main.length) $main = $('body');
+
+    // nav/footer/aside are never legitimate article content, safe to strip wherever found.
+    $main.find('nav,footer,aside,form').remove();
+    // Only strip <header> when falling back to <body> (no <article>/<main> found) — that's
+    // the case where a real page-level nav header could actually be in scope.
+    if ($main.is('body')) $main.find('header').remove();
 
     $main.find('p,li,blockquote,h2,h3').each((_i: number, el: any) => {
       const t = $(el).text().replace(/\s+/g, ' ').trim();
@@ -3382,6 +3390,16 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
   const HL_MAP: Record<string, string> = { yellow: 'yellow', cyan: 'cyan', green: 'green' };
   // half-points: 11pt = 22, 8pt = 16, 6pt = 12, 3pt = 6
   const FS_MAP: Record<number, number> = { 11: 22, 8: 16, 6: 12, 3: 6 };
+  const DOC_FONT = 'Calibri';
+
+  function shortCiteOf(cite: string): string {
+    const comma = cite.indexOf(',');
+    return (comma > 0 ? cite.slice(0, comma) : cite).trim();
+  }
+  function longCiteOf(cite: string): string {
+    const comma = cite.indexOf(',');
+    return comma > 0 ? cite.slice(comma + 1).trim() : '';
+  }
 
   const children: Paragraph[] = [];
 
@@ -3391,7 +3409,7 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
     // Separator between cards
     if (ci > 0) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: '', size: 6 })],
+        children: [new TextRun({ text: '', size: 6, font: DOC_FONT })],
         border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC', space: 4 } },
         spacing: { after: 120 },
       }));
@@ -3399,22 +3417,33 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
 
     // Tag line — 12pt bold
     children.push(new Paragraph({
-      children: [new TextRun({ text: card.tag, bold: true, size: 24 })],
-      spacing: { after: 40 },
+      children: [new TextRun({ text: card.tag, bold: true, size: 24, font: DOC_FONT })],
+      spacing: { after: 20 },
     }));
 
-    // Cite — 8pt
-    children.push(new Paragraph({
-      children: [new TextRun({ text: card.cite, size: 16 })],
-      spacing: { after: 80 },
-    }));
+    // Short cite (author + date) — same styling as the tagline
+    const shortC = shortCiteOf(card.cite);
+    const longC = longCiteOf(card.cite);
+    if (shortC) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: shortC, bold: true, size: 24, font: DOC_FONT })],
+        spacing: { after: longC ? 20 : 80 },
+      }));
+    }
+    // Long cite (credentials/publication/URL) — small
+    if (longC) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: longC, size: 16, font: DOC_FONT })],
+        spacing: { after: 80 },
+      }));
+    }
 
     // Body — runs with emphasis, or plain text
     const runs: TextRun[] = (card.bodyRuns && card.bodyRuns.length > 0 ? card.bodyRuns : [{ text: card.body }]).map((r) => {
       // fontSize field (new) or legacy small:boolean fallback
       const effectiveFontSize = r.fontSize ?? (r.small ? 8 : 11);
       const halfPt = FS_MAP[effectiveFontSize] ?? 22;
-      const opts: Record<string, any> = { text: r.text, size: halfPt };
+      const opts: Record<string, any> = { text: r.text, size: halfPt, font: DOC_FONT };
       if (r.underline && !r.small && effectiveFontSize >= 8) opts['underline'] = { type: UnderlineType.SINGLE };
       if (r.highlight && HL_MAP[r.highlight]) opts['highlight'] = HL_MAP[r.highlight];
       return new TextRun(opts);
@@ -3423,7 +3452,10 @@ ipcMain.handle('export:cardsToDocx', async (_e, cards: Array<{
     children.push(new Paragraph({ children: runs, spacing: { after: 80 } }));
   }
 
-  const doc = new Document({ sections: [{ children }] });
+  const doc = new Document({
+    sections: [{ children }],
+    styles: { default: { document: { run: { font: DOC_FONT } } } },
+  });
   const buffer = await Packer.toBuffer(doc);
   await fs.writeFile(savePath, buffer);
   await shell.openPath(savePath);

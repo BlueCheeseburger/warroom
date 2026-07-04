@@ -1,4 +1,4 @@
--- Warroom Chat Schema
+-- Warroom SQL Schema
 -- Run this in your Supabase project's SQL editor (https://app.supabase.com → SQL Editor)
 
 -- ─── Teams ───────────────────────────────────────────────────────────────────

@@ -91,6 +91,72 @@ const ANTHROPIC_MODEL_OPTIONS = [
   },
 ];
 
+// ─── Model tier system (mirrors electron/main.ts getProviderForTask) ───────────
+// Every provider has 3 tiers: lite (cheapest), balanced (default), best (highest quality).
+// Some tasks always override the user's chosen tier — these are the "exceptions"
+// shown in the model picker so users understand what actually happens when they pick
+// Lite or Balanced.
+
+type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok';
+type ModelTier = 'lite' | 'balanced' | 'best';
+
+const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
+  gemini:    { lite: 'Gemini 2.5 Flash Lite', balanced: 'Gemini 2.5 Flash',      best: 'Gemini 3.5 Flash' },
+  openai:    { lite: 'GPT-4.1 nano',          balanced: 'GPT-4.1 mini',          best: 'GPT-4.1' },
+  anthropic: { lite: 'Claude Haiku 3.5',      balanced: 'Claude Sonnet 3.5',     best: 'Claude Sonnet 4.6' },
+  grok:      { lite: 'Grok 3 mini',           balanced: 'Grok 3 fast',           best: 'Grok 3' },
+};
+
+function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
+  if (provider === 'gemini') {
+    if (modelKey === 'flash-lite') return 'lite';
+    if (modelKey === 'flash-35')   return 'best';
+    return 'balanced';
+  }
+  if (provider === 'openai') {
+    if (modelKey === 'gpt-4.1-nano') return 'lite';
+    if (modelKey === 'gpt-4.1')      return 'best';
+    return 'balanced';
+  }
+  if (provider === 'grok') {
+    if (modelKey === 'grok-3-mini') return 'lite';
+    if (modelKey === 'grok-3')      return 'best';
+    return 'balanced';
+  }
+  // anthropic
+  if (modelKey === 'claude-3-5-haiku-20241022') return 'lite';
+  if (modelKey === 'claude-sonnet-4-6')         return 'best';
+  return 'balanced';
+}
+
+/** Plain-language note explaining which tasks override the selected tier. Only Lite and
+ *  Balanced have exceptions worth calling out — Best is used as-selected everywhere. */
+function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: ModelTier }) {
+  const labels = TIER_LABELS[provider];
+  if (tier === 'lite') {
+    return (
+      <p className="text-[11px] mt-2 px-3 py-2 rounded-lg leading-relaxed"
+        style={{ background: 'var(--bg-input)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-side)' }}>
+        <strong style={{ color: 'var(--ink)' }}>Heads up:</strong> the AI chat and card extraction will still
+        run on <strong style={{ color: 'var(--ink)' }}>{labels.balanced}</strong> even with Lite selected —
+        Lite alone isn't reliable enough for those. Lite is used for cheap, low-stakes jobs like naming your
+        chats and suggesting blocks.
+      </p>
+    );
+  }
+  if (tier === 'balanced') {
+    return (
+      <p className="text-[11px] mt-2 px-3 py-2 rounded-lg leading-relaxed"
+        style={{ background: 'var(--bg-input)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-side)' }}>
+        <strong style={{ color: 'var(--ink)' }}>Heads up:</strong> chat titles are still generated with the
+        cheaper <strong style={{ color: 'var(--ink)' }}>{labels.lite}</strong> to save cost — everything else
+        (chat, card extraction) uses {labels.balanced} as selected.
+      </p>
+    );
+  }
+  return null;
+}
+
 function GDriveSettings() {
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -599,6 +665,7 @@ export default function Settings() {
               {openaiModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
+              <ModelExceptionNote provider="openai" tier={getModelTier('openai', openaiModel)} />
             </div>
           </div>
         )}
@@ -645,6 +712,7 @@ export default function Settings() {
               {anthropicModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
+              <ModelExceptionNote provider="anthropic" tier={getModelTier('anthropic', anthropicModel)} />
             </div>
           </div>
         )}
@@ -695,6 +763,7 @@ export default function Settings() {
               {grokModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
+              <ModelExceptionNote provider="grok" tier={getModelTier('grok', grokModel)} />
             </div>
           </div>
         )}
@@ -741,9 +810,7 @@ export default function Settings() {
               {geminiModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
-              <p className="text-[10px] pt-1" style={{ color: 'var(--nav-inactive-color)' }}>
-                Agentic tasks will use Gemini 2.5 Flash regardless of this selection.
-              </p>
+              <ModelExceptionNote provider="gemini" tier={getModelTier('gemini', geminiModel)} />
               <div className="flex items-center justify-between pt-2 mt-1" style={{ borderTop: '1px solid var(--border-side)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>

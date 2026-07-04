@@ -37,12 +37,17 @@ export async function copyCardToClipboard(card: Card): Promise<void> {
   const bodyHtml = card.bodyRuns && card.bodyRuns.length > 0
     ? card.bodyRuns.map(runToHtml).join('')
     : escHtml(card.body);
+  const short = shortCite(card.cite);
+  const long = longCite(card.cite);
   const html = [
-    `<p style="font-size:12pt;font-weight:bold;margin:0 0 4px">${escHtml(card.tag)}</p>`,
-    `<p style="font-size:8pt;margin:0 0 8px;color:#555">${escHtml(card.cite)}</p>`,
+    `<div style="font-family:Calibri,sans-serif">`,
+    `<p style="font-size:12pt;font-weight:bold;margin:0 0 2px">${escHtml(card.tag)}</p>`,
+    `<p style="font-size:12pt;font-weight:bold;margin:0 0 2px">${escHtml(short)}</p>`,
+    long ? `<p style="font-size:8pt;margin:0 0 8px;color:#555">${escHtml(long)}</p>` : '',
     `<p style="font-size:11pt;margin:0;white-space:pre-wrap">${bodyHtml}</p>`,
+    `</div>`,
   ].join('');
-  const plain = `${card.tag}\n${card.cite}\n\n${card.body}`;
+  const plain = `${card.tag}\n${short}${long ? ', ' + long : ''}\n\n${card.body}`;
   await navigator.clipboard.write([
     new ClipboardItem({
       'text/html': new Blob([html], { type: 'text/html' }),
@@ -249,7 +254,7 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
             <span className="text-sm font-semibold truncate">{card.tag}</span>
             {outdated && <span className="text-[10px] px-1.5 bg-warn/10 text-warn rounded-sm shrink-0">{card.year}</span>}
           </div>
-          <div className="text-sm text-ink/80 truncate">{shortCite(card.cite)}</div>
+          <div className="text-sm font-semibold truncate">{shortCite(card.cite)}</div>
         </div>
         {!selectMode && (
           <button
@@ -285,7 +290,7 @@ function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: L
             <span className="text-sm font-semibold">{card.tag}</span>
             {outdated && <span className="text-[10px] px-1.5 py-0 bg-warn/10 text-warn rounded-sm">Outdated — {card.year}</span>}
           </div>
-          <div className="text-sm text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
+          <div className="text-sm font-semibold mb-0.5">{shortCite(card.cite)}</div>
           {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1.5">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/60">
             {expanded

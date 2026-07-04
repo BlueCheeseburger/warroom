@@ -138,7 +138,7 @@ function RoundCardList({ cards }: { cards: Card[] }) {
       {cards.map((card) => (
         <div key={card.id} className="space-y-2">
           <div className="text-base font-semibold leading-snug mb-0.5">{card.tag}</div>
-          <div className="text-base text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
+          <div className="text-base font-semibold mb-0.5">{shortCite(card.cite)}</div>
           {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1">{longCite(card.cite)}</div>}
           <div className="text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">{card.body}</div>
           {isOutdated(card.year) && (
@@ -199,7 +199,7 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
               </span>
             )}
           </div>
-          <div className="text-sm text-ink/80 mb-0.5">{shortCite(card.cite)}</div>
+          <div className="text-sm font-semibold mb-0.5">{shortCite(card.cite)}</div>
           {longCite(card.cite) && <div className="text-xs text-ink/45 mb-2">{longCite(card.cite)}</div>}
           <div className="text-xs text-ink/70">
             {expanded
