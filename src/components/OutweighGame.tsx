@@ -26,7 +26,7 @@ async function extractCustomDoc(value: string, db: DB): Promise<CustomDoc | null
     const path = decodeURIComponent(value.slice(10));
     const res = await (window.warroom as any).speechdoc.extract(path);
     if (!res?.ok) return null;
-    const label = path.split('/').pop()?.replace(/\.docx$/i, '') ?? path;
+    const label = path.split(/[/\\]/).pop()?.replace(/\.docx$/i, '') ?? path;
     return { text: res.data.full, label };
   }
   return null;

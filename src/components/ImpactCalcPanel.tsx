@@ -126,7 +126,7 @@ export default function ImpactCalcPanel() {
       const path = decodeURIComponent(value.slice(10));
       const res = await (window.warroom as any).speechdoc.extract(path);
       if (!res?.ok) throw new Error(res?.error ?? 'Failed to extract doc');
-      const label = path.split('/').pop()?.replace(/\.docx$/i, '') ?? path;
+      const label = path.split(/[/\\]/).pop()?.replace(/\.docx$/i, '') ?? path;
       return { text: res.data.full, label };
     }
     if (value.startsWith('flow:')) {

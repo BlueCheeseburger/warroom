@@ -233,8 +233,10 @@ const api = {
     subscribe: (teamId: string) => ipcRenderer.invoke('chat:subscribe', teamId),
     unsubscribe: () => ipcRenderer.invoke('chat:unsubscribe'),
     onNewMessage: (cb: (msg: any) => void) => {
-      ipcRenderer.on('chat:newMessage', (_e, msg) => cb(msg));
-      return () => ipcRenderer.removeAllListeners('chat:newMessage');
+      const handler = (_e: any, msg: any) => cb(msg);
+      ipcRenderer.on('chat:newMessage', handler);
+      // Remove only THIS listener, not every listener on the channel.
+      return () => ipcRenderer.removeListener('chat:newMessage', handler);
     },
     // Room management
     getMembers: (teamId: string) => ipcRenderer.invoke('chat:getMembers', teamId),
@@ -276,8 +278,10 @@ const api = {
     subscribeDM: (dmChannelId: string) => ipcRenderer.invoke('chat:subscribeDM', dmChannelId),
     unsubscribeDM: () => ipcRenderer.invoke('chat:unsubscribeDM'),
     onNewDMMessage: (cb: (msg: any) => void) => {
-      ipcRenderer.on('chat:newDMMessage', (_e, msg) => cb(msg));
-      return () => ipcRenderer.removeAllListeners('chat:newDMMessage');
+      const handler = (_e: any, msg: any) => cb(msg);
+      ipcRenderer.on('chat:newDMMessage', handler);
+      // Remove only THIS listener, not every listener on the channel.
+      return () => ipcRenderer.removeListener('chat:newDMMessage', handler);
     },
   },
   gdrive: {
@@ -334,12 +338,16 @@ const api = {
   setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
     ipcRenderer.invoke('window:setTitleBarOverlay', opts),
   onScoutingOpen: (cb: (data: { kind: 'judge' | 'opponent'; id: string }) => void) => {
-    const handler = (_e: any, data: any) => cb(data);
-    ipcRenderer.on('scouting:openJudge',    (_e: any, id: string) => cb({ kind: 'judge',    id }));
-    ipcRenderer.on('scouting:openOpponent', (_e: any, id: string) => cb({ kind: 'opponent', id }));
+    // Keep references to the exact listeners we register so cleanup can remove
+    // them. (Previously cleanup removed an unrelated `handler` that was never
+    // registered, so these two listeners leaked on every re-subscribe.)
+    const onJudge    = (_e: any, id: string) => cb({ kind: 'judge',    id });
+    const onOpponent = (_e: any, id: string) => cb({ kind: 'opponent', id });
+    ipcRenderer.on('scouting:openJudge',    onJudge);
+    ipcRenderer.on('scouting:openOpponent', onOpponent);
     return () => {
-      ipcRenderer.removeListener('scouting:openJudge',    handler);
-      ipcRenderer.removeListener('scouting:openOpponent', handler);
+      ipcRenderer.removeListener('scouting:openJudge',    onJudge);
+      ipcRenderer.removeListener('scouting:openOpponent', onOpponent);
     };
   },
   onFileOpen: (cb: (filePath: string) => void) => {

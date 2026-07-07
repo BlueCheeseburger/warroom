@@ -1087,7 +1087,12 @@ export default function FlowView() {
     if (sheets.length <= 1) return;
     const saved = flushAndGetSheets();
     const next = saved.filter((_, i) => i !== idx);
-    const newIdx = Math.min(activeSheetIdx, next.length - 1);
+    // Keep pointing at the SAME sheet after removal: deleting a tab before the
+    // active one shifts everything down by one, so decrement in that case.
+    // (Previously `min(activeSheetIdx, len-1)` left the index unchanged, jumping
+    // the view forward to a different sheet.)
+    const shifted = idx < activeSheetIdx ? activeSheetIdx - 1 : activeSheetIdx;
+    const newIdx = Math.max(0, Math.min(shifted, next.length - 1));
     setSheets(next); cellsRef.current = next[newIdx]?.cells ?? {}; setActiveSheetIdx(newIdx);
     persist({ sheets: next });
   }

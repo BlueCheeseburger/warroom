@@ -79,6 +79,10 @@ function SpeechTimer() {
   safeIdxRef.current = safeIdx;
   const slotsLenRef = useRef(slots.length);
   slotsLenRef.current = slots.length;
+  // Current displayed seconds, read by the agent-control effect without putting
+  // `display` in its deps (which would re-register the window listener every tick).
+  const displayRef = useRef(display);
+  displayRef.current = display;
 
   // Reset on event or level change
   useEffect(() => {
@@ -192,12 +196,12 @@ function SpeechTimer() {
     function handleControl(e: Event) {
       const { action, speech, level: lvl } = (e as CustomEvent).detail ?? {};
       if (action === 'start') {
-        if (display === 0) setTimeLeft(null);
+        if (displayRef.current === 0) setTimeLeft(null);
         setRunning(true);
       } else if (action === 'pause') {
         setRunning(false);
       } else if (action === 'toggle') {
-        if (display === 0) { setTimeLeft(null); setRunning(true); }
+        if (displayRef.current === 0) { setTimeLeft(null); setRunning(true); }
         else setRunning((v) => !v);
       } else if (action === 'reset') {
         setRunning(false);
@@ -213,7 +217,7 @@ function SpeechTimer() {
     }
     window.addEventListener('warroom-timer-control', handleControl);
     return () => window.removeEventListener('warroom-timer-control', handleControl);
-  }, [slots, display]);
+  }, [slots]); // `display` is read via displayRef so it needn't re-register each tick
 
 
   const overtime = display === 0;

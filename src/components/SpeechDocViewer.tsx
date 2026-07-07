@@ -2787,7 +2787,7 @@ export default function SpeechDocViewer() {
   async function loadFile(path: string) {
     if (loadedPath.current === path) return;
     loadedPath.current = path;
-    const name = path.split('/').pop() ?? path;
+    const name = path.split(/[/\\]/).pop() ?? path;
     setFilePath(path);
     setFileName(name);
     setStep('loading');

@@ -437,7 +437,7 @@ export default function App() {
         setView({ kind: 'speech-doc', docPath: filePath });
       } else if (filePath.endsWith('.xlsx')) {
         const id = crypto.randomUUID();
-        const name = filePath.split('/').pop()?.replace(/\.xlsx$/i, '') ?? 'Flow';
+        const name = filePath.split(/[/\\]/).pop()?.replace(/\.xlsx$/i, '') ?? 'Flow';
         const meta = { id, name, event };
         const newIndex = [...flowsIndex, meta];
         setFlowsIndex(newIndex);
