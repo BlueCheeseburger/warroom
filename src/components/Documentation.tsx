@@ -185,7 +185,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/2/26
+          Last updated: 7/7/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1146,16 +1146,26 @@ export default function Documentation() {
           </P>
           <H3>Encrypted chat</H3>
           <P>
-            All team-chat and DM content is end-to-end encrypted before it leaves your computer.
+            All team-chat and DM content is encrypted client-side before it leaves your computer.
             Message text and every shared attachment (cases, blocks, flows, opponents, tournaments,
-            speech docs) are encrypted client-side with <Code>AES-256-GCM</Code>; the cloud database
-            only ever stores ciphertext. Each team has one symmetric key, derived from the team's
-            invite code via <Code>PBKDF2</Code> (200k iterations, salted with the team id). Because
-            every member already knows the invite code, everyone derives the identical key with no
-            key exchange — and the key itself is never transmitted or stored on any server. Sender
-            name, timestamps, and attachment labels stay readable for display; only the actual
-            content is encrypted. Warroom AI does not read team-chat history, so no plaintext is
-            ever sent to the AI provider.
+            speech docs) are encrypted with <Code>AES-256-GCM</Code>; the cloud database only ever
+            stores ciphertext. Each team has one symmetric key, derived from the team's invite code
+            via <Code>PBKDF2</Code> (200k iterations, salted with the team id). Because every member
+            already knows the invite code, everyone derives the identical key with no key exchange,
+            and the derived key itself is never transmitted. Sender name, timestamps, and attachment
+            labels stay readable for display; only the actual content is encrypted. Warroom AI does
+            not read team-chat history, so no plaintext is ever sent to the AI provider.
+          </P>
+          <P>
+            <strong>What this does and doesn't protect.</strong> This is <em>not</em> end-to-end /
+            zero-knowledge encryption. The key is derived from the invite code, and the invite code
+            is itself stored server-side (the server has to match on it when someone joins). So it
+            strongly protects your content if only the message rows leak — an over-broad database
+            read or a partial dump that excludes the teams table yields nothing but ciphertext — but
+            it does <em>not</em> protect against a full database compromise or a malicious operator,
+            who could re-derive the key from the stored invite code. Treat it as strong
+            defense-in-depth over the database's access controls, not as a guarantee that the
+            operator can never read your messages.
           </P>
           <H3>Path safety</H3>
           <P>

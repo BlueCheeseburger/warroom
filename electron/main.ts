@@ -1246,11 +1246,27 @@ ipcMain.handle('window:setTitleBarOverlay', (event, opts: { color: string; symbo
   return false;
 });
 
+// Only these keys may be read or written through the renderer-facing secure
+// channel. Without an allowlist, any renderer-side code execution (e.g. injected
+// HTML that slips past the CSP) could read *every* stored secret by key name and
+// exfiltrate it. `gdrive_tokens` is deliberately absent — it is managed entirely
+// in the main process and the renderer never needs it.
+const ALLOWED_SECURE_KEYS = new Set([
+  'gemini', 'openai_key', 'anthropic_key', 'grok_key',
+  'chat_email', 'chat_password',
+  'oc_username', 'oc_password',
+  'gdrive_client_id', 'gdrive_client_secret',
+]);
+
 ipcMain.handle('secure:set', async (_e, key: string, value: string) => {
+  if (!ALLOWED_SECURE_KEYS.has(key)) throw new Error('Unknown secure key');
   await setSecure(key, value);
   return true;
 });
-ipcMain.handle('secure:get', async (_e, key: string) => getSecure(key));
+ipcMain.handle('secure:get', async (_e, key: string) => {
+  if (!ALLOWED_SECURE_KEYS.has(key)) return null;
+  return getSecure(key);
+});
 
 // ─── Speech doc extraction (for Warroom Agent token saving) ──────────────────
 
@@ -6221,16 +6237,32 @@ ipcMain.handle('impactlib:save', async (_e, entryId: string, saved: boolean) => 
 
 // ─── Collaborative flows (Yjs over Supabase Realtime broadcast) ────────────────
 // Live flowing rides a Supabase Realtime *broadcast* channel keyed by the flow's
-// unguessable UUID. Broadcast is ephemeral pub/sub (no DB write per keystroke);
-// durability is a debounced base64 Yjs snapshot in the `flows` table. The Yjs doc
-// itself, the merge logic, and awareness all live in the renderer — this process
-// is only the transport bridge (relay update/awareness bytes, forward presence).
+// UUID. Broadcast is ephemeral pub/sub (no DB write per keystroke); durability is
+// a debounced base64 Yjs snapshot in the `flows` table. The Yjs doc itself, the
+// merge logic, and awareness all live in the renderer — this process is only the
+// transport bridge (relay update/awareness bytes, forward presence).
+//
+// The channel is PRIVATE: Supabase Realtime Authorization gates subscribe/send on
+// an RLS policy over `realtime.messages` (see schema.sql), which only lets members
+// of the flow's team join. Without this, the UUID was the only secret — anyone
+// with the public anon key and a flow id (e.g. a removed teammate) could read live
+// edits and inject Yjs updates. Requires re-running schema.sql to install the
+// realtime policies.
 const flowChannels = new Map<string, any>();
 
 ipcMain.handle('flowSync:join', async (_e, flowId: string) => {
   if (!sb || !mainWin) return sbErr('Supabase not configured');
   if (flowChannels.has(flowId)) return sbOk(true);
-  const ch = sb.channel(`flow-${flowId}`, { config: { broadcast: { self: false } } });
+  // A private channel authorizes against the caller's JWT via RLS on
+  // realtime.messages. supabase-js wires the token on auth-state changes, but set
+  // it explicitly here so a join that races the auth listener still carries the
+  // signed-in user's token (the anon key alone would be rejected by the policy).
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess?.session?.access_token;
+    if (token) await sb.realtime.setAuth(token);
+  } catch { /* fall through — subscribe will surface an auth failure */ }
+  const ch = sb.channel(`flow-${flowId}`, { config: { private: true, broadcast: { self: false } } });
   ch.on('broadcast', { event: 'update' }, (msg: any) => {
     mainWin?.webContents.send('flowSync:remoteUpdate', { flowId, update: msg.payload?.u });
   });
@@ -6240,9 +6272,22 @@ ipcMain.handle('flowSync:join', async (_e, flowId: string) => {
   ch.on('presence', { event: 'sync' }, () => {
     mainWin?.webContents.send('flowSync:presence', { flowId, state: ch.presenceState() });
   });
-  await new Promise<void>((resolve) => {
-    ch.subscribe((status: string) => { if (status === 'SUBSCRIBED') resolve(); });
+  const status = await new Promise<string>((resolve) => {
+    const timer = setTimeout(() => resolve('TIMED_OUT'), 10_000);
+    ch.subscribe((s: string) => {
+      // SUBSCRIBED = joined; CHANNEL_ERROR/TIMED_OUT/CLOSED = failed (e.g. the
+      // realtime RLS policy rejected a non-member). Resolve either way so we
+      // never hang the renderer waiting on a channel that will never join.
+      if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+        clearTimeout(timer);
+        resolve(s);
+      }
+    });
   });
+  if (status !== 'SUBSCRIBED') {
+    try { await ch.unsubscribe(); } catch {}
+    return sbErr('Could not join the live flow — you may no longer have access.');
+  }
   flowChannels.set(flowId, ch);
   return sbOk(true);
 });

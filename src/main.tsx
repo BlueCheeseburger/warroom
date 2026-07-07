@@ -1,3 +1,4 @@
+import './lib/hardenStorage'; // must be first — makes localStorage best-effort before any module reads it
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';

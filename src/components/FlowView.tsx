@@ -91,17 +91,90 @@ const HTML_RE = /<(br|div|span|b|i|u|s|strike|em|strong|p)[\s/>]/i;
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// ── Cell HTML sanitizer ──────────────────────────────────────────────────────
+// Cell content is rich text, but it is NOT all locally trusted: it arrives from
+// remote collaborators over the live broadcast channel (Y.Doc updates) and from
+// AI / MCP-written values, any of which could smuggle in <img onerror=…>,
+// <script>, event handlers, or javascript: URLs. Before any cell HTML reaches a
+// live innerHTML we parse it inertly (DOMParser never loads resources or runs
+// script), drop every element/attribute outside a small formatting allowlist,
+// and reserialize. execCommand-produced formatting (b/i/u/strike/br/spans) is
+// preserved; anything dangerous is stripped.
+const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'SUB', 'SUP']);
+const VOID_TAGS = new Set(['BR']);
+// Subtrees whose raw text must never be emitted (unwrapping would leak their contents).
+const DROP_SUBTREE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH']);
+const ALLOWED_STYLE_PROPS = new Set([
+  'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'color', 'background-color', 'vertical-align',
+]);
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function sanitizeStyle(style: string): string {
+  return style
+    .split(';')
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .filter((decl) => {
+      const idx = decl.indexOf(':');
+      if (idx < 0) return false;
+      const prop = decl.slice(0, idx).trim().toLowerCase();
+      const val = decl.slice(idx + 1).trim().toLowerCase();
+      if (!ALLOWED_STYLE_PROPS.has(prop)) return false;
+      // Reject anything that could fetch a resource or execute.
+      if (/url\(|expression|javascript:|@import|[<>]/.test(val)) return false;
+      return true;
+    })
+    .join('; ');
+}
+function sanitizeNode(node: Node, out: string[]): void {
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      out.push(escapeHtml(child.textContent || ''));
+      return;
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) return;
+    const el = child as HTMLElement;
+    const tag = el.tagName;
+    if (DROP_SUBTREE.has(tag)) return; // skip element and everything under it
+    if (!ALLOWED_TAGS.has(tag)) {
+      // Unknown-but-harmless wrapper: drop the tag, keep its (sanitized) children.
+      sanitizeNode(el, out);
+      return;
+    }
+    const name = tag.toLowerCase();
+    if (VOID_TAGS.has(tag)) { out.push(`<${name}>`); return; }
+    const style = sanitizeStyle(el.getAttribute('style') || '');
+    out.push(style ? `<${name} style="${escapeAttr(style)}">` : `<${name}>`);
+    sanitizeNode(el, out);
+    out.push(`</${name}>`);
+  });
+}
+function sanitizeCellHtml(html: string): string {
+  if (!html || !/[<&]/.test(html)) return html; // plain text — nothing to strip
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const out: string[] = [];
+  sanitizeNode(doc.body, out);
+  return out.join('');
+}
+
 function cellToHtml(value: string): string {
   if (!value) return '';
-  if (HTML_RE.test(value)) return value;
+  if (HTML_RE.test(value)) return sanitizeCellHtml(value);
   return escapeHtml(value).replace(/\n/g, '<br>');
 }
 function htmlToText(html: string): string {
   if (!html) return '';
   if (!HTML_RE.test(html) && !/[<&]/.test(html)) return html;
-  const d = document.createElement('div');
-  d.innerHTML = html;
-  return d.innerText;
+  // Parse inertly rather than assigning to a live element, so a hostile
+  // <img onerror> in remote/AI content can't fire while we extract text.
+  const doc = new DOMParser().parseFromString(sanitizeCellHtml(html), 'text/html');
+  // Preserve line breaks the way innerText did (<br>/<div> → newline).
+  doc.body.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+  doc.body.querySelectorAll('div, p').forEach((b) => { b.append('\n'); });
+  return (doc.body.textContent || '').replace(/\n{2,}/g, '\n').replace(/\n$/, '');
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -510,10 +583,14 @@ export default function FlowView() {
   // neither user loses their caret). We never overwrite the cell *this* user is
   // focused in — same-cell concurrent edits reconcile on blur instead.
   function patchRemoteCell(key: string, html: string) {
-    cellsRef.current[key] = html;
+    // Remote HTML is untrusted (any teammate — or anyone who reached the live
+    // broadcast channel — can send it), so sanitize before it touches the DOM
+    // or our local mirror.
+    const clean = sanitizeCellHtml(html || '');
+    cellsRef.current[key] = clean;
     if (focusedCell.current === key) return;
     const el = cellEls.current[key];
-    if (el) { el.innerHTML = html || ''; el.dataset.init = '1'; }
+    if (el) { el.innerHTML = clean; el.dataset.init = '1'; }
   }
 
   // ── Live lifecycle: attach / detach the sync handle ─────────────────────────

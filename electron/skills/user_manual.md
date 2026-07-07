@@ -333,7 +333,7 @@ Chat icon in the title bar.
 - **Share attachments**: cases, blocks, flows, opponents, tournaments, speech docs — all shareable in messages
 - **Edit / delete**: hover your own message in a room or DM for Edit and Delete buttons
 - **Unread badge** shown on chat icon
-- **Encryption**: every message and shared attachment is end-to-end encrypted. Only your team can read what's sent — the cloud server only ever stores scrambled ciphertext. The key is derived from your team's invite code, so keep that code private. Warroom AI never reads your team-chat history.
+- **Encryption**: every message and shared attachment is encrypted on your device (AES-256-GCM) before it's sent, so the cloud server only ever stores scrambled ciphertext — a leak of just the message data reveals nothing. The key is derived from your team's invite code, so keep that code private. Note this is not zero-knowledge encryption: the invite code is also stored on the server (it has to be, to let people join), so it's strong protection against a data leak, not a guarantee that the service operator can't read messages. Warroom AI never reads your team-chat history.
 
 ---
 
@@ -389,4 +389,4 @@ Gear icon at bottom of sidebar.
 ---
 
 ## Data & Storage
-All local data in app userData folder. Sensitive values (API keys, passwords, tokens) encrypted via OS keychain. JSON files use write-then-rename to prevent data loss on crash. Chat data syncs via Supabase, with all message content and shared attachments end-to-end encrypted (AES-256-GCM) so the server only stores ciphertext.
+All local data in app userData folder. Sensitive values (API keys, passwords, tokens) encrypted via OS keychain. JSON files use write-then-rename to prevent data loss on crash. Chat data syncs via Supabase, with all message content and shared attachments encrypted client-side (AES-256-GCM) so the server only stores ciphertext. This is defense-in-depth against a data leak, not zero-knowledge encryption — the team key is derived from the invite code, which is also stored server-side.

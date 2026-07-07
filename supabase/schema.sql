@@ -466,6 +466,50 @@ drop policy if exists "flow_owner_can_delete" on flows;
 create policy "flow_owner_can_delete" on flows
   for delete using (owner_id = auth.uid());
 
+-- ─── Realtime Authorization for live-flow broadcast ───────────────────────────
+-- Live flowing uses a PRIVATE Supabase Realtime broadcast channel named
+-- `flow-<flow id>`. Private channels enforce RLS on `realtime.messages`, so these
+-- policies are what actually restrict who can read/inject live edits: only a
+-- member of the flow's team. Previously the channel was public, so the flow UUID
+-- was the only secret — anyone with the (public) anon key and a flow id, including
+-- a removed teammate, could join, read every keystroke, and broadcast malicious
+-- Yjs updates. `realtime.topic()` returns the channel name for the current message;
+-- we parse the flow id out of it and check team membership.
+--
+-- Helper: is the current user allowed on this flow's realtime channel?
+create or replace function can_access_flow_channel(topic text)
+returns boolean
+language sql security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.flows f
+    where topic = 'flow-' || f.id::text
+      and public.is_team_member(f.team_id)
+  );
+$$;
+
+revoke execute on function public.can_access_flow_channel(text) from public;
+grant execute on function public.can_access_flow_channel(text) to authenticated;
+
+-- Receiving broadcasts + presence sync on a flow channel (SELECT on realtime.messages).
+drop policy if exists "flow_members_can_read_broadcast" on realtime.messages;
+create policy "flow_members_can_read_broadcast" on realtime.messages
+  for select to authenticated
+  using (
+    realtime.messages.extension in ('broadcast', 'presence')
+    and public.can_access_flow_channel(realtime.topic())
+  );
+
+-- Sending broadcasts + presence tracking on a flow channel (INSERT on realtime.messages).
+drop policy if exists "flow_members_can_send_broadcast" on realtime.messages;
+create policy "flow_members_can_send_broadcast" on realtime.messages
+  for insert to authenticated
+  with check (
+    realtime.messages.extension in ('broadcast', 'presence')
+    and public.can_access_flow_channel(realtime.topic())
+  );
+
 -- ─── Impact Library (global shared library) ───────────────────────────────────
 -- A cross-user, app-wide library of debate impacts. Unlike everything above this
 -- is NOT team-scoped — every signed-in user reads the same pool and can contribute

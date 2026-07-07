@@ -15,13 +15,20 @@ export async function loadDB(): Promise<DB> {
   if (!storage) return emptyDB();
   const raw = await storage.read(FILE);
   const base = raw ? { ...emptyDB(), ...raw } : emptyDB();
-  // Merge localStorage fallbacks so manual W-L survives even if db.json
-  // predates those fields (they'll be 0 from emptyDB but LS may have real values).
+  // One-time migration: seed manual W-L from the old localStorage values ONLY when
+  // this db.json predates those fields entirely. Once db.json carries the field —
+  // even a value of 0 — it is the source of truth. (The previous logic keyed off
+  // `=== 0`, which meant a deliberate reset to 0 got silently overwritten by a
+  // stale localStorage value on every launch.)
   try {
-    const lsW = localStorage.getItem('warroom-manual-wins');
-    const lsL = localStorage.getItem('warroom-manual-losses');
-    if (lsW !== null && base.manualWins === 0) base.manualWins = parseInt(lsW, 10) || 0;
-    if (lsL !== null && base.manualLosses === 0) base.manualLosses = parseInt(lsL, 10) || 0;
+    if (raw && (raw as any).manualWins === undefined) {
+      const lsW = localStorage.getItem('warroom-manual-wins');
+      if (lsW !== null) base.manualWins = parseInt(lsW, 10) || 0;
+    }
+    if (raw && (raw as any).manualLosses === undefined) {
+      const lsL = localStorage.getItem('warroom-manual-losses');
+      if (lsL !== null) base.manualLosses = parseInt(lsL, 10) || 0;
+    }
   } catch {}
   return base;
 }
