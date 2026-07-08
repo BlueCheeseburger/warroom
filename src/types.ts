@@ -523,6 +523,10 @@ declare global {
         list: () => Promise<{ ok: boolean; skills: { name: string; source: 'user' | 'bundled' }[]; error?: string }>;
         read: (name: string) => Promise<{ ok: boolean; content: string; error?: string }>;
       };
+      prompts: {
+        list: () => Promise<{ ok: boolean; prompts: { name: string; source: 'user' | 'bundled'; label?: string }[]; error?: string }>;
+        openInEditor: (name: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+      };
       notes: {
         get: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: SharedNote[]; error?: string }>;
         upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) => Promise<{ ok: boolean; error?: string }>;

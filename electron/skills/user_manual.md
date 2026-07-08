@@ -321,6 +321,9 @@ Star icon in the title bar.
 - **Navigation**: ask the AI to take you anywhere — "open my Spending DA case", "go to settings", "show my tournaments". It opens the view for you.
 - **Flow editing**: ask the AI to fill in or edit a flow — "add the perm to my Round 3 flow under 2AC", "put 'extend impact' in 2NR row 4". It can read your flow's columns/rows and write to specific cells. If the flow is open, edits appear live.
 
+### AI Prompts
+Every question or task Warroom sends to the AI — card cutting, scouting reports, mission briefs, cross-ex questions, card credibility, impact calc, the Outweigh game, and more — is built from an editable prompt file, not baked into the app. Throughout the Documentation page you'll find "View/edit this prompt" links next to each AI feature; clicking one opens that prompt in a plain text editor. Change the wording and save — your edit is used the very next time that feature runs, with no restart needed. If you want to go back to the original wording, just delete your edited copy.
+
 ---
 
 ## Team Chat

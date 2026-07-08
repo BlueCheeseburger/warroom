@@ -107,6 +107,122 @@ function safePath(name: string) {
   return join(dataDir(), name);
 }
 
+// ─── Prompts helpers ───────────────────────────────────────────────────────────
+// Same bundled+user-override architecture as skills, but for the .txt templates
+// that get sent to the AI. Default (bundled) prompts: electron/prompts/
+// User overrides: userData/warroom/prompts/
+function userPromptsDir() { return join(dataDir(), 'prompts'); }
+function bundledPromptsDir() {
+  // In dev (not packaged): source lives at <project-root>/electron/prompts/
+  // In production (packaged): copied to resources/prompts/ via electron-builder extraResources
+  return isDev
+    ? join(app.getAppPath(), 'electron', 'prompts')
+    : join(process.resourcesPath, 'prompts');
+}
+
+async function ensureUserPromptsDir() { await fs.mkdir(userPromptsDir(), { recursive: true }); }
+
+// Short human-readable labels shown next to each prompt in the UI.
+const PROMPT_LABELS: Record<string, string> = {
+  agent_system: 'Warroom AI agent — system prompt',
+  agent_title_suffix: 'Warroom AI agent — chat title instruction',
+  card_credibility_scoring: 'Card credibility scoring',
+  card_extraction: 'Card extraction from a document',
+  compare_impacts_docs: 'Impact calc — compare two uploaded documents',
+  compare_impacts_text: 'Impact calc — compare two pasted texts',
+  cross_ex_grade_trap: 'Cross-ex trap drill — grading',
+  cross_ex_questions_followup: 'Cross-ex questions — "3 more like this"',
+  cross_ex_questions_initial: 'Cross-ex questions — initial generation',
+  cross_ex_traps: 'Cross-ex trap drill — generation',
+  cutter_emphasize: 'Card cutter — emphasis & taglines',
+  cutter_read_source: 'Card cutter — read source article',
+  cx_shared_rules: 'Cross-ex — shared rules (used by multiple prompts)',
+  cx_side_guidance: 'Cross-ex — aff/neg side guidance (used by multiple prompts)',
+  flow_import: 'Flow sheet import (AI fallback)',
+  impact_library_draft: 'Impact Library — draft entry',
+  impact_library_review: 'Impact Library — review edited entry',
+  mission_brief: 'Round mission briefing',
+  outweigh_judge: 'Outweigh game — judge decision',
+  outweigh_rebuttal: 'Outweigh game — AI rebuttal',
+  outweigh_scenario: 'Outweigh game — scenario generation',
+  round_email_parse: 'Tabroom pairing email parser (vision fallback)',
+  suggest_blocks: 'Suggested blocks for a round',
+  team_summary: 'Opponent scouting report',
+  topic_brief: 'New topic brief',
+};
+
+/** Returns { name, source, label } for all available prompt templates (user overrides bundled) */
+async function listPrompts(): Promise<{ name: string; source: 'user' | 'bundled'; label?: string }[]> {
+  await ensureUserPromptsDir();
+  const readDir = async (dir: string, source: 'user' | 'bundled') => {
+    try {
+      const entries = await fs.readdir(dir);
+      return entries
+        .filter((f) => f.endsWith('.txt'))
+        .map((f) => ({ name: f.replace(/\.txt$/, ''), source }));
+    } catch { return []; }
+  };
+  const [bundled, user] = await Promise.all([readDir(bundledPromptsDir(), 'bundled'), readDir(userPromptsDir(), 'user')]);
+  // User prompts override bundled ones with the same name
+  const names = new Set(user.map((s) => s.name));
+  const merged = [...user, ...bundled.filter((s) => !names.has(s.name))];
+  return merged.map((p) => ({ ...p, label: PROMPT_LABELS[p.name] }));
+}
+
+/** Read a prompt template by name — checks user dir first, then bundled */
+async function readPromptTemplate(name: string): Promise<string | null> {
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  if (!safeName) return null;
+  const userPath    = join(userPromptsDir(), `${safeName}.txt`);
+  const bundledPath = join(bundledPromptsDir(), `${safeName}.txt`);
+  for (const p of [userPath, bundledPath]) {
+    try { return await fs.readFile(p, 'utf8'); } catch {}
+  }
+  return null;
+}
+
+/**
+ * Loads a prompt template by name and substitutes {{KEY}} tokens with vars[KEY].
+ * Throws if the template is missing, or if a placeholder in the template has no
+ * matching var — a missing placeholder means a bug in the extraction/call site,
+ * not something to silently ignore.
+ */
+async function renderPrompt(name: string, vars: Record<string, string>): Promise<string> {
+  const template = await readPromptTemplate(name);
+  if (template === null) throw new Error(`Prompt template "${name}" not found.`);
+  return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, key: string) => {
+    if (!Object.prototype.hasOwnProperty.call(vars, key)) {
+      throw new Error(`Prompt "${name}" is missing a value for placeholder {{${key}}}.`);
+    }
+    return vars[key];
+  });
+}
+
+/**
+ * Ensures the user-editable copy exists at userPromptsDir()/<name>.txt, seeding it
+ * from the bundled default on first access, and returns its absolute path (for the
+ * "open in editor" flow).
+ */
+async function ensureUserPromptFile(name: string): Promise<string> {
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  if (!safeName) throw new Error('Invalid prompt name.');
+  await ensureUserPromptsDir();
+  const userPath = join(userPromptsDir(), `${safeName}.txt`);
+  try {
+    await fs.access(userPath);
+  } catch {
+    const bundledPath = join(bundledPromptsDir(), `${safeName}.txt`);
+    let content: string;
+    try {
+      content = await fs.readFile(bundledPath, 'utf8');
+    } catch {
+      throw new Error(`Prompt "${safeName}" not found.`);
+    }
+    await fs.writeFile(userPath, content, 'utf8');
+  }
+  return userPath;
+}
+
 // ─── Trusted path tracking ────────────────────────────────────────────────────
 // IPC handlers that read files only accept paths that the main process itself
 // handed to the renderer (from a file dialog or an internally-generated temp
@@ -1540,15 +1656,7 @@ ipcMain.handle('ai:extractCards', async (_e, filePath: string) => {
   checkPath(filePath);
   const text = await extractText(filePath);
   if (!text.trim()) throw new Error('Could not extract text from file');
-  const prompt = `You are a policy debate evidence assistant. Extract all debate cards from the provided document text. For each card return a JSON array where each item has exactly these fields:
-- "tag": a short argumentative label summarizing the card's claim (under 15 words, no punctuation at end)
-- "cite": author last name, year, and source or institution (e.g. "Kristensen & McKinzie 18, Federation of American Scientists")
-- "body": the full text of the card body
-- "year": integer year extracted from the cite
-Return ONLY a valid JSON array. No markdown, no code fences, no explanation, no preamble. If you cannot find any cards, return an empty array [].
-
-Document text:
-${text.slice(0, 60000)}`;
+  const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: text.slice(0, 60000) });
   const raw = await callAI(prompt, 'balanced');
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
@@ -1674,28 +1782,16 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     ? 'IMPORTANT: if the author\'s credentials (title, affiliation, expertise) are not present in the article text, use Google Search to look them up by name and publication — a cite without credentials is incomplete.'
     : 'IMPORTANT: if the author\'s credentials are not present in the article text, make your best effort from context clues, or write "credentials not found" in that position.';
 
-  const prompt = `You are Warroom AI, a policy debate evidence assistant. Below are numbered paragraphs extracted from a saved web article or PDF${images.length ? ', plus a list of its images' : ''}.
-
-TODAY'S DATE: ${todayStr}. Current-year sources use a month-day short cite (e.g. "Brady 3-15"); past years use a two-digit year.
-
-Use these CITE RULES from the card-cutting skill:
-${skill}
-
----
-
-TASKS — return ONLY one JSON object (no markdown, no prose) with these fields:
-- "author": author last name(s) (e.g. "Borsari and Davis"), or "quals unknown" if not findable.
-- "year": 4-digit publication year integer. If unknown use ${today.getFullYear()}.
-- "title": the article title.
-- "cite": a full formatted cite string EXACTLY per the cite rules above (short cite + credentials + full names + full date + "title" + [URL]). Use this URL if present: ${metaUrl || '(none — omit the URL bracket)'}. ${credentialsInstruction}
-- "bodyIndices": array of the paragraph indices that are the ACTUAL ARTICLE BODY in reading order. EXCLUDE navigation, standalone bylines, related-article lists, newsletter/subscribe prompts, ads, photo captions, and comments. Keep only the author's prose/evidence.
-- "imageIndices": array of up to 3 image indices that are genuinely part of the article's content (judge from alt text; exclude logos, ads, icons, author headshots). Max 3 — pick only the most substantive ones. Use [] if none or no images.
-
-PARAGRAPHS:
-${numbered}
-
-IMAGES:
-${imgList}`;
+  const prompt = await renderPrompt('cutter_read_source', {
+    IMAGES_NOTE: images.length ? ', plus a list of its images' : '',
+    TODAY_STR: todayStr,
+    CARD_CUTTING_SKILL: skill,
+    CURRENT_YEAR: String(today.getFullYear()),
+    META_URL_OR_NOTE: metaUrl || '(none — omit the URL bracket)',
+    CREDENTIALS_INSTRUCTION: credentialsInstruction,
+    PARAGRAPHS: numbered,
+    IMAGES: imgList,
+  });
 
   const parsed = parseJsonLoose(await callGeminiWithSearch(prompt)) || {};
   const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
@@ -1730,28 +1826,12 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
   if (!text) throw new Error('No card body text to cut.');
   const skill = (await readSkill('card_cutting')) ?? '';
 
-  const prompt = `You are Warroom AI, an expert policy debate card cutter. Follow the card-cutting skill:
-${skill}
-
----
-
-The debater has selected the VERBATIM body text below for a card${cite ? ` (cite: ${cite})` : ''}.
-What they intend to use this card for: ${intent ? `"${intent}"` : '(not specified — infer the strongest argument)'}.
-
-Decide the emphasis a skilled debater would apply, then propose taglines.
-
-Return ONLY one JSON object (no markdown, no prose) with these fields:
-- "taglines": array of 1 OR 2 debate flow tags using em dashes (—) for structure. Maximum 10 words. Use CAPS selectively to stress the most important nouns/verbs — not every word, just the key ones that a debater would shout on a flow. Examples: "Iran attacks threaten deal — Hormuz CLOSURE INEVITABLE" or "Surveillance DETERS — detection forces restraint" or "INTERIM DEAL collapses — fighting spreads regionally". The style is mixed case with a few caps for emphasis, not shouting. Strong declarative claim (what the card PROVES), not a description. Offer 2 only if two genuinely distinct framings exist.
-- "underline": array of the EXACT verbatim substrings the debater should READ ALOUD (the "cut"). Copy them character-for-character from the body. This should be a meaningful, readable cut — not the entire body, not one fragment.
-- "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize.
-- "small": array of the EXACT verbatim substrings that should be KEPT for context but NOT read aloud (shrunk to small text). These must not overlap the underlined text.
-
-CRITICAL: every string in underline/highlight/small MUST be copied verbatim from the body text below — do not paraphrase, reword, or invent text. If unsure, include less.
-
-COVERAGE: you MUST process the ENTIRE body text from start to finish. Do not stop after the first few paragraphs. Apply emphasis throughout — the last paragraph deserves the same treatment as the first. If you run out of space, compress the JSON (no extra whitespace) so everything fits.
-
-BODY TEXT:
-${text.slice(0, 40000)}`;
+  const prompt = await renderPrompt('cutter_emphasize', {
+    CARD_CUTTING_SKILL: skill,
+    CITE_NOTE: cite ? ` (cite: ${cite})` : '',
+    INTENT_NOTE: intent ? `"${intent}"` : '(not specified — infer the strongest argument)',
+    BODY_TEXT: text.slice(0, 40000),
+  });
 
   const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
   const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
@@ -1826,42 +1906,11 @@ ipcMain.handle('ai:teamSummary', async (_e, {
       negCiteLines.length ? negCiteLines.join('\n\n') : '(none)',
     ].join('\n');
 
-    const prompt = `You are a competitive policy debate analyst. Analyze this team's disclosed rounds and evidence to produce a rich scouting report.
-
-TEAM: ${teamName}
-
-${affSection}
-
-${negSection}
-
----
-
-Produce a scouting report with two sections ("aff" and "neg").
-
-CRITICAL FORMATTING RULES — the "aff" and "neg" JSON string values MUST contain these literal character sequences for a custom renderer to display them. Do not strip or escape them.
-  **text between double asterisks** = bold (use for position names, key claims, predictions)
-  *text between single asterisks* = italic (use for author names, qualifiers)
-  __text between double underscores__ = underlined (use for specific card tags or central warrants)
-  [cite:N] = inline citation chip (use after claims referencing source [N] from the data above)
-
-EXAMPLE of a correctly formatted value (copy this style exactly):
-  "aff": "This team runs the **Arctic Governance Affirmative**, which contends that US leadership prevents *Chinese and Russian* territorial aggression[cite:2]. Their central warrant is __US leadership key to prevent great power war__[cite:5], which appears in 4 of 5 rounds. **Expect them to read this aff at the next tournament.**"
-
-CONTENT REQUIREMENTS for each section:
-1. Name the argument(s) with specificity — use **bold** for all position names
-2. Identify key cards — use __underline__ for the most important card tags
-3. Analyze frequency (count) and recency ([RECENT] rounds weighted higher) — use *italic* for author names
-4. End with a bold prediction sentence
-
-Each section: 3–5 paragraphs of analytical prose. No markdown headers inside the text.
-
-Also return a "citations" array with one entry per [cite:N] you used:
-- "id": the N integer
-- "sourceTitle": short label (tournament name + round, or author + year)
-- "excerpt": verbatim snippet from the source data above (under 120 words)
-
-Return ONLY valid JSON, no markdown fences, no extra text:
-{ "aff": "...", "neg": "...", "citations": [{ "id": 1, "sourceTitle": "...", "excerpt": "..." }] }`;
+    const prompt = await renderPrompt('team_summary', {
+      TEAM_NAME: teamName,
+      AFF_SECTION: affSection,
+      NEG_SECTION: negSection,
+    });
 
     const raw = await callAI(prompt.slice(0, 120000), 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -1876,17 +1925,6 @@ Return ONLY valid JSON, no markdown fences, no extra text:
     return { ok: false, error: e.message ?? 'AI error' };
   }
 });
-
-const ROUND_EMAIL_PROMPT = `You are a debate round pairing parser. Extract the round information from this Tabroom pairing email screenshot.
-Return ONLY a JSON object with these fields (omit any you cannot find):
-- "round": integer round number
-- "side": "aff" or "neg" (lowercase)
-- "room": room name/number as a string
-- "time": start time as a string (e.g. "9:00 AM")
-- "aff_team": name of the aff team
-- "neg_team": name of the neg team
-- "judge": judge name(s) as a string
-Return ONLY valid JSON, no markdown, no explanation.`;
 
 ipcMain.handle('ai:parseRoundEmail', async (_e, { filePath, imageBase64, mimeType }: { filePath?: string; imageBase64?: string; mimeType?: string }) => {
   try {
@@ -1946,7 +1984,8 @@ ipcMain.handle('ai:parseRoundEmail', async (_e, { filePath, imageBase64, mimeTyp
     // Call Gemini Vision — wrapped in its own try/catch so Gemini errors don't
     // surface as raw HTTP messages; fall back to an OCR diagnostic instead.
     try {
-      const raw = await callGeminiVision(apiKey, b64ForFallback, mimeForFallback, ROUND_EMAIL_PROMPT);
+      const roundEmailPrompt = await renderPrompt('round_email_parse', {});
+      const raw = await callGeminiVision(apiKey, b64ForFallback, mimeForFallback, roundEmailPrompt);
       const geminiData = JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
       // Apply the same timezone stripping that the OCR path applies
       if (geminiData.time) geminiData.time = stripTimezone(String(geminiData.time)) ?? geminiData.time;
@@ -1982,10 +2021,11 @@ ipcMain.handle('clipboard:readImage', async () => {
 });
 
 ipcMain.handle('ai:suggestBlocks', async (_e, opponentPositions: string, blockList: { id: string; title: string }[]) => {
-  const raw = await callAI(
-    `You are a policy debate assistant. Given an opponent's disclosed positions and a list of available blocks, return the IDs of the 4 most relevant blocks the debater should review before this round.\n\nOpponent positions:\n${opponentPositions}\n\nAvailable blocks (id: title):\n${blockList.map(b => `${b.id}: ${b.title}`).join('\n')}\n\nReturn ONLY a JSON array of exactly 4 block ID strings. No explanation, no markdown, no preamble. Example: ["id1","id2","id3","id4"]`,
-    'user',
-  );
+  const prompt = await renderPrompt('suggest_blocks', {
+    OPPONENT_POSITIONS: opponentPositions,
+    BLOCK_LIST: blockList.map(b => `${b.id}: ${b.title}`).join('\n'),
+  });
+  const raw = await callAI(prompt, 'user');
   const ids = JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
   if (!Array.isArray(ids)) throw new Error('Unexpected AI response');
   return ids.slice(0, 4) as string[];
@@ -2017,35 +2057,12 @@ ipcMain.handle('ai:missionBrief', async (_e, {
       rawCitesSample ? `\nSample cites:\n${rawCitesSample.slice(0, 1500)}` : '',
     ].filter(Boolean).join('\n');
 
-    const prompt = `You are an elite policy debate coach. Your debater has the following round coming up. Give them a mission briefing.
-
-ROUND INFO: ${roundCtx}
-
-OPPONENT: ${opponentName}
-${disclosureSection ? `\nOPPONENT DISCLOSURE:\n${disclosureSection}` : '\n(No disclosure available)'}
-
-${judgeSection}
-
----
-
-Write a mission briefing for this debater. Use this exact structure:
-
-**SITUATION**
-2-3 sentences: what this round looks like and what the key challenge is.
-
-**OPPONENT INTEL**
-Bullet points on their known positions — what they run aff, what neg shells to expect, any tendencies from disclosure. If no disclosure, say so clearly.
-
-**JUDGE NOTES**
-What matters to this judge — voting issues, stylistic preferences, deal-breakers. If no paradigm, say "Fetch the paradigm before the round."
-
-**GAME PLAN**
-3-5 specific strategic recommendations for this round. Be concrete — name arguments, flows, blocks they should have ready.
-
-**WATCH OUT FOR**
-1-3 things that could go wrong and how to avoid them.
-
-Be direct, tactical, and brief. No fluff.`;
+    const prompt = await renderPrompt('mission_brief', {
+      ROUND_CTX: roundCtx,
+      OPPONENT_NAME: opponentName,
+      OPPONENT_DISCLOSURE_BLOCK: disclosureSection ? `\nOPPONENT DISCLOSURE:\n${disclosureSection}` : '\n(No disclosure available)',
+      JUDGE_SECTION: judgeSection,
+    });
 
     const raw = await callAI(prompt, 'user');
     return { ok: true, text: raw };
@@ -2064,23 +2081,12 @@ function cxEventBits(event: 'policy' | 'pf' | 'ld') {
   return { skillName, eventLabel };
 }
 
-// Shared guidance block injected into every cross-ex prompt.
-const CX_SHARED_RULES = `RULES:
-1. Questions must target claims made in the HIGHLIGHTED TEXT only — that is what the opponent reads aloud and must defend.
-2. ONE EXCEPTION: if the un-highlighted small text DIRECTLY and COMPLETELY CONTRADICTS a claim in the highlighted text WITHIN THE SAME CARD, you may ask about that contradiction. That is the ONLY reason to ever reference small text.
-3. Each question: 1-3 sentences MAX. Be direct and pointed. No preamble, no "Can you explain…".
-4. Each answer: 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
-5. Do NOT use markdown emphasis (no **, *, or __). Plain text only. You may wrap key phrases in 'single quotes'.
-6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, in-card contradictions, non-unique impacts, or overclaims.
-7. When a question targets a specific card, name that card by its cite (author last name + year) VERBATIM inside the question text — exactly the same string you put in "cardCite" (e.g. write "Your Brady 25 evidence…"). This lets the reader click the cite to jump to the card.`;
-
-// How to tell aff content from neg content inside a doc that may contain both.
-const CX_SIDE_GUIDANCE = `DETERMINING SIDE (Aff vs Neg):
-- Speech labels: AFF speeches are 1AC, 2AC, 1AR, 2AR. NEG speeches are 1NC, 2NC, 1NR, 2NR. If a section is headed by one of these, it belongs to that side.
-- Argument type: Aff content = the plan/advocacy, advantages, solvency, and case extensions. Neg content = disadvantages (DAs), counterplans (CPs), kritiks (Ks), topicality (T), and case-defense / "AT:" / "A2:" answer blocks.
-- Tags, pocket headings, and file names often name the side directly.
-- Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
-- These are questions an opponent would ask YOU in cross-ex about the cards on that side.`;
+// Shared guidance blocks injected into every cross-ex prompt. Loaded from their own
+// prompt template files (rather than duplicated inline across every cx prompt) so
+// editing them once updates every prompt that references {{CX_SHARED_RULES}} /
+// {{CX_SIDE_GUIDANCE}}.
+async function getCxSharedRules(): Promise<string> { return renderPrompt('cx_shared_rules', {}); }
+async function getCxSideGuidance(): Promise<string> { return renderPrompt('cx_side_guidance', {}); }
 
 const stripTrailingCommas = (x: string) => x.replace(/,(\s*[}\]])/g, '$1');
 const normalizeSmartQuotes = (x: string) => x.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
@@ -2194,47 +2200,27 @@ ${full}`;
       const sideLine = side && side !== 'General'
         ? `These are questions about the ${side} content in the document.`
         : '';
-      const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
-
-${skillBlock}${docBlock}
-
----
-
-${CX_SHARED_RULES}
-
-${sideLine}
-Generate 3 NEW questions in the same spirit as this seed — same line of attack, fresh angles. Do NOT repeat it.
-SEED: ${basedOn.slice(0, 500)}
-
-For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if not targeting a specific card.
-
-Return ONLY a JSON array of exactly 3 objects, no markdown fences, no preamble:
-[{"question": "short pointed question", "answer": "short answer + one-line follow-up", "cardCite": "Brady 25"}]`;
+      const prompt = await renderPrompt('cross_ex_questions_followup', {
+        EVENT_LABEL: eventLabel,
+        SKILL_BLOCK: skillBlock,
+        DOC_BLOCK: docBlock,
+        CX_SHARED_RULES: await getCxSharedRules(),
+        SIDE_LINE: sideLine,
+        SEED: basedOn.slice(0, 500),
+      });
       const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
       if (questions.length === 0) throw new Error('No questions returned — try again.');
       return { ok: true, questions };
     }
 
     // ── Initial generation — detect side(s) and return grouped questions ──────
-    const prompt = `You are an elite ${eventLabel} debate coach writing cross-ex questions.
-
-${skillBlock}${docBlock}
-
----
-
-${CX_SHARED_RULES}
-
-${CX_SIDE_GUIDANCE}
-
-TASK:
-- First decide whether this document contains AFF content, NEG content, or BOTH.
-- Generate between 3 and 6 questions TOTAL, distributed across the sides present in proportion to each side's highlighted content.
-- If only one side is present, return a single group for that side ("Aff", "Neg", or "General" if genuinely undeterminable).
-- Do not duplicate or overlap questions across sides.
-- For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if the question targets the case generally rather than a specific card.
-
-Return ONLY this JSON (no markdown fences, no preamble):
-{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Brady 25"}]}]}`;
+    const prompt = await renderPrompt('cross_ex_questions_initial', {
+      EVENT_LABEL: eventLabel,
+      SKILL_BLOCK: skillBlock,
+      DOC_BLOCK: docBlock,
+      CX_SHARED_RULES: await getCxSharedRules(),
+      CX_SIDE_GUIDANCE: await getCxSideGuidance(),
+    });
 
     const raw = await callAI(prompt, 'balanced');
     const parsed = parseAIJson(raw);
@@ -2286,35 +2272,13 @@ ipcMain.handle('ai:crossExTraps', async (_e, {
     const full = (fullText ?? '').slice(0, 60000);
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
-    const prompt = `You are an elite ${eventLabel} debate coach running a cross-ex TRAP DRILL with a student.
-
-${skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : ''}HIGHLIGHTED TEXT (what the opponent reads):
-${highlighted}
-
-FULL CARD TEXT (small text):
-${full}
-
----
-
-Design 3 cross-ex TRAPS. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.
-
-TRAP RULES:
-- The setup must probe argument logic, warrants, or internal links — NOT card wording. NEVER ask the student to quote specific sentences, recall exact phrasing, or cite internal evidence from the card. They cannot see the card during the drill.
-- The trap should work by getting the student to overclaim, underclaim, or concede a logical implication — not by testing whether they memorized the card.
-- Good traps: "Does your card say X is already happening or just that it might happen?", "If that's true, doesn't that mean Y is also true?", "So your impact assumes Z — but does your card actually say that?"
-- Bad traps: "What specific evidence in that card supports that claim?", "What does the card say about X exactly?"
-
-For each trap provide:
-- "setup": the opening question you ask the student (1-2 sentences).
-- "trapAnswer": the tempting WRONG answer most students give that springs the trap (1 sentence).
-- "gotcha": the follow-up that exploits the wrong answer — the moment they realize they're cornered (1-2 sentences).
-- "idealAnswer": the disciplined answer that avoids the trap entirely (1-2 sentences).
-- "lesson": one sentence on the principle (what to watch for / how to avoid it).
-
-${CX_SHARED_RULES}
-
-Return ONLY this JSON, no markdown fences, no preamble:
-[{"setup": "...", "trapAnswer": "...", "gotcha": "...", "idealAnswer": "...", "lesson": "..."}]`;
+    const prompt = await renderPrompt('cross_ex_traps', {
+      EVENT_LABEL: eventLabel,
+      SKILL_BLOCK: skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : '',
+      HIGHLIGHTED: highlighted,
+      FULL: full,
+      CX_SHARED_RULES: await getCxSharedRules(),
+    });
 
     const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -2350,31 +2314,15 @@ ipcMain.handle('ai:crossExGradeTrap', async (_e, {
     const { eventLabel } = cxEventBits(event);
     if (!(userAnswer ?? '').trim()) throw new Error('Type an answer first.');
 
-    const prompt = `You are an elite ${eventLabel} debate coach grading a student's answer in a cross-ex trap drill.
-
-THE TRAP:
-- Setup question asked: ${setup}
-- The wrong answer that springs the trap: ${trapAnswer}
-- The gotcha follow-up if they fall for it: ${gotcha}
-- The ideal trap-avoiding answer: ${idealAnswer}
-- Lesson: ${lesson}
-
-THE STUDENT ANSWERED:
-"${(userAnswer ?? '').slice(0, 1500)}"
-
-Decide a verdict:
-- "avoided" — the student sidestepped the trap (answer is disciplined, close to the ideal).
-- "fell" — the student walked into the trap (answer resembles the wrong answer / opens the gotcha).
-- "partial" — partially safe but sloppy / leaves an opening.
-
-Then write 2-3 sentences of feedback:
-- If avoided: confirm they got it right and name exactly HOW they avoided the trap.
-- If fell or partial: spring the gotcha, explain what went wrong, and give the concrete fix.
-
-Do NOT use markdown emphasis. Plain text. You may use 'single quotes'.
-
-Return ONLY this JSON, no fences, no preamble:
-{"verdict": "avoided" | "fell" | "partial", "feedback": "..."}`;
+    const prompt = await renderPrompt('cross_ex_grade_trap', {
+      EVENT_LABEL: eventLabel,
+      SETUP: setup,
+      TRAP_ANSWER: trapAnswer,
+      GOTCHA: gotcha,
+      IDEAL_ANSWER: idealAnswer,
+      LESSON: lesson,
+      USER_ANSWER: (userAnswer ?? '').slice(0, 1500),
+    });
 
     const raw = await callAI(prompt, 'lite');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -2408,63 +2356,11 @@ ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
       `${i + 1}. TAG: ${String(c.tag ?? '').slice(0, 300)} | CITE: ${String(c.cite ?? '').slice(0, 600) || '(no citation text)'}`,
     ).join('\n');
 
-    const prompt = `You are an evidence-credibility analyst for competitive debate. Today's date is ${today}.
-
-Score debate evidence ("cards") based solely on what their citation text actually states. Never invent credentials, dates, publications, or qualifications not present in the text.
-
-For each card you receive a TAG (the claim being made) and a CITE (the citation — may include author name, credentials, date, and source/publication).
-
-Score 0–10 on FOUR factors:
-
---- AUTHOR (0–10): expertise of the author(s) RELATIVE TO THIS SPECIFIC CLAIM ---
-Judge domain match, not just credentials:
-• 10 — PhD/professor/senior practitioner in the exact field the tag claim is about
-• 8 — credentialed expert in a closely related field, or senior government official on their area
-• 6 — credentialed expert in a tangentially related field, or established think-tank fellow
-• 4 — journalist or policy staffer with relevant beat; credentialed expert off their specialty
-• 2 — student, generalist commentator, or non-expert with no stated credentials
-• 0 — anonymous, or credentials entirely absent from the cite
-If ONLY an organization is listed (no individual), use the org's reputation as a proxy:
-RAND / CBO / CRS / GAO / OMB / IPCC → 8–9 | Established think tanks (Brookings, CSIS, CFR, Wilson Center) → 6–7 | Ideologically-aligned think tanks (Heritage, CATO, CAP, AEI) → 4–5 | Media outlet → 3–4
-
---- RECENCY (0–10): how current the evidence is, weighted by how fast this topic decays ---
-Decay rates:
-• Geopolitics / military posture / economic data / polling — fast decay: 2024=10, 2023=8, 2022=6, 2020=3, pre-2019=1
-• Policy / legislation / public health — medium decay: 2024=10, 2022=8, 2020=6, 2018=4, pre-2016=2
-• Social science / theory / historical analysis — slow decay: within 10 years=8+, within 20 years=5+
-• No date present in cite → 0
-
---- SOURCE (0–10): publication quality ---
-Peer-reviewed journal → 9–10
-Government report (CRS, CBO, GAO, RAND, IPCC, official agency) → 8–9
-Established think tank (Brookings, CSIS, Chatham House, CFR, Wilson Center) → 7–8
-Ideologically-aligned think tank (Heritage, CATO, CAP, AEI) → 5–6
-Major newspaper / wire service news article (NYT, WaPo, FT, Economist, AP) → 5–6
-Trade publication / specialized magazine → 4–5
-Op-ed, magazine essay, or editorial → 3–4
-Personal blog, advocacy website, or unknown outlet → 1–2
-Source entirely absent from the cite → 0
-
---- CLAIM MATCH (0–10): does the cited source actually support what the TAG claims? ---
-Judge based on logical fit between the tag text and the cite's apparent subject:
-• 10 — cite directly proves the exact claim in the tag
-• 7 — cite is related and supports the general argument; tag may be slightly overextended
-• 4 — cite is tangentially related; tag makes a stronger claim than the source likely supports
-• 1 — obvious mismatch; the source topic does not support the tag's claim
-Note: you cannot read the full card body — judge from how specific/bold the tag claim is vs what the cite suggests about the source's scope.
-
-Then give:
-- "score": overall credibility 0–10 (holistic — weigh all four factors)
-- "verdict": exactly one word — "Strong" (8–10), "Solid" (6–7), "Shaky" (4–5), or "Weak" (0–3)
-- "reason": 12 words or fewer — the single most important credibility factor (good or bad)
-- "press": 15 words or fewer — the sharpest cross-ex attack on THIS card's credibility specifically
-
-Cards:
-${cardLines}
-
-Return ONLY a JSON array of exactly ${list.length} objects in the SAME ORDER as above. No markdown, no preamble.
-Inside any string value, use ONLY single quotes — never double quotes — so the JSON stays valid.
-[{"score":7,"verdict":"Solid","author":6,"recency":8,"source":7,"claim":7,"reason":"...","press":"..."}]`;
+    const prompt = await renderPrompt('card_credibility_scoring', {
+      TODAY: today,
+      CARD_LINES: cardLines,
+      CARD_COUNT: String(list.length),
+    });
 
     const raw = await callAI(prompt, 'balanced');
     const parsed = parseAIJson(raw);
@@ -2510,70 +2406,12 @@ ipcMain.handle('gemini:compareImpacts', async (
     const textA = (await mammoth.extractRawText({ path: pathA })).value as string;
     const textB = (await mammoth.extractRawText({ path: pathB })).value as string;
 
-    const prompt = `You are an expert policy debate judge performing impact calculus — the process of comparing the relative importance of harms from two opposing sides.
-
-IMPACT CALCULUS CRITERIA
-Impact calculus typically weighs harms across five dimensions (debaters may argue alternative orderings):
-1. Magnitude — how severe is the harm? (extinction > existential > major > moderate > minor)
-2. Probability — how likely is the harm to occur? (high / medium / low)
-3. Timeframe — how soon does the harm materialize? (immediate / short / medium / long)
-4. Reversibility — can the harm be undone? (irreversible > difficult > reversible)
-5. Breadth — how many people or systems are affected? (describe in context)
-
-A common default hierarchy is: magnitude first, then probability, then timeframe, then reversibility. However, debaters can and do flip this ordering with warrants.
-
-YOUR TASK
-Below are two debate documents. Extract every distinct impact claim from each, compare them across the five dimensions above, identify the direct clashes between them, decide who wins each clash with explicit reasoning, and give an overall verdict on which side has the better impacts.
-
-DOC A: ${labelA}
----
-${textA}
----
-
-DOC B: ${labelB}
----
-${textB}
----
-
-Return ONLY valid JSON — no markdown fences, no extra text, no commentary — matching this exact shape:
-{
-  "summary": "<2-3 sentence overall verdict synthesizing the impact comparison>",
-  "docA": {
-    "label": "${labelA}",
-    "impacts": [
-      {
-        "claim": "<short description of the impact>",
-        "magnitude": "<extinction|existential|major|moderate|minor>",
-        "probability": "<high|medium|low>",
-        "timeframe": "<immediate|short|medium|long>",
-        "reversibility": "<irreversible|difficult|reversible>"
-      }
-    ]
-  },
-  "docB": {
-    "label": "${labelB}",
-    "impacts": [
-      {
-        "claim": "<short description of the impact>",
-        "magnitude": "<extinction|existential|major|moderate|minor>",
-        "probability": "<high|medium|low>",
-        "timeframe": "<immediate|short|medium|long>",
-        "reversibility": "<irreversible|difficult|reversible>"
-      }
-    ]
-  },
-  "clashes": [
-    {
-      "claimA": "<impact claim from Doc A, or null if no direct clash>",
-      "claimB": "<impact claim from Doc B, or null if no direct clash>",
-      "winner": "<A|B|even>",
-      "reasoning": "<concise explanation of why this side wins this clash>",
-      "dimension": "<the primary dimension that decides this clash, e.g. magnitude, probability, timeframe>"
-    }
-  ],
-  "verdict": "<A|B|even>",
-  "verdictReason": "<1-2 sentence explanation of the overall verdict>"
-}`;
+    const prompt = await renderPrompt('compare_impacts_docs', {
+      LABEL_A: labelA,
+      TEXT_A: textA,
+      LABEL_B: labelB,
+      TEXT_B: textB,
+    });
 
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -2602,157 +2440,12 @@ ipcMain.handle('ai:compareImpactsText', async (
   try {
     // No truncation — the user's own docs are sent in full. Long docs cost more in
     // API usage, but that's the user's call, not ours to make by silently cutting content.
-    const prompt = `You are an expert policy debate coach and judge with deep knowledge of how impact calculus actually plays out in competitive rounds. Your job is to perform a rigorous, round-realistic impact comparison between two debate documents.
-
-═══════════════════════════════════════════════════════════
-WHAT IMPACT CALCULUS ACTUALLY IS IN A REAL ROUND
-═══════════════════════════════════════════════════════════
-
-Impact calculus is the process by which debaters and judges decide which harms matter most when both sides are winning some offense. It is NOT just listing impacts — it is the active work of comparing them across specific dimensions with warranted arguments. A debater who says "our impact is extinction" without calculus loses to a debater who says "their extinction scenario requires five independent unlikely steps; ours is immediate and empirically verified."
-
-The standard DEFAULT hierarchy judges use (absent explicit in-round arguments):
-  MAGNITUDE > PROBABILITY > TIMEFRAME > REVERSIBILITY > BREADTH
-
-But this ordering is itself contestable. Debaters win rounds by collapsing the hierarchy:
-  • "Probability first" — if their scenario is speculative and ours is near-certain, even a smaller harm outweighs an extinction risk with a 0.00001% chance
-  • "Timeframe first" — if their harm materializes in 50 years and ours is happening now, we solve first and their impact never happens
-  • "Reversibility first" — irreversible harms (death, extinction, ecosystem collapse) should always outweigh reversible ones regardless of magnitude comparisons
-  • "Breadth first" — systemic harms affecting billions of people outweigh localized harms even if the localized harm is more severe per person
-
-═══════════════════════════════════════════════════════════
-THE FIVE DIMENSIONS — WHAT TO ACTUALLY LOOK FOR
-═══════════════════════════════════════════════════════════
-
-1. MAGNITUDE (most commonly decisive)
-   Scale: extinction > existential risk > civilization-scale > major (millions dead) > moderate (thousands) > minor (hundreds or less)
-   Key distinctions:
-   • Extinction and existential risks have special status — they eliminate ALL future generations, which means the expected value dwarfs any finite harm. This is the "Pascal's mugging" problem in debate: even very low probability extinction outweighs certain moderate harms IF probability calculus applies.
-   • Structural violence (poverty, racism, slow death) can outweigh kinetic violence in magnitude IF the debater establishes breadth — more people die from malnutrition per year than most wars.
-   • "Nuclear war causes extinction" vs "nuclear war kills millions but humanity survives" is itself a contested empirical claim — evaluate what the evidence actually says.
-
-2. PROBABILITY (often decisive against extinction claims)
-   Scale: near-certain > likely > possible > speculative > negligible
-   Key distinctions:
-   • Scenario planning: how many independent steps does the impact require? A 5-step causal chain where each step is 50% likely = 3% overall probability.
-   • Empirical track record: has this causal mechanism happened before? Deterrence has held for 80 years — that's evidence against "miscalculation leads to nuclear war."
-   • "Their scenario requires [X, Y, Z] to all happen" is a devastatingly effective argument when the individual steps are each uncertain.
-   • Brink arguments: "we are already close to the threshold, the plan pushes us over" substantially raises probability.
-
-3. TIMEFRAME (often decisive in policy rounds)
-   Scale: immediate (months) > short (1–5 years) > medium (5–20 years) > long (20+ years) > speculative future
-   Key distinctions:
-   • "Timeframe is a terminal defense" — if our impact happens in 10 years and theirs in 50, we solve theirs before it occurs.
-   • "Short timeframe means we have to act now" — urgency arguments flip the usual caution framework.
-   • "Their evidence is from the 1990s and assumes a world that no longer exists" undercuts both timeframe and probability.
-
-4. REVERSIBILITY (increasingly important in modern debate)
-   Scale: irreversible (extinction, species loss, death) > difficult (economic collapse, political instability) > reversible (policy changes, temporary harms)
-   Key distinctions:
-   • "Death is uniquely irreversible" — the individual can never be compensated. This gives life-and-death impacts a floor value.
-   • "Extinction forecloses all future value" — this is the utilitarian argument for why extinction outweighs everything else.
-   • "Economic harm is reversible but ecological collapse is not" — environmental impacts often win reversibility even at lower magnitude.
-   • Structural violence arguments often invoke irreversibility: communities destroyed by poverty or racism cannot simply be made whole.
-
-5. BREADTH (often used as a tiebreaker or framing move)
-   Scale: all of humanity > most of humanity > a nation > a region > a community > individuals
-   Key distinctions:
-   • Breadth is usually paired with magnitude — "100 million people experience moderate harm" can outweigh "1,000 people experience severe harm" depending on aggregation assumptions.
-   • Some frameworks reject aggregation (deontological, rights-based) and say individual rights cannot be traded off against numbers.
-   • "Our impact is global, theirs is localized" is a strong breadth argument even at equal magnitude.
-
-═══════════════════════════════════════════════════════════
-COMMON IMPACT CALC ARGUMENTS IN REAL ROUNDS
-═══════════════════════════════════════════════════════════
-
-WINNING MOVES FOR BIG IMPACTS (extinction, existential):
-  • "Magnitude controls — finite harms cannot outweigh infinite expected disvalue of extinction"
-  • "Even a 1% chance of extinction outweighs a 100% chance of a recoverable harm"
-  • "Future generations count — their 10,000 lives outweigh today's 1,000 by orders of magnitude"
-  • "Our impact is a prerequisite — without solving [X], their impact can't be solved anyway"
-
-WINNING MOVES AGAINST BIG IMPACTS:
-  • "Probability is so low it doesn't trigger — their scenario requires [list steps]"
-  • "Their evidence is from discredited/outdated sources — the empirical consensus has shifted"
-  • "Deterrence/resilience — the world has faced this situation before and recovered"
-  • "Their impact is linear, not catastrophic — more of a bad thing, not an existential break"
-  • "Timeframe outweighs — our harm is happening right now while theirs is 50 years away"
-  • "Even if their magnitude is bigger, we solve before it materializes"
-
-STRUCTURAL VIOLENCE / FRAMEWORK IMPACTS:
-  • "Structural impacts are ongoing and cumulative — millions dying per year competes with speculative future extinction"
-  • "Rights-based framework: individual dignity cannot be aggregated away by utilitarian calculus"
-  • "Their framework only counts dramatic harms, ignoring slow violence that kills more people"
-
-TURNS AND LINK ARGUMENTS:
-  • "Their impact is our impact — the plan causes the same harm they're trying to prevent"
-  • "Impact turn — their impact is actually good (e.g. war sparks innovation, crisis creates political will)"
-  • "Link turn — the plan decreases the risk of their impact rather than increasing it"
-
-═══════════════════════════════════════════════════════════
-HOW A JUDGE ACTUALLY DECIDES
-═══════════════════════════════════════════════════════════
-
-A judge does NOT simply compare magnitudes. The decision process:
-
-1. Determine which impacts are ACTUALLY in the round (survived with enough defense)
-2. For each surviving impact pair, identify which dimension the debaters flagged as decisive
-3. If no dimension was explicitly argued, apply the default hierarchy (magnitude > probability > timeframe > reversibility)
-4. Look for "impact turns" — cases where winning an impact actually helps the other side
-5. "Even if" calculus — assume they win their link, do we still win on magnitude/probability/timeframe?
-6. The team that wins impact calculus has usually done three things: (a) established their own impact is real, (b) undermined the opponent's impact on at least one dimension, and (c) given the judge an explicit reason to prefer their framework for comparison
-
-YOUR TASK
-Below are two debate documents. Extract every distinct impact claim from each. For each claim, assess it through the lens of a real competitive round — not just what magnitude it claims, but how defensible that claim is on probability, timeframe, and reversibility. Identify the direct clashes between them, decide who wins each clash with explicit round-realistic reasoning (the kind a debater would actually read in a rebuttal), and give an overall verdict.
-
-DOC A: ${labelA}
----
-${textA}
----
-
-DOC B: ${labelB}
----
-${textB}
----
-
-Return ONLY valid JSON — no markdown fences, no extra text, no commentary — matching this exact shape:
-{
-  "summary": "<2-3 sentence overall verdict synthesizing the impact comparison>",
-  "docA": {
-    "label": "${labelA}",
-    "impacts": [
-      {
-        "claim": "<short description of the impact>",
-        "magnitude": "<extinction|existential|major|moderate|minor>",
-        "probability": "<high|medium|low>",
-        "timeframe": "<immediate|short|medium|long>",
-        "reversibility": "<irreversible|difficult|reversible>"
-      }
-    ]
-  },
-  "docB": {
-    "label": "${labelB}",
-    "impacts": [
-      {
-        "claim": "<short description of the impact>",
-        "magnitude": "<extinction|existential|major|moderate|minor>",
-        "probability": "<high|medium|low>",
-        "timeframe": "<immediate|short|medium|long>",
-        "reversibility": "<irreversible|difficult|reversible>"
-      }
-    ]
-  },
-  "clashes": [
-    {
-      "claimA": "<impact claim from Doc A, or null if no direct clash>",
-      "claimB": "<impact claim from Doc B, or null if no direct clash>",
-      "winner": "<A|B|even>",
-      "reasoning": "<concise explanation of why this side wins this clash>",
-      "dimension": "<the primary dimension that decides this clash, e.g. magnitude, probability, timeframe>"
-    }
-  ],
-  "verdict": "<A|B|even>",
-  "verdictReason": "<1-2 sentence explanation of the overall verdict>"
-}`;
+    const prompt = await renderPrompt('compare_impacts_text', {
+      LABEL_A: labelA,
+      TEXT_A: textA,
+      LABEL_B: labelB,
+      TEXT_B: textB,
+    });
 
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -2822,27 +2515,11 @@ ipcMain.handle('ai:outweighScenario', async (_e, params: {
       customBlock += `\nUse this material to pick a specific, realistic topic and impact that plausibly comes from these docs/notes/resolution.\n`;
     }
 
-    const prompt = `You are running an impact-calculus practice drill for a competitive debater. Generate ONE impact scenario for them to debate against.
-
-EVENT: ${eventLine}
-
-DIFFICULTY: ${tierLine}
-${customBlock}
-Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on, using the correct side terms for the event above — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card"/contention logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
-
-Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
-{
-  "context": "<1-2 sentence setup: the topic area and who is arguing what, using the correct side terms for the event. Address the user as 'You'.>",
-  "side": "<a short label for the side YOU (the AI) are defending, using the event's real side terms, e.g. 'Neg — Deterrence DA' for policy or 'Con — Economic Harm' for PF>",
-  "aiImpact": {
-    "claim": "<your impact in one sentence>",
-    "warrant": "<1-2 sentence justification a debater would read aloud>",
-    "magnitude": "<extinction|existential|major|moderate|minor>",
-    "probability": "<high|medium|low>",
-    "timeframe": "<immediate|short|medium|long>",
-    "reversibility": "<irreversible|difficult|reversible>"
-  }
-}`;
+    const prompt = await renderPrompt('outweigh_scenario', {
+      EVENT_LINE: eventLine,
+      TIER_LINE: tierLine,
+      CUSTOM_BLOCK: customBlock,
+    });
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let scenario: any;
@@ -2865,24 +2542,15 @@ ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
     const { difficulty, scenario, userImpact, userCalc } = params;
     const tierLine = OUTWEIGH_DIFFICULTY[difficulty] ?? OUTWEIGH_DIFFICULTY.jv;
     const eventLine = outweighEventLine(params?.event);
-    const prompt = `You are an expert competitive debater delivering a short impact-calculus rebuttal in a practice round. Stay in character — speak as a debater would in a rebuttal, not as a coach.
-
-EVENT: ${eventLine}
-
-DIFFICULTY (match your sophistication to this level): ${tierLine}
-
-YOUR IMPACT (defend it):
-${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}
-Your side: ${scenario?.side ?? ''}
-Context: ${scenario?.context ?? ''}
-
-THE USER'S IMPACT: ${userImpact}
-THE USER'S CALCULUS:
-${userCalc}
-
-Write a tight 1-2 minute impact-calc rebuttal (roughly 150-260 words). Do impact comparison the way it actually happens in rounds: extend and defend your impact, then attack theirs on at least one specific dimension (magnitude, probability, timeframe, reversibility, or breadth). Use real moves — "their scenario requires X then Y then Z", "timeframe outweighs — we solve before theirs triggers", "even if they win their link, magnitude controls", etc. Be persuasive but fair; do NOT invent fake evidence or misrepresent what they wrote.
-
-You MAY use light markdown emphasis (**bold** for the key outweighing claim) but keep it speech-like. Return ONLY the speech text — no headers, no JSON, no stage directions.`;
+    const prompt = await renderPrompt('outweigh_rebuttal', {
+      EVENT_LINE: eventLine,
+      TIER_LINE: tierLine,
+      AI_IMPACT_JSON: JSON.stringify(scenario?.aiImpact ?? {}, null, 2),
+      SIDE: scenario?.side ?? '',
+      CONTEXT: scenario?.context ?? '',
+      USER_IMPACT: userImpact,
+      USER_CALC: userCalc,
+    });
     const raw = await callAI(prompt, 'best');
     const speech = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     return { ok: true, speech };
@@ -2908,41 +2576,16 @@ ipcMain.handle('ai:outweighJudge', async (_e, params: {
   try {
     const { scenario, userImpact, userCalc, rebuttal, userFinal } = params;
     const eventLine = outweighEventLine(params?.event);
-    const prompt = `You are an experienced, fair debate judge writing a decision after an impact-calculus exchange between two debaters, "You" (the user) and "the Opponent." You did not write either side's arguments — judge them cold, on the merits, as an independent third party would.
-
-EVENT: ${eventLine}
-
-THE OPPONENT'S IMPACT + SIDE:
-${JSON.stringify(scenario?.aiImpact ?? {}, null, 2)}
-Side: ${scenario?.side ?? ''}
-Context: ${scenario?.context ?? ''}
-
-YOUR (THE USER'S) IMPACT: ${userImpact}
-YOUR OPENING CALCULUS:
-${userCalc}
-
-THE OPPONENT'S REBUTTAL:
-${rebuttal}
-
-YOUR FINAL SHOT (your last word):
-${userFinal || '(the user did not write a final shot)'}
-
-Judge it the way a real judge resolves impact calc: which impacts actually survived, which dimension was decisive, and whether the user gave you a reason to prefer their impact. Reward warranted comparison over assertion. Be honest — if the user lost, say so and explain why, but stay constructive and encouraging.
-
-Separately and independently, grade the Opponent's rebuttal on its own argumentative merits — was it well warranted, did it actually engage the user's specific claims, did it invent unsupported assertions or misrepresent what the user wrote? Grade it critically and objectively; do not assume it's good just because it's the "other side," and do not let the round's overall winner bias this score — a losing debater can still have delivered a sharp, well-warranted rebuttal, and a winning one can have been sloppy.
-
-Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
-{
-  "winner": "<user|ai|tie>",
-  "userScore": <integer 1-10 rating the quality of the USER's impact calc work>,
-  "opponentScore": <integer 1-10 rating the quality of the OPPONENT's rebuttal, graded independently on its own merits>,
-  "opponentNotes": "<1-2 sentence honest critique of the Opponent's rebuttal — what was strong or weak about its argumentation>",
-  "verdict": "<2-3 sentence decision explaining who won the impact debate and on what dimension. You may use **bold**.>",
-  "feedback": [
-    { "dimension": "<magnitude|probability|timeframe|reversibility|breadth|framing>", "note": "<what the user did well or missed on this dimension>" }
-  ],
-  "tips": ["<1 concrete thing to do better next time>", "<another>"]
-}`;
+    const prompt = await renderPrompt('outweigh_judge', {
+      EVENT_LINE: eventLine,
+      AI_IMPACT_JSON: JSON.stringify(scenario?.aiImpact ?? {}, null, 2),
+      SIDE: scenario?.side ?? '',
+      CONTEXT: scenario?.context ?? '',
+      USER_IMPACT: userImpact,
+      USER_CALC: userCalc,
+      REBUTTAL: rebuttal,
+      USER_FINAL: userFinal || '(the user did not write a final shot)',
+    });
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
@@ -2971,32 +2614,10 @@ ipcMain.handle('ai:impactLibraryDraft', async (_e, params: { source: string; eve
   try {
     const source = (params?.source ?? '').slice(0, 60000);
     const eventLine = IMPACT_LIB_EVENT[params?.event ?? 'general'] ?? IMPACT_LIB_EVENT.general;
-    const prompt = `You are an expert debate coach building an entry for a shared IMPACT LIBRARY. Read the material below (it may be a full speech doc / card, or just a rough idea) and distill it into ONE clean, structured impact entry that any debater could pick up and use.
-
-EVENT CONTEXT: ${eventLine}
-
-Break the impact out across the four standard impact-calculus dimensions SEPARATELY, each with a one-sentence warranted note (not just a rating word). Then generate the standard ANSWERS — the moves a good debater reads to beat this impact — and TAGS for search (topics/positions this impact shows up in). Be rigorous and honest: if the source overstates the impact, rate it realistically, don't inflate it.
-
-SOURCE MATERIAL:
----
-${source || '(no source provided — the user only gave an idea; infer a sensible impact)'}
----
-
-Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
-{
-  "title": "<short label for this impact, e.g. 'US-China war' or 'Dedev / degrowth'>",
-  "claim": "<the impact claim in 1-2 sentences — what the harm is and its terminal>",
-  "magnitude": "<extinction|existential|major|moderate|minor>",
-  "magnitude_note": "<one sentence justifying the magnitude rating>",
-  "probability": "<high|medium|low>",
-  "probability_note": "<one sentence on the link/probability — how many steps, empirical support>",
-  "timeframe": "<immediate|short|medium|long>",
-  "timeframe_note": "<one sentence on when the impact materializes>",
-  "reversibility": "<irreversible|difficult|reversible>",
-  "reversibility_note": "<one sentence on whether the harm can be undone>",
-  "answers": ["<a standard way to beat this impact>", "<another>", "<another>"],
-  "tags": ["<topic/position tag>", "<another>"]
-}`;
+    const prompt = await renderPrompt('impact_library_draft', {
+      EVENT_LINE: eventLine,
+      SOURCE: source || '(no source provided — the user only gave an idea; infer a sensible impact)',
+    });
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let draft: any;
@@ -3017,26 +2638,14 @@ ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
     const entry = params?.entry ?? {};
     const source = (params?.source ?? '').slice(0, 60000);
     const existing = Array.isArray(params?.existing) ? params!.existing!.slice(0, 60) : [];
-    const prompt = `You are finalizing a user's edited entry for a shared debate IMPACT LIBRARY. Do four things and return them as JSON.
-
-1. REGENERATE the "answers" (standard ways to beat this impact) so they match the user's EDITED entry, not any earlier version.
-2. REGENERATE concise "tags" (topics/positions) for search based on the edited entry.
-3. DRIFT CHECK: ${source ? 'compare the edited entry against the SOURCE MATERIAL and flag any claim the source does not actually support (overstated magnitude, invented mechanism, etc.). If it all checks out, return an empty array.' : 'no source was provided, so only flag internal problems — e.g. dimension ratings that contradict the claim. If none, return an empty array.'}
-4. DUPLICATE CHECK: compare against the EXISTING LIBRARY TITLES/CLAIMS and list any that look like the same impact (so it can be merged instead of duplicated). If none are close, return an empty array.
-
-THE USER'S EDITED ENTRY:
-${JSON.stringify(entry, null, 2)}
-${source ? `\nSOURCE MATERIAL:\n---\n${source}\n---\n` : ''}
-EXISTING LIBRARY ENTRIES:
-${existing.length ? existing.map((x) => `- id=${x.id} | ${x.title}: ${x.claim}`).join('\n') : '(the library is empty)'}
-
-Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
-{
-  "answers": ["<regenerated answer>", "..."],
-  "tags": ["<regenerated tag>", "..."],
-  "driftWarnings": ["<a specific claim not supported by the source, or omit if none>"],
-  "duplicates": [ { "id": "<existing entry id>", "title": "<its title>", "why": "<why it's likely the same impact>" } ]
-}`;
+    const prompt = await renderPrompt('impact_library_review', {
+      DRIFT_CHECK_INSTRUCTION: source
+        ? 'compare the edited entry against the SOURCE MATERIAL and flag any claim the source does not actually support (overstated magnitude, invented mechanism, etc.). If it all checks out, return an empty array.'
+        : 'no source was provided, so only flag internal problems — e.g. dimension ratings that contradict the claim. If none, return an empty array.',
+      ENTRY_JSON: JSON.stringify(entry, null, 2),
+      SOURCE_BLOCK: source ? `\nSOURCE MATERIAL:\n---\n${source}\n---\n` : '',
+      EXISTING_ENTRIES: existing.length ? existing.map((x) => `- id=${x.id} | ${x.title}: ${x.claim}`).join('\n') : '(the library is empty)',
+    });
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let review: any;
@@ -3076,30 +2685,10 @@ ipcMain.handle('gemini:importFlow', async (
       ? `The caller's best guess for the event is "${input.event}". Use that event.`
       : `The event is unknown. Infer whether this is policy or pf from the column labels and content. Default to policy if unclear.`;
 
-    const prompt = `You are importing a competitive debate "flow" — a spreadsheet a debater uses to track arguments across the speeches of a round. Spreadsheets come in messy, arbitrary layouts (different column orders, extra columns, merged speeches, varied headers). Your job is to map each one onto a FIXED column schema so the app can display it.
-
-TARGET COLUMN SCHEMAS (output cells must align to these exact columns, in this exact order):
-• policy — 7 columns: ["1AC","1NC","2AC","2NC/1NR","1AR","2NR","2AR"]
-• pf — 8 columns: ["Pro Case","Con Case","Con Rebuttal","Pro Rebuttal","Pro Summary","Con Summary","Pro FF","Con FF"]
-
-CRITICAL POLICY MERGE RULE:
-Real policy debate has 8 speeches — 1AC, 1NC, 2AC, 2NC, 1NR, 1AR, 2NR, 2AR. This app MERGES the 2NC and 1NR (the "neg block") into the single column "2NC/1NR" (index 3). If the source spreadsheet has SEPARATE 2NC and 1NR columns (or any column labeled "block" / "neg block"), COMBINE their cell contents for each row into that one column, joining the two cells with a newline ("\\n"). Never emit separate 2NC and 1NR columns.
-
-EVENT:
-${eventInstruction}
-
-SOURCE SHEETS (raw cell grids as 2D arrays of strings; header row included if the sheet has one):
-${sheetBlocks}
-
-INSTRUCTIONS:
-1. Detect any header row and DROP it — output ONLY argument rows, never the header.
-2. Preserve the relative top-to-bottom order of the argument rows.
-3. Each output row must have EXACTLY the right number of columns (7 for policy, 8 for pf). Use an empty string "" for any blank/missing cell.
-4. Map each source column to the target column it best corresponds to. If a source column doesn't map to any target column, ignore it.
-5. Apply the policy merge rule above when relevant.
-
-Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
-{"event":"policy","sheets":[{"name":"<sheet name>","rows":[["...","...","...","...","...","...","..."]]}]}`;
+    const prompt = await renderPrompt('flow_import', {
+      EVENT_INSTRUCTION: eventInstruction,
+      SHEET_BLOCKS: sheetBlocks,
+    });
 
     const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
@@ -3821,6 +3410,22 @@ ipcMain.handle('skills:write', async (_e, name: string, content: string) => {
     const skillPath = join(userSkillsDir(), `${safeName}.md`);
     await fs.writeFile(skillPath, content, 'utf8');
     return { ok: true, name: safeName, path: skillPath, sizeBytes: Buffer.byteLength(content, 'utf8') };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+});
+
+// Prompts IPC — lets the Documentation page link the user to the exact .txt file
+// used for each AI call, and opens the user-editable copy in their default editor.
+ipcMain.handle('prompts:list', async () => {
+  try { return { ok: true, prompts: await listPrompts() }; }
+  catch (e: any) { return { ok: false, error: e.message, prompts: [] }; }
+});
+
+ipcMain.handle('prompts:openInEditor', async (_e, name: string) => {
+  try {
+    const path = await ensureUserPromptFile(name);
+    const err = await shell.openPath(path);
+    if (err) return { ok: false, error: err };
+    return { ok: true, path };
   } catch (e: any) { return { ok: false, error: e.message }; }
 });
 
@@ -5451,118 +5056,7 @@ ipcMain.handle('chat:geminiSend', async (_e, messages: GeminiMsg[], systemText?:
 
 // ─── Gemini agent turn (tool-calling, non-streaming) ─────────────────────────
 
-const AGENT_SYSTEM = `You are Warroom AI, an agentic AI for competitive debate preparation.
-
-## RULES
-These rules exist because debate formats, app features, and rules are specific. Guessing causes real harm.
-1. **ALWAYS call get_skill BEFORE answering ANY question about debate format, rules, speech times, argument types, strategy, or judging norms** — even if confident. Call first, then answer from what it returns. Never answer from memory.
-2. **ALWAYS call get_skill("user_manual") BEFORE answering ANY question about how to use Warroom, where a feature is, or whether the app has a feature.** Never guess at navigation, settings, or app behavior. "Does Warroom have X?" is a feature question — load the manual first. If the user_manual doesn't have the answer, also load get_skill("documentation") — it covers technical details the manual may omit.
-3. If the skill doesn't cover it, say so — do not invent an answer.
-4. **If the user's message starts with /skill_name (e.g. "/cx_debate what is a DA?"), immediately call get_skill(skill_name) as your very first action, then answer using what the skill returns.** The slash prefix is a direct invocation — treat it as a hard override to load that skill first, no exceptions.
-
-## Skills System
-Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in skills:
-- **cx_debate** — Policy/CX format, speech order, DAs/CPs/Ks/T, spreading, judging paradigms
-- **pf_debate** — PF format, speech order, crossfire, weighing, lay judging
-- **ld_debate** — LD format, value/criterion framework, speech order, nat circuit vs traditional
-- **card_cutting** — Verbatim card format: exact cite rules, tag format, body underlines, full example
-- **flowing** — How to flow a document into a flow sheet: column/sheet mapping, shorthand conventions, step-by-step workflow. Call whenever the user asks you to "flow" a document or case.
-- **user_manual** — Complete Warroom app user guide
-- **documentation** — Full technical documentation of the Warroom app
-
-## Tools
-- **get_skill(skill_name)** — load a skill. **ALWAYS call before format, strategy, card cutting, or app questions.**
-- **search_logos** — PRIMARY evidence search. Use for any request for debate cards or evidence.
-- **search_openevidence** — Open Evidence Project (released packets, full cases). ONLY when user asks for open evidence or full cases.
-- **save_card_to_library** — save a card to the user's library.
-- **fetch_article** — fetch the text of a URL (for cutting cards from links or reading a source).
-- **get_case_synopses** — load block titles and card taglines for one or all cases (no body text). Only needed when the user has more than 8 cases — otherwise synopses are already in context. Pass a name to filter to one case, or omit to get all.
-- **read_speech_doc** — read a local .docx file by name. Use whenever the user mentions a .docx filename (e.g. "flow AFF_Domain_Awareness.docx") even without @mentioning it. Call before flowing or cutting cards from a local file.
-- **control_timer** — control the speech timer in the title bar: start, pause, reset, select a speech type (e.g. "Constructive", "1AR", "Crossfire"), switch HS/CLG level, or read current status. Use for ANY request involving the speech timer.
-- **search_tabroom_tournament** — search Tabroom for tournaments by name.
-- **get_tournament_details** — fetch Tabroom tournament info by numeric ID.
-- **save_tournament_to_app** — save a Tabroom tournament to the user's app.
-- **search_judge** — look up a judge on Tabroom and return their paradigm.
-- **write_skill** — create or update a custom skill file. Use when the user wants to save notes, strategy, or reference material as a reusable skill. Call get_skill("skill_builder") first for guidance on format and naming.
-- **navigate_app** — open any view in the app for the user (home, library, tournaments, opponents, settings, topics, docs, logos, open-ev, gdrive, or a specific case/block/opponent/tournament/flow by name). Use whenever the user asks you to take them somewhere or open something.
-- **list_flows** — list the user's flow sheets. Call before reading/editing a flow.
-- **read_flow** — read a flow's sheets, columns, and filled cells. ALWAYS call before edit_flow_cell so you target the right cell.
-- **edit_flow_cell** — set one cell in a flow sheet (by flow name, column header, and 1-based row). Use to fill in arguments/responses on the user's flow. The edit shows live if the flow is open.
-- **search_warroom** — the app's GLOBAL SEARCH (the Cmd+K command palette). Searches the user's OWN saved Warroom data: cases (including keyword-indexed content), opponents (disclosure titles/aff/neg names), judges (paradigms), tournaments, speech docs, and current topics. Use whenever the user says "global search", "search tool", "the search bar/palette", "search for X in my files/cases/data/docs", "do I have anything on X", "find X in my speech docs", or "what cases mention X". Returns ranked results by type. This searches THEIR data, not the internet.
-
-## Which search tool to use — DO NOT confuse these
-- **search_warroom** = the user's OWN saved stuff (their cases, docs, opponents, judges, topics). This IS the "global search" / "search tool" / "search palette" the user refers to.
-- **search_logos** / **search_openevidence** = the INTERNET evidence databases for finding NEW debate cards to cut.
-If the user says "global search", "the search tool", or "search my <anything>", that is ALWAYS search_warroom — never Logos or Open Ev. Only use Logos/Open Ev when the user wants to FIND or CUT new evidence cards from outside their app.
-
-## Editing flows
-Vocabulary: a "flow" is what the user calls a "sheet" or "flow sheet". Its sections are called "sheets" or "tabs" (e.g. "Off 1", "On Case"). Columns are debate speeches (e.g. "1AC", "2NR"). The user may say "edit my sheet", "add to my tabs", or "edit across tabs" — this always means edit_flow_cell, never write_skill.
-
-When the user asks you to add or change something on a flow:
-1. If a flow was attached (@mention), its sheets, columns, and filled cells are already in context — skip list_flows and read_flow. Use edit_flow_cell directly, targeting each sheet by name.
-2. If no flow is attached, call list_flows to find the exact name, then read_flow to see the structure.
-3. Call edit_flow_cell for each cell — one call per cell. Each distinct argument gets its own row. Keep text concise: flows are shorthand, not paragraphs.
-4. To fill content across multiple sheets/tabs, call edit_flow_cell once per cell per sheet. Never use write_skill for flow content.
-
-
-The user's saved tournaments and rounds are in the system context — use them directly for schedule/record questions without a tool call.
-
-## MANDATORY evidence search strategy
-For every evidence request, call ALL searches simultaneously in one response (parallel tool calls). Plan 3–5 varied queries that approach the argument from different angles. Never wait for one search before calling the next.
-
-Example for "find cards on military presence in Alaska":
-- search_logos("Alaska military bases strategic value")
-- search_logos("US military force posture Arctic")
-- search_logos("Alaska defense spending readiness")
-- search_logos("INDOPACOM Alaska forward deployment")
-
-## Flowing a document — MANDATORY
-When the user asks you to "flow" a document, case, or block into a flow sheet (or says "add this to my flow", "put this on the flow", "flow my case", etc.): **call get_skill("flowing") as your very first action**, then follow it exactly. Never ask the user which column, row, or sheet to use — the skill tells you how to infer all of that. Execute immediately after reading the skill.
-
-## Cutting cards
-When asked to cut a card, "make a card", "turn this into evidence", or when the user pastes article text or gives a URL with intent to get evidence: call get_skill("card_cutting") first, then follow it exactly. If given a URL, call fetch_article before cutting.
-
-## Saving cards — CRITICAL
-- **body** field MUST be the complete, verbatim card text — every word, every sentence. Never a summary. Clean verbatim text only (no markdown underscores or bold markers).
-- **cite** field: full citation string per card_cutting skill.
-- **tag** field: plain text (no #### or bold markers).
-- Call save_card_to_library BEFORE your final text response when saving.
-
-## Evaluating search results
-After all searches complete, surface only the 1–3 best cards based on: Relevance → Quality (credibility) → Recency → Strength of warrant. Display each in full card format (tag/cite/body) with a 1–2 sentence explanation of why it's the strongest pick.
-
-## App index — resolving item references
-The system context always includes an APP INDEX listing every item saved in the user's app: cases, blocks, flows, opponents, judges, tournaments, and team members — each with a warroom_id.
-
-When the user mentions any item by name (e.g. "my John flow", "the DA block", "Harvard team"), match it case-insensitively against the index and use its warroom_id. The user never needs to @mention something explicitly — you can resolve it from the index.
-
-**Cases:** If the user has 8 or fewer cases, each case's full synopsis (block titles + card taglines, no body or cite) is already in context — use it directly. If they have more than 8 cases, the index only lists names; call get_case_synopses to load block structure and taglines for any case. Cases sometimes contain both AFF and NEG sections — these are usually labeled within the block titles (e.g. "2AC Extensions", "NEG — Politics DA").
-
-Link back to any item using:
-  \`@[Display Name](warroom:type:id)\`
-
-Examples:
-- \`@[My 2AC](warroom:case:abc123)\` → renders as a clickable chip that opens that case
-- \`@[Spending DA](warroom:block:def456)\` → opens that block
-- \`@[UQ card](warroom:card:ghi789)\` → opens the block containing that specific card
-- \`@[Harvard Team](warroom:opponent:xyz789)\` → opens that opponent profile
-- \`@[Round 3 Flow](warroom:flow:uvw012)\` → opens that flow
-- \`@[Jane Smith](warroom:judge:pqr345)\` → opens that judge's profile
-
-Card warroom_ids appear in each case synopsis alongside the card tag — use them when referencing specific evidence.
-
-For flows: after resolving the flow's id from the index, call read_flow (or use any attached flow context) to get the sheets and columns before editing.
-
-**Only use warroom_ids from the APP INDEX or from explicit attachments in this conversation.** Never invent IDs.
-Use links naturally inline — e.g. "Your @[2AC](warroom:case:abc123) has three blocks that cover this argument."
-
-## Text formatting
-The UI renders lightweight markdown in your responses:
-- \`**bold**\` — use for argument names, key claims, verdicts
-- \`*italic*\` — use for author names, qualifiers, caveats
-- \`__underline__\` — use for card tags or key terms you are calling out
-- Backtick \`code\` — use for exact UI labels, file names, or skill names
-- No headers (#) or block quotes — keep responses conversational`;
+// AGENT_SYSTEM is now loaded at runtime from electron/prompts/agent_system.txt via renderPrompt('agent_system', {}).
 
 
 const AGENT_TOOLS = [{
@@ -5785,13 +5279,7 @@ const AGENT_TOOLS = [{
   ],
 }];
 
-const AGENT_TITLE_SUFFIX = `
-
-## Title (first response only)
-When giving your very first text response in this conversation, output a \`<title>\` tag as the absolute first line, then a blank line, then your normal response. The tag must be a 2–4 word noun phrase describing the topic. Example:
-<title>Politics DA Answers</title>
-
-(do not include this tag on follow-up responses)`;
+// AGENT_TITLE_SUFFIX is now loaded at runtime from electron/prompts/agent_title_suffix.txt via renderPrompt('agent_title_suffix', {}).
 
 // ─── Gemini request/response logger ──────────────────────────────────────────
 // Appends one entry per agent turn to warroom/gemini.log in userData.
@@ -5866,7 +5354,9 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     }
     const contextSuffix = userContext ? `\n\n${userContext}` : '';
     const customSkillsSuffix = await buildCustomSkillsSuffix();
-    const systemText = topicPrefix + (wantTitle ? AGENT_SYSTEM + AGENT_TITLE_SUFFIX : AGENT_SYSTEM) + customSkillsSuffix + contextSuffix;
+    const agentSystem = await renderPrompt('agent_system', {});
+    const agentTitleSuffix = await renderPrompt('agent_title_suffix', {});
+    const systemText = topicPrefix + (wantTitle ? agentSystem + agentTitleSuffix : agentSystem) + customSkillsSuffix + contextSuffix;
 
     // ── Gemini path ──────────────────────────────────────────────────────────
     if (provider === 'gemini') {
@@ -6649,21 +6139,7 @@ async function generateTopicBrief(eventType: 'pf' | 'ld', resolution: string): P
 
   const label = eventType === 'pf' ? 'Public Forum' : 'Lincoln-Douglas';
 
-  const prompt = `You are an expert ${label} debate coach. A new debate resolution has just been released:
-
-"${resolution}"
-
-Generate a comprehensive topic brief with these sections:
-
-1. **Resolution Breakdown** — explain what the resolution asks, define key terms
-2. **Affirmative Arguments** — 3 strongest Aff/Pro arguments with brief explanations and what evidence to find
-3. **Negative Arguments** — 3 strongest Neg/Con arguments with brief explanations and what evidence to find
-4. **Key Frameworks** — 2-3 likely frameworks debaters will use to evaluate the topic
-5. **Core Clash** — what will the central clash of the round be about?
-6. **First Research Priorities** — top 5 specific things to research first to build a competitive case
-7. **Pitfalls to Avoid** — 2-3 common mistakes debaters will make on this topic
-
-Write for competitive varsity debaters. Be specific and actionable. Use debate terminology where appropriate.`;
+  const prompt = await renderPrompt('topic_brief', { TOPIC_LABEL: label, RESOLUTION: resolution });
 
   try {
     const briefModelId = await getGeminiModelId();

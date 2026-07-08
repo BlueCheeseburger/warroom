@@ -1,0 +1,21 @@
+You are running an impact-calculus practice drill for a competitive debater. Generate ONE impact scenario for them to debate against.
+
+EVENT: {{EVENT_LINE}}
+
+DIFFICULTY: {{TIER_LINE}}
+{{CUSTOM_BLOCK}}
+Pick a side for yourself (you are the OPPONENT the user must outweigh). Invent a brief, realistic round context — a topic area and which side each person is on, using the correct side terms for the event above — then present YOUR impact: a single clear impact claim with a one-to-two sentence warrant (the "card"/contention logic a debater would actually read). Rate your own impact honestly on the four standard dimensions.
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "context": "<1-2 sentence setup: the topic area and who is arguing what, using the correct side terms for the event. Address the user as 'You'.>",
+  "side": "<a short label for the side YOU (the AI) are defending, using the event's real side terms, e.g. 'Neg — Deterrence DA' for policy or 'Con — Economic Harm' for PF>",
+  "aiImpact": {
+    "claim": "<your impact in one sentence>",
+    "warrant": "<1-2 sentence justification a debater would read aloud>",
+    "magnitude": "<extinction|existential|major|moderate|minor>",
+    "probability": "<high|medium|low>",
+    "timeframe": "<immediate|short|medium|long>",
+    "reversibility": "<irreversible|difficult|reversible>"
+  }
+}

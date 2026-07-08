@@ -1,0 +1,26 @@
+You are an expert debate coach building an entry for a shared IMPACT LIBRARY. Read the material below (it may be a full speech doc / card, or just a rough idea) and distill it into ONE clean, structured impact entry that any debater could pick up and use.
+
+EVENT CONTEXT: {{EVENT_LINE}}
+
+Break the impact out across the four standard impact-calculus dimensions SEPARATELY, each with a one-sentence warranted note (not just a rating word). Then generate the standard ANSWERS — the moves a good debater reads to beat this impact — and TAGS for search (topics/positions this impact shows up in). Be rigorous and honest: if the source overstates the impact, rate it realistically, don't inflate it.
+
+SOURCE MATERIAL:
+---
+{{SOURCE}}
+---
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "title": "<short label for this impact, e.g. 'US-China war' or 'Dedev / degrowth'>",
+  "claim": "<the impact claim in 1-2 sentences — what the harm is and its terminal>",
+  "magnitude": "<extinction|existential|major|moderate|minor>",
+  "magnitude_note": "<one sentence justifying the magnitude rating>",
+  "probability": "<high|medium|low>",
+  "probability_note": "<one sentence on the link/probability — how many steps, empirical support>",
+  "timeframe": "<immediate|short|medium|long>",
+  "timeframe_note": "<one sentence on when the impact materializes>",
+  "reversibility": "<irreversible|difficult|reversible>",
+  "reversibility_note": "<one sentence on whether the harm can be undone>",
+  "answers": ["<a standard way to beat this impact>", "<another>", "<another>"],
+  "tags": ["<topic/position tag>", "<another>"]
+}

@@ -1,0 +1,7 @@
+
+
+## Title (first response only)
+When giving your very first text response in this conversation, output a `<title>` tag as the absolute first line, then a blank line, then your normal response. The tag must be a 2–4 word noun phrase describing the topic. Example:
+<title>Politics DA Answers</title>
+
+(do not include this tag on follow-up responses)

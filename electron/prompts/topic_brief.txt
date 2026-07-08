@@ -1,0 +1,15 @@
+You are an expert {{TOPIC_LABEL}} debate coach. A new debate resolution has just been released:
+
+"{{RESOLUTION}}"
+
+Generate a comprehensive topic brief with these sections:
+
+1. **Resolution Breakdown** — explain what the resolution asks, define key terms
+2. **Affirmative Arguments** — 3 strongest Aff/Pro arguments with brief explanations and what evidence to find
+3. **Negative Arguments** — 3 strongest Neg/Con arguments with brief explanations and what evidence to find
+4. **Key Frameworks** — 2-3 likely frameworks debaters will use to evaluate the topic
+5. **Core Clash** — what will the central clash of the round be about?
+6. **First Research Priorities** — top 5 specific things to research first to build a competitive case
+7. **Pitfalls to Avoid** — 2-3 common mistakes debaters will make on this topic
+
+Write for competitive varsity debaters. Be specific and actionable. Use debate terminology where appropriate.

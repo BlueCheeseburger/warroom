@@ -72,6 +72,21 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Opens the editable copy of an AI prompt template (electron/prompts/<name>.txt, or
+// the user-override copy at <userData>/warroom/prompts/<name>.txt) in the OS's
+// default text editor. See the "AI Prompts" section for how this works.
+function PromptLink({ name, children }: { name: string; children?: React.ReactNode }) {
+  return (
+    <a
+      onClick={() => window.warroom.prompts.openInEditor(name)}
+      style={{ cursor: 'pointer', color: 'var(--accent)', textDecoration: 'underline' }}
+      className="text-xs"
+    >
+      {children ?? 'View/edit this prompt →'}
+    </a>
+  );
+}
+
 // ─── TOC ──────────────────────────────────────────────────────────────────────
 
 const TOC_SECTIONS = [
@@ -99,6 +114,7 @@ const TOC_SECTIONS = [
   { id: 'architecture', label: 'Architecture' },
   { id: 'topics',      label: 'NSDA Topics' },
   { id: 'ai-guide',    label: 'AI help guide' },
+  { id: 'ai-prompts',  label: 'AI Prompts' },
 ];
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -185,7 +201,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/7/26
+          Last updated: 7/8/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -378,13 +394,14 @@ export default function Documentation() {
             parses the file with mammoth, then sends the text to Warroom AI (using the
             <Code>extractCards</Code> IPC handler) which returns structured{' '}
             <Code>{'{ tag, cite, body, year }'}</Code> objects. The cards are created in the selected
-            block.
+            block. <PromptLink name="card_extraction" />
           </P>
           <H3>Block suggestions</H3>
           <P>
             On the Mission Brief (round view), Warroom can suggest which blocks to read against an
             opponent's positions using <Code>suggestBlocks</Code> — Warroom AI compares the opponent's
-            disclosed arguments against your block list and returns a ranked selection.
+            disclosed arguments against your block list and returns a ranked selection.{' '}
+            <PromptLink name="suggest_blocks" />
           </P>
         </section>
 
@@ -410,6 +427,11 @@ export default function Documentation() {
             their formatting everywhere a card appears. Neon green highlight counts as “read aloud” across Warroom, alongside
             yellow and cyan.
           </P>
+          <P>
+            <PromptLink name="cutter_read_source">View/edit the "read source" prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="cutter_emphasize">View/edit the "emphasis &amp; taglines" prompt →</PromptLink>
+          </P>
         </section>
 
         {/* ── Opponents ─────────────────────────────────────────────── */}
@@ -426,7 +448,8 @@ export default function Documentation() {
             </LI>
             <LI>
               <strong>AI Scout report</strong> — Warroom AI synthesises the OC data into a readable
-              aff/neg summary with citations (stored as <Code>disclosures.aiScout</Code>)
+              aff/neg summary with citations (stored as <Code>disclosures.aiScout</Code>).{' '}
+              <PromptLink name="team_summary" />
             </LI>
             <LI>
               <strong>Debate Land stats</strong> — career OTR, peak rank, avg speaks, win%, bids,
@@ -462,7 +485,15 @@ export default function Documentation() {
           <P>
             The round view (<Code>MissionBrief</Code>) is the pre-round prep screen. It shows:
             opponent info and disclosures, judge paradigm, AI-suggested blocks, and a notes editor.
-            It can be accessed by clicking a round in the tournament view.
+            It can be accessed by clicking a round in the tournament view. Its AI-generated briefing
+            (situation, opponent intel, judge notes, game plan, watch out for) is powered by{' '}
+            <Code>ai:missionBrief</Code>. <PromptLink name="mission_brief" />
+          </P>
+          <P>
+            Pasting or dropping a Tabroom pairing email screenshot auto-fills a round's fields via
+            OCR, with a Warroom AI vision fallback (<Code>ai:parseRoundEmail</Code>) when the
+            deterministic OCR parse doesn't match a known Tabroom format.{' '}
+            <PromptLink name="round_email_parse" />
           </P>
         </section>
 
@@ -593,7 +624,8 @@ export default function Documentation() {
             <strong>2NC + 1NR</strong> (the neg block) into a single column, so a standard 8-column
             source sheet maps cleanly onto the app's layout. If it can't confidently figure out a
             sheet's structure, it falls back to <strong>Warroom AI</strong> to interpret the
-            spreadsheet and map the columns correctly. Both policy and PF flows are supported.
+            spreadsheet and map the columns correctly. Both policy and PF flows are supported.{' '}
+            <PromptLink name="flow_import" />
           </P>
           <P>
             The imported flow appears in the sidebar and can be renamed and edited like any other
@@ -791,6 +823,15 @@ export default function Documentation() {
             Your questions are saved per-document, so they stay put when you close and reopen the
             panel, reload the doc, or restart the app — they only clear when you regenerate.
           </P>
+          <P>
+            <PromptLink name="cross_ex_questions_initial">View/edit the question-generation prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="cross_ex_questions_followup">View/edit the "3 more like this" prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="cross_ex_traps">View/edit the trap-drill prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="cross_ex_grade_trap">View/edit the trap-grading prompt →</PromptLink>
+          </P>
           <H3>Card Credibility</H3>
           <P>
             A shield-icon <strong>Credibility</strong> button opens a right-hand panel that grades the
@@ -836,6 +877,9 @@ export default function Documentation() {
             and press line. Over / under-highlighted cards also show a dismissible highlight warning here
             with the exact percentage. A <strong>Go to card in document</strong> button scrolls the doc to
             that card and flashes it.
+          </P>
+          <P>
+            <PromptLink name="card_credibility_scoring" />
           </P>
         </section>
 
@@ -933,6 +977,19 @@ export default function Documentation() {
             <Code>impact_library_votes</Code>, <Code>impact_library_saves</Code> — re-run{' '}
             <Code>supabase/schema.sql</Code>). All AI runs on the best model tier.
           </P>
+          <P>
+            <PromptLink name="outweigh_scenario">View/edit the Outweigh scenario prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="outweigh_rebuttal">View/edit the Outweigh rebuttal prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="outweigh_judge">View/edit the Outweigh judge prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="compare_impacts_text">View/edit the doc-comparison prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="impact_library_draft">View/edit the Impact Library draft prompt →</PromptLink>
+            {' · '}
+            <PromptLink name="impact_library_review">View/edit the Impact Library review prompt →</PromptLink>
+          </P>
         </section>
 
         {/* ── FindCards ─────────────────────────────────────────────── */}
@@ -964,6 +1021,9 @@ export default function Documentation() {
           <P>
             The Warroom Agent is an AI assistant (Warroom AI) that lives in a resizable right-side
             panel (<Code>GeminiPanel</Code>). It supports multi-turn conversation and tool calls.
+          </P>
+          <P>
+            <PromptLink name="agent_system">View/edit the agent's system prompt →</PromptLink>
           </P>
           <H3>Model selection</H3>
           <UL>
@@ -1245,6 +1305,9 @@ export default function Documentation() {
             <LI>The brief can be regenerated at any time from the Topics screen.</LI>
             <LI>Requires an API key in Settings → API Keys.</LI>
           </UL>
+          <P>
+            <PromptLink name="topic_brief" />
+          </P>
           <H3>Policy topic context</H3>
           <P>
             The current Policy topic is injected into every Warroom Agent conversation as system context, so the agent always knows what resolution is being debated without you needing to state it.
@@ -1297,6 +1360,38 @@ export default function Documentation() {
               </div>
             </div>
           </Card>
+        </section>
+
+        {/* ── AI Prompts ──────────────────────────────────────────────── */}
+        <section id="doc-ai-prompts">
+          <H2>AI Prompts</H2>
+          <P>
+            Every prompt Warroom sends to the AI — card extraction, the card cutter, scouting
+            reports, mission briefs, cross-ex questions, card credibility scoring, impact calc, the
+            Outweigh game, the Impact Library, flow import, topic briefs, and the Warroom Agent's own
+            system prompt — lives in its own plain-text file rather than being hardcoded, the same
+            way skills do.
+          </P>
+          <UL>
+            <LI>
+              <strong>Bundled defaults</strong> ship in <Code>electron/prompts/</Code> (one{' '}
+              <Code>.txt</Code> file per prompt, with <Code>{'{{PLACEHOLDER}}'}</Code> tokens marking
+              where dynamic content — document text, names, dates, computed context — gets inserted).
+            </LI>
+            <LI>
+              <strong>Your edits</strong> live at <Code>userData/warroom/prompts/</Code>, seeded from
+              the matching bundled file the first time you open it. A user-edited prompt always wins
+              over the bundled default of the same name — exactly like skills.
+            </LI>
+            <LI>
+              Every <strong>"View/edit this prompt"</strong> link throughout this page (and in the
+              User Manual) opens the editable copy directly in your system's default text editor.
+            </LI>
+            <LI>
+              Edits take effect on the <strong>very next AI call</strong> — no restart or rebuild
+              needed.
+            </LI>
+          </UL>
         </section>
 
         <div className="h-16" />

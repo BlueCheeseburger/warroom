@@ -98,10 +98,10 @@ A command-palette search (`SearchPalette.tsx`) opens on **⌘K / Ctrl K** or via
 Cases are the top-level unit of prep — an aff or neg position. Each case contains **blocks** (e.g. "T-Topicality", "Heg DA", "2AC vs DA"). Blocks hold individual evidence **cards** (tag + cite + body text + year).
 
 ### Card extraction
-Cards can be imported from a `.docx` file via AI extraction. The main process parses the file with mammoth, then sends the text to Warroom AI (using the `extractCards` IPC handler) which returns structured `{ tag, cite, body, year }` objects. The cards are created in the selected block.
+Cards can be imported from a `.docx` file via AI extraction. The main process parses the file with mammoth, then sends the text to Warroom AI (using the `extractCards` IPC handler) which returns structured `{ tag, cite, body, year }` objects. The cards are created in the selected block. Prompt template: `electron/prompts/card_extraction.txt`.
 
 ### Block suggestions
-On the Mission Brief (round view), Warroom can suggest which blocks to read against an opponent's positions using `suggestBlocks` — Warroom AI compares the opponent's disclosed arguments against your block list and returns a ranked selection.
+On the Mission Brief (round view), Warroom can suggest which blocks to read against an opponent's positions using `suggestBlocks` — Warroom AI compares the opponent's disclosed arguments against your block list and returns a ranked selection. Prompt template: `electron/prompts/suggest_blocks.txt`.
 
 ---
 
@@ -114,9 +114,9 @@ The Cards view (sidebar label "Cards", view kind `library`) aggregates all cards
 A **＋** button sits next to **Cards** in the sidebar (`Section action={openCardCutter}`). It calls the store's `openCardCutter()` (navigates to `library` and sets `cardCutterOpen`), and `Library.tsx` renders `<CardCutter>` while that flag is set. The cutter is a multi-step wizard (`src/components/CardCutter.tsx`):
 
 1. **Pick** — file dialog for `.html/.htm/.xhtml/.mhtml/.pdf`. Instructions tell the user to save with ⌘S/Ctrl+S as HTML (keeps images) or Print → Save as PDF (text only).
-2. **Read source** — `window.warroom.ai.cutterReadSource(filePath)` → `ai:cutterReadSource` in `electron/main.ts`. For HTML it parses with **cheerio**: strips chrome (`script/style/nav/aside/ads/...`), picks the `article`/`main`/`body` container, collects verbatim paragraphs, and gathers `<img>` candidates (alt-text aware; filters logos/ads/icons by class/id/size; inlines relative images from the saved page's `_files` folder as data URLs, keeps remote `http(s)` srcs). For PDF it uses `extractText` (pdf-parse), no images. It then sends numbered paragraphs + image alt-text to `callAI(prompt, 'balanced')` (with the `card_cutting` skill for cite rules) to get `{ author, year, title, cite, bodyIndices, imageIndices }`. Returns a `CutterSource` (verbatim body paragraphs filtered to `bodyIndices`, images flagged `suggested`).
+2. **Read source** — `window.warroom.ai.cutterReadSource(filePath)` → `ai:cutterReadSource` in `electron/main.ts`. For HTML it parses with **cheerio**: strips chrome (`script/style/nav/aside/ads/...`), picks the `article`/`main`/`body` container, collects verbatim paragraphs, and gathers `<img>` candidates (alt-text aware; filters logos/ads/icons by class/id/size; inlines relative images from the saved page's `_files` folder as data URLs, keeps remote `http(s)` srcs). For PDF it uses `extractText` (pdf-parse), no images. It then sends numbered paragraphs + image alt-text to `callAI(prompt, 'balanced')` (with the `card_cutting` skill for cite rules) to get `{ author, year, title, cite, bodyIndices, imageIndices }`. Returns a `CutterSource` (verbatim body paragraphs filtered to `bodyIndices`, images flagged `suggested`). Prompt template: `electron/prompts/cutter_read_source.txt`.
 3. **Select** — the user highlights body chunks (additive ranges captured via `selectionOffsets`, merged; hover-✕ removes one), optionally picks images from a dropdown, types an **intent**, and chooses a highlight color (**yellow / cyan / green**).
-4. **Cut** — `window.warroom.ai.cutterEmphasize({ body, intent, highlightColor, cite })` → `ai:cutterEmphasize` returns `{ taglines, underline[], highlight[], small[] }` as **exact verbatim substrings**. `buildAttrsFromSpans` (in `src/utils/cardFormat.ts`) applies them onto the verbatim body (exact match, then whitespace-flexible regex fallback) to produce per-character attributes.
+4. **Cut** — `window.warroom.ai.cutterEmphasize({ body, intent, highlightColor, cite })` → `ai:cutterEmphasize` returns `{ taglines, underline[], highlight[], small[] }` as **exact verbatim substrings**. `buildAttrsFromSpans` (in `src/utils/cardFormat.ts`) applies them onto the verbatim body (exact match, then whitespace-flexible regex fallback) to produce per-character attributes. Prompt template: `electron/prompts/cutter_emphasize.txt`.
 5. **Edit** — a read-only mini editor (no text editing, so the body stays verbatim) lets the user select text and toggle **underline / highlight(color) / small / clear**; pick or rewrite a tagline; edit cite/year. Saving writes a `Card` with `bodyRuns` (and optional `images`) into the `__cut__` case ("Cut Cards") / `__cut_inbox__` block.
 
 **Formatted cards.** `Card` now carries optional `bodyRuns: CardRun[]` (`{ text, underline?, highlight?: 'yellow'|'cyan'|'green', small? }`) and `images: CardImage[]`. `body` stays the plain verbatim text (search/preview). The shared `FormattedBody` / `CardImages` components (`src/components/CardBody.tsx`) render the emphasis everywhere a card shows — the Cards list (`Library.tsx`) and block view (`BlockView.tsx`). **Green highlight** was added to the read-aloud set in `speechdoc:extract`'s token-saving regex (alongside cyan/yellow); the viewer's luminance-based `isBrightHighlight` already accepted it. This guided cutter differs from `ai:extractCards`, which pulls already-formatted cards out of a Verbatim doc rather than cutting new ones from raw prose.
@@ -128,7 +128,7 @@ A **＋** button sits next to **Cards** in the sidebar (`Section action={openCar
 Opponent profiles store scouting data for teams you might face. Each opponent tracks:
 - Team name, school, notes
 - **OpenCaselist disclosures** — pulled via the OC API: rounds disclosed, aff position name, neg position names, raw round data, raw cite text
-- **AI Scout report** — Warroom AI synthesises the OC data into a readable aff/neg summary with citations (stored as `disclosures.aiScout`)
+- **AI Scout report** — Warroom AI synthesises the OC data into a readable aff/neg summary with citations (stored as `disclosures.aiScout`). Prompt template: `electron/prompts/team_summary.txt`.
 - **Debate Land stats** — career OTR, peak rank, avg speaks, win%, bids, total record (via `window.warroom.dl` IPC)
 - Rounds against this opponent (linked by round ID)
 
@@ -146,7 +146,10 @@ Tournaments store name, dates (start/end), location, event type, and an optional
 Each round within a tournament records: round number, side (aff/neg), opponent, room, time, result (win/loss/pending), judge name + paradigm text, and notes. Three argument tracking lists are available: `argsRead`, `argsWorked`, `argsFailed`. Rounds created by the Tabroom monitor are flagged `autoFilled: true`.
 
 ### Mission Brief
-The round view (`MissionBrief`) is the pre-round prep screen. It shows: opponent info and disclosures, judge paradigm, AI-suggested blocks, and a notes editor. Accessed by clicking a round in the tournament view.
+The round view (`MissionBrief`) is the pre-round prep screen. It shows: opponent info and disclosures, judge paradigm, AI-suggested blocks, and a notes editor. Accessed by clicking a round in the tournament view. Its AI briefing is generated by `ai:missionBrief`. Prompt template: `electron/prompts/mission_brief.txt`.
+
+### Tabroom pairing email parsing
+Pasting/dropping a Tabroom pairing email screenshot auto-fills a round's fields. A deterministic OCR + regex pass (`visionOCR` + `parseTabroomEmailText`) runs first; if it can't match a known Tabroom format, `ai:parseRoundEmail` falls back to a Gemini Vision call. Prompt template: `electron/prompts/round_email_parse.txt`.
 
 ---
 
@@ -204,7 +207,7 @@ Each flow has an ID, name, and debate event type. The flows index is persisted s
 
 An **import button** sits next to the `+` in the sidebar's Flow section. Clicking it opens a file picker for an existing flow spreadsheet (`.xlsx`); the app parses it and creates a new flow named after the file. Each **worksheet (tab)** in the workbook becomes its own flow sheet in the app.
 
-Import is **very robust** — it works no matter how the spreadsheet is laid out. It first tries to auto-detect the structure algorithmically, recognizing speech-column headers (for policy: `1AC`, `1NC`, `2AC`, `2NC/1NR`, `1AR`, `2NR`, `2AR`, plus PF column layouts). Real policy debate has 8 speeches, but the app merges **2NC + 1NR** (the neg block) into a single column, so a standard 8-column source sheet maps cleanly onto the app's layout. If it can't confidently figure out a sheet's structure, it falls back to **Warroom AI** to interpret the spreadsheet and map the columns correctly. Both policy and PF flows are supported.
+Import is **very robust** — it works no matter how the spreadsheet is laid out. It first tries to auto-detect the structure algorithmically, recognizing speech-column headers (for policy: `1AC`, `1NC`, `2AC`, `2NC/1NR`, `1AR`, `2NR`, `2AR`, plus PF column layouts). Real policy debate has 8 speeches, but the app merges **2NC + 1NR** (the neg block) into a single column, so a standard 8-column source sheet maps cleanly onto the app's layout. If it can't confidently figure out a sheet's structure, it falls back to **Warroom AI** to interpret the spreadsheet and map the columns correctly. Both policy and PF flows are supported. Prompt template: `electron/prompts/flow_import.txt`.
 
 The imported flow appears in the sidebar and can be renamed and edited like any other flow.
 
@@ -270,7 +273,7 @@ A grid-with-arrow toolbar button opens a top-right popover that bridges the spee
 
 ### Cross-Ex Practice
 
-A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that uses Warroom AI to generate targeted cross-examination questions for the open document, each paired with a model answer. The document is run through the same `speechdoc:extract` used by token-saving, giving the AI the **highlighted/underlined text** (what the opponent actually reads) separately from the **full small text**. The `ai:crossExQuestions` handler loads the skill for the user's current event (`cx_debate` for Policy, `ld_debate` for LD, `pf_debate` for PF) so questions use the right vocabulary and strategy.
+A "Cross-Ex Practice" button in the viewer toolbar opens a right-hand panel that uses Warroom AI to generate targeted cross-examination questions for the open document, each paired with a model answer. The document is run through the same `speechdoc:extract` used by token-saving, giving the AI the **highlighted/underlined text** (what the opponent actually reads) separately from the **full small text**. The `ai:crossExQuestions` handler loads the skill for the user's current event (`cx_debate` for Policy, `ld_debate` for LD, `pf_debate` for PF) so questions use the right vocabulary and strategy. Prompt templates: `electron/prompts/cross_ex_questions_initial.txt` (first generation) and `electron/prompts/cross_ex_questions_followup.txt` ("3 more like this"); both reference the shared `electron/prompts/cx_shared_rules.txt` and (initial only) `electron/prompts/cx_side_guidance.txt` via `{{CX_SHARED_RULES}}` / `{{CX_SIDE_GUIDANCE}}` placeholders. The trap drill (`ai:crossExTraps` / `ai:crossExGradeTrap`) uses `electron/prompts/cross_ex_traps.txt` and `electron/prompts/cross_ex_grade_trap.txt`.
 
 Question rules enforced by the prompt: questions target highlighted text only (the one exception being un-highlighted small text that directly and completely contradicts highlighted text in the same card); questions are 1-3 sentences and answers 2-4 sentences; no markdown emphasis (key phrases use 'single quotes', rendered bold by `CxText`).
 
@@ -282,7 +285,7 @@ A shield-icon "Credibility" toolbar button opens a right-hand panel that grades 
 
 `buildCards` skips any heading with no citation text under it (section headers, blank tags, analytics) using a `wordCount(cite) === 0` check, so only real cards (tag + cite) are scored.
 
-The `ai:scoreCards` handler in `electron/main.ts` takes `{ cards: { tag: string; cite: string }[] }` and returns `{ ok, scores?: { score, verdict, author, recency, source, claim, reason, press }[], error? }`. In **one AI call** the model scores all cards at once and returns a JSON array in the **same order**; results map back to cards by index. Each card gets an overall **score 0–10**, a one-word **verdict** (Strong 8–10 / Solid 6–7 / Shaky 4–5 / Weak 0–3), four sub-scores (**Author qualifications**, **Recency**, **Source quality**, **Claim fit** — whether the cite actually supports the tag's claim), a short **reason**, and a **"press"** line — the single best cross-examination attack on that card's credibility. The prompt gives the model an explicit rubric per factor: author scored by **domain match** (with org reputation as a proxy when no individual credentials are stated — RAND/CBO/CRS high, ideologically-aligned think tanks mid, media low), recency by **topic-specific decay rate** (geopolitics decays fast, theory slow), and source by a publication-quality hierarchy.
+The `ai:scoreCards` handler in `electron/main.ts` takes `{ cards: { tag: string; cite: string }[] }` and returns `{ ok, scores?: { score, verdict, author, recency, source, claim, reason, press }[], error? }`. In **one AI call** the model scores all cards at once and returns a JSON array in the **same order**; results map back to cards by index. Each card gets an overall **score 0–10**, a one-word **verdict** (Strong 8–10 / Solid 6–7 / Shaky 4–5 / Weak 0–3), four sub-scores (**Author qualifications**, **Recency**, **Source quality**, **Claim fit** — whether the cite actually supports the tag's claim), a short **reason**, and a **"press"** line — the single best cross-examination attack on that card's credibility. The prompt gives the model an explicit rubric per factor: author scored by **domain match** (with org reputation as a proxy when no individual credentials are stated — RAND/CBO/CRS high, ideologically-aligned think tanks mid, media low), recency by **topic-specific decay rate** (geopolitics decays fast, theory slow), and source by a publication-quality hierarchy. Prompt template: `electron/prompts/card_credibility_scoring.txt`.
 
 The call uses `callAI(prompt, 'balanced')`. The **balanced tier** is the user's selected model from Settings, but never the cheapest "lite" model — e.g. Gemini 2.5 Flash Lite is bumped up to Gemini 2.5 Flash (analogously for OpenAI/Anthropic). The prompt instructs the model to judge author and source **only** from what the cite text states and to **never fabricate** credentials, dates, or outlets.
 
@@ -327,7 +330,7 @@ The round runs in three beats:
 
 The judge call (`ai:outweighJudge`) is a fully separate, stateless request from the one that wrote the rebuttal (`ai:outweighRebuttal`) — it's never told it authored that speech, so grading the opponent's rebuttal can't be biased by the model recognizing its own writing.
 
-The game is powered by `ai:outweighScenario`, `ai:outweighRebuttal`, and `ai:outweighJudge` in the main process.
+The game is powered by `ai:outweighScenario`, `ai:outweighRebuttal`, and `ai:outweighJudge` in the main process. Prompt templates: `electron/prompts/outweigh_scenario.txt`, `electron/prompts/outweigh_rebuttal.txt`, `electron/prompts/outweigh_judge.txt`.
 
 ### Compare two docs (Tools)
 The original analyzer compares two of your own cases, speech docs, or a flow:
@@ -339,7 +342,7 @@ Reading the results:
 - **Dimension winners** — for each clash, a winner is called on magnitude, probability, timeframe, and reversibility.
 - **Overall verdict** — a summary declaring which side wins the exchange and why, suitable for a final rebuttal.
 
-Saved comparisons are listed for one-click reopening. The comparison tool is powered by `ai:compareImpactsText`. Everything in Impact Calc runs on the best model tier (your selected model, never Flash Lite).
+Saved comparisons are listed for one-click reopening. The comparison tool is powered by `ai:compareImpactsText` (prompt template: `electron/prompts/compare_impacts_text.txt`; the older docx-upload variant `gemini:compareImpacts` uses `electron/prompts/compare_impacts_docs.txt`). Everything in Impact Calc runs on the best model tier (your selected model, never Flash Lite).
 
 ### Impact Library (Tools)
 A **shared, community-built** database of impacts. Unlike the rest of the app it is **not team-scoped** — every signed-in user reads and contributes to the same global pool. It lives in Supabase and uses the user's **chat account**, so they sign in through the chat panel to browse or contribute (the screen shows a sign-in prompt otherwise). Each entry is an AI-structured impact: the four dimensions broken out separately (each with a one-line warrant), a set of standard **answers** (how to beat it), and search tags.
@@ -351,7 +354,7 @@ A **shared, community-built** database of impacts. Unlike the rest of the app it
 
 **Browsing**: search (title/claim/tags/answers), event filter, and sort by **Top** (net likes), **Newest**, **Saved** (personal bookmarks), or **Mine**. Each entry has **like**, **dislike**, and **save** buttons; likes/dislikes take an optional quick reason tag (dislike reasons include "AI error"). Users can delete their own entries.
 
-Powered by `ai:impactLibraryDraft` and `ai:impactLibraryReview` (AI structuring) plus the `impactlib:*` Supabase handlers (`impactlib:list` / `submit` / `update` / `delete` / `vote` / `save`). Tables: `impact_library`, `impact_library_votes`, `impact_library_saves` — **re-run `supabase/schema.sql`** to create them. Like/dislike counts are denormalized on `impact_library` and kept in sync by a trigger on the votes table.
+Powered by `ai:impactLibraryDraft` (prompt template: `electron/prompts/impact_library_draft.txt`) and `ai:impactLibraryReview` (prompt template: `electron/prompts/impact_library_review.txt`) plus the `impactlib:*` Supabase handlers (`impactlib:list` / `submit` / `update` / `delete` / `vote` / `save`). Tables: `impact_library`, `impact_library_votes`, `impact_library_saves` — **re-run `supabase/schema.sql`** to create them. Like/dislike counts are denormalized on `impact_library` and kept in sync by a trigger on the votes table.
 
 ---
 
@@ -369,7 +372,7 @@ Similar to FindCards — a persistent webview pointing at Open Evidence (openev.
 
 ## Warroom Agent (AI)
 
-Warroom AI is an agentic AI assistant that lives in a resizable right-side panel (`GeminiPanel`). It supports multi-turn conversation and tool calls.
+Warroom AI is an agentic AI assistant that lives in a resizable right-side panel (`GeminiPanel`). It supports multi-turn conversation and tool calls. Its system prompt is built in `chat:geminiAgentTurn` from `renderPrompt('agent_system', {})` plus (on the first turn of a session) `renderPrompt('agent_title_suffix', {})` appended, plus a topic-context prefix and a custom-skills suffix. Prompt templates: `electron/prompts/agent_system.txt`, `electron/prompts/agent_title_suffix.txt`.
 
 ### Model selection
 - **Gemini 2.5 Flash Lite** — cheapest, fastest; auto-enables token saving
@@ -550,6 +553,7 @@ Warroom monitors **speechanddebate.org/topics/** for the latest Policy, Public F
 - When a new topic drops, an AI-generated brief is automatically requested. It covers: resolution breakdown, Aff/Neg arguments, frameworks, core clash, research priorities, and pitfalls.
 - The brief can be regenerated at any time from the Topics screen.
 - Requires a Gemini API key in Settings → API Keys.
+- Generated by `generateTopicBrief` (a standalone Gemini `generateContent` call, not routed through `callAI`). Prompt template: `electron/prompts/topic_brief.txt`.
 
 ### Policy topic context
 The current Policy topic is injected into every Warroom AI conversation as system context, so the agent always knows what resolution is being debated without you needing to state it.
@@ -572,3 +576,30 @@ Warroom AI can answer any "how do I…" or "where is…" question about the app.
 
 ### Custom skills
 Users can add their own skills by dropping `.md` files into `userData/warroom/skills/`. User skills override built-in defaults with the same name. See `electron/skills/HOW_TO_WRITE_SKILLS.txt` for the full tutorial.
+
+---
+
+## AI Prompts
+
+Every prompt Warroom sends to an AI provider (Gemini/OpenAI/Anthropic/Grok) is extracted into its own plain-text template file, using the exact same bundled+user-override architecture as skills.
+
+### Loader (electron/main.ts)
+- `userPromptsDir()` → `<userData>/warroom/prompts/`
+- `bundledPromptsDir()` → `electron/prompts/` in dev, `resources/prompts/` when packaged (via `electron-builder.yml` `extraResources`)
+- `listPrompts()` — lists bundled + user `.txt` files; user overrides bundled by name; each entry carries a short human `label` from `PROMPT_LABELS`
+- `readPromptTemplate(name)` — sanitizes `name`, checks the user dir first then bundled, returns raw file contents or `null`
+- `renderPrompt(name, vars)` — loads a template and substitutes every `{{KEY}}` token with `vars[KEY]`; **throws** if the template is missing or if a placeholder has no matching var (a missing placeholder is treated as a bug, not silently ignored)
+- `ensureUserPromptFile(name)` — seeds the user-editable copy from the bundled default on first access (if it doesn't already exist) and returns its absolute path
+
+### IPC / preload
+- `prompts:list` → `{ ok, prompts: { name, source, label? }[] }`
+- `prompts:openInEditor(name)` → calls `ensureUserPromptFile` then `shell.openPath(path)` so it opens in the OS's default text editor
+- Exposed on the renderer as `window.warroom.prompts.{list, openInEditor}`
+
+### Call sites
+Every `callAI` / `callGeminiVision` / `callGeminiWithSearch` invocation in `electron/main.ts`, the agent's `AGENT_SYSTEM` / `AGENT_TITLE_SUFFIX` strings, and the standalone `generateTopicBrief` Gemini call build their prompt via `await renderPrompt('<name>', { PLACEHOLDER: value, ... })` instead of an inline template literal. Dynamic content (document text, names, dates, computed helper strings like `affSection`/`judgeSection`) is passed in as `{{PLACEHOLDER}}` values; static instructional wording lives only in the `.txt` file. Two prompts, `cx_shared_rules.txt` and `cx_side_guidance.txt`, are shared blocks referenced by several cross-ex prompts via `{{CX_SHARED_RULES}}` / `{{CX_SIDE_GUIDANCE}}` rather than duplicated.
+
+One exception: `chat:generateGeminiTitle`'s prompt (chat session title generation) is still an inline template literal in `main.ts` — its extraction was blocked by the local security tooling (the prompt's "User: … Assistant: … Title:" scaffolding pattern-matched a prompt-injection heuristic) and needs a human to authorize the file write.
+
+### Editing a prompt
+Editing `<userData>/warroom/prompts/<name>.txt` (or triggering the seed-then-edit flow via any "View/edit this prompt" link in the Documentation page) changes what gets sent to the AI on the **very next call** — no rebuild or restart needed. Deleting the user override falls back to the bundled default again.

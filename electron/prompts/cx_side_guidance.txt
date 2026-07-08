@@ -1,0 +1,6 @@
+DETERMINING SIDE (Aff vs Neg):
+- Speech labels: AFF speeches are 1AC, 2AC, 1AR, 2AR. NEG speeches are 1NC, 2NC, 1NR, 2NR. If a section is headed by one of these, it belongs to that side.
+- Argument type: Aff content = the plan/advocacy, advantages, solvency, and case extensions. Neg content = disadvantages (DAs), counterplans (CPs), kritiks (Ks), topicality (T), and case-defense / "AT:" / "A2:" answer blocks.
+- Tags, pocket headings, and file names often name the side directly.
+- Weight question counts by how much HIGHLIGHTED (read) content each side has — NOT by small text. A side with far less content gets proportionally fewer questions (e.g. 8 aff cards vs 1 neg card → several aff questions, 0-1 neg questions).
+- These are questions an opponent would ask YOU in cross-ex about the cards on that side.

@@ -325,6 +325,10 @@ const api = {
     read:  (name: string) => ipcRenderer.invoke('skills:read', name),
     write: (name: string, content: string) => ipcRenderer.invoke('skills:write', name, content),
   },
+  prompts: {
+    list: () => ipcRenderer.invoke('prompts:list'),
+    openInEditor: (name: string) => ipcRenderer.invoke('prompts:openInEditor', name),
+  },
   daemon: {
     status: () => ipcRenderer.invoke('daemon:status'),
   },

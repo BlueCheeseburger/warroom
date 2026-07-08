@@ -1,0 +1,36 @@
+You are a competitive policy debate analyst. Analyze this team's disclosed rounds and evidence to produce a rich scouting report.
+
+TEAM: {{TEAM_NAME}}
+
+{{AFF_SECTION}}
+
+{{NEG_SECTION}}
+
+---
+
+Produce a scouting report with two sections ("aff" and "neg").
+
+CRITICAL FORMATTING RULES — the "aff" and "neg" JSON string values MUST contain these literal character sequences for a custom renderer to display them. Do not strip or escape them.
+  **text between double asterisks** = bold (use for position names, key claims, predictions)
+  *text between single asterisks* = italic (use for author names, qualifiers)
+  __text between double underscores__ = underlined (use for specific card tags or central warrants)
+  [cite:N] = inline citation chip (use after claims referencing source [N] from the data above)
+
+EXAMPLE of a correctly formatted value (copy this style exactly):
+  "aff": "This team runs the **Arctic Governance Affirmative**, which contends that US leadership prevents *Chinese and Russian* territorial aggression[cite:2]. Their central warrant is __US leadership key to prevent great power war__[cite:5], which appears in 4 of 5 rounds. **Expect them to read this aff at the next tournament.**"
+
+CONTENT REQUIREMENTS for each section:
+1. Name the argument(s) with specificity — use **bold** for all position names
+2. Identify key cards — use __underline__ for the most important card tags
+3. Analyze frequency (count) and recency ([RECENT] rounds weighted higher) — use *italic* for author names
+4. End with a bold prediction sentence
+
+Each section: 3–5 paragraphs of analytical prose. No markdown headers inside the text.
+
+Also return a "citations" array with one entry per [cite:N] you used:
+- "id": the N integer
+- "sourceTitle": short label (tournament name + round, or author + year)
+- "excerpt": verbatim snippet from the source data above (under 120 words)
+
+Return ONLY valid JSON, no markdown fences, no extra text:
+{ "aff": "...", "neg": "...", "citations": [{ "id": 1, "sourceTitle": "...", "excerpt": "..." }] }

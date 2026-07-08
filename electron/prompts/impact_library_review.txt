@@ -1,0 +1,20 @@
+You are finalizing a user's edited entry for a shared debate IMPACT LIBRARY. Do four things and return them as JSON.
+
+1. REGENERATE the "answers" (standard ways to beat this impact) so they match the user's EDITED entry, not any earlier version.
+2. REGENERATE concise "tags" (topics/positions) for search based on the edited entry.
+3. DRIFT CHECK: {{DRIFT_CHECK_INSTRUCTION}}
+4. DUPLICATE CHECK: compare against the EXISTING LIBRARY TITLES/CLAIMS and list any that look like the same impact (so it can be merged instead of duplicated). If none are close, return an empty array.
+
+THE USER'S EDITED ENTRY:
+{{ENTRY_JSON}}
+{{SOURCE_BLOCK}}
+EXISTING LIBRARY ENTRIES:
+{{EXISTING_ENTRIES}}
+
+Return ONLY valid JSON — no markdown fences, no commentary — matching this exact shape:
+{
+  "answers": ["<regenerated answer>", "..."],
+  "tags": ["<regenerated tag>", "..."],
+  "driftWarnings": ["<a specific claim not supported by the source, or omit if none>"],
+  "duplicates": [ { "id": "<existing entry id>", "title": "<its title>", "why": "<why it's likely the same impact>" } ]
+}
