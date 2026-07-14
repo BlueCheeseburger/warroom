@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { isShortcutDisabled } from '../lib/shortcutPrefs';
 
 // Reusable ⌘F / Ctrl+F find-in-page for a scrollable container. Matches are
 // painted with the CSS Custom Highlight API (CSS.highlights + Highlight + Range)
@@ -115,6 +116,7 @@ export function useInPageFind(containerRef: React.RefObject<HTMLElement>) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        if (isShortcutDisabled('find-page')) return;
         e.preventDefault();
         setOpen(true);
       } else if (e.key === 'Escape' && open) {

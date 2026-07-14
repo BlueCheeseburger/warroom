@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser } from '../lib/flowSync';
+import { isShortcutDisabled } from '../lib/shortcutPrefs';
 import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
@@ -101,6 +102,11 @@ function escapeHtml(s: string): string {
 // script), drop every element/attribute outside a small formatting allowlist,
 // and reserialize. execCommand-produced formatting (b/i/u/strike/br/spans) is
 // preserved; anything dangerous is stripped.
+// Highlighter color (amber). Cells force dark ink on any highlighted span (see
+// .flow-cell rule in index.css) so it stays readable in dark mode.
+const HILITE = '#fde68a';
+const HILITE_RGB = 'rgb(253,230,138)';
+
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'SUB', 'SUP']);
 const VOID_TAGS = new Set(['BR']);
 // Subtrees whose raw text must never be emitted (unwrapping would leak their contents).
@@ -441,18 +447,34 @@ export default function FlowView() {
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === 'f') {
+        if (isShortcutDisabled('find-page')) return;
         e.preventDefault();
         setFindOpen(true);
         setTimeout(() => findInputRef.current?.focus(), 0);
       } else if (k === 'z' && !e.shiftKey) {
+        if (isShortcutDisabled('flow-undo')) return;
         e.preventDefault(); undo();
       } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+        if (isShortcutDisabled('flow-redo')) return;
         e.preventDefault(); redo();
+      } else if (k === 't' && !e.shiftKey) {
+        if (isShortcutDisabled('flow-sheet-new')) return;
+        e.preventDefault(); addSheet();
+      } else if (/^[1-9]$/.test(e.key) && !e.shiftKey) {
+        // ⌘1–8 pick a sheet by position; ⌘9 jumps to the last one (browser-tab
+        // convention), so it still lands somewhere useful with >9 sheets.
+        if (isShortcutDisabled('flow-sheet-switch')) return;
+        const all = snap.current.sheets;
+        const n = Number(e.key);
+        const idx = n === 9 ? all.length - 1 : n - 1;
+        if (idx < 0 || idx >= all.length) return;
+        e.preventDefault();
+        switchSheet(idx);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [flowId, drawMode, findOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flowId, drawMode, findOpen, sheets, activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist ───────────────────────────────────────────────────────────────
 
@@ -775,15 +797,28 @@ export default function FlowView() {
   // Apply rich-text emphasis to the focused cell (toolbar buttons).
   // Buttons call this from onMouseDown(preventDefault) so the cell keeps focus
   // and its selection, letting execCommand act on the selected text.
-  function applyFormat(cmd: 'bold' | 'italic' | 'underline' | 'strikeThrough') {
+  function applyFormat(cmd: 'bold' | 'italic' | 'underline' | 'strikeThrough' | 'highlight') {
     const key = focusedCell.current;
     const el = key ? cellEls.current[key] : null;
     if (!key || !el) return;
     el.focus();
-    document.execCommand(cmd);
+    if (cmd === 'highlight') toggleHighlight();
+    else document.execCommand(cmd);
     cellsRef.current[key] = el.innerHTML;
     pushLiveCell(key, el.innerHTML);
     scheduleSave();
+  }
+
+  // Highlight is a background-color span rather than an execCommand flag, so it
+  // has no built-in toggle — read the caret's current background and clear it if
+  // it is already ours. styleWithCSS keeps this as an inline style the cell
+  // sanitizer allows (background-color) instead of a legacy <font> attribute.
+  function toggleHighlight() {
+    document.execCommand('styleWithCSS', false, 'true');
+    const cur = (document.queryCommandValue('backColor') || '').replace(/\s/g, '').toLowerCase();
+    const on = cur === HILITE_RGB || cur === HILITE;
+    document.execCommand('hiliteColor', false, on ? 'transparent' : HILITE);
+    document.execCommand('styleWithCSS', false, 'false');
   }
 
   // Focus a cell and place the caret at its start or end.
@@ -807,25 +842,37 @@ export default function FlowView() {
 
     // Rich-text emphasis — ⌘B / ⌘I / ⌘U, strikethrough ⌘⇧X (or ⌘⇧S)
     if (mod && !e.shiftKey && (k === 'b' || k === 'i' || k === 'u')) {
+      const id = k === 'b' ? 'flow-bold' : k === 'i' ? 'flow-italic' : 'flow-underline';
+      if (isShortcutDisabled(id)) return;
       e.preventDefault();
       document.execCommand(k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline');
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
     if (mod && e.shiftKey && (k === 'x' || k === 's')) {
+      if (isShortcutDisabled('flow-strike')) return;
       e.preventDefault();
       document.execCommand('strikeThrough');
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
+    if (mod && e.shiftKey && k === 'h') {
+      if (isShortcutDisabled('flow-highlight')) return;
+      e.preventDefault();
+      toggleHighlight();
+      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
+      return;
+    }
     // Arrow line — ⌘L from the source cell, then ⌘L (or click) on the target
     if (mod && k === 'l') {
+      if (isShortcutDisabled('flow-link')) return;
       e.preventDefault();
       linkCell(`${ri}-${ci}`);
       return;
     }
     // Move this cell's content up/down a row (swaps with its neighbour)
     if (mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (isShortcutDisabled('flow-move-row')) return;
       e.preventDefault();
       const dir = e.key === 'ArrowDown' ? 'down' : 'up';
       const t = dir === 'down' ? ri + 1 : ri - 1;
@@ -1348,6 +1395,9 @@ export default function FlowView() {
         <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('strikeThrough'); }} title="Strikethrough (⌘⇧X)">
           <span style={{ textDecoration: 'line-through', fontSize: 13 }}>S</span>
         </ToolBtn>
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('highlight'); }} title="Highlight (⌘⇧H)">
+          <span style={{ fontSize: 13, background: HILITE, color: '#1a1a1a', padding: '0 3px', borderRadius: 2 }}>H</span>
+        </ToolBtn>
 
         <ToolDivider />
 
@@ -1451,7 +1501,7 @@ export default function FlowView() {
         </div>
 
         {/* Shortcuts help */}
-        <ToolBtn title={'Keyboard shortcuts:\n↑↓←→ → move to the next cell in that direction\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
+        <ToolBtn title={'Keyboard shortcuts:\n↑↓←→ → move to the next cell in that direction\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘1–⌘8 → jump to a sheet   ⌘9 → last sheet   ⌘T → new sheet\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline\n⌘⇧X → strikethrough   ⌘⇧H → highlight\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
           <IcoHelp />
         </ToolBtn>
       </div>
@@ -1742,7 +1792,7 @@ export default function FlowView() {
                       onInput={(e) => handleInput(ri, ci, e)}
                       onKeyDown={(e) => handleKeyDown(ri, ci, e)}
                       onMouseDown={(e) => { if (drawMode) { e.preventDefault(); handleArrowCellClick(cellKey); } }}
-                      className="w-full outline-none bg-transparent leading-snug whitespace-pre-wrap break-words"
+                      className="flow-cell w-full outline-none bg-transparent leading-snug whitespace-pre-wrap break-words"
                       style={{
                         fontSize: effectiveFontSize + 'px',
                         color: 'rgb(var(--ink-rgb))',

@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
+import { isShortcutDisabled, toggleShortcutDisabled } from '../lib/shortcutPrefs';
 
 // ─── Keyboard shortcuts overlay (⌘/ on Mac, Ctrl+/ on Windows) ────────────────
 // The full, organized list of every keyboard shortcut in the app. Keep this in
@@ -7,26 +8,35 @@ import { useApp } from '../store/appStore';
 // or removing an entry, and update electron/skills/user_manual.md's "Keyboard
 // Shortcuts" section + Documentation.tsx to match (same discipline as the docs
 // sync rule for everything else).
+//
+// Disabling: a handful of standalone command-style shortcuts (not core typing/
+// navigation conventions) can be turned off per-user via localStorage
+// (shortcutPrefs.ts). The toggle is intentionally understated — no checkbox,
+// no visible chrome — clicking directly on a disableable shortcut's key badge
+// toggles it, shown only by a hover state and a struck-through/dimmed key once
+// off. Every consuming keydown handler checks isShortcutDisabled(id) before
+// acting. ⌘/ itself is disableable, but the Settings → Keyboard Shortcuts
+// button always opens this overlay regardless, so it's never a dead end.
 
 const isMac = window.warroom?.platform === 'darwin';
 const MOD = isMac ? '⌘' : 'Ctrl';
 
-interface Shortcut { keys: string[]; label: string; }
+interface Shortcut { id?: string; keys: string[]; label: string; }
 interface Group { title: string; shortcuts: Shortcut[]; }
 
 const GROUPS: Group[] = [
   {
     title: 'Global',
     shortcuts: [
-      { keys: [`${MOD}K`], label: 'Open global search' },
-      { keys: [`${MOD}/`], label: 'Open this shortcuts list' },
+      { id: 'global-search', keys: [`${MOD}K`], label: 'Open global search' },
+      { id: 'shortcuts-overlay', keys: [`${MOD}/`], label: 'Open this shortcuts list' },
       { keys: ['Esc'], label: 'Close the current modal, popover, or overlay' },
     ],
   },
   {
     title: 'Find on a page',
     shortcuts: [
-      { keys: [`${MOD}F`], label: 'Find on this page — Documentation, User Manual, a speech doc, or a flow' },
+      { id: 'find-page', keys: [`${MOD}F`], label: 'Find on this page — Documentation, User Manual, a speech doc, or a flow' },
       { keys: ['Enter', '⇧Enter'], label: 'Next / previous match' },
     ],
   },
@@ -42,28 +52,40 @@ const GROUPS: Group[] = [
   {
     title: 'Flow editor',
     shortcuts: [
-      { keys: [`${MOD}B`], label: 'Bold' },
-      { keys: [`${MOD}I`], label: 'Italic' },
-      { keys: [`${MOD}U`], label: 'Underline' },
-      { keys: [`${MOD}⇧X`], label: 'Strikethrough' },
-      { keys: [`${MOD}Z`], label: 'Undo' },
-      { keys: [`${MOD}⇧Z`], label: 'Redo (or ' + MOD + 'Y)' },
-      { keys: [`${MOD}L`], label: 'Draw an arrow — press once in the source cell, again in the target cell' },
+      { id: 'flow-bold', keys: [`${MOD}B`], label: 'Bold' },
+      { id: 'flow-italic', keys: [`${MOD}I`], label: 'Italic' },
+      { id: 'flow-underline', keys: [`${MOD}U`], label: 'Underline' },
+      { id: 'flow-strike', keys: [`${MOD}⇧X`], label: 'Strikethrough' },
+      { id: 'flow-highlight', keys: [`${MOD}⇧H`], label: 'Highlight' },
+      { id: 'flow-undo', keys: [`${MOD}Z`], label: 'Undo' },
+      { id: 'flow-redo', keys: [`${MOD}⇧Z`], label: 'Redo (or ' + MOD + 'Y)' },
+      { id: 'flow-link', keys: [`${MOD}L`], label: 'Draw an arrow — press once in the source cell, again in the target cell' },
       { keys: ['Tab', '⇧Tab'], label: 'Move to the next / previous column' },
       { keys: ['Enter'], label: 'Move down a row' },
       { keys: ['⇧Enter'], label: 'New line within a cell' },
-      { keys: ['←↑→↓'], label: "Move between cells from a cell's edge" },
-      { keys: ['⌥↑', '⌥↓'], label: "Move this cell's content up / down a row" },
+      { keys: ['←↑→↓'], label: 'Move to the neighbouring cell in that direction' },
+      { id: 'flow-move-row', keys: [`${MOD}↑`, `${MOD}↓`], label: "Move this cell's content up / down a row" },
+      { id: 'flow-sheet-switch', keys: [`${MOD}1`, '…', `${MOD}8`], label: 'Jump to sheet 1–8 (' + MOD + '9 jumps to the last sheet)' },
+      { id: 'flow-sheet-new', keys: [`${MOD}T`], label: 'New sheet' },
       { keys: ['Esc'], label: 'Cancel arrow-draw mode, or close find' },
     ],
   },
 ];
 
-function Kbd({ children }: { children: React.ReactNode }) {
+function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
   return (
     <kbd
-      className="text-xs font-mono px-1.5 py-0.5 rounded"
-      style={{ background: 'var(--bg-input)', border: '1px solid var(--border-med)', color: 'var(--ink)' }}
+      onClick={onClick}
+      title={onClick ? (disabled ? 'Disabled — click to re-enable' : 'Click to disable') : undefined}
+      className="text-xs font-mono px-1.5 py-0.5 rounded transition"
+      style={{
+        background: 'var(--bg-input)',
+        border: '1px solid var(--border-med)',
+        color: 'var(--ink)',
+        cursor: onClick ? 'pointer' : 'default',
+        opacity: disabled ? 0.4 : 1,
+        textDecoration: disabled ? 'line-through' : 'none',
+      }}
     >
       {children}
     </kbd>
@@ -72,6 +94,8 @@ function Kbd({ children }: { children: React.ReactNode }) {
 
 export default function ShortcutsOverlay() {
   const { shortcutsOpen, setShortcutsOpen } = useApp();
+  // Bumped on every toggle to force disabled-state re-reads from localStorage.
+  const [, setTick] = useState(0);
 
   function close() { setShortcutsOpen(false); }
 
@@ -132,7 +156,15 @@ export default function ShortcutsOverlay() {
                   <div key={i} className="flex items-center justify-between gap-4">
                     <span className="text-xs" style={{ color: 'var(--ink)', opacity: 0.8 }}>{s.label}</span>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {s.keys.map((k, j) => <Kbd key={j}>{k}</Kbd>)}
+                      {s.keys.map((k, j) => (
+                        <Kbd
+                          key={j}
+                          disabled={s.id ? isShortcutDisabled(s.id) : false}
+                          onClick={s.id ? () => { toggleShortcutDisabled(s.id!); setTick((t) => t + 1); } : undefined}
+                        >
+                          {k}
+                        </Kbd>
+                      ))}
                     </div>
                   </div>
                 ))}

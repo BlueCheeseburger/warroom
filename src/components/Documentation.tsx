@@ -661,15 +661,22 @@ export default function Documentation() {
           <H3>Editing flows</H3>
           <P>
             The flow editor works like a paper flow with spreadsheet conveniences. Cells support{' '}
-            <strong>rich text</strong> — <Code>⌘B</Code> for bold, <Code>⌘I</Code> for italic,{' '}
-            <Code>⌘U</Code> for underline, and <Code>⌘⇧X</Code> for strikethrough (the standard
-            keyboard shortcuts). Cells <strong>auto-grow</strong> to fit their text.
+            <strong>rich text</strong> — <Code>⌘B</Code> bold, <Code>⌘I</Code> italic,{' '}
+            <Code>⌘U</Code> underline, <Code>⌘⇧X</Code> strikethrough, and <Code>⌘⇧H</Code>{' '}
+            highlight, each with a toolbar button as well. Highlighted text is forced to dark ink so
+            the amber stays readable in dark mode. Cells <strong>auto-grow</strong> to fit their text.
           </P>
           <P>
             <strong>Keyboard navigation:</strong> the arrow keys always jump to the neighbouring cell
             in that direction — they never move the caret inside a cell, so moving around the flow is
             one keypress per cell no matter how much text a cell holds. <Code>Tab</Code> and{' '}
             <Code>Enter</Code> move to the next column / row.
+          </P>
+          <P>
+            <strong>Sheets by keyboard:</strong> <Code>⌘1</Code>–<Code>⌘8</Code> jump straight to that
+            sheet, <Code>⌘9</Code> jumps to the last sheet (the browser-tab convention, so it still
+            lands somewhere useful when a flow has more than nine sheets), and <Code>⌘T</Code> makes a
+            new sheet. These work whether or not a cell has focus.
           </P>
           <P>
             <strong>Move an argument (<Code>⌘↑</Code> / <Code>⌘↓</Code>):</strong> swaps the cell's

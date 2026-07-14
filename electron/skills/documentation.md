@@ -220,9 +220,13 @@ The imported flow appears in the sidebar and can be renamed and edited like any 
 
 ### Editing flows
 
-The flow editor works like a paper flow with spreadsheet conveniences. Cells support **rich text** — `⌘B` for bold, `⌘I` for italic, `⌘U` for underline, and `⌘⇧X` for strikethrough (the standard keyboard shortcuts). Cells **auto-grow** to fit their text.
+The flow editor works like a paper flow with spreadsheet conveniences. Cells support **rich text** — `⌘B` bold, `⌘I` italic, `⌘U` underline, `⌘⇧X` strikethrough, and `⌘⇧H` highlight (amber). Each has a toolbar button too. Highlight is a `background-color` span rather than an `execCommand` flag, so it has no native toggle — the handler reads the caret's current background via `queryCommandValue('backColor')` and clears it if it is already the highlight color. Highlighted runs are forced to dark ink by a `.flow-cell` rule in `index.css` so amber stays readable in dark mode. Cells **auto-grow** to fit their text.
 
 **Keyboard navigation:** the arrow keys always jump to the neighbouring cell in that direction (Up / Down / Left / Right) — they never move the caret within a cell, so navigating a flow is one keypress per cell regardless of how much text a cell holds. `Tab` and `Enter` move to the next column / row.
+
+**Sheets by keyboard:** `⌘1`–`⌘8` jump straight to that sheet by position and `⌘9` jumps to the *last* sheet (the browser-tab convention, so it still lands somewhere useful when a flow has more than nine sheets). `⌘T` creates a new sheet. Both live in the window-level shortcut handler rather than the cell handler, so they work whether or not a cell has focus.
+
+**Disabling shortcuts:** flow shortcuts are registered in `ShortcutsOverlay.tsx`'s `GROUPS` array with stable ids (`flow-bold`, `flow-highlight`, `flow-sheet-switch`, …) and each handler checks `isShortcutDisabled(id)` (`src/lib/shortcutPrefs.ts`) before acting, so the user can turn individual ones off from the `⌘/` overlay.
 
 **Move an argument (`⌘↑` / `⌘↓`, Ctrl on Windows):** swaps the cell's content with the cell above / below it in the same column, and moves the caret with it, so an argument can be nudged into position without cut-and-paste. Goes through the same debounced save + history path as typing, so it is undoable with `⌘Z`.
 

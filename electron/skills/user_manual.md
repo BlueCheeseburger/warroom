@@ -180,11 +180,12 @@ The imported flow shows up in the sidebar named after the file — rename and ed
 ### Editing a flow
 The flow editor works like a paper flow, with some spreadsheet shortcuts on top.
 
-**Format text in a cell.** While typing in a cell, select text and use the standard shortcuts:
+**Format text in a cell.** While typing in a cell, select text and use the standard shortcuts (each also has a toolbar button):
 - **Bold** — ⌘B
 - *Italic* — ⌘I
 - Underline — ⌘U
-- Strikethrough — ⌘⇧X
+- Strikethrough — ⌘⇧X — handy for marking an argument as dropped
+- Highlight — ⌘⇧H — paints the selection amber; press it again on highlighted text to clear it
 
 Cells grow automatically to fit whatever you type.
 
@@ -192,6 +193,11 @@ Cells grow automatically to fit whatever you type.
 1. Press the **arrow keys** to move to the next cell in that direction (Up/Down/Left/Right). They always jump cells — they never move your cursor around inside a cell — so getting anywhere on the flow is one keypress per cell.
 2. Press **Tab** or **Enter** to jump to the next column or row.
 3. Press **⌘↑** or **⌘↓** (Ctrl on Windows) to shift the argument in the current cell up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
+
+**Switch sheets without the mouse.** Mid-round you're constantly jumping between the sheet for each off-case position and the case sheet.
+- **⌘1** through **⌘8** jump straight to that sheet, counting from the left.
+- **⌘9** always jumps to the **last** sheet, however many you have.
+- **⌘T** makes a **new sheet** — for when they read an off-case position you didn't predict.
 
 **Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
 
@@ -396,14 +402,18 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **@**: type in the composer (AI panel or team chat) to open the mention picker
 
 ### In a flow
-- **⌘B / ⌘I / ⌘U / ⌘⇧X**: bold / italic / underline / strikethrough in a cell
+- **⌘B / ⌘I / ⌘U / ⌘⇧X / ⌘⇧H**: bold / italic / underline / strikethrough / highlight in a cell
 - **⌘F**: find across all sheets in the flow
 - **⌘Z / ⌘⇧Z (or ⌘Y)**: undo / redo
 - **Arrow keys**: move to the neighbouring cell in that direction (always — never moves the cursor inside a cell)
 - **Tab / Enter**: move to next column / row
 - **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
+- **⌘1 – ⌘8**: jump to that sheet; **⌘9** jumps to the last sheet
+- **⌘T**: new sheet
 - **⌘L**: draw an arrow — press it in the source cell, then again in the target cell
 - **Esc**: cancel arrow-draw mode or close find
+
+Any of these can be turned off individually from the **⌘/** shortcuts list.
 
 ---
 

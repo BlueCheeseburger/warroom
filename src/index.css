@@ -657,3 +657,9 @@ html.dark .docx-viewer-wrap * {
   color: #e8e8ea !important;
   border-color: rgba(240, 240, 242, 0.7) !important;
 }
+
+/* Flow cells: highlighted runs keep dark ink so amber stays readable in dark mode. */
+.flow-cell span[style*="background-color"] {
+  color: #1a1a1a !important;
+  border-radius: 2px;
+}
