@@ -502,6 +502,12 @@ IPC handlers that read arbitrary file paths maintain a `trustedPaths` set — on
 ### File writes
 JSON writes use a write-then-rename pattern (`db.json.tmp` → `db.json`) to prevent data loss on crash.
 
+### Rate limiting
+Two layers, because the Supabase anon key ships inside every installer — anyone can extract it and call Supabase directly, which makes any purely client-side throttle bypassable for the shared-backend surfaces.
+
+- **App-level (electron/main.ts, `checkAuthRateLimit`)** — throttles `chat:signIn` (5/5min per email), `chat:signUp` (3/hour per email), and `chat:resetPassword` (3/hour per email — the most important one, since unthrottled this lets anyone email-bomb any address) using an in-memory `Map<string, timestamp[]>` keyed by `action:email`. Resets on app restart. This stops a bug or runaway retry loop in the app's own UI from hammering auth, but is not bypass-proof — enable Supabase's own **Authentication → Rate Limits** dashboard setting for the layer that actually can't be routed around.
+- **Postgres-level (`supabase/schema.sql`, `rate_limit_events` table + `enforce_rate_limit()`)** — a generic security-definer function that logs an event and raises if the calling user (`auth.uid()`) has exceeded N actions of a given type in a trailing window, self-cleaning old events on each call. `BEFORE INSERT`/`BEFORE UPDATE` triggers call it for: team messages (20/30s), DM messages (20/30s), Impact Library submissions (5/hour — stricter, since it's shared content visible to every user, not a private chat), Impact Library edits (15/hour, guarded by `pg_trigger_depth() > 1` so the vote-count-refresh trigger's internal `UPDATE` on `impact_library` doesn't consume a random voter's edit budget), and Impact Library votes (60/hour, `BEFORE INSERT OR UPDATE` since the client upserts). Triggers fire regardless of which client made the request, so this layer is bypass-proof.
+
 ---
 
 ## Architecture

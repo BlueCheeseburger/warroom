@@ -4655,6 +4655,29 @@ let realtimeChannel: any = null;
 function sbOk<T>(data: T) { return { ok: true, data }; }
 function sbErr(e: any) { return { ok: false, error: e?.message ?? String(e) }; }
 
+// ─── Auth rate limiting (app-level, defense-in-depth) ─────────────────────────
+// The Supabase anon key ships inside every installer, so anyone can extract it
+// and hit Supabase's REST/auth endpoints directly — a throttle here cannot stop
+// that. What it DOES stop: a runaway retry loop or bug in the app itself from
+// hammering auth, and it's a real courtesy limit for normal use through the UI.
+// The bypass-proof layer is Supabase's own dashboard setting: Authentication →
+// Rate Limits. Both layers should be on; this one just can't be the only one.
+const authAttempts = new Map<string, number[]>(); // `${action}:${identifier}` -> attempt timestamps (ms)
+
+/** Returns a user-facing error message if the identifier is over the limit, else null (and records this attempt). */
+function checkAuthRateLimit(action: string, identifier: string, max: number, windowMs: number): string | null {
+  const key = `${action}:${identifier.trim().toLowerCase()}`;
+  const now = Date.now();
+  const recent = (authAttempts.get(key) ?? []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    const retrySec = Math.max(1, Math.ceil((windowMs - (now - recent[0])) / 1000));
+    return `Too many attempts — try again in ${retrySec}s.`;
+  }
+  recent.push(now);
+  authAttempts.set(key, recent);
+  return null;
+}
+
 ipcMain.handle('chat:getSession', async () => {
   if (!sb) return sbErr('Supabase not configured');
   try {
@@ -4668,6 +4691,8 @@ ipcMain.handle('chat:getSession', async () => {
 
 ipcMain.handle('chat:signIn', async (_e, email: string, password: string) => {
   if (!sb) return sbErr('Supabase not configured');
+  const limitMsg = checkAuthRateLimit('signIn', email, 5, 5 * 60_000); // 5 attempts / 5 min per email
+  if (limitMsg) return sbErr(limitMsg);
   try {
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) return sbErr(error);
@@ -4678,6 +4703,8 @@ ipcMain.handle('chat:signIn', async (_e, email: string, password: string) => {
 
 ipcMain.handle('chat:signUp', async (_e, email: string, password: string, displayName: string) => {
   if (!sb) return sbErr('Supabase not configured');
+  const limitMsg = checkAuthRateLimit('signUp', email, 3, 60 * 60_000); // 3 attempts / hour per email
+  if (limitMsg) return sbErr(limitMsg);
   try {
     const { data, error } = await sb.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
     if (error) return sbErr(error);
@@ -4698,6 +4725,9 @@ ipcMain.handle('chat:signOut', async () => {
 // of this file calls verifyOtp + sends 'auth:recovery' to the renderer.
 ipcMain.handle('chat:resetPassword', async (_e, email: string) => {
   if (!sb) return sbErr('Supabase not configured');
+  // Most important auth limit: unthrottled, this lets anyone email-bomb any address.
+  const limitMsg = checkAuthRateLimit('resetPassword', email, 3, 60 * 60_000); // 3 / hour per email
+  if (limitMsg) return sbErr(limitMsg);
   try {
     const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: 'warroom://auth',

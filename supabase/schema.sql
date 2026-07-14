@@ -643,3 +643,143 @@ create policy "impact_saves_insert_own" on impact_library_saves
 drop policy if exists "impact_saves_delete_own" on impact_library_saves;
 create policy "impact_saves_delete_own" on impact_library_saves
   for delete using (user_id = auth.uid());
+
+-- ─── Migration: reply-to (quote a specific message) ───────────────────────────
+-- reply_to_id is a soft link (on delete set null) so a reply survives the
+-- original message being deleted — the quoted snapshot (sender name + content,
+-- captured client-side at send time and encrypted like `content`) keeps
+-- displaying even after the original is gone or edited.
+alter table messages add column if not exists reply_to_id uuid references messages(id) on delete set null;
+alter table messages add column if not exists reply_to_sender_name text;
+alter table messages add column if not exists reply_to_content text;
+
+alter table dm_messages add column if not exists reply_to_id uuid references dm_messages(id) on delete set null;
+alter table dm_messages add column if not exists reply_to_sender_name text;
+alter table dm_messages add column if not exists reply_to_content text;
+
+-- ─── Migration: server-side rate limiting ──────────────────────────────────────
+-- The Supabase anon key ships inside every Warroom installer, so any app-level
+-- (Electron main process) rate limit can be bypassed by extracting the key and
+-- hitting these tables directly via the REST API. These limits live in Postgres
+-- itself — enforced by BEFORE INSERT/UPDATE triggers, which fire regardless of
+-- how the write arrives (supabase-js, raw REST, or anything else authenticated
+-- as that user). This is the bypass-proof layer for team/DM messages and the
+-- shared Impact Library. (Auth endpoints — sign in/up, password reset — are
+-- throttled app-side in electron/main.ts AND should have Supabase's own
+-- Authentication → Rate Limits enabled in the dashboard for the same reason.)
+
+create table if not exists rate_limit_events (
+  id bigint generated always as identity primary key,
+  user_id uuid not null,
+  action text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists rate_limit_events_lookup_idx on rate_limit_events(user_id, action, created_at desc);
+
+-- Records this attempt and raises if the caller has exceeded `p_max_count`
+-- actions of type `p_action` within the trailing `p_window`. Self-cleans old
+-- events for this (user, action) pair on every call, so the table stays small
+-- for active users without needing a separate cron job.
+create or replace function enforce_rate_limit(p_action text, p_max_count int, p_window interval)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_count int;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  delete from public.rate_limit_events
+    where user_id = v_uid and action = p_action and created_at < now() - p_window;
+
+  select count(*) into v_count
+    from public.rate_limit_events
+    where user_id = v_uid and action = p_action and created_at >= now() - p_window;
+
+  if v_count >= p_max_count then
+    raise exception 'You''re doing that too fast — try again in a bit.';
+  end if;
+
+  insert into public.rate_limit_events (user_id, action) values (v_uid, p_action);
+end;
+$$;
+
+-- Team messages: generous burst limit, only stops flood scripts.
+create or replace function rl_check_message()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.enforce_rate_limit('team_message', 20, interval '30 seconds');
+  return new;
+end;
+$$;
+drop trigger if exists rl_messages_trigger on messages;
+create trigger rl_messages_trigger before insert on messages
+  for each row execute function rl_check_message();
+
+-- DM messages: same burst limit as team messages.
+create or replace function rl_check_dm_message()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.enforce_rate_limit('dm_message', 20, interval '30 seconds');
+  return new;
+end;
+$$;
+drop trigger if exists rl_dm_messages_trigger on dm_messages;
+create trigger rl_dm_messages_trigger before insert on dm_messages
+  for each row execute function rl_check_dm_message();
+
+-- Impact Library submissions: this is curated shared content visible to every
+-- user of the app, not a private chat — much stricter than messages.
+create or replace function rl_check_impact_submit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.enforce_rate_limit('impact_submit', 5, interval '1 hour');
+  return new;
+end;
+$$;
+drop trigger if exists rl_impact_library_insert_trigger on impact_library;
+create trigger rl_impact_library_insert_trigger before insert on impact_library
+  for each row execute function rl_check_impact_submit();
+
+-- Impact Library edits: only rate-limit genuine top-level edits from
+-- impactlib:update — NOT the like_count/dislike_count side-effect update that
+-- refresh_impact_vote_counts() runs from inside the vote-count trigger below.
+-- pg_trigger_depth() > 1 means we're nested inside another trigger's own write
+-- (the vote trigger, depth 1) rather than a direct client UPDATE (depth 1 itself).
+create or replace function rl_check_impact_update()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if pg_trigger_depth() > 1 then
+    return new;
+  end if;
+  perform public.enforce_rate_limit('impact_update', 15, interval '1 hour');
+  return new;
+end;
+$$;
+drop trigger if exists rl_impact_library_update_trigger on impact_library;
+create trigger rl_impact_library_update_trigger before update on impact_library
+  for each row execute function rl_check_impact_update();
+
+-- Impact Library votes: generous limit. Uses BEFORE INSERT OR UPDATE since the
+-- client upserts (a changed vote hits the ON CONFLICT DO UPDATE path) — the
+-- limit is generous enough that a possible double-count on a single upsert
+-- doesn't meaningfully affect real usage.
+create or replace function rl_check_impact_vote()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.enforce_rate_limit('impact_vote', 60, interval '1 hour');
+  return new;
+end;
+$$;
+drop trigger if exists rl_impact_votes_trigger on impact_library_votes;
+create trigger rl_impact_votes_trigger before insert or update on impact_library_votes
+  for each row execute function rl_check_impact_vote();
+
+alter table rate_limit_events enable row level security;
+-- No client-facing policies on purpose: rate_limit_events is only ever touched
+-- by the security-definer functions above, never directly by client queries.

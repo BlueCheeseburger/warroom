@@ -1238,6 +1238,16 @@ export default function Documentation() {
             JSON writes use a write-then-rename pattern (<Code>db.json.tmp</Code> → <Code>db.json</Code>)
             to prevent data loss on crash.
           </P>
+          <H3>Rate limiting</H3>
+          <P>
+            Sign-in, sign-up, and password reset are throttled in the app itself (per-email, e.g.
+            password reset is capped at 3 requests/hour) to stop a bug or misuse of the app's own UI
+            from hammering auth. Since the Supabase anon key ships inside every installer, that app-side
+            throttle alone can't stop someone who extracts the key and calls Supabase directly — so
+            team/DM messages and Impact Library writes (submissions, edits, votes) are additionally
+            rate-limited inside Postgres itself via triggers, which enforce regardless of how the
+            request arrives.
+          </P>
         </section>
 
         {/* ── Architecture ───────────────────────────────────────────── */}
