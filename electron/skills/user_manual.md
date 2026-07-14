@@ -416,8 +416,8 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 ### Customizing shortcuts
 Most of the shortcuts above (not the plain typing/navigation ones like Enter, Tab, or arrow keys) can be **disabled or rebound** to a different combo from the **⌘/** shortcuts list:
 
-- **Disable one**: click its key badge — it dims and gets a line through it. Click again to re-enable.
-- **Rebind one**: hover the shortcut and click the small pencil icon that appears, then press your new combo (it must include ⌘/Ctrl or ⌥ — Shift alone isn't accepted, since Shift+letter is just typing a capital letter). Press Esc to cancel instead. If your combo is already used by another active shortcut, it'll tell you and ask for a different one.
+- **Disable one**: click the small power icon to the right of its key badge — it turns red and the key dims with a line through it. Click again to re-enable.
+- **Rebind one**: double-click its key badge, then press your new combo (it must include ⌘/Ctrl or ⌥ — Shift alone isn't accepted, since Shift+letter is just typing a capital letter). Press Esc to cancel instead. If your combo is already used by another active shortcut, it'll tell you and ask for a different one.
 - **Reset one back to default**: a small "reset" link appears next to any shortcut you've customized.
 - A few multi-key groups (jumping between sheets ⌘1–9, moving a row ⌘↑/⌘↓) can be disabled but not individually rebound, since they're not a single combo.
 

@@ -13,20 +13,18 @@ import {
 // Shortcuts" section + Documentation.tsx to match (same discipline as the docs
 // sync rule for everything else).
 //
-// Disabling: any shortcut whose id has a DEFAULT_BINDINGS entry (shortcutPrefs.ts)
-// can be turned off per-user — click its key badge to toggle. A few multi-key
-// groups (sheet-switching ⌘1-9, the ⌘↑/⌘↓ row-move pair) are disableable but not
-// individually rebindable, since they don't reduce to one combo.
+// Disabling: any shortcut with a stable `id` (rebindable or not) can be turned
+// off per-user via the small power icon to the right of its key badge.
 //
-// Rebinding: shortcuts with a DEFAULT_BINDINGS entry can be remapped to a
-// different combo. Both controls are intentionally understated — no checkboxes,
-// no permanent buttons. Click the key badge to disable/enable; hover a row to
-// reveal a small pencil icon that starts "recording" a new combo (press any
-// key with ⌘/Ctrl or ⌥ held; Esc cancels). Every consuming keydown handler
-// calls matchesShortcut(e, id) so a rebind or disable takes effect everywhere
-// that id is wired up. ⌘/ itself is disableable/rebindable, but the Settings →
-// Keyboard Shortcuts button always opens this overlay regardless, so it's
-// never a dead end.
+// Rebinding: shortcuts with a DEFAULT_BINDINGS entry (shortcutPrefs.ts) can be
+// remapped to a different combo — double-click the key badge to start
+// "recording" (press any key with ⌘/Ctrl or ⌥ held; Esc cancels). A few
+// multi-key groups (sheet-switching ⌘1-9, the ⌘↑/⌘↓ row-move pair) are
+// disableable but not individually rebindable, since they don't reduce to one
+// combo. Every consuming keydown handler calls matchesShortcut(e, id) so a
+// rebind or disable takes effect everywhere that id is wired up. ⌘/ itself is
+// disableable/rebindable, but the Settings → Keyboard Shortcuts button always
+// opens this overlay regardless, so it's never a dead end.
 
 const isMac = window.warroom?.platform === 'darwin';
 const MOD = isMac ? '⌘' : 'Ctrl';
@@ -82,20 +80,23 @@ const GROUPS: Group[] = [
   },
 ];
 
-function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
+function Kbd({ children, disabled, rebindable, onDoubleClick }: {
+  children: React.ReactNode; disabled?: boolean; rebindable?: boolean; onDoubleClick?: () => void;
+}) {
   return (
     <kbd
-      onClick={onClick}
-      title={onClick ? (disabled ? 'Disabled — click to re-enable' : 'Click to disable') : undefined}
+      onDoubleClick={onDoubleClick}
+      title={rebindable ? 'Double-click to change' : undefined}
       className="text-xs font-mono px-1.5 py-0.5 rounded transition"
       style={{
         background: 'var(--bg-input)',
         border: '1px solid var(--border-med)',
         boxShadow: disabled ? 'none' : 'inset 0 -1.5px 0 var(--border-med)',
         color: 'var(--ink)',
-        cursor: onClick ? 'pointer' : 'default',
+        cursor: rebindable ? 'pointer' : 'default',
         opacity: disabled ? 0.4 : 1,
         textDecoration: disabled ? 'line-through' : 'none',
+        userSelect: 'none',
       }}
     >
       {children}
@@ -103,25 +104,28 @@ function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disab
   );
 }
 
-function PencilIcon({ visible, onClick, title }: { visible: boolean; onClick: () => void; title: string }) {
+// Small, always-present (not hover-only) power-toggle to the right of a
+// shortcut's key badge — a real, discoverable "disable" control rather than
+// something the user has to know to hover for.
+function DisableToggle({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      title={title}
+      title={disabled ? 'Disabled — click to re-enable' : 'Click to disable'}
       className="w-5 h-5 flex items-center justify-center rounded transition"
       style={{
-        opacity: visible ? 0.5 : 0,
-        pointerEvents: visible ? 'auto' : 'none',
+        opacity: disabled ? 0.85 : 0.4,
         background: 'transparent',
         border: 'none',
         cursor: 'pointer',
-        color: 'var(--nav-inactive-color)',
+        color: disabled ? 'var(--neg)' : 'var(--nav-inactive-color)',
       }}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = visible ? '0.5' : '0'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = disabled ? '0.85' : '0.4'; }}
     >
-      <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M13.5 3.5l3 3L6 17H3v-3z" />
+      <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="10" cy="10" r="7" />
+        <path d="M5.5 5.5l9 9" />
       </svg>
     </button>
   );
@@ -317,16 +321,16 @@ export default function ShortcutsOverlay() {
                               <Kbd
                                 key={j}
                                 disabled={disabled}
-                                onClick={s.id ? () => { toggleShortcutDisabled(s.id!); bump(); } : undefined}
+                                rebindable={rebindable}
+                                onDoubleClick={rebindable ? () => { setRecordError(''); setRecordingId(s.id!); } : undefined}
                               >
                                 {k}
                               </Kbd>
                             ))}
-                            {rebindable && (
-                              <PencilIcon
-                                visible={hoveredId === s.id}
-                                title="Change this shortcut"
-                                onClick={() => { setRecordError(''); setRecordingId(s.id!); }}
+                            {s.id && (
+                              <DisableToggle
+                                disabled={disabled}
+                                onClick={() => { toggleShortcutDisabled(s.id!); bump(); }}
                               />
                             )}
                           </>

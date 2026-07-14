@@ -424,16 +424,18 @@ export default function Documentation() {
             speech doc viewer, and flows — one toggle or rebind, three call sites).
           </P>
           <P>
-            Both controls are deliberately understated — no checkboxes, no permanent buttons. Click a
-            shortcut's key badge to disable/re-enable it (dimmed + struck-through when off). Hover a row
-            to reveal a small pencil icon that starts "recording" — the next keydown with{' '}
+            Two separate controls, no checkboxes: a small power icon sits to the right of a shortcut's
+            key badge — click it to disable/re-enable (the key dims and gets struck through, the icon
+            turns red while off). It stays visibly present rather than hover-only, since it's meant to
+            read as a real button. <strong>Double-click the key badge itself</strong> to rebind — the
+            keys turn into a "Press new keys…" prompt, and the next keydown with{' '}
             <Code>⌘</Code>/<Code>Ctrl</Code> or <Code>⌥</Code> held becomes the new binding{' '}
             (<Code>isBindingValid</Code> rejects anything without a real modifier — Shift alone doesn't
             count, since Shift+letter is just typing a capital letter in a text field, and this runs
             inside flow cells). <Code>findConflict</Code> rejects a combo already claimed by another
-            enabled shortcut, surfacing which one. A customized entry shows a small "reset" link back to
-            default. <Code>⌘/</Code> itself is disableable/rebindable, but Settings → Keyboard Shortcuts
-            always opens this overlay directly, so it's never a dead end.
+            enabled shortcut, surfacing which one. A customized entry shows a small, hover-revealed
+            "reset" link back to default. <Code>⌘/</Code> itself is disableable/rebindable, but Settings
+            → Keyboard Shortcuts always opens this overlay directly, so it's never a dead end.
           </P>
         </section>
 
