@@ -523,6 +523,7 @@ type ToolName =
   | 'get_tournament_details'
   | 'save_tournament_to_app'
   | 'search_judge'
+  | 'scout_opponent'
   | 'write_skill'
   | 'navigate_app'
   | 'list_flows'
@@ -549,6 +550,10 @@ interface GeminiMsg {
   streaming?: boolean;
   error?: boolean;
   toolSteps?: ToolStep[];
+  // Snapshot of a quoted earlier message (quote-reply, not a thread) — captured
+  // at send time so it keeps displaying even if the original scrolls out of the
+  // loaded window or the conversation is reloaded from storage.
+  replyTo?: { id: string; role: 'user' | 'model'; text: string };
 }
 
 // ─── Agent steps block (Claude-style collapsible tool use UI) ─────────────────
@@ -1330,6 +1335,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; role: 'user' | 'model'; text: string } | null>(null);
   const [tokenSaving, setTokenSaving] = useState(false);
   const [geminiModel, setGeminiModel] = useState('flash');
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
@@ -1593,11 +1599,19 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const AGENT_BLOCK_ID = '__agent_inbox__';
   const MAX_TURNS = 12;
 
-  async function send(overrideContent?: string) {
+  async function send(overrideContent?: string, overrideReplyTo?: { id: string; role: 'user' | 'model'; text: string } | null) {
     const content = overrideContent ?? (composerText.trim() || pendingMentions.map((m) => `@${m.name}`).join(' '));
     if (!content || streaming) return;
     setError('');
     setStreaming(true);
+
+    // Snapshot the quoted message now — the composer's replyingTo is about to be
+    // cleared, but this local const survives for the rest of send()'s async work.
+    // overrideReplyTo lets retryMessage pass the replyTo directly (React state set
+    // just before calling send() wouldn't be visible yet — same reason retryMessage
+    // passes msg.text as overrideContent instead of relying on composerText).
+    const quotedReply = overrideReplyTo !== undefined ? overrideReplyTo : replyingTo;
+    setReplyingTo(null);
 
     const isFirst = history.length === 0;
     // 2.5 models: embed title tag inside the agent response (same call, no overhead).
@@ -1607,6 +1621,13 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     // ── Build rich user parts (images, speech docs, attachments) ──────────────
     const hasSpeechDoc = pendingMentions.some((a) => a.type === 'speechdoc');
     const userParts: any[] = [{ text: content }];
+    // Quote-reply context: tell the model what earlier message this is replying to,
+    // without polluting the displayed userMsg.text (which stays the clean input).
+    if (quotedReply) {
+      userParts.unshift({
+        text: `[The user is replying to ${quotedReply.role === 'user' ? 'their own earlier message' : "Warroom AI's earlier message"}: "${quotedReply.text.slice(0, 500)}"]`,
+      });
+    }
     for (const att of pendingMentions) {
       if (att.type === 'image' && att.data?.src) {
         const b64 = att.data.src.replace(/^data:[^;]+;base64,/, '');
@@ -1634,6 +1655,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       attachments: pendingMentions.map((m) =>
         m.type === 'speechdoc' ? { ...m, _tokenSavingUsed: tokenSaving && !!m.data?.tokenSaving } : m
       ),
+      replyTo: quotedReply ?? undefined,
     };
     const modelId = crypto.randomUUID();
     const modelMsg: GeminiMsg = { id: modelId, role: 'model', text: '', streaming: true, toolSteps: [] };
@@ -1992,6 +2014,121 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
               syncSteps(steps);
               return { name, functionResult: `Error looking up judge: ${e.message}` };
+            }
+
+          } else if (name === 'scout_opponent') {
+            const stepId = crypto.randomUUID();
+            steps = [...steps, { id: stepId, tool: 'scout_opponent', label: `Scouting "${args.name}"`, status: 'running' }];
+            syncSteps(steps);
+            try {
+              const opp: any = fuzzyFind(Object.values(db.opponents ?? {}), args.name, (x: any) => x.teamName);
+              if (!opp) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+                syncSteps(steps);
+                return { name, functionResult: `No opponent named "${args.name}" found in your saved opponents.` };
+              }
+              if (cancelledStepIds.current.has(stepId)) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'cancelled' } : s);
+                syncSteps(steps);
+                return { name, functionResult: 'Scouting excluded by user.' };
+              }
+
+              const cachedScout = opp.disclosures?.aiScout;
+              if (cachedScout && !args.refresh) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
+                syncSteps(steps);
+                const citeText = (cachedScout.citations ?? []).map((c: any) => `[${c.id}] ${c.sourceTitle}`).join('\n');
+                return { name, functionResult: `Scouting report for ${opp.teamName} (cached, generated ${cachedScout.generatedAt}):\n\nAFF:\n${cachedScout.aff}\n\nNEG:\n${cachedScout.neg}${citeText ? `\n\nSources:\n${citeText}` : ''}` };
+              }
+
+              let rawRounds: any[] = opp.disclosures?.rawRounds ?? [];
+              let rawCites: any[] = opp.disclosures?.rawCites ?? [];
+
+              if (rawRounds.length === 0 && rawCites.length === 0 && opp.teamId) {
+                const caselist = opp.caselist ?? 'hspolicy';
+                const [roundsRes, citesRes] = await Promise.all([
+                  window.warroom.opencaselist.rounds(caselist, opp.school, opp.teamId),
+                  window.warroom.opencaselist.cites(caselist, opp.school, opp.teamId),
+                ]);
+                if (!roundsRes.ok) {
+                  steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+                  syncSteps(steps);
+                  return { name, functionResult: `Could not pull disclosures from OpenCaselist: ${roundsRes.error ?? 'unknown error'}` };
+                }
+                rawRounds = Array.isArray(roundsRes.data) ? roundsRes.data : roundsRes.data?.rounds ?? [];
+                rawCites = citesRes.ok ? (Array.isArray(citesRes.data) ? citesRes.data : citesRes.data?.cites ?? []) : [];
+
+                const affCites = rawCites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('a'));
+                const negCites = rawCites.filter((c: any) => (c.side ?? '').toLowerCase().startsWith('n'));
+                const affRounds = rawRounds.filter((r: any) => (r.side ?? '').toLowerCase().startsWith('a'));
+                const aff = affCites.length
+                  ? { name: affCites[0].title ?? affCites[0].cites?.slice(0, 100) ?? 'Aff', description: '' }
+                  : affRounds.length ? { name: 'Aff', description: '' } : undefined;
+                const negPositions = Array.from(
+                  new Set(negCites.map((c: any) => c.title ?? c.cites?.slice(0, 100) ?? '').filter(Boolean))
+                ).map((n) => ({ name: n as string }));
+
+                await update((db) => ({
+                  ...db,
+                  opponents: {
+                    ...db.opponents,
+                    [opp.id]: {
+                      ...db.opponents[opp.id],
+                      disclosures: {
+                        ...(db.opponents[opp.id]?.disclosures ?? {}),
+                        pulledAt: new Date().toISOString(),
+                        roundsDisclosed: rawRounds.length,
+                        aff,
+                        neg: negPositions,
+                        rawRounds,
+                        rawCites,
+                      },
+                    },
+                  },
+                }));
+              }
+
+              if (rawRounds.length === 0 && rawCites.length === 0) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+                syncSteps(steps);
+                return { name, functionResult: `${opp.teamName} has no disclosed rounds or cites to scout${opp.teamId ? '' : ' (not linked to an OpenCaselist team)'}. Notes on file: ${opp.notes || '(none)'}` };
+              }
+
+              const res = await window.warroom.ai.teamSummary({ teamName: opp.teamName, rawRounds, rawCites });
+              if (cancelledStepIds.current.has(stepId)) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'cancelled' } : s);
+                syncSteps(steps);
+                return { name, functionResult: 'Scouting excluded by user.' };
+              }
+              if (!res.ok) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+                syncSteps(steps);
+                return { name, functionResult: res.error === 'NO_KEY' ? 'No AI API key configured — cannot generate a scouting report.' : (res.error ?? 'Scouting report generation failed.') };
+              }
+
+              const scout = { aff: res.aff!, neg: res.neg!, citations: res.citations ?? [] };
+              await update((db) => ({
+                ...db,
+                opponents: {
+                  ...db.opponents,
+                  [opp.id]: {
+                    ...db.opponents[opp.id],
+                    disclosures: {
+                      ...(db.opponents[opp.id]?.disclosures ?? {}),
+                      aiScout: { ...scout, generatedAt: new Date().toISOString() },
+                    },
+                  },
+                },
+              }));
+
+              steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
+              syncSteps(steps);
+              const citeText = scout.citations.map((c: any) => `[${c.id}] ${c.sourceTitle}`).join('\n');
+              return { name, functionResult: `Scouting report for ${opp.teamName}:\n\nAFF:\n${scout.aff}\n\nNEG:\n${scout.neg}${citeText ? `\n\nSources:\n${citeText}` : ''}` };
+            } catch (e: any) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `Error scouting opponent: ${e.message}` };
             }
 
           } else if (name === 'write_skill') {
@@ -2547,6 +2684,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     const msg = history[idx];
     setComposerText(msg.text);
     if (msg.attachments?.length) setPendingMentions(msg.attachments);
+    if (msg.replyTo) setReplyingTo(msg.replyTo);
     const trimmed = history.slice(0, idx);
     setHistory(trimmed);
     onHistoryChange(conversationId, trimmed);
@@ -2562,8 +2700,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     setHistory(trimmed);
     onHistoryChange(conversationId, trimmed);
     if (msg.attachments?.length) setPendingMentions(msg.attachments);
-    // Pass content directly — avoids React state timing issue
-    send(msg.text);
+    // Pass content + replyTo directly — avoids React state timing issue
+    send(msg.text, msg.replyTo ?? null);
   }
 
   function copyMessage(id: string, text: string) {
@@ -2571,6 +2709,20 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       setCopiedId(id);
       setTimeout(() => setCopiedId((prev) => prev === id ? null : prev), 1500);
     }).catch(() => {});
+  }
+
+  function handleReply(msg: GeminiMsg) {
+    setReplyingTo({ id: msg.id, role: msg.role, text: msg.text });
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }
+
+  function scrollToMessage(id: string) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background-color 0.3s';
+    el.style.backgroundColor = 'var(--nav-hover-bg)';
+    setTimeout(() => { el.style.backgroundColor = ''; }, 900);
   }
 
   return (
@@ -2638,12 +2790,25 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             </div>
           </div>
         ) : history.map((m) => (
-          <div key={m.id} className={`flex flex-col gap-1 group/msg ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+          <div key={m.id} id={`msg-${m.id}`} className={`flex flex-col gap-1 rounded-lg group/msg ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
             {m.role === 'model' && (
               <div className="flex items-center gap-1.5 mb-0.5">
                 <AIProviderIcon provider={apiProvider} size={12} />
                 <span className="text-[10px] font-semibold" style={{ color: 'var(--nav-active-color)' }}>Warroom AI</span>
               </div>
+            )}
+            {/* Quoted reply preview */}
+            {m.replyTo && (
+              <button
+                onClick={() => scrollToMessage(m.replyTo!.id)}
+                className="max-w-[90%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+              >
+                <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>
+                  {m.replyTo.role === 'user' ? 'You' : 'Warroom AI'}
+                </span>
+                <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{m.replyTo.text}</span>
+              </button>
             )}
             {/* Tool steps (agent mode) */}
             {m.role === 'model' && m.toolSteps && m.toolSteps.length > 0 && (
@@ -2718,9 +2883,22 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                   </svg>
                   Retry
                 </button>
+                <button
+                  title="Reply"
+                  onClick={() => handleReply(m)}
+                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition"
+                  style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+                  </svg>
+                  Reply
+                </button>
               </div>
             )}
-            {/* Copy button on model messages */}
+            {/* Copy / Reply buttons on model messages */}
             {m.role === 'model' && !m.streaming && m.text && (
               <div className="flex gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                 <button
@@ -2736,6 +2914,19 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                     : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   }
                   {copiedId === m.id ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  title="Reply"
+                  onClick={() => handleReply(m)}
+                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition"
+                  style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+                  </svg>
+                  Reply
                 </button>
               </div>
             )}
@@ -2798,6 +2989,21 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       {/* Composer */}
       <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-3 space-y-2"
         style={{ borderTop: '1px solid var(--border-side)' }}>
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0077ed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>
+                Replying to {replyingTo.role === 'user' ? 'yourself' : 'Warroom AI'}
+              </div>
+              <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.text}</div>
+            </div>
+            <button onClick={() => setReplyingTo(null)} title="Cancel reply"
+              style={{ background: 'transparent', border: 'none', color: 'var(--nav-inactive-color)', cursor: 'pointer' }}>×</button>
+          </div>
+        )}
         {pendingMentions.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] uppercase tracking-wider font-semibold"
@@ -2903,7 +3109,13 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-              if (e.key === 'Escape') { setShowMentionPicker(false); setShowAttachMenu(false); setShowSlashPicker(false); }
+              if (e.key === 'Escape') {
+                if (showMentionPicker || showAttachMenu || showSlashPicker) {
+                  setShowMentionPicker(false); setShowAttachMenu(false); setShowSlashPicker(false);
+                } else {
+                  setReplyingTo(null);
+                }
+              }
             }} />
         </div>
         <div className="flex items-center gap-2">

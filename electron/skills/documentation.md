@@ -215,9 +215,15 @@ The imported flow appears in the sidebar and can be renamed and edited like any 
 
 The flow editor works like a paper flow with spreadsheet conveniences. Cells support **rich text** — `⌘B` for bold, `⌘I` for italic, `⌘U` for underline, and `⌘⇧X` for strikethrough (the standard keyboard shortcuts). Cells **auto-grow** to fit their text.
 
-**Keyboard navigation:** arrow keys move between cells when the caret is at a cell's edge (Up / Down / Left / Right); `Tab` and `Enter` move to the next column / row; `Alt+↑` / `Alt+↓` shift a cell's content between rows.
+**Keyboard navigation:** arrow keys move between cells when the caret is at a cell's edge (Up / Down / Left / Right); `Tab` and `Enter` move to the next column / row.
 
-**Draw arrows:** the curved-arrow toolbar button enters draw mode — click a source cell, then a target cell, to draw a connector arrow linking an argument to its answer across columns (like the line on a paper flow). Click the `×` on an arrow's midpoint to delete it; press `Esc` to cancel. Arrows are saved per sheet.
+**Move a cell (`Alt+↑` / `Alt+↓`):** swaps the cell's content with the cell above / below it in the same column, and moves the caret with it, so an argument can be nudged into position without cut-and-paste. Goes through the same debounced save + history path as typing, so it is undoable with `⌘Z`.
+
+**Draw arrows:** two interchangeable ways to draw a connector arrow linking an argument to its answer across columns (like the line on a paper flow).
+- **`⌘L` (keyboard):** press `⌘L` inside the source cell to mark it, arrow-key to the target cell, press `⌘L` again to draw. Pressing `⌘L` twice in the same cell cancels.
+- **Toolbar (mouse):** the curved-arrow button enters draw mode — click a source cell, then a target cell.
+
+Both drive the same draw-mode state, so an arrow can be started with `⌘L` and finished with a click, or vice versa. Click the `×` on an arrow's midpoint to delete it; press `Esc` to cancel. Arrows are saved per sheet.
 
 **Find (`⌘F`):** a find bar searches across all sheets in the flow. Enter / Shift+Enter jump between matches; Esc closes. (Mirrors the speech-doc viewer's find.)
 
@@ -394,6 +400,9 @@ Type `@` in the chat input to attach context from your local data:
 ### Token saving
 When attaching a speech doc, "token saving" mode sends only underlined text, citations, and headings (not small body text) to reduce token usage. Auto-enabled for Flash Lite. Can be toggled globally in Settings or per-conversation.
 
+### Quote-reply
+Hovering any message (yours or Warroom AI's) reveals a Reply button next to Edit/Copy/Retry. Clicking it stores a `{ id, role, text }` snapshot in `replyingTo` state and shows a quote bar above the composer; sending attaches that snapshot to the new message as `GeminiMsg.replyTo` and injects a one-off `[The user is replying to ...]` context line into that turn's `userParts` (not into `m.text`, so the displayed message and later turns stay clean). Editing or retrying a message that has `replyTo` restores it into `replyingTo` so the requote isn't lost. Clicking a quoted snippet scrolls to and briefly highlights the original message via its `id="msg-<id>"` element, if still in the loaded history.
+
 ### Agent tool calls
 Warroom AI can call the following tools during a conversation:
 - `get_skill(skill_name)` — loads a skill .md file (cx_debate, pf_debate, ld_debate, card_cutting, user_manual, documentation, or user-added custom skills)
@@ -406,6 +415,7 @@ Warroom AI can call the following tools during a conversation:
 - `get_tournament_details` — fetches full info for a Tabroom tournament by numeric ID
 - `save_tournament_to_app` — saves a Tabroom tournament to the user's tournament list
 - `search_judge` — looks up a judge on Tabroom by name and returns their paradigm
+- `scout_opponent` — pulls an opponent's disclosed rounds/cites from OpenCaselist (if linked) and runs the same AI scouting pipeline as the opponent profile's "AI Scout" card, returning an AFF/NEG summary with citations. Caches to `disclosures.aiScout` so a repeat ask is instant unless `refresh` is passed.
 - `write_skill` — creates/updates a custom skill .md file in the user's skills folder
 - `navigate_app` — opens any view for the user (top-level views, or a case/block/opponent/tournament/flow resolved by name)
 - `list_flows` / `read_flow` — list flow sheets and read a flow's columns + filled cells
@@ -427,6 +437,7 @@ Team chat uses Supabase for real-time messaging. It appears in a resizable panel
 - Team creation with invite codes; members can join/leave; owner can kick members
 - Channel messages and direct messages (DMs) between team members
 - Message editing and deletion
+- Quote-reply: hovering any message reveals a Reply button. It captures a snapshot (sender name + content) and stores it on the new message as `reply_to_id` / `reply_to_sender_name` / `reply_to_content` (the content snapshot is encrypted the same way as `content` — see Encrypted chat below). Because it's a snapshot rather than a live join, the quote survives the original message being edited or deleted. Clicking the quoted block scrolls to the original message via `id="msg-<id>"` if it's still loaded.
 - Attachments: cases, blocks, flows, opponents, images, speech docs — shared with edit or view permissions. Clicking received attachments expands a content preview; "+" button imports to your library.
 - Round references in messages (link to a specific round)
 - Unread count badge on the chat icon in the sidebar
@@ -489,7 +500,7 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 Sensitive values (API keys, passwords, OAuth tokens) are encrypted with Electron's `safeStorage` (OS keychain-backed AES encryption). In dev mode, base64 fallback is used since the safeStorage key changes on each rebuild.
 
 ### Encrypted chat
-All team-chat and DM content is encrypted client-side before it leaves the client. Message text and every shared attachment (cases, blocks, flows, opponents, tournaments, speech docs) are encrypted with AES-256-GCM; Supabase only ever stores ciphertext. Each team has one symmetric key, derived from the team's invite code via PBKDF2 (200k iterations, SHA-256, salted with the team id) — implemented in `src/lib/chatCrypto.ts`. Because every member already knows the invite code, everyone derives the identical key with no key-distribution handshake, and the derived key is never transmitted. Encryption/decryption happen in `Chat.tsx` (load, realtime, send, edit for both rooms and DMs) and `SharePanel.tsx` (share-to-room / share-to-DM). Ciphertext is tagged with a `wre1:` prefix so legacy plaintext rows decrypt transparently (anything without the prefix is passed through). Metadata — sender name, timestamps, attachment `name`/`type` — stays plaintext for display; only `content` and attachment `data` are encrypted. Warroom AI does not read team-chat history, so no plaintext chat is sent to the AI provider.
+All team-chat and DM content is encrypted client-side before it leaves the client. Message text and every shared attachment (cases, blocks, flows, opponents, tournaments, speech docs) are encrypted with AES-256-GCM; Supabase only ever stores ciphertext. Each team has one symmetric key, derived from the team's invite code via PBKDF2 (200k iterations, SHA-256, salted with the team id) — implemented in `src/lib/chatCrypto.ts`. Because every member already knows the invite code, everyone derives the identical key with no key-distribution handshake, and the derived key is never transmitted. Encryption/decryption happen in `Chat.tsx` (load, realtime, send, edit for both rooms and DMs) and `SharePanel.tsx` (share-to-room / share-to-DM). Ciphertext is tagged with a `wre1:` prefix so legacy plaintext rows decrypt transparently (anything without the prefix is passed through). Metadata — sender name, timestamps, attachment `name`/`type` — stays plaintext for display; only `content`, attachment `data`, and the quote-reply snapshot field `reply_to_content` are encrypted (`reply_to_sender_name` stays plaintext, same tier as sender name). Warroom AI does not read team-chat history, so no plaintext chat is sent to the AI provider.
 
 **This is NOT end-to-end / zero-knowledge encryption.** The key is derived from the invite code, and the invite code is stored server-side in `teams.invite_code` (the server matches on it at join time). So it protects content if only the message/attachment rows leak (an over-broad RLS SELECT, or a partial dump excluding `teams`), but it does NOT protect against a full database compromise or a malicious operator, who can re-derive every team key from the stored invite code. Treat it as defense-in-depth over RLS, not as a guarantee the operator can't read messages. The threat model is documented at the top of `src/lib/chatCrypto.ts`.
 

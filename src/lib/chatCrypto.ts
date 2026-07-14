@@ -169,16 +169,22 @@ export async function encryptOutgoing(
   return { content: encContent, attachments: encAtts };
 }
 
-/** Decrypt a message row (content + attachments) coming back from Supabase. */
-export async function decryptMessage<T extends { content?: string; attachments?: any[] }>(
+/**
+ * Decrypt a message row (content + attachments + quoted reply snapshot) coming
+ * back from Supabase. reply_to_content is a snapshot of another message's content
+ * captured at send time (see encryptText call sites in Chat.tsx/GeminiPanel.tsx),
+ * encrypted the same way as `content`, so it needs the same decryption here.
+ */
+export async function decryptMessage<T extends { content?: string; attachments?: any[]; reply_to_content?: string | null }>(
   key: CryptoKey,
   msg: T,
 ): Promise<T> {
-  const [content, attachments] = await Promise.all([
+  const [content, attachments, replyToContent] = await Promise.all([
     decryptText(key, msg.content),
     Promise.all(
       (msg.attachments ?? []).map(async (a) => ({ ...a, data: await decryptAttachmentData(key, a.data) })),
     ),
+    msg.reply_to_content ? decryptText(key, msg.reply_to_content) : Promise.resolve(msg.reply_to_content),
   ]);
-  return { ...msg, content, attachments };
+  return { ...msg, content, attachments, reply_to_content: replyToContent };
 }

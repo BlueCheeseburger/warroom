@@ -830,6 +830,12 @@ export default function FlowView() {
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
+    // Arrow line — ⌘L from the source cell, then ⌘L (or click) on the target
+    if (mod && k === 'l') {
+      e.preventDefault();
+      linkCell(`${ri}-${ci}`);
+      return;
+    }
     if (mod) return; // let ⌘Z/⌘F/⌘A etc. bubble to global handlers
 
     if (e.key === 'Tab') {
@@ -845,9 +851,13 @@ export default function FlowView() {
       e.preventDefault();
       if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
     } else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      // Move this cell's content up/down a row (swaps with its neighbour)
       e.preventDefault();
-      const t = e.key === 'ArrowDown' ? ri + 1 : ri - 1;
-      if (t >= 0 && t < NUM_ROWS) focusCell(`${t}-${ci}`);
+      const dir = e.key === 'ArrowDown' ? 'down' : 'up';
+      const t = dir === 'down' ? ri + 1 : ri - 1;
+      if (t < 0 || t >= NUM_ROWS) return;
+      moveCell(ri, ci, dir);
+      focusCell(`${t}-${ci}`);
     } else if (e.key === 'ArrowUp' && caretAtEdge(el, 'start')) {
       if (ri > 0) { e.preventDefault(); focusCell(`${ri - 1}-${ci}`); }
     } else if (e.key === 'ArrowDown' && caretAtEdge(el, 'end')) {
@@ -973,6 +983,16 @@ export default function FlowView() {
   function handleArrowCellClick(cellKey: string) {
     if (!drawMode) return;
     if (!arrowFrom) { setArrowFrom(cellKey); return; }
+    if (arrowFrom === cellKey) { setArrowFrom(null); setDrawMode(false); return; }
+    const from = arrowFrom;
+    setActiveSheetArrows((arr) => [...arr, { id: crypto.randomUUID(), from, to: cellKey }]);
+    setArrowFrom(null);
+    setDrawMode(false);
+  }
+  // Keyboard arrow-drawing (⌘L): first call marks the source, second draws to
+  // the target. Draw mode stays on in between so the target can also be clicked.
+  function linkCell(cellKey: string) {
+    if (!arrowFrom) { setArrowFrom(cellKey); setDrawMode(true); return; }
     if (arrowFrom === cellKey) { setArrowFrom(null); setDrawMode(false); return; }
     const from = arrowFrom;
     setActiveSheetArrows((arr) => [...arr, { id: crypto.randomUUID(), from, to: cellKey }]);
@@ -1374,7 +1394,7 @@ export default function FlowView() {
         <ToolBtn
           onClick={() => { setDrawMode((v) => !v); setArrowFrom(null); }}
           active={drawMode}
-          title={drawMode ? 'Click a source cell, then a target cell — Esc to cancel' : 'Draw an arrow linking two cells'}
+          title={drawMode ? 'Click a source cell, then a target cell — Esc to cancel' : 'Draw an arrow linking two cells (⌘L)'}
         >
           <IcoArrow />
         </ToolBtn>
@@ -1435,7 +1455,7 @@ export default function FlowView() {
         </div>
 
         {/* Shortcuts help */}
-        <ToolBtn title={'Keyboard shortcuts:\nTab → next column   Enter → next row   Shift+Enter → line break\nArrows → move between cells   Alt+↑↓ → move a cell up/down\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find\nDouble-click a column header to rename · click ▾ for color'}>
+        <ToolBtn title={'Keyboard shortcuts:\nTab → next column   Enter → next row   Shift+Enter → line break\nArrows → move between cells   Alt+↑↓ → move a cell up/down\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
           <IcoHelp />
         </ToolBtn>
       </div>
@@ -1475,7 +1495,7 @@ export default function FlowView() {
           style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', borderBottom: '1px solid var(--border-subtle)' }}
         >
           <IcoArrow />
-          {arrowFrom ? 'Now click the target cell' : 'Click the source cell to start the arrow'}
+          {arrowFrom ? 'Now click the target cell — or arrow-key over to it and press ⌘L' : 'Click the source cell to start the arrow — or press ⌘L inside it'}
           <button className="ml-auto btn px-2 py-0.5 text-xs" onClick={() => { setDrawMode(false); setArrowFrom(null); }}>Cancel</button>
         </div>
       )}

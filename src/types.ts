@@ -580,6 +580,9 @@ export interface DMMessage {
   content: string;
   created_at: string;
   attachments?: (MessageAttachment & { permission?: 'edit' | 'view' })[];
+  reply_to_id?: string | null;
+  reply_to_sender_name?: string | null;
+  reply_to_content?: string | null;
 }
 
 export interface MessageAttachment {
@@ -600,6 +603,9 @@ export interface ChatMessage {
   round_ref_label?: string;
   created_at: string;
   attachments?: MessageAttachment[];
+  reply_to_id?: string | null;
+  reply_to_sender_name?: string | null;
+  reply_to_content?: string | null;
 }
 
 // Item queued for attachment when user picks a mention

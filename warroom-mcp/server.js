@@ -599,9 +599,13 @@ server.tool(
       );
     }
     if (opponents.length === 0) return { content: [{ type: 'text', text: 'No opponents found.' }] };
-    const text = opponents.map(o =>
-      `**${o.teamName}** (${o.school ?? ''})\nNotes: ${o.notes ?? '(none)'}`
-    ).join('\n\n');
+    const text = opponents.map(o => {
+      const scout = o.disclosures?.aiScout;
+      const scoutText = scout
+        ? `\nAI Scout (generated ${scout.generatedAt}):\n  AFF: ${scout.aff}\n  NEG: ${scout.neg}`
+        : '';
+      return `**${o.teamName}** (${o.school ?? ''})\nNotes: ${o.notes ?? '(none)'}${scoutText}`;
+    }).join('\n\n');
     return { content: [{ type: 'text', text: text }] };
   }
 );

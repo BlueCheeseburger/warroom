@@ -8,9 +8,11 @@ interface Props {
   isSelf: boolean;
   onEdit: (id: string, currentContent: string) => void;
   onDelete: (id: string) => void;
+  onReply: () => void;
+  onQuoteClick: (id: string) => void;
 }
 
-export default function ChatMessage({ message, isSelf, onEdit, onDelete }: Props) {
+export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply, onQuoteClick }: Props) {
   const { setView, update, flowsIndex, setFlowsIndex } = useApp();
   const [hovered, setHovered] = React.useState(false);
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -18,7 +20,8 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete }: Props
 
   return (
     <div
-      className={`flex flex-col gap-1 ${isSelf ? 'items-end' : 'items-start'}`}
+      id={`msg-${message.id}`}
+      className={`flex flex-col gap-1 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -27,6 +30,18 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete }: Props
         <span className="text-[11px] font-semibold px-0.5" style={{ color: 'var(--nav-active-color)' }}>
           {message.sender_name}
         </span>
+      )}
+
+      {/* Quoted reply preview */}
+      {message.reply_to_id && (
+        <button
+          onClick={() => onQuoteClick(message.reply_to_id!)}
+          className="max-w-[85%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+        >
+          <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>{message.reply_to_sender_name}</span>
+          <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{message.reply_to_content}</span>
+        </button>
       )}
 
       {/* Bubble */}
@@ -147,6 +162,18 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete }: Props
             ><TrashIcon /></button>
           </>
         )}
+        <button
+          onClick={onReply}
+          title="Reply"
+          className="w-5 h-5 flex items-center justify-center rounded transition"
+          style={{
+            color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+            cursor: hovered ? 'pointer' : 'default',
+            opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+        ><ReplyIcon /></button>
         <span className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>{time}</span>
         {(message as any).edited && (
           <span className="text-[9px]" style={{ color: 'var(--nav-inactive-color)' }}>(edited)</span>
@@ -421,6 +448,15 @@ function TrashIcon() {
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
       <path d="M10 11v6M14 11v6" />
       <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  );
+}
+
+function ReplyIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 17 4 12 9 7" />
+      <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
     </svg>
   );
 }

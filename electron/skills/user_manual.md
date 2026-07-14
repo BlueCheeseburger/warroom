@@ -191,13 +191,19 @@ Cells grow automatically to fit whatever you type.
 **Move around with the keyboard.**
 1. Press the **arrow keys** to move to the next cell when your cursor is already at that edge of the current cell (Up/Down/Left/Right).
 2. Press **Tab** or **Enter** to jump to the next column or row.
-3. Press **Alt+↑** or **Alt+↓** to shift the cell's content up or down a row.
+3. Press **Alt+↑** or **Alt+↓** to shift the cell's content up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
 
 **Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
+
+The fastest way, without leaving the keyboard:
+1. With your cursor in the **source cell** (the argument), press **⌘L**.
+2. Arrow-key over to the **target cell** (its answer) and press **⌘L** again — the arrow is drawn.
+
+Or with the mouse:
 1. Click the **curved-arrow button** in the toolbar to enter draw mode.
-2. Click the **source cell** (the argument).
-3. Click the **target cell** (its answer) — an arrow is drawn between them, even across columns.
-4. To remove an arrow, click the **×** on its midpoint. Press **Esc** anytime to cancel drawing.
+2. Click the **source cell**, then the **target cell** — an arrow is drawn between them, even across columns.
+
+The two are interchangeable: you can start an arrow with ⌘L and finish it with a click, or vice versa. To remove an arrow, click the **×** on its midpoint. Press **Esc** anytime to cancel drawing.
 
 Arrows are saved with the sheet, so they're there when you reopen the flow.
 
@@ -318,8 +324,10 @@ Star icon in the title bar.
 - **Evidence search**: AI searches Logos/Open Evidence automatically when asked. Spinner shows per-search. Hover over a running search + click ✕ to exclude it.
 - **Saved cards**: go to Cases → Agent Saves → Agent Inbox
 - **Voice input**: microphone button in the composer
+- **Reply to a message**: hover any message (yours or the AI's) and click Reply to quote it — your next message shows the quoted snippet and the AI gets that quote as context, without turning it into a separate thread. Click a quoted snippet to jump back to the original message.
 - **Navigation**: ask the AI to take you anywhere — "open my Spending DA case", "go to settings", "show my tournaments". It opens the view for you.
 - **Flow editing**: ask the AI to fill in or edit a flow — "add the perm to my Round 3 flow under 2AC", "put 'extend impact' in 2NR row 4". It can read your flow's columns/rows and write to specific cells. If the flow is open, edits appear live.
+- **Opponent scouting**: ask "scout [team name]" and it pulls their disclosed rounds/cites from OpenCaselist (if the team is linked) and returns an AFF/NEG summary with citations — the same report you'd get from the "Scout" button on an opponent profile. Repeat asks return the cached report instantly; say "refresh" or "rescout" to regenerate it.
 
 ### AI Prompts
 Every question or task Warroom sends to the AI — card cutting, scouting reports, mission briefs, cross-ex questions, card credibility, impact calc, the Outweigh game, and more — is built from an editable prompt file, not baked into the app. Throughout the Documentation page you'll find "View/edit this prompt" links next to each AI feature; clicking one opens that prompt in a plain text editor. Change the wording and save — your edit is used the very next time that feature runs, with no restart needed. If you want to go back to the original wording, just delete your edited copy.
@@ -335,6 +343,7 @@ Chat icon in the title bar.
 - **DMs**: click a teammate's name
 - **Share attachments**: cases, blocks, flows, opponents, tournaments, speech docs — all shareable in messages
 - **Edit / delete**: hover your own message in a room or DM for Edit and Delete buttons
+- **Reply**: hover any message (yours or someone else's) for a Reply button — quotes that message above your new one so context is clear without starting a separate thread. Click the quoted snippet on a sent message to jump back to the original.
 - **Unread badge** shown on chat icon
 - **Encryption**: every message and shared attachment is encrypted on your device (AES-256-GCM) before it's sent, so the cloud server only ever stores scrambled ciphertext — a leak of just the message data reveals nothing. The key is derived from your team's invite code, so keep that code private. Note this is not zero-knowledge encryption: the invite code is also stored on the server (it has to be, to let people join), so it's strong protection against a data leak, not a guarantee that the service operator can't read messages. Warroom AI never reads your team-chat history.
 
@@ -386,7 +395,8 @@ Gear icon at bottom of sidebar.
 - **⌘Z / ⌘⇧Z (or ⌘Y)**: undo / redo
 - **Arrow keys**: move between cells from a cell's edge
 - **Tab / Enter**: move to next column / row
-- **Alt+↑ / Alt+↓**: shift a cell's content between rows
+- **Alt+↑ / Alt+↓**: shift a cell's content up / down a row (swaps with its neighbour, cursor follows)
+- **⌘L**: draw an arrow — press it in the source cell, then again in the target cell
 - **Esc**: cancel arrow-draw mode or close find
 
 ---

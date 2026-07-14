@@ -4881,6 +4881,9 @@ ipcMain.handle('chat:sendMessage', async (_e, payload: any) => {
     const { data: msg, error: msgErr } = await sb.from('messages').insert({
       team_id: payload.teamId, sender_id: payload.senderId, sender_name: payload.senderName,
       content: payload.content, round_ref_id: payload.roundRefId ?? null, round_ref_label: payload.roundRefLabel ?? null,
+      reply_to_id: payload.replyToId ?? null,
+      reply_to_sender_name: payload.replyToSenderName ?? null,
+      reply_to_content: payload.replyToContent ?? null,
     }).select().single();
     if (msgErr) return sbErr(msgErr);
     if (payload.attachments?.length) {
@@ -5183,6 +5186,18 @@ const AGENT_TOOLS = [{
       },
     },
     {
+      name: 'scout_opponent',
+      description: "Scout an opponent team: pulls their disclosed rounds and evidence cites from OpenCaselist (if linked) and returns an AI-generated summary of their AFF and NEG positions with source citations. Use when the user asks to scout, research, or get intel on an opponent team, or uses a suggested prompt like 'Scout [team name]'. If a scouting report was already generated for this team, returns the cached report immediately unless refresh is true.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING', description: 'Opponent team name. Matched case-insensitively against saved opponents.' },
+          refresh: { type: 'BOOLEAN', description: 'Set true to regenerate the report even if a cached one already exists. Defaults to false.' },
+        },
+        required: ['name'],
+      },
+    },
+    {
       name: 'write_skill',
       description: "Create or update a custom skill file in the user's skills library. Use when the user wants to save debate notes, strategy, coach tips, judge research, argument files, or any knowledge they want Warroom AI to remember and reference. The skill can be loaded later with get_skill(name). Call get_skill(\"skill_builder\") first for naming conventions and format guidance. If updating an existing skill, call get_skill(name) first so you don't overwrite content the user wants to keep.",
       parameters: {
@@ -5384,7 +5399,9 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     }
     const contextSuffix = userContext ? `\n\n${userContext}` : '';
     const customSkillsSuffix = await buildCustomSkillsSuffix();
-    const agentSystem = await renderPrompt('agent_system', {});
+    const agentSystem = await renderPrompt('agent_system', {
+      CURRENT_DATETIME: new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }),
+    });
     const agentTitleSuffix = await renderPrompt('agent_title_suffix', {});
     const systemText = topicPrefix + (wantTitle ? agentSystem + agentTitleSuffix : agentSystem) + customSkillsSuffix + contextSuffix;
 
@@ -5584,12 +5601,15 @@ ipcMain.handle('chat:getDMMessages', async (_e, dmChannelId: string) => {
   } catch (e) { return sbErr(e); }
 });
 
-ipcMain.handle('chat:sendDMMessage', async (_e, payload: { dmChannelId: string; senderId: string; senderName: string; content: string; attachments?: any[] }) => {
+ipcMain.handle('chat:sendDMMessage', async (_e, payload: { dmChannelId: string; senderId: string; senderName: string; content: string; attachments?: any[]; replyToId?: string; replyToSenderName?: string; replyToContent?: string }) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
     const { data, error } = await sb.from('dm_messages').insert({
       dm_channel_id: payload.dmChannelId, sender_id: payload.senderId,
       sender_name: payload.senderName, content: payload.content,
+      reply_to_id: payload.replyToId ?? null,
+      reply_to_sender_name: payload.replyToSenderName ?? null,
+      reply_to_content: payload.replyToContent ?? null,
     }).select().single();
     if (error) return sbErr(error);
     if (payload.attachments?.length) {

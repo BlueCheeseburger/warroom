@@ -983,6 +983,7 @@ export default function Settings() {
             { label: 'Team chat message text', tag: 'encrypted' },
             { label: 'Direct message text', tag: 'encrypted' },
             { label: 'Shared attachment data (cases, blocks, flows, opponents, tournaments, speech docs)', tag: 'encrypted' },
+            { label: 'Quoted reply snippets', tag: 'encrypted' },
             { label: 'Sender names, timestamps & attachment labels', tag: 'plaintext' },
             { label: 'User accounts & team membership', tag: 'plaintext' },
           ].map(({ label, tag }) => (

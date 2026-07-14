@@ -201,7 +201,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/8/26
+          Last updated: 7/14/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -641,15 +641,22 @@ export default function Documentation() {
           <P>
             <strong>Keyboard navigation:</strong> arrow keys move between cells when the caret is at
             a cell's edge (Up / Down / Left / Right); <Code>Tab</Code> and <Code>Enter</Code> move to
-            the next column / row; <Code>Alt+↑</Code> / <Code>Alt+↓</Code> shift a cell's content
-            between rows.
+            the next column / row.
           </P>
           <P>
-            <strong>Draw arrows:</strong> the curved-arrow toolbar button enters draw mode — click a
-            source cell, then a target cell, to draw a connector arrow linking an argument to its
-            answer across columns (like the line on a paper flow). Click the <Code>×</Code> on an
-            arrow's midpoint to delete it; press <Code>Esc</Code> to cancel. Arrows are saved per
-            sheet.
+            <strong>Move a cell (<Code>Alt+↑</Code> / <Code>Alt+↓</Code>):</strong> swaps the cell's
+            content with the cell above / below it in the same column and carries the caret along, so
+            an argument can be nudged into position without cut-and-paste. It saves and records
+            history like typing does, so it is undoable with <Code>⌘Z</Code>.
+          </P>
+          <P>
+            <strong>Draw arrows:</strong> arrows link an argument to its answer across columns, like
+            the line you'd draw on a paper flow. Press <Code>⌘L</Code> inside the source cell to mark
+            it, arrow-key to the target cell, and press <Code>⌘L</Code> again to draw — or use the
+            curved-arrow toolbar button and click the source cell, then the target cell. The two are
+            interchangeable, so an arrow can be started with the keyboard and finished with a click.
+            Click the <Code>×</Code> on an arrow's midpoint to delete it; press <Code>Esc</Code> to
+            cancel. Arrows are saved per sheet.
           </P>
           <P>
             <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all sheets in the
@@ -1054,6 +1061,14 @@ export default function Documentation() {
             and headings (not small body text) to reduce token usage. Auto-enabled for Flash Lite.
             Can be toggled globally in Settings or per-conversation.
           </P>
+          <H3>Quote-reply</H3>
+          <P>
+            Hover any message — yours or Warroom AI's — for a Reply button. It quotes that message
+            above your next one and passes the quoted text to the model as context on that turn only
+            (it doesn't alter the displayed message or get repeated on later turns). Editing or
+            retrying a message that was itself a reply preserves its quote. Click a quoted snippet to
+            scroll back to the original message.
+          </P>
           <H3>Agent tool calls</H3>
           <P>
             The agent can call these tools during a conversation:
@@ -1065,6 +1080,7 @@ export default function Documentation() {
             <LI><Code>fetch_article</Code> — fetches/extracts text from a URL for cutting cards from web sources</LI>
             <LI><Code>get_skill</Code> / <Code>write_skill</Code> — load or save a skill <Code>.md</Code> file</LI>
             <LI><Code>search_tabroom_tournament</Code> · <Code>get_tournament_details</Code> · <Code>save_tournament_to_app</Code> · <Code>search_judge</Code> — Tabroom lookups</LI>
+            <LI><Code>scout_opponent</Code> — pulls an opponent's disclosed rounds/cites from OpenCaselist (if linked) and calls the same AI scouting pipeline as the opponent profile's "AI Scout" card, returning an AFF/NEG summary with citations. Caches the result to <Code>disclosures.aiScout</Code> so repeat asks are instant unless <Code>refresh</Code> is passed.</LI>
             <LI><Code>navigate_app</Code> — opens any view for the user (top-level, or a case/block/opponent/tournament/flow resolved by name)</LI>
             <LI><Code>list_flows</Code> / <Code>read_flow</Code> / <Code>edit_flow_cell</Code> — list flows, read a flow's columns + cells, and write individual cells. Edits write to <Code>flow_data_&lt;id&gt;</Code> and fire a <Code>warroom-flow-updated</Code> event so an open flow reloads live.</LI>
           </UL>
@@ -1097,6 +1113,7 @@ export default function Documentation() {
             <LI>Team creation with invite codes; members can join/leave; owner can kick members</LI>
             <LI>Channel messages and direct messages (DMs) between team members</LI>
             <LI>Message editing and deletion</LI>
+            <LI>Quote-reply: hover any message for a Reply button that quotes it above your next message (not a thread — a snapshot of sender name + content, so it stays intact even if the original is later edited or deleted). Clicking a quoted snippet scrolls to the original if still loaded.</LI>
             <LI>Attachments: cases, blocks, flows, opponents, images, speech docs — shared with edit or view permissions</LI>
             <LI>Round references in messages (link to a specific round)</LI>
             <LI>Unread count badge on the chat icon in the sidebar</LI>

@@ -445,10 +445,25 @@ function ChatBody() {
 
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
+  const [replyingTo, setReplyingTo] = React.useState<{ id: string; senderName: string; content: string } | null>(null);
 
   async function handleEditMessage(id: string, current: string) {
     setEditingId(id);
     setEditingText(current);
+  }
+
+  function handleReply(id: string, senderName: string, content: string) {
+    setReplyingTo({ id, senderName, content });
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }
+
+  function scrollToMessage(id: string) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background-color 0.3s';
+    el.style.backgroundColor = 'var(--nav-hover-bg)';
+    setTimeout(() => { el.style.backgroundColor = ''; }, 900);
   }
 
   async function submitEdit() {
@@ -485,13 +500,17 @@ function ChatBody() {
       // Encrypt content + attachment data before it ever leaves the client.
       const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
       const { content: encContent, attachments: encAtts } = await encryptOutgoing(key, content, plainAtts);
+      const replyToContent = replyingTo ? await encryptText(key, replyingTo.content) : undefined;
       const res = await window.warroom.chat.sendMessage({
         teamId: currentTeam.id, senderId: currentUser.id, senderName: currentUser.displayName,
         content: encContent,
         attachments: encAtts,
+        replyToId: replyingTo?.id,
+        replyToSenderName: replyingTo?.senderName,
+        replyToContent,
       });
       if (!res.ok) throw new Error(res.error);
-      setComposerText(''); setPendingMentions([]);
+      setComposerText(''); setPendingMentions([]); setReplyingTo(null);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to send');
     } finally {
@@ -535,7 +554,9 @@ function ChatBody() {
               } else {
                 nodes.push(
                   <ChatMessageBubble key={m.id} message={m} isSelf={m.sender_id === currentUser?.id}
-                    onEdit={handleEditMessage} onDelete={handleDeleteMessage} />
+                    onEdit={handleEditMessage} onDelete={handleDeleteMessage}
+                    onReply={() => handleReply(m.id, m.sender_name, m.content)}
+                    onQuoteClick={scrollToMessage} />
                 );
               }
               return nodes;
@@ -546,6 +567,17 @@ function ChatBody() {
 
       {/* Composer */}
       <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-3 space-y-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
+            <ReplyIcon />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>Replying to {replyingTo.senderName}</div>
+              <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.content}</div>
+            </div>
+            <button onClick={() => setReplyingTo(null)} title="Cancel reply"
+              style={{ background: 'transparent', border: 'none', color: 'var(--nav-inactive-color)', cursor: 'pointer' }}>×</button>
+          </div>
+        )}
         {pendingMentions.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--label-color)' }}>Attaching</span>
@@ -590,7 +622,7 @@ function ChatBody() {
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-              if (e.key === 'Escape') { setShowMentionPicker(false); setShowAttachMenu(false); }
+              if (e.key === 'Escape') { setShowMentionPicker(false); setShowAttachMenu(false); if (!showMentionPicker && !showAttachMenu) setReplyingTo(null); }
             }} />
         </div>
         <div className="flex items-center gap-2">
@@ -829,6 +861,7 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
   const [showAddMember, setShowAddMember] = useState(false);
   const [adding, setAdding] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     loadMessages();
@@ -870,18 +903,37 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
 
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
+  const [replyingTo, setReplyingTo] = React.useState<{ id: string; senderName: string; content: string } | null>(null);
+
+  function handleReply(id: string, senderName: string, content: string) {
+    setReplyingTo({ id, senderName, content });
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }
+
+  function scrollToMessage(id: string) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background-color 0.3s';
+    el.style.backgroundColor = 'var(--nav-hover-bg)';
+    setTimeout(() => { el.style.backgroundColor = ''; }, 900);
+  }
 
   async function send() {
     if (!composerText.trim() || !currentUser || !currentTeam) return;
     setSending(true); setError('');
     try {
       const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const replyToContent = replyingTo ? await encryptText(key, replyingTo.content) : undefined;
       const res = await window.warroom.chat.sendDMMessage({
         dmChannelId: channel.id, senderId: currentUser.id,
         senderName: currentUser.displayName, content: await encryptText(key, composerText.trim()),
+        replyToId: replyingTo?.id,
+        replyToSenderName: replyingTo?.senderName,
+        replyToContent,
       });
       if (!res.ok) throw new Error(res.error);
-      setComposerText('');
+      setComposerText(''); setReplyingTo(null);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to send');
     } finally {
@@ -975,7 +1027,9 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
                 nodes.push(
                   <DMMessageBubble key={m.id} message={m} isSelf={m.sender_id === currentUser?.id}
                     onEdit={(id, txt) => { setEditingId(id); setEditingText(txt); }}
-                    onDelete={handleDelete} />
+                    onDelete={handleDelete}
+                    onReply={() => handleReply(m.id, m.sender_name, m.content)}
+                    onQuoteClick={scrollToMessage} />
                 );
               }
               return nodes;
@@ -986,12 +1040,26 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
 
       {/* Composer */}
       <div className="shrink-0 px-3 pt-2 pb-3 space-y-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
+            <ReplyIcon />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>Replying to {replyingTo.senderName}</div>
+              <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.content}</div>
+            </div>
+            <button onClick={() => setReplyingTo(null)} title="Cancel reply"
+              style={{ background: 'transparent', border: 'none', color: 'var(--nav-inactive-color)', cursor: 'pointer' }}>×</button>
+          </div>
+        )}
         {error && <p className="text-xs text-red-500">{error}</p>}
-        <textarea className="input w-full resize-none text-sm" rows={2}
+        <textarea ref={textareaRef} className="input w-full resize-none text-sm" rows={2}
           placeholder="Message…"
           value={composerText}
           onChange={(e) => setComposerText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+            if (e.key === 'Escape') setReplyingTo(null);
+          }} />
         <div className="flex justify-end">
           <button className="btn-primary text-xs px-3 py-1" onClick={send}
             disabled={sending || !composerText.trim()}>
@@ -1005,10 +1073,12 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
 
 // ─── DM message bubble ────────────────────────────────────────────────────────
 
-function DMMessageBubble({ message: m, isSelf, onEdit, onDelete }: {
+function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuoteClick }: {
   message: DMMessage; isSelf: boolean;
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
+  onReply: () => void;
+  onQuoteClick: (id: string) => void;
 }) {
   const { flowsIndex, setFlowsIndex, update, setView } = useApp();
   const [hovered, setHovered] = React.useState(false);
@@ -1080,13 +1150,26 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete }: {
 
   return (
     <div
-      className={`flex flex-col gap-1 ${isSelf ? 'items-end' : 'items-start'}`}
+      id={`msg-${m.id}`}
+      className={`flex flex-col gap-1 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       {/* Sender name (others only) */}
       {!isSelf && (
         <span className="text-[11px] font-semibold px-0.5" style={{ color: 'var(--nav-active-color)' }}>{m.sender_name}</span>
+      )}
+
+      {/* Quoted reply preview */}
+      {m.reply_to_id && (
+        <button
+          onClick={() => onQuoteClick(m.reply_to_id!)}
+          className="max-w-[85%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+        >
+          <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>{m.reply_to_sender_name}</span>
+          <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{m.reply_to_content}</span>
+        </button>
       )}
 
       {/* Bubble */}
@@ -1143,6 +1226,18 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete }: {
             ><DMTrashIcon /></button>
           </>
         )}
+        <button
+          onClick={onReply}
+          title="Reply"
+          className="w-5 h-5 flex items-center justify-center rounded transition"
+          style={{
+            color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+            cursor: hovered ? 'pointer' : 'default',
+            opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+        ><ReplyIcon /></button>
         <span className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>{time}</span>
         {(m as any).edited && <span className="text-[9px]" style={{ color: 'var(--nav-inactive-color)' }}>(edited)</span>}
       </div>
@@ -1255,5 +1350,8 @@ function DMPencilIcon() {
 }
 function DMTrashIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>;
+}
+function ReplyIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
 }
 
