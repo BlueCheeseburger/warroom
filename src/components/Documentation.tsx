@@ -405,6 +405,20 @@ export default function Documentation() {
             here too — grep for <Code>metaKey || e.ctrlKey</Code> across <Code>src/</Code> to find every
             shortcut currently wired up.
           </P>
+          <H3>Disabling individual shortcuts</H3>
+          <P>
+            A subset of standalone command-style shortcuts (not core typing/navigation conventions like
+            Enter, Tab, or arrow keys) can be turned off per-user, stored in <Code>localStorage</Code> via{' '}
+            <Code>shortcutPrefs.ts</Code> (<Code>isShortcutDisabled</Code> / <Code>toggleShortcutDisabled</Code>,
+            keyed by the entry's stable <Code>id</Code>). The control is deliberately understated — no
+            checkbox or visible toggle chrome; clicking directly on a disableable shortcut's key badge in
+            this overlay toggles it, shown only by a hover cursor/tooltip and a dimmed, struck-through key
+            once off. Every consuming keydown handler calls <Code>isShortcutDisabled(id)</Code> before
+            acting, so a disabled shortcut is inert everywhere it's used (e.g. <Code>find-page</Code> covers
+            ⌘F in Documentation, User Manual, the speech doc viewer, and flows — one toggle, four handlers).{' '}
+            <Code>⌘/</Code> itself is disableable, but the Settings → Keyboard Shortcuts button always opens
+            this overlay directly regardless of that preference, so it's never a dead end.
+          </P>
         </section>
 
         {/* ── Cases & Blocks ─────────────────────────────────────────── */}
