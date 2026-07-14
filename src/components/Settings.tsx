@@ -242,7 +242,7 @@ function GDriveSettings() {
 }
 
 export default function Settings() {
-  const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme } = useApp();
+  const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme, setShortcutsOpen } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
 
   // Whether the app is *effectively* dark right now, so the theme previews
@@ -1036,6 +1036,23 @@ export default function Settings() {
           onClick={() => setView({ kind: 'user-manual' })}
         >
           Open manual
+        </button>
+      </div>
+
+      {/* Keyboard Shortcuts */}
+      <div className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
+        <div>
+          <div className="label mb-1">Keyboard Shortcuts</div>
+          <p className="text-xs text-ink/50">
+            The full list of shortcuts across the app — global search, flow editing, AI chat, and more.
+            Press <span className="font-mono">{window.warroom?.platform === 'darwin' ? '⌘' : 'Ctrl'}/</span> anytime to open it.
+          </p>
+        </div>
+        <button
+          className="btn shrink-0"
+          onClick={() => setShortcutsOpen(true)}
+        >
+          View shortcuts
         </button>
       </div>
 

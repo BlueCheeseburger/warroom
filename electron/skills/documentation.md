@@ -93,6 +93,13 @@ A command-palette search (`SearchPalette.tsx`) opens on **⌘K / Ctrl K** or via
 
 ---
 
+## Keyboard Shortcuts (⌘/)
+**⌘/ / Ctrl+/** opens `ShortcutsOverlay.tsx` — the full, organized shortcuts list for the app, also reachable from Settings → Keyboard Shortcuts. Purely client-side: a static `GROUPS` array (title + `{ keys, label }[]`), no IPC, `⌘`/`Ctrl` labels picked off `window.warroom.platform`. State is `useApp`'s `shortcutsOpen`/`setShortcutsOpen`, mirroring the search palette's `searchOpen` exactly (same backdrop + card styling, Esc-to-close, mounted unconditionally in `App.tsx` since the component self-guards on `shortcutsOpen`). The global `⌘K`/`⌘/` listener lives in `App.tsx` alongside the search-palette one.
+
+Groups: **Global** (⌘K search, ⌘/ this list, Esc closes any overlay), **Find on a page** (⌘F), **AI panel & team chat** (Enter/Shift+Enter/@/Esc — `Chat.tsx` and `GeminiPanel.tsx` share the same composer conventions), and **Flow editor** (formatting, undo/redo, arrow-drawing, cell navigation — see the Flows section below for the full list). **Keep this in sync**: whenever a new global or component-level shortcut is added anywhere in the app, add it to `GROUPS` in `ShortcutsOverlay.tsx`, the "Keyboard Shortcuts" section of `user_manual.md`, and this section — grep `metaKey || e.ctrlKey` across `src/` to enumerate every shortcut currently wired up.
+
+---
+
 ## Cases & Blocks
 
 Cases are the top-level unit of prep — an aff or neg position. Each case contains **blocks** (e.g. "T-Topicality", "Heg DA", "2AC vs DA"). Blocks hold individual evidence **cards** (tag + cite + body text + year).

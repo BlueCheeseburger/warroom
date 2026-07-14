@@ -49,6 +49,7 @@ import ImpactHub from './components/ImpactHub';
 import OutweighGame from './components/OutweighGame';
 import ImpactLibrary from './components/ImpactLibrary';
 import SearchPalette from './components/SearchPalette';
+import ShortcutsOverlay from './components/ShortcutsOverlay';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 
 const CHAT_MIN_W = 260;
@@ -56,7 +57,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen } = useApp();
+  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -76,17 +77,21 @@ export default function App() {
 
   useEffect(() => { init(); }, [init]);
 
-  // ── Cmd+K global search shortcut ───────────────────────────────────────────
+  // ── Cmd+K global search, Cmd+/ keyboard shortcuts list ─────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === 'k') {
         e.preventDefault();
         setSearchOpen(true);
+      } else if (e.key === '/') {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setSearchOpen]);
+  }, [setSearchOpen, setShortcutsOpen]);
 
   // ── Background keyword extraction on app ready ─────────────────────────────
   // Distills the top keywords from every case docx + recent speech doc so the
@@ -624,6 +629,7 @@ export default function App() {
       )}
       {showOnboarding && <Onboarding onDone={() => setShowOnboarding(false)} />}
       {searchOpen && <SearchPalette />}
+      <ShortcutsOverlay />
       {/* Tabroom monitor toast */}
       {monitorToast && (
         <div

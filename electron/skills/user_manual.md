@@ -384,10 +384,16 @@ Gear icon at bottom of sidebar.
 ---
 
 ## Keyboard Shortcuts
-- **Enter**: send message in AI panel
-- **Shift+Enter**: new line in AI panel
+Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts list in-app — it's always up to date with this section. Also reachable from Settings → Keyboard Shortcuts.
+
+- **⌘K / Ctrl K**: open global search
+- **⌘/ / Ctrl+/**: open the keyboard shortcuts list
+- **Escape**: close the current modal, popover, or overlay
+- **⌘F / Ctrl F**: find on the current page — Documentation, User Manual, a speech doc, or a flow
+- **Enter**: send message in AI panel or team chat
+- **Shift+Enter**: new line in AI panel or team chat
 - **Escape**: close mention picker or attach menu
-- **@**: type in AI composer to open mention picker
+- **@**: type in the composer (AI panel or team chat) to open the mention picker
 
 ### In a flow
 - **⌘B / ⌘I / ⌘U / ⌘⇧X**: bold / italic / underline / strikethrough in a cell

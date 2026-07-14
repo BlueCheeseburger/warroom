@@ -95,6 +95,7 @@ const TOC_SECTIONS = [
   { id: 'data-model',  label: 'Data model' },
   { id: 'navigation',  label: 'Navigation & modes' },
   { id: 'global-search', label: 'Global search (⌘K)' },
+  { id: 'shortcuts',   label: 'Keyboard shortcuts (⌘/)' },
   { id: 'cases',       label: 'Cases & blocks' },
   { id: 'library',     label: 'Card library' },
   { id: 'opponents',   label: 'Opponents' },
@@ -377,6 +378,32 @@ export default function Documentation() {
           <P>
             Press <Code>⌘F</Code> / <Code>Ctrl F</Code> on the Documentation and User Manual pages to find
             text on the page — Enter / Shift+Enter jump between matches, Esc closes.
+          </P>
+        </section>
+
+        {/* ── Keyboard shortcuts ─────────────────────────────────────── */}
+        <section id="doc-shortcuts">
+          <H2>Keyboard shortcuts <Badge color="blue">⌘/</Badge></H2>
+          <P>
+            Press <Code>⌘/</Code> (<Code>Ctrl+/</Code> on Windows) anywhere to open{' '}
+            <Code>ShortcutsOverlay.tsx</Code> — the full, organized list of every shortcut in the app.
+            Also reachable from Settings → Keyboard Shortcuts. Purely client-side: it reads a static{' '}
+            <Code>GROUPS</Code> array (no IPC), and picks <Code>⌘</Code> vs <Code>Ctrl</Code> labels off{' '}
+            <Code>window.warroom.platform</Code>.
+          </P>
+          <P>
+            State lives in <Code>useApp</Code> as <Code>shortcutsOpen</Code> / <Code>setShortcutsOpen</Code>,
+            mirroring the search palette's <Code>searchOpen</Code> pattern exactly — same backdrop + card
+            styling, Esc-to-close, mounted unconditionally in <Code>App.tsx</Code> (the component
+            self-guards on <Code>shortcutsOpen</Code>).
+          </P>
+          <P>
+            The list groups shortcuts into <strong>Global</strong> (⌘K search, ⌘/ this list, Esc),{' '}
+            <strong>Find on a page</strong> (⌘F), <strong>AI panel & team chat</strong> (Enter/Shift+Enter/@),
+            and <strong>Flow editor</strong> (formatting, undo/redo, arrow-drawing, cell navigation).
+            When a new global or component-level keyboard shortcut is added anywhere in the app, add it
+            here too — grep for <Code>metaKey || e.ctrlKey</Code> across <Code>src/</Code> to find every
+            shortcut currently wired up.
           </P>
         </section>
 

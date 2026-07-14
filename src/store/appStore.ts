@@ -118,6 +118,9 @@ interface AppState {
   // Global search palette
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
+  // Keyboard shortcuts overlay (⌘/ or Ctrl+/)
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (open: boolean) => void;
   pendingSearchQuery: string;
   setPendingSearchQuery: (q: string) => void;
   // Term to auto-open the in-doc find with after navigating to a case/speech doc
@@ -167,6 +170,8 @@ export const useApp = create<AppState>((set, get) => ({
   })),
   searchOpen: false,
   setSearchOpen: (open) => set({ searchOpen: open }),
+  shortcutsOpen: false,
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   pendingSearchQuery: '',
   setPendingSearchQuery: (q) => set({ pendingSearchQuery: q }),
   pendingFindQuery: '',
