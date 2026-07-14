@@ -666,12 +666,13 @@ export default function Documentation() {
             keyboard shortcuts). Cells <strong>auto-grow</strong> to fit their text.
           </P>
           <P>
-            <strong>Keyboard navigation:</strong> arrow keys move between cells when the caret is at
-            a cell's edge (Up / Down / Left / Right); <Code>Tab</Code> and <Code>Enter</Code> move to
-            the next column / row.
+            <strong>Keyboard navigation:</strong> the arrow keys always jump to the neighbouring cell
+            in that direction — they never move the caret inside a cell, so moving around the flow is
+            one keypress per cell no matter how much text a cell holds. <Code>Tab</Code> and{' '}
+            <Code>Enter</Code> move to the next column / row.
           </P>
           <P>
-            <strong>Move a cell (<Code>Alt+↑</Code> / <Code>Alt+↓</Code>):</strong> swaps the cell's
+            <strong>Move an argument (<Code>⌘↑</Code> / <Code>⌘↓</Code>):</strong> swaps the cell's
             content with the cell above / below it in the same column and carries the caret along, so
             an argument can be nudged into position without cut-and-paste. It saves and records
             history like typing does, so it is undoable with <Code>⌘Z</Code>.

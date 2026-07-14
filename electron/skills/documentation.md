@@ -222,9 +222,9 @@ The imported flow appears in the sidebar and can be renamed and edited like any 
 
 The flow editor works like a paper flow with spreadsheet conveniences. Cells support **rich text** — `⌘B` for bold, `⌘I` for italic, `⌘U` for underline, and `⌘⇧X` for strikethrough (the standard keyboard shortcuts). Cells **auto-grow** to fit their text.
 
-**Keyboard navigation:** arrow keys move between cells when the caret is at a cell's edge (Up / Down / Left / Right); `Tab` and `Enter` move to the next column / row.
+**Keyboard navigation:** the arrow keys always jump to the neighbouring cell in that direction (Up / Down / Left / Right) — they never move the caret within a cell, so navigating a flow is one keypress per cell regardless of how much text a cell holds. `Tab` and `Enter` move to the next column / row.
 
-**Move a cell (`Alt+↑` / `Alt+↓`):** swaps the cell's content with the cell above / below it in the same column, and moves the caret with it, so an argument can be nudged into position without cut-and-paste. Goes through the same debounced save + history path as typing, so it is undoable with `⌘Z`.
+**Move an argument (`⌘↑` / `⌘↓`, Ctrl on Windows):** swaps the cell's content with the cell above / below it in the same column, and moves the caret with it, so an argument can be nudged into position without cut-and-paste. Goes through the same debounced save + history path as typing, so it is undoable with `⌘Z`.
 
 **Draw arrows:** two interchangeable ways to draw a connector arrow linking an argument to its answer across columns (like the line on a paper flow).
 - **`⌘L` (keyboard):** press `⌘L` inside the source cell to mark it, arrow-key to the target cell, press `⌘L` again to draw. Pressing `⌘L` twice in the same cell cancels.

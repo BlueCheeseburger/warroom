@@ -189,9 +189,9 @@ The flow editor works like a paper flow, with some spreadsheet shortcuts on top.
 Cells grow automatically to fit whatever you type.
 
 **Move around with the keyboard.**
-1. Press the **arrow keys** to move to the next cell when your cursor is already at that edge of the current cell (Up/Down/Left/Right).
+1. Press the **arrow keys** to move to the next cell in that direction (Up/Down/Left/Right). They always jump cells — they never move your cursor around inside a cell — so getting anywhere on the flow is one keypress per cell.
 2. Press **Tab** or **Enter** to jump to the next column or row.
-3. Press **Alt+↑** or **Alt+↓** to shift the cell's content up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
+3. Press **⌘↑** or **⌘↓** (Ctrl on Windows) to shift the argument in the current cell up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
 
 **Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
 
@@ -399,9 +399,9 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **⌘B / ⌘I / ⌘U / ⌘⇧X**: bold / italic / underline / strikethrough in a cell
 - **⌘F**: find across all sheets in the flow
 - **⌘Z / ⌘⇧Z (or ⌘Y)**: undo / redo
-- **Arrow keys**: move between cells from a cell's edge
+- **Arrow keys**: move to the neighbouring cell in that direction (always — never moves the cursor inside a cell)
 - **Tab / Enter**: move to next column / row
-- **Alt+↑ / Alt+↓**: shift a cell's content up / down a row (swaps with its neighbour, cursor follows)
+- **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
 - **⌘L**: draw an arrow — press it in the source cell, then again in the target cell
 - **Esc**: cancel arrow-draw mode or close find
 

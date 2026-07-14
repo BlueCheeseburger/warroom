@@ -800,18 +800,6 @@ export default function FlowView() {
     sel.addRange(range);
   }
 
-  function caretAtEdge(el: HTMLDivElement, edge: 'start' | 'end'): boolean {
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return false;
-    const r = sel.getRangeAt(0);
-    if (!r.collapsed) return false;
-    const probe = r.cloneRange();
-    probe.selectNodeContents(el);
-    if (edge === 'start') { probe.setEnd(r.startContainer, r.startOffset); }
-    else { probe.setStart(r.endContainer, r.endOffset); }
-    return probe.toString().length === 0;
-  }
-
   function handleKeyDown(ri: number, ci: number, e: React.KeyboardEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     const mod = e.metaKey || e.ctrlKey;
@@ -836,6 +824,16 @@ export default function FlowView() {
       linkCell(`${ri}-${ci}`);
       return;
     }
+    // Move this cell's content up/down a row (swaps with its neighbour)
+    if (mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const dir = e.key === 'ArrowDown' ? 'down' : 'up';
+      const t = dir === 'down' ? ri + 1 : ri - 1;
+      if (t < 0 || t >= NUM_ROWS) return;
+      moveCell(ri, ci, dir);
+      focusCell(`${t}-${ci}`);
+      return;
+    }
     if (mod) return; // let ⌘Z/⌘F/⌘A etc. bubble to global handlers
 
     if (e.key === 'Tab') {
@@ -850,22 +848,20 @@ export default function FlowView() {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
-    } else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      // Move this cell's content up/down a row (swaps with its neighbour)
+    // Arrow keys always jump to the neighbouring cell in that direction —
+    // they never move the caret inside the cell.
+    } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      const dir = e.key === 'ArrowDown' ? 'down' : 'up';
-      const t = dir === 'down' ? ri + 1 : ri - 1;
-      if (t < 0 || t >= NUM_ROWS) return;
-      moveCell(ri, ci, dir);
-      focusCell(`${t}-${ci}`);
-    } else if (e.key === 'ArrowUp' && caretAtEdge(el, 'start')) {
-      if (ri > 0) { e.preventDefault(); focusCell(`${ri - 1}-${ci}`); }
-    } else if (e.key === 'ArrowDown' && caretAtEdge(el, 'end')) {
-      if (ri < NUM_ROWS - 1) { e.preventDefault(); focusCell(`${ri + 1}-${ci}`, 'start'); }
-    } else if (e.key === 'ArrowLeft' && caretAtEdge(el, 'start')) {
-      if (ci > 0) { e.preventDefault(); focusCell(`${ri}-${ci - 1}`); }
-    } else if (e.key === 'ArrowRight' && caretAtEdge(el, 'end')) {
-      if (ci < columns.length - 1) { e.preventDefault(); focusCell(`${ri}-${ci + 1}`, 'start'); }
+      if (ri > 0) focusCell(`${ri - 1}-${ci}`);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (ci > 0) focusCell(`${ri}-${ci - 1}`);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (ci < columns.length - 1) focusCell(`${ri}-${ci + 1}`, 'start');
     }
   }
 
@@ -1455,7 +1451,7 @@ export default function FlowView() {
         </div>
 
         {/* Shortcuts help */}
-        <ToolBtn title={'Keyboard shortcuts:\nTab → next column   Enter → next row   Shift+Enter → line break\nArrows → move between cells   Alt+↑↓ → move a cell up/down\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
+        <ToolBtn title={'Keyboard shortcuts:\n↑↓←→ → move to the next cell in that direction\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline   ⌘⇧X → strikethrough\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
           <IcoHelp />
         </ToolBtn>
       </div>
