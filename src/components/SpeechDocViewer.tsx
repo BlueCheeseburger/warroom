@@ -6,7 +6,7 @@ import type { DebateEvent, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './FlowView';
 import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
-import { isShortcutDisabled } from '../lib/shortcutPrefs';
+import { matchesShortcut } from '../lib/shortcutPrefs';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -2444,8 +2444,7 @@ export default function SpeechDocViewer() {
   // Cmd/Ctrl+F opens the find bar; Esc closes it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && step === 'viewing') {
-        if (isShortcutDisabled('find-page')) return;
+      if (step === 'viewing' && matchesShortcut(e, 'find-page')) {
         e.preventDefault();
         setFindOpen(true);
         window.setTimeout(() => findInputRef.current?.focus(), 0);

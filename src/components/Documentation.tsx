@@ -405,19 +405,35 @@ export default function Documentation() {
             here too — grep for <Code>metaKey || e.ctrlKey</Code> across <Code>src/</Code> to find every
             shortcut currently wired up.
           </P>
-          <H3>Disabling individual shortcuts</H3>
+          <H3>Disabling & rebinding shortcuts</H3>
           <P>
-            A subset of standalone command-style shortcuts (not core typing/navigation conventions like
-            Enter, Tab, or arrow keys) can be turned off per-user, stored in <Code>localStorage</Code> via{' '}
-            <Code>shortcutPrefs.ts</Code> (<Code>isShortcutDisabled</Code> / <Code>toggleShortcutDisabled</Code>,
-            keyed by the entry's stable <Code>id</Code>). The control is deliberately understated — no
-            checkbox or visible toggle chrome; clicking directly on a disableable shortcut's key badge in
-            this overlay toggles it, shown only by a hover cursor/tooltip and a dimmed, struck-through key
-            once off. Every consuming keydown handler calls <Code>isShortcutDisabled(id)</Code> before
-            acting, so a disabled shortcut is inert everywhere it's used (e.g. <Code>find-page</Code> covers
-            ⌘F in Documentation, User Manual, the speech doc viewer, and flows — one toggle, four handlers).{' '}
-            <Code>⌘/</Code> itself is disableable, but the Settings → Keyboard Shortcuts button always opens
-            this overlay directly regardless of that preference, so it's never a dead end.
+            <Code>shortcutPrefs.ts</Code> is the single source of truth for every rebindable shortcut's
+            default combo (<Code>DEFAULT_BINDINGS: Record&lt;string, KeyBinding&gt;</Code>, keyed by the
+            entry's stable <Code>id</Code>). A shortcut with an entry there can be both disabled and
+            rebound per-user; entries without one (Enter, Tab, arrow keys, and multi-key groups like the
+            ⌘1–9 sheet switcher or the ⌘↑/⌘↓ row-move pair) are fixed. Two independent{' '}
+            <Code>localStorage</Code> keys back this: a disabled-id set and a{' '}
+            <Code>Record&lt;string, KeyBinding&gt;</Code> of overrides.
+          </P>
+          <P>
+            Every consuming keydown handler calls one function —{' '}
+            <Code>matchesShortcut(e, id)</Code> — instead of hand-rolling its own key comparison. It
+            checks disabled state, then compares the event against the effective binding (override if
+            set, else default). This is what makes a rebind or disable take effect everywhere that id is
+            wired up at once (e.g. <Code>find-page</Code> covers ⌘F in Documentation, User Manual, the
+            speech doc viewer, and flows — one toggle or rebind, three call sites).
+          </P>
+          <P>
+            Both controls are deliberately understated — no checkboxes, no permanent buttons. Click a
+            shortcut's key badge to disable/re-enable it (dimmed + struck-through when off). Hover a row
+            to reveal a small pencil icon that starts "recording" — the next keydown with{' '}
+            <Code>⌘</Code>/<Code>Ctrl</Code> or <Code>⌥</Code> held becomes the new binding{' '}
+            (<Code>isBindingValid</Code> rejects anything without a real modifier — Shift alone doesn't
+            count, since Shift+letter is just typing a capital letter in a text field, and this runs
+            inside flow cells). <Code>findConflict</Code> rejects a combo already claimed by another
+            enabled shortcut, surfacing which one. A customized entry shows a small "reset" link back to
+            default. <Code>⌘/</Code> itself is disableable/rebindable, but Settings → Keyboard Shortcuts
+            always opens this overlay directly, so it's never a dead end.
           </P>
         </section>
 
@@ -713,9 +729,8 @@ export default function Documentation() {
             viewer's find.)
           </P>
           <P>
-            <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> (or{' '}
-            <Code>⌘Y</Code>) redoes, also available as toolbar buttons. Undo covers text edits, column
-            changes, colors, and arrows.
+            <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> redoes, also
+            available as toolbar buttons. Undo covers text edits, column changes, colors, and arrows.
           </P>
           <P>
             <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}

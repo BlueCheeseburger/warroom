@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
-import { isShortcutDisabled, toggleShortcutDisabled } from '../lib/shortcutPrefs';
+import {
+  isShortcutDisabled, toggleShortcutDisabled,
+  DEFAULT_BINDINGS, getEffectiveBinding, hasCustomBinding, resetBinding,
+  setCustomBinding, isBindingValid, bindingFromEvent, formatBinding, findConflict,
+} from '../lib/shortcutPrefs';
 
 // ─── Keyboard shortcuts overlay (⌘/ on Mac, Ctrl+/ on Windows) ────────────────
 // The full, organized list of every keyboard shortcut in the app. Keep this in
@@ -9,14 +13,20 @@ import { isShortcutDisabled, toggleShortcutDisabled } from '../lib/shortcutPrefs
 // Shortcuts" section + Documentation.tsx to match (same discipline as the docs
 // sync rule for everything else).
 //
-// Disabling: a handful of standalone command-style shortcuts (not core typing/
-// navigation conventions) can be turned off per-user via localStorage
-// (shortcutPrefs.ts). The toggle is intentionally understated — no checkbox,
-// no visible chrome — clicking directly on a disableable shortcut's key badge
-// toggles it, shown only by a hover state and a struck-through/dimmed key once
-// off. Every consuming keydown handler checks isShortcutDisabled(id) before
-// acting. ⌘/ itself is disableable, but the Settings → Keyboard Shortcuts
-// button always opens this overlay regardless, so it's never a dead end.
+// Disabling: any shortcut whose id has a DEFAULT_BINDINGS entry (shortcutPrefs.ts)
+// can be turned off per-user — click its key badge to toggle. A few multi-key
+// groups (sheet-switching ⌘1-9, the ⌘↑/⌘↓ row-move pair) are disableable but not
+// individually rebindable, since they don't reduce to one combo.
+//
+// Rebinding: shortcuts with a DEFAULT_BINDINGS entry can be remapped to a
+// different combo. Both controls are intentionally understated — no checkboxes,
+// no permanent buttons. Click the key badge to disable/enable; hover a row to
+// reveal a small pencil icon that starts "recording" a new combo (press any
+// key with ⌘/Ctrl or ⌥ held; Esc cancels). Every consuming keydown handler
+// calls matchesShortcut(e, id) so a rebind or disable takes effect everywhere
+// that id is wired up. ⌘/ itself is disableable/rebindable, but the Settings →
+// Keyboard Shortcuts button always opens this overlay regardless, so it's
+// never a dead end.
 
 const isMac = window.warroom?.platform === 'darwin';
 const MOD = isMac ? '⌘' : 'Ctrl';
@@ -58,7 +68,7 @@ const GROUPS: Group[] = [
       { id: 'flow-strike', keys: [`${MOD}⇧X`], label: 'Strikethrough' },
       { id: 'flow-highlight', keys: [`${MOD}⇧H`], label: 'Highlight' },
       { id: 'flow-undo', keys: [`${MOD}Z`], label: 'Undo' },
-      { id: 'flow-redo', keys: [`${MOD}⇧Z`], label: 'Redo (or ' + MOD + 'Y)' },
+      { id: 'flow-redo', keys: [`${MOD}⇧Z`], label: 'Redo' },
       { id: 'flow-link', keys: [`${MOD}L`], label: 'Draw an arrow — press once in the source cell, again in the target cell' },
       { keys: ['Tab', '⇧Tab'], label: 'Move to the next / previous column' },
       { keys: ['Enter'], label: 'Move down a row' },
@@ -93,6 +103,30 @@ function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disab
   );
 }
 
+function PencilIcon({ visible, onClick, title }: { visible: boolean; onClick: () => void; title: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="w-5 h-5 flex items-center justify-center rounded transition"
+      style={{
+        opacity: visible ? 0.5 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        color: 'var(--nav-inactive-color)',
+      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = visible ? '0.5' : '0'; }}
+    >
+      <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13.5 3.5l3 3L6 17H3v-3z" />
+      </svg>
+    </button>
+  );
+}
+
 function matchShortcut(s: Shortcut, q: string): boolean {
   if (!q) return true;
   const hay = (s.label + ' ' + s.keys.join(' ')).toLowerCase();
@@ -102,20 +136,66 @@ function matchShortcut(s: Shortcut, q: string): boolean {
 export default function ShortcutsOverlay() {
   const { shortcutsOpen, setShortcutsOpen } = useApp();
   const [query, setQuery] = useState('');
-  // Bumped on every toggle to force disabled-state re-reads from localStorage.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [recordError, setRecordError] = useState('');
+  // Bumped on every disable/rebind to force effective-binding re-reads from localStorage.
   const [, setTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function close() { setShortcutsOpen(false); }
+  function bump() { setTick((t) => t + 1); }
 
   useEffect(() => {
-    if (!shortcutsOpen) return;
+    // The component never unmounts (it self-guards on shortcutsOpen), so this
+    // must fire on CLOSE too — otherwise closing mid-recording (backdrop click,
+    // the × button — anything other than Escape) would leave the capture-phase
+    // recording listener below attached forever, eating every keystroke app-wide.
+    if (!shortcutsOpen) { setRecordingId(null); return; }
     setQuery('');
+    setRecordingId(null);
     const t = setTimeout(() => inputRef.current?.focus(), 10);
+    return () => clearTimeout(t);
+  }, [shortcutsOpen]);
+
+  // Esc closes the overlay — unless a rebind is being recorded, in which case
+  // Esc cancels the recording instead (handled by the recorder listener below).
+  useEffect(() => {
+    if (!shortcutsOpen || recordingId) return;
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
     window.addEventListener('keydown', onKey);
-    return () => { clearTimeout(t); window.removeEventListener('keydown', onKey); };
-  }, [shortcutsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shortcutsOpen, recordingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While recording, capture the next keydown as the new binding.
+  useEffect(() => {
+    if (!recordingId) return;
+    const id = recordingId;
+    function onKey(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') { setRecordingId(null); return; }
+      // Ignore bare modifier presses — wait for the actual combo.
+      if (['Meta', 'Control', 'Shift', 'Alt'].includes(e.key)) return;
+      const binding = bindingFromEvent(e);
+      if (!isBindingValid(binding)) {
+        setRecordError('Must include ⌘/Ctrl or ⌥');
+        return;
+      }
+      const conflict = findConflict(id, binding);
+      if (conflict) {
+        const label = GROUPS.flatMap((g) => g.shortcuts).find((s) => s.id === conflict)?.label ?? conflict;
+        setRecordError(`Already used by "${label}"`);
+        return;
+      }
+      setCustomBinding(id, binding);
+      setRecordingId(null);
+      setRecordError('');
+      bump();
+    }
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [recordingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!shortcutsOpen) return null;
 
@@ -196,28 +276,65 @@ export default function ShortcutsOverlay() {
             <div key={group.title} className="mb-4 last:mb-1">
               <div className="label px-2.5 mb-1" style={{ fontSize: 10 }}>{group.title}</div>
               <div>
-                {group.shortcuts.map((s, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-4 px-2.5 py-1.5 rounded-lg transition"
-                    style={{ background: 'transparent' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                  >
-                    <span className="text-xs" style={{ color: 'var(--ink)', opacity: 0.8 }}>{s.label}</span>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {s.keys.map((k, j) => (
-                        <Kbd
-                          key={j}
-                          disabled={s.id ? isShortcutDisabled(s.id) : false}
-                          onClick={s.id ? () => { toggleShortcutDisabled(s.id!); setTick((t) => t + 1); } : undefined}
-                        >
-                          {k}
-                        </Kbd>
-                      ))}
+                {group.shortcuts.map((s, i) => {
+                  const rebindable = !!(s.id && DEFAULT_BINDINGS[s.id]);
+                  const disabled = s.id ? isShortcutDisabled(s.id) : false;
+                  const recording = recordingId === s.id;
+                  const customized = rebindable && s.id ? hasCustomBinding(s.id) : false;
+                  const displayKeys = rebindable && s.id
+                    ? [formatBinding(getEffectiveBinding(s.id)!, MOD)]
+                    : s.keys;
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg transition"
+                      style={{ background: 'transparent' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; if (s.id) setHoveredId(s.id); }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; setHoveredId(null); }}
+                    >
+                      <span className="text-xs" style={{ color: 'var(--ink)', opacity: 0.8 }}>{s.label}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {recording ? (
+                          <span
+                            className="text-xs font-mono px-1.5 py-0.5 rounded"
+                            style={{ border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                          >
+                            {recordError || 'Press new keys…'}
+                          </span>
+                        ) : (
+                          <>
+                            {customized && (
+                              <button
+                                onClick={() => { if (s.id) { resetBinding(s.id); bump(); } }}
+                                title="Reset to default"
+                                className="text-[10px] transition"
+                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', opacity: hoveredId === s.id ? 0.7 : 0 }}
+                              >
+                                reset
+                              </button>
+                            )}
+                            {displayKeys.map((k, j) => (
+                              <Kbd
+                                key={j}
+                                disabled={disabled}
+                                onClick={s.id ? () => { toggleShortcutDisabled(s.id!); bump(); } : undefined}
+                              >
+                                {k}
+                              </Kbd>
+                            ))}
+                            {rebindable && (
+                              <PencilIcon
+                                visible={hoveredId === s.id}
+                                title="Change this shortcut"
+                                onClick={() => { setRecordError(''); setRecordingId(s.id!); }}
+                              />
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

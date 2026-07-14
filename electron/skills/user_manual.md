@@ -215,7 +215,7 @@ Arrows are saved with the sheet, so they're there when you reopen the flow.
 
 **Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar. It searches every sheet in the flow at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close.
 
-**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** (or **⌘Y**) to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, and arrows.
+**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, and arrows.
 
 **Recolor a column.** Click the **▾** menu on any column header (it's always visible) and pick a color from the palette to recolor that column. Choose **Reset to default** to restore the side's standard color.
 
@@ -404,7 +404,7 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 ### In a flow
 - **⌘B / ⌘I / ⌘U / ⌘⇧X / ⌘⇧H**: bold / italic / underline / strikethrough / highlight in a cell
 - **⌘F**: find across all sheets in the flow
-- **⌘Z / ⌘⇧Z (or ⌘Y)**: undo / redo
+- **⌘Z / ⌘⇧Z**: undo / redo
 - **Arrow keys**: move to the neighbouring cell in that direction (always — never moves the cursor inside a cell)
 - **Tab / Enter**: move to next column / row
 - **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
@@ -413,7 +413,15 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **⌘L**: draw an arrow — press it in the source cell, then again in the target cell
 - **Esc**: cancel arrow-draw mode or close find
 
-Any of these can be turned off individually from the **⌘/** shortcuts list.
+### Customizing shortcuts
+Most of the shortcuts above (not the plain typing/navigation ones like Enter, Tab, or arrow keys) can be **disabled or rebound** to a different combo from the **⌘/** shortcuts list:
+
+- **Disable one**: click its key badge — it dims and gets a line through it. Click again to re-enable.
+- **Rebind one**: hover the shortcut and click the small pencil icon that appears, then press your new combo (it must include ⌘/Ctrl or ⌥ — Shift alone isn't accepted, since Shift+letter is just typing a capital letter). Press Esc to cancel instead. If your combo is already used by another active shortcut, it'll tell you and ask for a different one.
+- **Reset one back to default**: a small "reset" link appears next to any shortcut you've customized.
+- A few multi-key groups (jumping between sheets ⌘1–9, moving a row ⌘↑/⌘↓) can be disabled but not individually rebound, since they're not a single combo.
+
+Your changes are saved on this device and apply everywhere that shortcut is used in the app.
 
 ---
 

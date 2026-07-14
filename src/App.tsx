@@ -51,7 +51,7 @@ import ImpactLibrary from './components/ImpactLibrary';
 import SearchPalette from './components/SearchPalette';
 import ShortcutsOverlay from './components/ShortcutsOverlay';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
-import { isShortcutDisabled } from './lib/shortcutPrefs';
+import { matchesShortcut } from './lib/shortcutPrefs';
 
 const CHAT_MIN_W = 260;
 const CHAT_MAX_W = 600;
@@ -81,13 +81,10 @@ export default function App() {
   // ── Cmd+K global search, Cmd+/ keyboard shortcuts list ─────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === 'k') {
-        if (isShortcutDisabled('global-search')) return;
+      if (matchesShortcut(e, 'global-search')) {
         e.preventDefault();
         setSearchOpen(true);
-      } else if (e.key === '/') {
-        if (isShortcutDisabled('shortcuts-overlay')) return;
+      } else if (matchesShortcut(e, 'shortcuts-overlay')) {
         e.preventDefault();
         setShortcutsOpen(true);
       }

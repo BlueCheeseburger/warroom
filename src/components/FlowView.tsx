@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser } from '../lib/flowSync';
-import { isShortcutDisabled } from '../lib/shortcutPrefs';
+import { isShortcutDisabled, matchesShortcut } from '../lib/shortcutPrefs';
 import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
@@ -434,7 +434,7 @@ export default function FlowView() {
     return () => window.removeEventListener('warroom-flow-colors-changed', onColors);
   }, []);
 
-  // ── Global shortcuts: find (⌘F), undo (⌘Z), redo (⌘⇧Z / ⌘Y) ────────────────
+  // ── Global shortcuts: find (⌘F), undo (⌘Z), redo (⌘⇧Z) ─────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!flowId) return;
@@ -443,26 +443,21 @@ export default function FlowView() {
         else if (findOpen) closeFind();
         return;
       }
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const k = e.key.toLowerCase();
-      if (k === 'f') {
-        if (isShortcutDisabled('find-page')) return;
+      if (matchesShortcut(e, 'find-page')) {
         e.preventDefault();
         setFindOpen(true);
         setTimeout(() => findInputRef.current?.focus(), 0);
-      } else if (k === 'z' && !e.shiftKey) {
-        if (isShortcutDisabled('flow-undo')) return;
+      } else if (matchesShortcut(e, 'flow-undo')) {
         e.preventDefault(); undo();
-      } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
-        if (isShortcutDisabled('flow-redo')) return;
+      } else if (matchesShortcut(e, 'flow-redo')) {
         e.preventDefault(); redo();
-      } else if (k === 't' && !e.shiftKey) {
-        if (isShortcutDisabled('flow-sheet-new')) return;
+      } else if (matchesShortcut(e, 'flow-sheet-new')) {
         e.preventDefault(); addSheet();
-      } else if (/^[1-9]$/.test(e.key) && !e.shiftKey) {
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && /^[1-9]$/.test(e.key)) {
         // ⌘1–8 pick a sheet by position; ⌘9 jumps to the last one (browser-tab
-        // convention), so it still lands somewhere useful with >9 sheets.
+        // convention), so it still lands somewhere useful with >9 sheets. Not
+        // individually rebindable — it's a range, not one combo — but still
+        // respects the disable toggle.
         if (isShortcutDisabled('flow-sheet-switch')) return;
         const all = snap.current.sheets;
         const n = Number(e.key);
@@ -838,39 +833,36 @@ export default function FlowView() {
   function handleKeyDown(ri: number, ci: number, e: React.KeyboardEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     const mod = e.metaKey || e.ctrlKey;
-    const k = e.key.toLowerCase();
 
-    // Rich-text emphasis — ⌘B / ⌘I / ⌘U, strikethrough ⌘⇧X (or ⌘⇧S)
-    if (mod && !e.shiftKey && (k === 'b' || k === 'i' || k === 'u')) {
-      const id = k === 'b' ? 'flow-bold' : k === 'i' ? 'flow-italic' : 'flow-underline';
-      if (isShortcutDisabled(id)) return;
+    // Rich-text emphasis — ⌘B / ⌘I / ⌘U
+    if (matchesShortcut(e, 'flow-bold') || matchesShortcut(e, 'flow-italic') || matchesShortcut(e, 'flow-underline')) {
       e.preventDefault();
-      document.execCommand(k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline');
+      const cmd = matchesShortcut(e, 'flow-bold') ? 'bold' : matchesShortcut(e, 'flow-italic') ? 'italic' : 'underline';
+      document.execCommand(cmd);
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
-    if (mod && e.shiftKey && (k === 'x' || k === 's')) {
-      if (isShortcutDisabled('flow-strike')) return;
+    if (matchesShortcut(e, 'flow-strike')) {
       e.preventDefault();
       document.execCommand('strikeThrough');
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
-    if (mod && e.shiftKey && k === 'h') {
-      if (isShortcutDisabled('flow-highlight')) return;
+    if (matchesShortcut(e, 'flow-highlight')) {
       e.preventDefault();
       toggleHighlight();
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
     // Arrow line — ⌘L from the source cell, then ⌘L (or click) on the target
-    if (mod && k === 'l') {
-      if (isShortcutDisabled('flow-link')) return;
+    if (matchesShortcut(e, 'flow-link')) {
       e.preventDefault();
       linkCell(`${ri}-${ci}`);
       return;
     }
-    // Move this cell's content up/down a row (swaps with its neighbour)
+    // Move this cell's content up/down a row (swaps with its neighbour). Not
+    // individually rebindable — it's a pair (up + down), not one combo — but
+    // still respects the disable toggle.
     if (mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       if (isShortcutDisabled('flow-move-row')) return;
       e.preventDefault();
