@@ -642,6 +642,12 @@ html.dark .badge-neg {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Command-palette-style entrance for floating cards (ShortcutsOverlay, etc). */
+@keyframes wr-palette-in {
+  from { opacity: 0; transform: translate(-50%, -4px) scale(0.98); }
+  to   { opacity: 1; transform: translate(-50%, 0)    scale(1); }
+}
+
 /* ── docx-preview renderer ───────────────────────────────────────────────── */
 
 .docx-viewer-wrap {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { isShortcutDisabled, toggleShortcutDisabled } from '../lib/shortcutPrefs';
 
@@ -81,6 +81,7 @@ function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disab
       style={{
         background: 'var(--bg-input)',
         border: '1px solid var(--border-med)',
+        boxShadow: disabled ? 'none' : 'inset 0 -1.5px 0 var(--border-med)',
         color: 'var(--ink)',
         cursor: onClick ? 'pointer' : 'default',
         opacity: disabled ? 0.4 : 1,
@@ -92,35 +93,53 @@ function Kbd({ children, disabled, onClick }: { children: React.ReactNode; disab
   );
 }
 
+function matchShortcut(s: Shortcut, q: string): boolean {
+  if (!q) return true;
+  const hay = (s.label + ' ' + s.keys.join(' ')).toLowerCase();
+  return hay.includes(q);
+}
+
 export default function ShortcutsOverlay() {
   const { shortcutsOpen, setShortcutsOpen } = useApp();
+  const [query, setQuery] = useState('');
   // Bumped on every toggle to force disabled-state re-reads from localStorage.
   const [, setTick] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   function close() { setShortcutsOpen(false); }
 
   useEffect(() => {
     if (!shortcutsOpen) return;
+    setQuery('');
+    const t = setTimeout(() => inputRef.current?.focus(), 10);
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => { clearTimeout(t); window.removeEventListener('keydown', onKey); };
   }, [shortcutsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!shortcutsOpen) return null;
 
+  const q = query.trim().toLowerCase();
+  const filteredGroups = GROUPS
+    .map((group) => ({ ...group, shortcuts: group.shortcuts.filter((s) => matchShortcut(s, q)) }))
+    .filter((group) => group.shortcuts.length > 0);
+
   return (
     <>
-      <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9998 }} />
+      <div
+        onClick={close}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9998, animation: 'lm-fade 120ms ease-out' }}
+      />
       <div
         style={{
           position: 'fixed',
           top: 90,
           left: '50%',
-          transform: 'translateX(-50%)',
           width: '100%',
           maxWidth: 560,
           maxHeight: 'calc(100vh - 160px)',
           zIndex: 9999,
+          transform: 'translateX(-50%)',
           background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)',
           backdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
           WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
@@ -130,12 +149,13 @@ export default function ShortcutsOverlay() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          animation: 'wr-palette-in 140ms cubic-bezier(0.16, 1, 0.3, 1)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           className="flex items-center justify-between px-5"
-          style={{ height: 48, borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
+          style={{ height: 44, flexShrink: 0 }}
         >
           <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Keyboard shortcuts</span>
           <button
@@ -147,13 +167,43 @@ export default function ShortcutsOverlay() {
           </button>
         </div>
 
-        <div className="overflow-y-auto scroll-thin px-5 py-4" style={{ flex: 1 }}>
-          {GROUPS.map((group) => (
-            <div key={group.title} className="mb-5 last:mb-0">
-              <div className="label mb-2" style={{ fontSize: 10 }}>{group.title}</div>
-              <div className="space-y-1.5">
+        <div
+          className="flex items-center gap-2 px-5"
+          style={{ height: 40, borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
+            stroke="var(--nav-inactive-color)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+            style={{ flexShrink: 0 }}>
+            <circle cx="8.5" cy="8.5" r="5" />
+            <path d="M12.5 12.5L17 17" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter shortcuts…"
+            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: 'var(--ink)', fontFamily: 'inherit' }}
+          />
+        </div>
+
+        <div className="overflow-y-auto scroll-thin px-2.5 py-3" style={{ flex: 1 }}>
+          {filteredGroups.length === 0 && (
+            <div className="text-xs text-center py-8" style={{ color: 'var(--nav-inactive-color)' }}>
+              No shortcuts match "{query.trim()}"
+            </div>
+          )}
+          {filteredGroups.map((group) => (
+            <div key={group.title} className="mb-4 last:mb-1">
+              <div className="label px-2.5 mb-1" style={{ fontSize: 10 }}>{group.title}</div>
+              <div>
                 {group.shortcuts.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between gap-4">
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-4 px-2.5 py-1.5 rounded-lg transition"
+                    style={{ background: 'transparent' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
                     <span className="text-xs" style={{ color: 'var(--ink)', opacity: 0.8 }}>{s.label}</span>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {s.keys.map((k, j) => (
