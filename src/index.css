@@ -34,6 +34,32 @@
   --warn-rgb:   201 122 10;
   --danger-rgb: 179 38 30;
 
+  /* ── Convenience aliases ──────────────────────────────────────────────────
+     Components across the app reach for these plain names (`var(--ink)` alone
+     accounts for 127 call sites). They were never declared, so every one of
+     those declarations was being dropped by the parser and the element silently
+     fell back to inheriting — wrong in dark mode and in the paper/editorial
+     directions especially. Declaring them here fixes every call site at once.
+
+     These MUST stay defined only on :root and only in terms of other tokens.
+     Every theme override (html.dark, html[data-direction=...]) lands on the same
+     html element, so the var() indirection below re-resolves per theme on its
+     own — do NOT redeclare these inside the theme blocks, or they'll go stale
+     the moment the underlying token changes. */
+  --ink:          rgb(var(--ink-rgb));
+  --ink-color:    rgb(var(--ink-rgb));
+  --ink-muted:    rgb(var(--ink-rgb) / 0.62); /* tracks --nav-inactive-color */
+  --ink-faint:    rgb(var(--ink-rgb) / 0.42); /* tracks --placeholder */
+  --danger:       rgb(var(--danger-rgb));
+  --danger-color: rgb(var(--danger-rgb));
+  --accent-color: var(--accent);
+  --bg-popover:   var(--bg-elevated);
+  --bg-hover:     var(--nav-hover-bg);
+  --bg-side:      var(--bg-sidebar);
+  --bg-sunken:    var(--bg-nest);
+  --emerald:      var(--pos);
+  --rose:         var(--neg);
+
   /* Surface backgrounds */
   --bg-main:     #edeff3;
   --bg-sidebar:  #e5e8ee;
