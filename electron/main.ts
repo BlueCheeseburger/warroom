@@ -1484,6 +1484,56 @@ ipcMain.handle('speechdoc:clearCache', (_e, filePath?: string) => {
   return sbOk(null);
 });
 
+// Extracts just the "guaranteed searchable" text from a docx: every heading
+// (pocket/hat/block/tag) plus the cite line immediately following each tag
+// (author, quals, date, publication — see DEBATE_DOC_STRUCTURE.md §2). Used so
+// a card's tagline, author, and date are always part of a document's search
+// keyword set (extractKeywords in searchIndex.ts), regardless of how the
+// word-frequency ranking there would otherwise treat them — a tag mentioned
+// once shouldn't lose to a body word repeated 50 times. Mirrors the tag/cite
+// detection in speechdoc:extract above but only needs the heading+cite subset,
+// not the emphasis-run parsing. Best-effort: never throws, returns '' on any
+// failure so a bad docx can't break keyword extraction.
+async function extractDocxPriorityText(filePath: string): Promise<string> {
+  try {
+    const JSZip = require('jszip');
+    const buf = await fs.readFile(filePath);
+    const zip = await JSZip.loadAsync(buf);
+    const xml: string = await zip.file('word/document.xml')?.async('string') ?? '';
+    if (!xml) return '';
+    const stylesXml: string = await zip.file('word/styles.xml')?.async('string') ?? '';
+    const headingLevels = resolveHeadingStyles(stylesXml);
+    if (headingLevels.size === 0) {
+      headingLevels.set('Heading1', 1); headingLevels.set('Heading2', 2);
+      headingLevels.set('Heading3', 3); headingLevels.set('Heading4', 4);
+    }
+    const strip = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const getStyle = (p: string) => (p.match(/w:pStyle\s+w:val="([^"]+)"/) ?? [])[1] ?? 'Normal';
+    const levelOfStyle = (style: string) => headingLevels.get(style) ?? 0;
+
+    const paras = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)];
+    let maxLevel = 0;
+    for (const paraMatch of paras) maxLevel = Math.max(maxLevel, levelOfStyle(getStyle(paraMatch[0])));
+
+    const lines: string[] = [];
+    let nextIsCite = false;
+    for (const paraMatch of paras) {
+      const p = paraMatch[0];
+      const text = strip(p);
+      if (!text) continue;
+      const level = levelOfStyle(getStyle(p));
+      if (level > 0) {
+        lines.push(text);
+        nextIsCite = level === maxLevel;
+      } else if (nextIsCite) {
+        lines.push(text);
+        nextIsCite = false;
+      }
+    }
+    return lines.join('\n');
+  } catch { return ''; }
+}
+
 // Resolve which paragraph styles are HEADINGS from a docx's word/styles.xml, so
 // heading detection works even when a doc's heading styles aren't literally named
 // Heading1–9 (Google Docs exports, custom Verbatim templates, etc.). Computes each
@@ -2936,7 +2986,12 @@ ipcMain.handle('fs:extractDocxText', async (_e, filePath: string) => {
     if (typeof filePath !== 'string') return { ok: false, error: 'Invalid path' };
     checkPath(filePath);
     const text = await extractText(filePath);
-    return { ok: true, text };
+    // priorityText (tags + cites) is docx-only — extractText() also handles
+    // pdf/etc, where there's no heading structure to pull it from.
+    const priorityText = filePath.toLowerCase().endsWith('.docx')
+      ? await extractDocxPriorityText(filePath)
+      : '';
+    return { ok: true, text, priorityText };
   } catch (e: any) {
     return { ok: false, error: e.message };
   }

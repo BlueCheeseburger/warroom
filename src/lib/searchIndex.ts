@@ -18,9 +18,12 @@ const SPEECHDOC_RECENTS_KEY = 'warroom-speech-doc-recents';
 
 // Number of distilled keywords kept per document. Large enough that meaningful
 // but non-dominant terms (e.g. "arctic" in a domain-awareness aff) are retained.
+// This is a floor for frequency-ranked body words, not a hard ceiling — every
+// card's tagline and cite (author + date + publication) is guaranteed included
+// on top of it, even if that pushes the total above DOC_KEYWORD_CAP.
 export const DOC_KEYWORD_CAP = 2000;
 // Bump to invalidate every cached keyword set when the extraction logic changes.
-export const DOC_KEYWORD_VERSION = 2;
+export const DOC_KEYWORD_VERSION = 3;
 
 const STOPWORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'had', 'her',
@@ -50,23 +53,45 @@ const STOPWORDS = new Set([
 // Numbers 1-10 as strings — filtered out as pure noise
 const SMALL_NUMBERS = new Set(['1','2','3','4','5','6','7','8','9','10']);
 
-export function extractKeywords(text: string, n = 150): string[] {
+function tokenize(text: string): string[] {
   const lower = text.toLowerCase();
   const noHtml = lower.replace(/<[^>]+>/g, ' ');
-  const tokens = noHtml.split(/[^\w$]+/g);
+  return noHtml.split(/[^\w$]+/g);
+}
 
-  const freq = new Map<string, number>();
-  for (const tok of tokens) {
-    if (tok.length < 3) continue;
-    if (STOPWORDS.has(tok)) continue;
-    if (SMALL_NUMBERS.has(tok)) continue;
-    freq.set(tok, (freq.get(tok) ?? 0) + 1);
+function isMeaningfulToken(tok: string): boolean {
+  return tok.length >= 3 && !STOPWORDS.has(tok) && !SMALL_NUMBERS.has(tok);
+}
+
+/**
+ * Distills up to `n` frequency-ranked keywords from `text`, plus every distinct
+ * meaningful word from `priorityText` — guaranteed included regardless of how
+ * rarely it appears, ahead of and on top of the `n` frequency-ranked words.
+ * `priorityText` is meant to be a document's headings + cite lines (tagline,
+ * author, date, publication — see extractDocxPriorityText in main.ts): a card
+ * mentioned once shouldn't lose to a body word repeated 50 times. `n` is a
+ * floor for the frequency-ranked portion, not a hard cap on the total — if
+ * priority terms alone exceed `n`, they're all still returned.
+ */
+export function extractKeywords(text: string, n = 150, priorityText = ''): string[] {
+  const priority: string[] = [];
+  const prioritySet = new Set<string>();
+  for (const tok of tokenize(priorityText)) {
+    if (!isMeaningfulToken(tok) || prioritySet.has(tok)) continue;
+    prioritySet.add(tok);
+    priority.push(tok);
   }
 
-  return [...freq.entries()]
+  const freq = new Map<string, number>();
+  for (const tok of tokenize(text)) {
+    if (!isMeaningfulToken(tok) || prioritySet.has(tok)) continue;
+    freq.set(tok, (freq.get(tok) ?? 0) + 1);
+  }
+  const ranked = [...freq.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
     .map(([word]) => word);
+
+  return [...priority, ...ranked.slice(0, Math.max(0, n - priority.length))];
 }
 
 // Strip a leading markdown/heading prefix from a cite title (mirrors OpponentProfile).
@@ -127,7 +152,7 @@ export async function refreshSpeechDocKeywords(): Promise<boolean> {
         cache[d.path] = {
           size,
           ver: DOC_KEYWORD_VERSION,
-          keywords: extractKeywords(res.text, DOC_KEYWORD_CAP),
+          keywords: extractKeywords(res.text, DOC_KEYWORD_CAP, res.priorityText),
         };
         changed = true;
       } catch { /* skip this doc */ }

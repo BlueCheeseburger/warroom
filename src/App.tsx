@@ -115,7 +115,7 @@ export default function App() {
           if (!fetched?.ok || !fetched.tempPath) continue;
           const res = await window.warroom?.fs.extractDocxText(fetched.tempPath);
           if (!res?.ok || !res.text) continue;
-          const keywords = extractKeywords(res.text, DOC_KEYWORD_CAP);
+          const keywords = extractKeywords(res.text, DOC_KEYWORD_CAP, res.priorityText);
           const { update } = useApp.getState();
           await update(db2 => ({
             ...db2,

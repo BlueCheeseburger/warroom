@@ -363,7 +363,10 @@ export default function Documentation() {
           <P>
             On launch, Warroom distills the top content keywords from each case and speech doc (up to
             2,000 per document, stopwords and 1–10 numbers removed) and caches them. Pure numbers above
-            10 stay searchable (e.g. a <Code>$1,500,000</Code> plan figure). Opening a matched case or
+            10 stay searchable (e.g. a <Code>$1,500,000</Code> plan figure). On top of that 2,000 cap,
+            every card's <strong>tagline and cite (author, date, publication)</strong> is guaranteed
+            searchable regardless of how often those words appear elsewhere in the document — a tag
+            mentioned once shouldn't lose to a body word repeated 50 times. Opening a matched case or
             speech doc auto-opens the in-document find on the searched term; matched opponent disclosures
             auto-scroll and highlight the term in the title.
           </P>

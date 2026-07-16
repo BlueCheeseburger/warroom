@@ -73,6 +73,16 @@ After a tag, the following paragraphs are `Normal` / `NormalWeb`:
 A bare tag with no Normal paragraph under it (another heading follows immediately)
 is an **analytic / label tag**, not an evidence card.
 
+**Consumers of tag/cite detection**: `speechdoc:extract` (token saving / AI
+attach / aff-neg), and `extractDocxPriorityText` (`electron/main.ts`) — a
+lighter pass reusing the same heading-level + "first paragraph after a tag is
+the cite" logic, but only collecting headings + cite lines (not body/emphasis).
+Its output feeds `extractKeywords`' `priorityText` param
+(`src/lib/searchIndex.ts`) so every card's tagline and cite (author, date,
+publication) is guaranteed part of a case/speech-doc's ⌘K search keywords,
+regardless of word-frequency ranking. If the tag/cite detection rules above
+change, update both consumers.
+
 ---
 
 ## 3. Emphasis inside the body (what is actually read aloud)
