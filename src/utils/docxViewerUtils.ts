@@ -78,8 +78,10 @@ export function removeDarkModeViewerFixes(container: HTMLElement) {
     if (el.style.borderRightColor) el.style.borderRightColor = orig;
     delete el.dataset.origBorderColor;
   });
-  container.querySelectorAll<HTMLElement>('section.docx').forEach(s => {
-    s.style.background = '#ffffff';
-    s.style.color = '#1c1c1e';
-  });
+  // Deliberately nothing here for the page sections. This function is the exact
+  // inverse of applyDarkModeViewerFixes, which only ever touches elements it
+  // tagged with data-orig-bg / data-orig-border-color — it never restyles a page.
+  // Page background/text colour is owned by the `html.dark .docx-viewer-wrap` rule
+  // in index.css, which reacts to theme toggles on its own; writing inline colours
+  // here would beat that rule and strand the page in light mode.
 }

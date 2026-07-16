@@ -2707,8 +2707,6 @@ export default function SpeechDocViewer() {
           experimental: true,
         });
 
-        // Force readable background + text on every page section
-        const isDark = document.documentElement.classList.contains('dark');
         // Remove any leading blank children (blank cover page present in some docx files).
         for (const child of Array.from(containerRef.current.children)) {
           const stripped = (child.textContent ?? '').replace(/[\s ​‌‍﻿]/g, '');
@@ -2719,19 +2717,16 @@ export default function SpeechDocViewer() {
           }
         }
 
-        containerRef.current.querySelectorAll('section.docx').forEach((el) => {
-          const s = el as HTMLElement;
-          s.style.background = isDark ? '#2c2c2e' : '#ffffff';
-          s.style.color = isDark ? '#e8e8ea' : '#1c1c1e';
-          s.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)';
-          s.style.borderRadius = '4px';
-          s.style.marginBottom = '24px';
-          s.style.padding = '48px 56px';
-          s.style.maxWidth = '860px';
-          s.style.marginLeft = 'auto';
-          s.style.marginRight = 'auto';
-        });
-
+        // NOTE: there used to be a `section.docx` loop here painting page
+        // background/text/shadow/padding/max-width. It never ran: renderAsync is
+        // called with className 'docx-render', so the pages are section.docx-render
+        // and the selector matched nothing. Rather than "fix" the selector, it's
+        // gone — page colour belongs to the `html.dark .docx-viewer-wrap` rule in
+        // index.css, which re-evaluates on theme toggle, whereas these inline
+        // colours were computed once at render and would have stranded an open doc
+        // in the old theme. Page geometry is docx-preview's, from the real Word
+        // page margins. A centred page-card look would be a deliberate CSS change.
+        const isDark = document.documentElement.classList.contains('dark');
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
 
         // Resolve which paragraph styles are headings from styles.xml (handles
