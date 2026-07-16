@@ -124,6 +124,47 @@ On the Mission Brief (round view), Warroom can suggest which blocks to read agai
 
 ---
 
+## Cases Grid & Folders
+
+Clicking the **Cases** title in the sidebar opens the `{ kind: 'cases-grid'; folderId?: string }` view — a full-screen grid of every case *and* every imported speech doc, each drawn as a Google-Docs-style first-page preview.
+
+`buildCaseItems(db)` (`src/utils/caseItems.ts`) flattens the three sources that live in different places into one `CaseItem` list:
+
+- `case` — built from blocks, lives in `db.cases`. No docx behind it.
+- `oc-case` — an OpenCaseList import. Also in `db.cases`, but backed by real docx bytes via `ocSource`.
+- `speech-doc` — a `.docx` you opened. Lives only in the `warroom-speech-doc-recents` localStorage list, not the db.
+
+### The folder model
+
+Folders live in `src/utils/caseFolders.ts` and persist through `window.warroom.storage` under the `case_folders` key — not localStorage, because this is durable library structure rather than view state.
+
+`CaseFoldersData` is two fields:
+
+- `folders` — a flat array of `{ id, name, parentId, createdAt }`. `parentId: null` means top level; nesting is arbitrary depth.
+- `assignments` — a map of `itemKey → folderId`. An item with no entry sits at the top level.
+
+Item keys are namespaced so one map can address either bucket: `case:<id>` for cases and `doc:<path>` for speech docs (`itemKeyForCase` / `itemKeyForDoc`).
+
+**A folder is only a label.** Filing something into one writes an assignment and nothing else — it never moves, copies, renames, or deletes the underlying file on disk or the record in `db.cases`. The whole folder structure can be thrown away without losing a single document.
+
+Consequently **deleting a folder keeps its documents**: `deleteFolder` re-parents its subfolders and reassigns its items to the deleted folder's parent (or back to the top level), so the only thing lost is the grouping. `resolveItemFolder` is defensive in the same spirit — an assignment pointing at a folder that no longer exists resolves to the top level rather than stranding the document somewhere unreachable.
+
+Every mutation (`createFolder`, `renameFolder`, `deleteFolder`, `moveFolder`, `moveItem`) is **pure** and returns a new `CaseFoldersData`; callers apply it through the `useCaseFolders()` hook's `update((d) => moveItem(d, key, folderId))`. Writes broadcast a window event, so the grid and the sidebar tree — both consumers of the same hook — re-render together in the same tick. `moveFolder` refuses a move into the folder's own subtree (`isSelfOrDescendant`) since that would orphan it.
+
+### Sidebar tree
+
+The sidebar's Cases section mirrors the same state as a nested tree. Top-level folders come from `childFolders(folders, null)`; expanding one reveals its subfolders recursively plus the items assigned to it, and the loose list underneath holds only items whose `resolveItemFolder` is `null`. Expanded folders persist in localStorage under `sidebar-cases-folders-open`.
+
+A folder row navigates to `{ kind: 'cases-grid', folderId }`; the section title itself opens the grid at the top level (the `+` button still opens the speech-doc view). Items and folders are HTML5-draggable onto folder rows to file them, and dropping anywhere that isn't a folder row falls through to a top-level drop zone, which is how something gets un-filed.
+
+### Page previews
+
+Items backed by real docx bytes (speech docs and `oc-case` imports) get a **real first page**: the docx is rendered with `docx-preview` using `breakPages: true`, and only page one is kept and scaled down into the tile. Because that render is expensive, the result is cached in localStorage under `warroom-case-preview-<key>`, keyed by the same namespaced item key as the folder assignments — so a revisit is instant and offline.
+
+Block-built `case` items have **no docx behind them**, so there is no page to render. Their tile is **synthesized** instead — a page-shaped mock laid out from the case's own tags and cites — so the grid reads as one consistent wall of documents rather than a mix of pages and placeholders.
+
+---
+
 ## Cards (Card Library)
 
 The Cards view (sidebar label "Cards", view kind `library`) aggregates all cards across every case and block. Cards can be searched, flagged, and clicked to open their block. Flagged cards are highlighted for quick reference. Cards can be exported or shared as attachments in team chat.
@@ -278,7 +319,9 @@ The toolbar also includes **Focus mode** (hides body text, showing only card str
 
 **Office-font substitution.** macOS ships no Calibri, so `docx-preview`'s inline `font-family: Calibri` would fall back to the browser default serif (Times New Roman-like) — wrong for nearly all debate docs. A one-time global `@font-face` block (id `wr-docx-fonts`) redefines the Office families (`Calibri`, `Calibri Light`, `Aptos`, `Aptos Display`, `Cambria`, `Cambria Math`) with `local()`-only source chains that resolve to real Office fonts when installed, else metric-compatible open fonts (Carlito/Caladea), else a clean system sans-serif (`Helvetica Neue`/`Arial`) for the sans families.
 
-**The theme-font gap.** Aliases alone are not enough. Modern Word docs often leave the latin font *unset* on body runs — a run carries only `w:rFonts w:cs="Calibri"` (complex-script) and inherits its real font from `docDefaults` → `w:asciiTheme="minorHAnsi"` → the **theme** font (Aptos) in `theme1.xml`. `docx-preview` does **not** resolve theme fonts, so those runs emit no inline `font-family` at all and fall through to Chromium's default serif. This is why a doc could render sans-serif headings (which set Calibri explicitly) but serif body text, despite the document intending one font throughout — and why an `@font-face 'Aptos'` alias cannot fix it, since the string "Aptos" is never emitted. The fix: the post-render loop sets `section.docx { font-family: <Calibri sans stack> }` as a container default, so theme-inherited runs inherit the sans stack while runs carrying an explicit inline font (Calibri headings, or a genuinely Times-New-Roman body) still win via inline-style specificity. See `DEBATE_DOC_STRUCTURE.md` §6.
+**The theme-font gap.** Aliases alone are not enough. Modern Word docs often leave the latin font *unset* on body runs — a run carries only `w:rFonts w:cs="Calibri"` (complex-script) and inherits its real font from `docDefaults` → `w:asciiTheme="minorHAnsi"` → the **theme** font (Aptos) in `theme1.xml`. `docx-preview` does **not** resolve theme fonts, so those runs emit no inline `font-family` at all and fall through to Chromium's default serif. This is why a doc could render sans-serif headings (which set Calibri explicitly) but serif body text, despite the document intending one font throughout — and why an `@font-face 'Aptos'` alias cannot fix it, since the string "Aptos" is never emitted. The fix: the injected `#wr-docx-fonts` style block sets a page default, `section.docx-render { font-family: <Calibri sans stack> }`, so theme-inherited runs land on the sans stack while runs that DO resolve a font (Calibri headings, a genuinely Times-New-Roman body) keep it — docx-preview styles those per-element, which beats this selector.
+
+**Mind the page class.** The page `<section>` takes its class from `renderAsync`'s `className` option (`createPageElement(this.className, ...)`), so `SpeechDocViewer` pages are `section.docx-render` and `section.docx` matches nothing there. `GoogleDrivePanel` passes no `className` and gets docx-preview's `'docx'` default; `CasePreview` passes a per-item hashed class because docx-preview scopes all generated CSS to that class and shared classes would make thumbnails clobber each other. Check the call site before writing a selector. See `DEBATE_DOC_STRUCTURE.md` §6.
 
 ### OpenCaseList-imported cases
 

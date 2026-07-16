@@ -2308,6 +2308,22 @@ export default function SpeechDocViewer() {
       @font-face { font-family: 'Aptos'; font-weight: bold; src: local('Aptos Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold'); }
       @font-face { font-family: 'Cambria'; src: local('Cambria'), local('Caladea'), local('Georgia'), local('Times New Roman'); }
       @font-face { font-family: 'Cambria Math'; src: local('Cambria Math'), local('Caladea'), local('Georgia'); }
+
+      /* Default font for theme-inherited runs.
+         Modern debate docs routinely leave the latin font UNSET on body runs: the run
+         carries only w:rFonts w:cs="Calibri" (complex-script) and inherits its real
+         font from docDefaults -> w:asciiTheme="minorHAnsi" -> the THEME font (Aptos).
+         docx-preview does not resolve theme fonts, so those runs emit no font-family
+         at all and fall through to Chromium's default serif — which is why a doc could
+         render sans-serif headings but Times New Roman body text despite declaring one
+         font throughout. Aliasing 'Aptos' cannot fix it, because that string is never
+         emitted. Setting the page default here does: runs with no font inherit the sans
+         stack, while runs that DO resolve a font (Calibri headings, a genuinely
+         Times-New-Roman body) keep it — docx-preview styles those per-element, which
+         beats this selector. Class must match renderAsync's className option. */
+      section.docx-render {
+        font-family: 'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif;
+      }
     `;
     document.head.appendChild(el);
   }, []);
@@ -2714,15 +2730,6 @@ export default function SpeechDocViewer() {
           s.style.maxWidth = '860px';
           s.style.marginLeft = 'auto';
           s.style.marginRight = 'auto';
-          // Default font for theme-inherited runs. Many modern debate docs leave the
-          // latin font unset on body runs so it inherits docDefaults = the minorHAnsi
-          // THEME font (Aptos/Calibri). docx-preview does NOT resolve theme fonts, so
-          // those runs emit no inline font-family and fall through to the browser's
-          // default serif (Times New Roman) — the wrong look for a Calibri/Aptos doc.
-          // Setting the section default to the Calibri sans stack fixes that; runs that
-          // DO carry an explicit inline font (Calibri headers, real Times New Roman
-          // bodies) keep winning via inline-style specificity.
-          s.style.fontFamily = "'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif";
         });
 
         if (isDark) applyDarkModeViewerFixes(containerRef.current);

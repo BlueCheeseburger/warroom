@@ -97,6 +97,7 @@ const TOC_SECTIONS = [
   { id: 'global-search', label: 'Global search (⌘K)' },
   { id: 'shortcuts',   label: 'Keyboard shortcuts (⌘/)' },
   { id: 'cases',       label: 'Cases & blocks' },
+  { id: 'cases-grid',  label: 'Cases grid & folders' },
   { id: 'library',     label: 'Card library' },
   { id: 'opponents',   label: 'Opponents' },
   { id: 'tournaments', label: 'Tournaments & rounds' },
@@ -461,6 +462,87 @@ export default function Documentation() {
             opponent's positions using <Code>suggestBlocks</Code> — Warroom AI compares the opponent's
             disclosed arguments against your block list and returns a ranked selection.{' '}
             <PromptLink name="suggest_blocks" />
+          </P>
+        </section>
+
+        {/* ── Cases grid & folders ───────────────────────────────────── */}
+        <section id="doc-cases-grid">
+          <H2>Cases grid &amp; folders</H2>
+          <P>
+            Clicking the <strong>Cases</strong> title in the sidebar opens the{' '}
+            <Code>{"{ kind: 'cases-grid'; folderId?: string }"}</Code> view — a full-screen grid of
+            every case <em>and</em> every imported speech doc, each drawn as a Google-Docs-style
+            first-page preview. <Code>buildCaseItems(db)</Code> (<Code>src/utils/caseItems.ts</Code>)
+            flattens the three sources that live in different places into one <Code>CaseItem</Code>{' '}
+            list: <Code>case</Code> (built from blocks, in <Code>db.cases</Code>),{' '}
+            <Code>oc-case</Code> (an OpenCaseList import — also in <Code>db.cases</Code>, but backed
+            by real docx bytes via <Code>ocSource</Code>), and <Code>speech-doc</Code> (a{' '}
+            <Code>.docx</Code> you opened, which lives only in the{' '}
+            <Code>warroom-speech-doc-recents</Code> localStorage list).
+          </P>
+
+          <H3>The folder model</H3>
+          <P>
+            Folders live in <Code>src/utils/caseFolders.ts</Code> and persist through{' '}
+            <Code>window.warroom.storage</Code> under the <Code>case_folders</Code> key — not
+            localStorage, because this is durable library structure rather than view state.{' '}
+            <Code>CaseFoldersData</Code> is two fields: a flat <Code>folders</Code> array (each with
+            a <Code>parentId</Code>, so nesting is arbitrary depth) and an <Code>assignments</Code>{' '}
+            map of <Code>itemKey → folderId</Code>. Item keys are namespaced so one map can address
+            either bucket: <Code>case:&lt;id&gt;</Code> for cases and{' '}
+            <Code>doc:&lt;path&gt;</Code> for speech docs (<Code>itemKeyForCase</Code> /{' '}
+            <Code>itemKeyForDoc</Code>). An item with no entry sits at the top level.
+          </P>
+          <P>
+            <strong>A folder is only a label.</strong> Filing something into one writes an
+            assignment and nothing else — it never moves, copies, renames, or deletes the underlying
+            file on disk or the record in <Code>db.cases</Code>. The whole folder structure can be
+            thrown away without losing a single document. Consequently{' '}
+            <strong>deleting a folder keeps its documents</strong>: <Code>deleteFolder</Code>{' '}
+            re-parents its subfolders and reassigns its items to the deleted folder's parent (or back
+            to the top level), so the only thing lost is the grouping.{' '}
+            <Code>resolveItemFolder</Code> is defensive in the same spirit — an assignment pointing
+            at a folder that no longer exists resolves to the top level rather than stranding the
+            document somewhere unreachable.
+          </P>
+          <P>
+            Every mutation (<Code>createFolder</Code>, <Code>renameFolder</Code>,{' '}
+            <Code>deleteFolder</Code>, <Code>moveFolder</Code>, <Code>moveItem</Code>) is{' '}
+            <strong>pure</strong> and returns a new <Code>CaseFoldersData</Code>; callers apply it
+            through the <Code>useCaseFolders()</Code> hook's{' '}
+            <Code>update((d) =&gt; moveItem(d, key, folderId))</Code>. Writes broadcast a window
+            event, so the grid and the sidebar tree — both consumers of the same hook — re-render
+            together in the same tick. <Code>moveFolder</Code> refuses a move into the folder's own
+            subtree (<Code>isSelfOrDescendant</Code>) since that would orphan it.
+          </P>
+
+          <H3>Sidebar tree</H3>
+          <P>
+            The sidebar's Cases section mirrors the same state as a nested tree. Top-level folders
+            come from <Code>childFolders(folders, null)</Code>; expanding one reveals its subfolders
+            recursively plus the items assigned to it, and the loose list underneath holds only items
+            whose <Code>resolveItemFolder</Code> is <Code>null</Code>. Expanded folders persist in
+            localStorage under <Code>sidebar-cases-folders-open</Code>. A folder row navigates to{' '}
+            <Code>{"{ kind: 'cases-grid', folderId }"}</Code>; the section title itself opens the
+            grid at the top level. Items and folders are HTML5-draggable onto folder rows to file
+            them, and dropping anywhere that isn't a folder row falls through to a top-level drop
+            zone, which is how something gets un-filed.
+          </P>
+
+          <H3>Page previews</H3>
+          <P>
+            Items backed by real docx bytes (speech docs and <Code>oc-case</Code> imports) get a{' '}
+            <strong>real first page</strong>: the docx is rendered with{' '}
+            <Code>docx-preview</Code> using <Code>breakPages: true</Code>, and only page one is kept
+            and scaled down into the tile. Because that render is expensive, the result is cached in
+            localStorage under <Code>warroom-case-preview-&lt;key&gt;</Code>, keyed by the same
+            namespaced item key as the folder assignments — so a revisit is instant and offline.
+          </P>
+          <P>
+            Block-built <Code>case</Code> items have <strong>no docx behind them</strong>, so there
+            is no page to render. Their tile is <strong>synthesized</strong> instead — a page-shaped
+            mock laid out from the case's own tags and cites — so the grid reads as one consistent
+            wall of documents rather than a mix of pages and placeholders.
           </P>
         </section>
 

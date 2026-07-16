@@ -34,6 +34,30 @@ Cases are top-level positions (Aff or Neg). Each holds blocks (e.g. "T – Topic
 
 ---
 
+## Cases Grid
+Click **Cases** in the sidebar and you get the whole library at once — every case you've built and every document you've imported, laid out as a grid of page previews. Each tile shows the actual first page, the way Google Docs shows you a document before you open it, so you can find the right doc by recognising it instead of reading file names. Click any tile to open it.
+
+### Folders
+Make a folder to group things however you think about them — by tournament, by argument, by side, whatever fits.
+
+- **Make a folder**: use the new-folder button at the top of the grid, then give it a name
+- **File a document**: drag its tile onto a folder — or drag it onto a folder in the sidebar
+- **Open a folder**: click it, in the grid or in the sidebar
+- **Nest folders**: drag one folder into another; they can go as deep as you like
+- **Rename or delete**: hover a folder in the grid — Rename and Delete appear on the tile
+
+Folders also appear in the sidebar under Cases, as a tree you can expand and collapse. Whatever you file in one place shows up in the other immediately — it's the same set of folders, just two ways of looking at it.
+
+### Folders never touch your files
+A folder is just a label. Filing a document into one does **not** move it, copy it, or change it on disk — it only changes where Warroom shows it to you. That means nothing you do here can lose a document.
+
+The same goes for deleting a folder: **your documents stay**. Deleting only removes the grouping, and everything that was inside moves up a level to wherever the folder used to be. If you want to get rid of a document itself, delete the document, not the folder.
+
+### Finding things
+Search from the grid looks across **every folder at once**, not just the one you're standing in — so you never have to remember where you filed something to get back to it.
+
+---
+
 ## Cards
 (Called "Cards" in the sidebar — the Library/All cards view.) All cards across every case and block in one view. Search by tag, citation, or body text. Flag/unflag cards with the flag icon. Click any card to jump to the block it lives in.
 

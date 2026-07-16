@@ -30,6 +30,7 @@ export interface FlowMeta {
 
 export type View =
   | { kind: 'home' }
+  | { kind: 'cases-grid'; folderId?: string }
   | { kind: 'case'; caseId: string }
   | { kind: 'block'; blockId: string }
   | { kind: 'library' }

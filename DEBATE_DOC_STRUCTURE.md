@@ -148,9 +148,19 @@ explicitly) but serif body text — even though the document intends one font
 throughout. An `@font-face` alias can't fix this because the string "Aptos" is
 never emitted by docx-preview.
 
-**The fix:** the post-render loop sets `section.docx { font-family: <Calibri sans
-stack> }` as the container default, so theme-inherited runs (no inline font) land
-on the sans stack, while runs that *do* carry an explicit inline font — Calibri
-headings, or a genuinely Times-New-Roman card body — keep winning via inline-style
-specificity. When touching font handling, prefer adjusting that section default
-over the `@font-face` block for theme-inheritance cases.
+**The fix:** the injected `#wr-docx-fonts` style block sets a page default —
+`section.docx-render { font-family: <Calibri sans stack> }` — so theme-inherited
+runs (which resolve no font at all) land on the sans stack, while runs that *do*
+resolve a font (Calibri headings, a genuinely Times-New-Roman card body) keep it,
+because docx-preview styles those per-element and that beats this selector. When
+touching font handling, prefer adjusting that page default over the `@font-face`
+block for theme-inheritance cases.
+
+**Watch the class name.** The page `<section>` takes its class from `renderAsync`'s
+`className` option, so in `SpeechDocViewer.tsx` (which passes `'docx-render'`) the
+pages are `section.docx-render` — `section.docx` matches **nothing** there. Other
+callers differ: `GoogleDrivePanel.tsx` passes no `className` and so gets
+docx-preview's `'docx'` default, and `CasePreview.tsx` passes a per-item hashed
+class on purpose (docx-preview scopes all its generated CSS to that class, so
+sharing one class across many thumbnails would make them clobber each other's
+styles). Always check the call site's `className` before writing a selector.

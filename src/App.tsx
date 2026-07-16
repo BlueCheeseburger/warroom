@@ -32,6 +32,7 @@ import MissionBrief from './components/MissionBrief';
 import TournamentList from './components/TournamentList';
 import TournamentView from './components/TournamentView';
 import SpeechDocViewer from './components/SpeechDocViewer';
+import CasesGrid from './components/CasesGrid';
 import Onboarding from './components/Onboarding';
 import FlowView from './components/FlowView';
 import FindCards from './components/FindCards';
@@ -669,6 +670,7 @@ function Router() {
   if (!isSpeech && !isLogos && !isOpenEv && !isGoogleScholar) {
     switch (view.kind) {
       case 'home':        regular = <Home />; break;
+      case 'cases-grid':  regular = <CasesGrid />; break;
       case 'case':        regular = <CaseView />; break;
       case 'block':       regular = <BlockView />; break;
       case 'library':     regular = <Library />; break;

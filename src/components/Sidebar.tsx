@@ -1,7 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
 import gdriveLogo from '../assets/gdrive-logo.png';
 import { importFlowFromXlsx } from '../utils/flowImport';
+import {
+  useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
+  isSelfOrDescendant, CaseFolder,
+} from '../utils/caseFolders';
+import { buildCaseItems, CaseItem } from '../utils/caseItems';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string; cardCount?: number }
@@ -64,6 +69,14 @@ export function IcoCases() {
   return (
     <Ico>
       <path d="M2 7v9a1 1 0 001 1h14a1 1 0 001-1V9a1 1 0 00-1-1H9.5L7.5 6H3a1 1 0 00-1 1z"/>
+    </Ico>
+  );
+}
+/** Folder in the Cases tree — a smaller, plainer sibling of IcoCases. */
+export function IcoFolder() {
+  return (
+    <Ico size={14}>
+      <path d="M2 6.5v9a1 1 0 001 1h14a1 1 0 001-1V8.5a1 1 0 00-1-1H9.5l-2-2H3a1 1 0 00-1 1z"/>
     </Ico>
   );
 }
@@ -199,7 +212,6 @@ export default function Sidebar() {
   const [driveConfigured, setDriveConfigured] = useState(false);
   const [importing, setImporting] = useState(false);
   const { db, view, setView, mode, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
-  const cases = Object.values(db.cases).filter((c: any) => !c.id.startsWith('__'));
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});
@@ -282,7 +294,7 @@ export default function Sidebar() {
       ) : (
         <ExpandedNav
           view={view} mode={mode} setView={setView}
-          cases={cases} tournaments={tournaments} opponents={opponents}
+          tournaments={tournaments} opponents={opponents}
           flowsIndex={flowsIndex} busyViews={busyViews}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
@@ -299,7 +311,7 @@ export default function Sidebar() {
 function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
   const { setSearchOpen } = useApp();
   const isHome       = view.kind === 'home';
-  const isCases      = view.kind === 'case' || view.kind === 'block';
+  const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid';
   const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'speech-doc' || view.kind === 'google-scholar';
   const isOpponents  = view.kind === 'opponents' || view.kind === 'opponent' || view.kind === 'judge';
   const isTournament = view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
@@ -336,7 +348,7 @@ function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount,
 
         <div className="w-6 my-1" style={{ borderTop: '1px solid var(--border-subtle)' }} />
 
-        <CIcon label="Cases" active={isCases} onClick={() => setView({ kind: 'home' })}>
+        <CIcon label="Cases" active={isCases} onClick={() => setView({ kind: 'cases-grid' })}>
           <IcoCases />
         </CIcon>
 
@@ -432,29 +444,16 @@ function CIcon({ label, active, onClick, children }: {
 // ── Expanded navigation (icons + text) ────────────────────────────────────────
 
 function ExpandedNav({
-  view, mode, setView, cases, tournaments, opponents,
+  view, mode, setView, tournaments, opponents,
   flowsIndex, busyViews, chatOpen, setChatOpen, unreadCount,
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
   const { setSearchOpen, event, openCardCutter } = useApp();
-  const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
 
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const eventTopicTab: 'policy' | 'pf' | 'ld' = event === 'pf' || event === 'ld' ? event : 'policy';
   const eventTopicLabel = eventTopicTab === 'pf' ? 'Public Forum' : eventTopicTab === 'ld' ? 'Lincoln-Douglas' : 'Policy';
-
-  // Refresh when localStorage changes (e.g. after saving in SpeechDocViewer)
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === RECENTS_KEY) setSpeechDocs(getSpeechDocs());
-    }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  // Also refresh when view changes back to cases (user saved and returned)
-  useEffect(() => { setSpeechDocs(getSpeechDocs()); }, [view]);
 
   return (
     <div className="flex flex-col h-full">
@@ -517,37 +516,8 @@ function ExpandedNav({
 
       <nav className="flex-1 overflow-y-auto sidebar-scroll py-2 px-2">
 
-        {/* Cases */}
-        <Section title="Cases" icon={<IcoCases />}
-          action={mode === 'prep' ? () => setView({ kind: 'speech-doc' }) : undefined} actionLabel="+">
-          {cases.length === 0 && speechDocs.length === 0 && <Empty>No cases yet</Empty>}
-          {cases.map((c: any) => (
-            <NavItem key={c.id}
-              active={(view.kind === 'case' && (view as any).caseId === c.id) ||
-                (view.kind === 'block' && db.blocks[(view as any).blockId]?.caseId === c.id)}
-              onClick={() => setView({ kind: 'case', caseId: c.id })}
-              itemId={c.id} itemType="case" itemName={c.name}>
-              <span className="truncate">{c.name}</span>
-            </NavItem>
-          ))}
-          {speechDocs.map((d) => (
-            <NavItem key={d.path}
-              active={view.kind === 'speech-doc' && (view as any).docPath === d.path}
-              onClick={() => setView({ kind: 'speech-doc', docPath: d.path })}
-              itemId={d.path} itemType="speech-doc" itemName={d.name.replace(/\.docx$/i, '')}
-              onDeleteOverride={() => {
-                removeFromRecents(d.path);
-                setSpeechDocs(getSpeechDocs());
-                if (view.kind === 'speech-doc' && (view as any).docPath === d.path) setView({ kind: 'home' });
-              }}
-              onRenameOverride={(name) => {
-                renameInRecents(d.path, name);
-                setSpeechDocs(getSpeechDocs());
-              }}>
-              <span className="truncate">{d.name.replace(/\.docx$/i, '')}</span>
-            </NavItem>
-          ))}
-        </Section>
+        {/* Cases — nested folder tree; the section title opens the full grid */}
+        <CasesSection view={view} setView={setView} db={db} mode={mode} />
 
         {mode === 'prep' && (
           <>
@@ -718,13 +688,265 @@ function NavRowPrimary({ active, onClick, icon, label }: {
   );
 }
 
+// ── Cases folder tree ─────────────────────────────────────────────────────────
+
+/**
+ * A folder is only a label layered over documents that already exist (see
+ * utils/caseFolders.ts) — filing something never moves or deletes the underlying
+ * file, so a drag here is always safe to undo by dragging back. Folder state is
+ * shared with the Cases grid, so a change in either place shows up in both.
+ */
+
+const FOLDERS_OPEN_KEY = 'sidebar-cases-folders-open';
+
+/** Which folders are expanded, persisted like the section collapse state above. */
+function useOpenFolders() {
+  const [open, setOpen] = useState<Set<string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(FOLDERS_OPEN_KEY) ?? '[]');
+      return new Set<string>(Array.isArray(raw) ? raw : []);
+    } catch { return new Set<string>(); }
+  });
+  const toggle = (id: string) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    try { localStorage.setItem(FOLDERS_OPEN_KEY, JSON.stringify([...next])); } catch {}
+    return next;
+  });
+  return [open, toggle] as const;
+}
+
+/** Sentinel drop target for "no folder" — distinct from `null` meaning "nothing hovered". */
+const TOP_LEVEL_DROP = '__top__';
+
+const INDENT_PX = 11;
+
+type DragPayload = { kind: 'item' | 'folder'; id: string };
+
+function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate,
+  onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }: {
+  folder: CaseFolder; depth: number; open: boolean; active: boolean; dropping: boolean;
+  onToggle: () => void; onNavigate: () => void;
+  onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
+  onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const lit = active || dropping;
+  return (
+    <div
+      className="mb-0.5"
+      style={{ paddingLeft: depth * INDENT_PX }}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        onClick={onNavigate}
+        className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
+        style={{
+          background: lit ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
+          color: lit ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+          boxShadow: dropping
+            ? 'inset 0 0 0 1.5px rgb(var(--ink-rgb) / 0.5)'
+            : active ? 'var(--nav-active-shadow)' : 'none',
+        }}
+      >
+        <span
+          role="button" tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(); } }}
+          className="shrink-0 flex items-center justify-center"
+          style={{ width: 9 }}
+        >
+          <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
+            className="transition-transform duration-150"
+            style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+            <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+        <span className="shrink-0 flex items-center" style={{ opacity: lit ? 0.9 : 0.5 }}>
+          <IcoFolder />
+        </span>
+        <span className="truncate flex-1">{folder.name}</span>
+      </button>
+    </div>
+  );
+}
+
+function CasesSection({ view, setView, db, mode }: {
+  view: any; setView: (v: any) => void; db: any; mode: string;
+}) {
+  const { folders, update } = useCaseFolders();
+  const [openIds, toggleOpen] = useOpenFolders();
+  const [dragging, setDragging] = useState<DragPayload | null>(null);
+  const [dropId, setDropId] = useState<string | null>(null);
+
+  // buildCaseItems reads the speech-doc recents out of localStorage, which React
+  // can't see change. Bumping this tick is what re-reads them.
+  const [docsTick, setDocsTick] = useState(0);
+  const bumpDocs = () => setDocsTick((t) => t + 1);
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) { if (e.key === RECENTS_KEY) bumpDocs(); }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Also re-read on navigation — the user may have saved a doc and come back.
+  useEffect(() => { bumpDocs(); }, [view]);
+
+  const items = useMemo(
+    // docsTick is a dependency, not a value: it forces the localStorage re-read above.
+    () => buildCaseItems(db).filter((i) => i.kind === 'speech-doc' || !i.id.startsWith('__')),
+    [db, docsTick],
+  );
+
+  function isItemActive(item: CaseItem): boolean {
+    if (item.kind === 'speech-doc') return view.kind === 'speech-doc' && view.docPath === item.path;
+    return (view.kind === 'case' && view.caseId === item.id) ||
+      (view.kind === 'block' && db.blocks[view.blockId]?.caseId === item.id);
+  }
+
+  /** A folder can't be filed into itself or its own subtree — that would orphan it. */
+  function canDrop(target: string | null): boolean {
+    if (!dragging) return false;
+    if (dragging.kind === 'item' || target === null) return true;
+    return !isSelfOrDescendant(folders, dragging.id, target);
+  }
+
+  function onDropInto(e: React.DragEvent, target: string | null) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropId(null);
+    const d = dragging;
+    setDragging(null);
+    if (!d || !canDrop(target)) return;
+    if (d.kind === 'item') update((data) => moveItem(data, d.id, target));
+    else update((data) => moveFolder(data, d.id, target));
+  }
+
+  function onDragOverTarget(e: React.DragEvent, target: string | null) {
+    if (!canDrop(target)) return;
+    e.preventDefault(); // without this the drop event never fires
+    e.stopPropagation();
+    setDropId(target ?? TOP_LEVEL_DROP);
+  }
+
+  function startDrag(e: React.DragEvent, payload: DragPayload) {
+    e.stopPropagation();
+    setDragging(payload);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', payload.id);
+  }
+
+  function renderItem(item: CaseItem, depth: number) {
+    const isDoc = item.kind === 'speech-doc';
+    return (
+      <div
+        key={item.key}
+        style={{ paddingLeft: depth * INDENT_PX, opacity: dragging?.id === item.key ? 0.45 : 1 }}
+        draggable
+        onDragStart={(e) => startDrag(e, { kind: 'item', id: item.key })}
+        onDragEnd={() => { setDragging(null); setDropId(null); }}
+      >
+        <NavItem
+          active={isItemActive(item)}
+          onClick={() => setView(isDoc
+            ? { kind: 'speech-doc', docPath: item.path }
+            : { kind: 'case', caseId: item.id })}
+          itemId={item.id}
+          itemType={isDoc ? 'speech-doc' : 'case'}
+          itemName={item.name}
+          onDeleteOverride={isDoc ? () => {
+            removeFromRecents(item.path!);
+            bumpDocs();
+            if (view.kind === 'speech-doc' && view.docPath === item.path) setView({ kind: 'home' });
+          } : undefined}
+          onRenameOverride={isDoc ? (name: string) => {
+            renameInRecents(item.path!, name);
+            bumpDocs();
+          } : undefined}
+        >
+          <span className="truncate">{item.name}</span>
+        </NavItem>
+      </div>
+    );
+  }
+
+  function renderFolders(parentId: string | null, depth: number): React.ReactNode {
+    return childFolders(folders, parentId).map((f) => {
+      const open = openIds.has(f.id);
+      return (
+        <React.Fragment key={f.id}>
+          <FolderRow
+            folder={f}
+            depth={depth}
+            open={open}
+            active={view.kind === 'cases-grid' && view.folderId === f.id}
+            dropping={dropId === f.id}
+            onToggle={() => toggleOpen(f.id)}
+            onNavigate={() => setView({ kind: 'cases-grid', folderId: f.id })}
+            onDragStart={(e) => startDrag(e, { kind: 'folder', id: f.id })}
+            onDragEnd={() => { setDragging(null); setDropId(null); }}
+            onDragOver={(e) => onDragOverTarget(e, f.id)}
+            onDragLeave={() => setDropId((cur) => (cur === f.id ? null : cur))}
+            onDrop={(e) => onDropInto(e, f.id)}
+          />
+          {open && (
+            <>
+              {renderFolders(f.id, depth + 1)}
+              {items.filter((i) => resolveItemFolder(folders, i.key) === f.id)
+                .map((i) => renderItem(i, depth + 1))}
+            </>
+          )}
+        </React.Fragment>
+      );
+    });
+  }
+
+  const topFolders = childFolders(folders, null);
+  const looseItems = items.filter((i) => resolveItemFolder(folders, i.key) === null);
+  const topLit = dropId === TOP_LEVEL_DROP;
+
+  return (
+    <Section
+      title="Cases" icon={<IcoCases />}
+      onTitleClick={() => setView({ kind: 'cases-grid' })}
+      action={mode === 'prep' ? () => setView({ kind: 'speech-doc' }) : undefined} actionLabel="+"
+    >
+      {/* Anything not dropped on a folder row falls through to here = top level. */}
+      <div
+        onDragOver={(e) => onDragOverTarget(e, null)}
+        onDragLeave={() => setDropId((cur) => (cur === TOP_LEVEL_DROP ? null : cur))}
+        onDrop={(e) => onDropInto(e, null)}
+        style={{
+          borderRadius: 8,
+          outline: topLit ? '1.5px dashed rgb(var(--ink-rgb) / 0.4)' : '1.5px dashed transparent',
+          outlineOffset: -1,
+        }}
+      >
+        {topFolders.length === 0 && items.length === 0 && <Empty>No cases yet</Empty>}
+        {renderFolders(null, 0)}
+        {looseItems.map((i) => renderItem(i, 0))}
+      </div>
+    </Section>
+  );
+}
+
 // ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({ title, children, action, actionLabel, icon, defaultOpen = true,
-  extraAction, extraIcon, extraTitle, extraBusy }: {
+  extraAction, extraIcon, extraTitle, extraBusy, onTitleClick }: {
   title: string; children?: React.ReactNode; action?: () => void;
   actionLabel?: string; icon?: React.ReactNode; defaultOpen?: boolean;
   extraAction?: () => void; extraIcon?: React.ReactNode; extraTitle?: string; extraBusy?: boolean;
+  /** When set, the title text navigates somewhere instead of toggling; the chevron still collapses. */
+  onTitleClick?: () => void;
 }) {
   const key = `sidebar-collapsed-${title.toLowerCase()}`;
   const [open, setOpen] = useState(() => {
@@ -760,9 +982,23 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
           >
             <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          <span className="text-[9px] uppercase tracking-[0.2em] font-bold" style={{ color: 'var(--nav-section-color)' }}>
-            {title}
-          </span>
+          {onTitleClick ? (
+            <span
+              role="button" tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onTitleClick(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onTitleClick(); } }}
+              className="text-[9px] uppercase tracking-[0.2em] font-bold transition"
+              style={{ color: 'var(--nav-section-color)' }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)')}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)')}
+            >
+              {title}
+            </span>
+          ) : (
+            <span className="text-[9px] uppercase tracking-[0.2em] font-bold" style={{ color: 'var(--nav-section-color)' }}>
+              {title}
+            </span>
+          )}
         </button>
         <div className="flex items-center" style={{ gap: 2 }}>
           {extraAction && (
