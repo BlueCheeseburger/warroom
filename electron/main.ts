@@ -1609,6 +1609,38 @@ ipcMain.handle('dialog:openFile', async (_e, accept: string[]) => {
   return p;
 });
 
+// Multi-select variant of dialog:openFile — returns every chosen path. Each is
+// trusted + persisted individually so a bulk import can read them all later.
+ipcMain.handle('dialog:openFiles', async (_e, accept: string[]) => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Files', extensions: accept }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  for (const p of result.filePaths) {
+    trustPath(p);
+    persistTrustedPath(p);
+  }
+  return result.filePaths;
+});
+
+// Trust paths recovered from a genuine OS drag-drop.
+//
+// Only reachable through preload's `dialog.resolveDroppedFiles`, which derives
+// these paths via webUtils.getPathForFile on real File objects the user dragged
+// in. A drag-drop is an explicit user gesture selecting specific files — the same
+// trust anchor a file dialog provides — so the paths are persisted like dialog
+// picks and stay readable across restarts (they show up in the sidebar).
+ipcMain.handle('fs:trustDropped', async (_e, paths: string[]) => {
+  if (!Array.isArray(paths)) return { ok: false, error: 'Invalid paths' };
+  for (const p of paths) {
+    if (typeof p !== 'string' || !p) continue;
+    trustPath(p);
+    await persistTrustedPath(p);
+  }
+  return { ok: true };
+});
+
 // Write base64 buffer to a temp file and return the path (without opening it)
 ipcMain.handle('fs:writeTempFile', async (_e, base64: string, filename: string) => {
   try {

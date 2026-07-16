@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const api = {
   storage: {
@@ -40,6 +40,29 @@ const api = {
   },
   dialog: {
     openFile: (accept: string[]) => ipcRenderer.invoke('dialog:openFile', accept),
+    openFiles: (accept: string[]) => ipcRenderer.invoke('dialog:openFiles', accept),
+    /**
+     * Resolve OS-dragged File objects to real paths and trust them for the
+     * file-read IPC handlers.
+     *
+     * Electron removed `File.path` in v32, so `webUtils.getPathForFile` is the
+     * only way to recover a dropped file's path. It resolves *genuine* File
+     * objects only — a renderer cannot forge one carrying an arbitrary path — so
+     * an OS drag-drop is as legitimate a trust anchor as a file dialog. That's
+     * why this takes File objects rather than strings: the trust decision stays
+     * anchored to something the renderer can't fabricate.
+     */
+    resolveDroppedFiles: async (files: File[], accept: string[]) => {
+      const paths: string[] = [];
+      for (const f of files) {
+        let p = '';
+        try { p = webUtils.getPathForFile(f); } catch { continue; }
+        const ext = p.split('.').pop()?.toLowerCase() ?? '';
+        if (p && accept.includes(ext)) paths.push(p);
+      }
+      if (paths.length > 0) await ipcRenderer.invoke('fs:trustDropped', paths);
+      return paths;
+    },
     saveBuffer: (base64: string, defaultName: string, filters: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:saveBuffer', base64, defaultName, filters),
   },

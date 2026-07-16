@@ -202,7 +202,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/14/26
+          Last updated: 7/16/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -778,12 +778,24 @@ export default function Documentation() {
             The <Code>SpeechDocViewer</Code> renders <Code>.docx</Code> files in-app using{' '}
             <Code>docx-preview</Code>. It is always mounted (hidden when inactive) so it preserves
             state across navigation. Recent docs are tracked in <Code>localStorage</Code> under{' '}
-            <Code>warroom-speech-doc-recents</Code>.
+            <Code>warroom-speech-doc-recents</Code> (cap {40}), which doubles as the sidebar's
+            Cases list — writes dispatch a <Code>storage</Code> event so the sidebar re-reads.
           </P>
           <P>
             Opening a <Code>.docx</Code> from Finder triggers the <Code>onFileOpen</Code> IPC event
             and navigates to the speech-doc view. Speech docs can also be attached to chat messages
             and shared with teammates.
+          </P>
+          <P>
+            <strong>Multi-upload.</strong> The drop zone and picker both accept many docs at once —{' '}
+            <Code>dialog:openFiles</Code> opens a <Code>multiSelections</Code> dialog. Every path is
+            written to recents <em>before</em> the first doc renders, so the whole batch shows up in
+            the sidebar immediately and a doc that fails to render still lands there. Because
+            Electron removed <Code>File.path</Code> in v32, dropped files are resolved via{' '}
+            <Code>webUtils.getPathForFile</Code> in the preload; since that only resolves genuine{' '}
+            <Code>File</Code> objects (a renderer cannot forge one carrying an arbitrary path), a
+            drag-drop is a valid trust anchor and <Code>fs:trustDropped</Code> persists those paths
+            the same way dialog picks are trusted.
           </P>
           <P>
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card

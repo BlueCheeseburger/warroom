@@ -236,10 +236,11 @@ Realtime sync needs the team's Supabase backend set up (the same one team chat u
 Opens .docx files in-app.
 
 - **Open**: drag .docx onto app, or File → Open
+- **Upload several at once**: drag a whole batch of .docx files onto the drop zone, or click it and multi-select in the file picker (⌘-click / shift-click). Every doc you pick is saved automatically and appears in the sidebar under **Cases** right away — the first one opens so you can start reading, and the rest are one click away. Nothing to save by hand.
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
 - **Document title**: the name of the open case/speech doc is always shown in the toolbar (between the tool cluster and the Credibility button), so you can tell at a glance which doc you're in.
-- **Fonts**: docs written in Calibri (the debate default) render in Calibri — or a clean sans-serif stand-in on machines without it — instead of falling back to a serif font.
+- **Fonts**: docs written in Calibri (the debate default) render in Calibri — or a clean sans-serif stand-in on machines without it — instead of falling back to a serif font. This holds for the whole document: if a doc used to show sans-serif headings but serif body text, it now renders consistently throughout. Docs that genuinely use Times New Roman still render in Times New Roman.
 
 ### Cases imported from OpenCaseList
 When you click **+ Save to Cases** on an opponent's disclosed file, it's added to the **Cases** list in the sidebar and opens in this same full viewer — with the outline, find, reading time, send-to-flow, credibility, and cross-ex tools all available, exactly like one of your own speech docs.

@@ -21,8 +21,19 @@ interface RecentDoc { path: string; name: string; cardCount?: number }
 function getRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]'); } catch { return []; }
 }
+// Recents double as the sidebar's Cases list, so the cap is a real library limit,
+// not just a "recently opened" convenience — keep it roomy enough that a bulk
+// import of many docs doesn't silently evict earlier ones.
+const RECENTS_MAX = 40;
+
 function addRecent(path: string, name: string) {
-  const next = [{ path, name }, ...getRecents().filter(r => r.path !== path)].slice(0, 8);
+  addRecents([{ path, name }]);
+}
+/** Batch-add docs to recents (newest first), de-duped by path. One write + one event. */
+function addRecents(docs: { path: string; name: string }[]) {
+  if (docs.length === 0) return;
+  const incoming = new Set(docs.map(d => d.path));
+  const next = [...docs, ...getRecents().filter(r => !incoming.has(r.path))].slice(0, RECENTS_MAX);
   localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
 }
@@ -2892,10 +2903,23 @@ export default function SpeechDocViewer() {
   }
 
   async function pickFile() {
-    const path = await window.warroom.dialog.openFile(['docx']);
-    if (!path) return;
+    const paths = await window.warroom.dialog.openFiles(['docx']);
+    if (!paths || paths.length === 0) return;
+    await importDocs(paths);
+  }
+
+  /**
+   * Import one or more speech docs: every doc is saved to recents immediately (so
+   * the whole batch shows up in the sidebar under Cases at once), then the first
+   * one is opened. Saving before loading means a doc that fails to render still
+   * lands in the sidebar rather than vanishing.
+   */
+  async function importDocs(paths: string[]) {
+    const docs = paths.map(p => ({ path: p, name: p.split(/[/\\]/).pop() ?? p }));
+    addRecents(docs);
+    setRecents(getRecents());
     loadedPath.current = '';
-    await loadFile(path);
+    await loadFile(docs[0].path);
   }
 
   async function exportDocx() {
@@ -2936,19 +2960,19 @@ export default function SpeechDocViewer() {
         <div
           className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
           onClick={pickFile}
-          onDrop={(e) => {
+          onDrop={async (e) => {
             e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if (!file) return;
-            const path = (file as any).path as string | undefined;
-            if (path && path.toLowerCase().endsWith('.docx')) {
-              loadFile(path);
-            }
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length === 0) return;
+            const paths = await window.warroom.dialog.resolveDroppedFiles(files, ['docx']);
+            if (paths.length > 0) { importDocs(paths); return; }
+            setError('Those files could not be opened — speech docs must be .docx.');
+            setStep('error');
           }}
           onDragOver={(e) => e.preventDefault()}
         >
-          <div className="text-sm font-medium text-ink/60 mb-2">Drop a speech doc here (.docx)</div>
-          <div className="text-xs text-ink/40">or click to open file picker</div>
+          <div className="text-sm font-medium text-ink/60 mb-2">Drop speech docs here (.docx)</div>
+          <div className="text-xs text-ink/40">drop several at once, or click to open file picker</div>
         </div>
 
         {recents.length > 0 && (
