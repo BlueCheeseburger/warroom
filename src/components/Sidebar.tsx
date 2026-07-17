@@ -106,6 +106,16 @@ export function IcoImport() {
     </Ico>
   );
 }
+export function IcoAutoFlow() {
+  // A small wand + sparkle — "AI builds this for you" (Auto Flow's sidebar trigger).
+  return (
+    <Ico>
+      <path d="M4 16L14 6" strokeWidth="1.6" strokeLinecap="round"/>
+      <path d="M12 4l2 2-2 2-2-2z" fill="currentColor" stroke="none"/>
+      <path d="M16.5 10.5v2.5M15.25 11.75h2.5" strokeLinecap="round"/>
+    </Ico>
+  );
+}
 export function IcoOpponents() {
   // Person (opponent) + gavel head (judge)
   return (
@@ -449,7 +459,7 @@ function ExpandedNav({
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
-  const { setSearchOpen, event, openCardCutter } = useApp();
+  const { setSearchOpen, event, openCardCutter, setAutoFlowOpen } = useApp();
 
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const eventTopicTab: 'policy' | 'pf' | 'ld' = event === 'pf' || event === 'ld' ? event : 'policy';
@@ -591,6 +601,7 @@ function ExpandedNav({
           title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
           extraAction={importFlow} extraBusy={importing}
           extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
+          extraActions={[{ onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs' }]}
         >
           {flowsIndex.length === 0 && <Empty>No flows yet</Empty>}
           {flowsIndex.map((f: any) => (
@@ -940,11 +951,15 @@ function CasesSection({ view, setView, db, mode }: {
 
 // ── Section ───────────────────────────────────────────────────────────────────
 
+interface SectionExtraAction { onClick: () => void; icon: React.ReactNode; title?: string; busy?: boolean }
+
 function Section({ title, children, action, actionLabel, icon, defaultOpen = true,
-  extraAction, extraIcon, extraTitle, extraBusy, onTitleClick }: {
+  extraAction, extraIcon, extraTitle, extraBusy, extraActions, onTitleClick }: {
   title: string; children?: React.ReactNode; action?: () => void;
   actionLabel?: string; icon?: React.ReactNode; defaultOpen?: boolean;
   extraAction?: () => void; extraIcon?: React.ReactNode; extraTitle?: string; extraBusy?: boolean;
+  /** For a second (or third) icon button beyond the single extraAction slot above — e.g. Flow's Import + Auto Flow buttons. Rendered after extraAction, before the "+" action. */
+  extraActions?: SectionExtraAction[];
   /** When set, the title text navigates somewhere instead of toggling; the chevron still collapses. */
   onTitleClick?: () => void;
 }) {
@@ -1022,6 +1037,28 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
               ) : extraIcon}
             </button>
           )}
+          {extraActions?.map((a, i) => (
+            <button
+              key={i}
+              onClick={a.onClick}
+              disabled={a.busy}
+              title={a.title}
+              className="flex items-center justify-center transition rounded"
+              style={{
+                width: 22, height: 22, flexShrink: 0,
+                background: 'transparent', border: 'none', cursor: a.busy ? 'default' : 'pointer',
+                color: 'var(--nav-section-color)',
+              }}
+              onMouseEnter={(e) => { if (!a.busy) (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'; }}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
+            >
+              {a.busy ? (
+                <svg className="animate-spin" width="11" height="11" viewBox="0 0 10 10" fill="none">
+                  <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 20" strokeLinecap="round" opacity="0.7" />
+                </svg>
+              ) : a.icon}
+            </button>
+          ))}
           {action && (
             <button
               onClick={action}

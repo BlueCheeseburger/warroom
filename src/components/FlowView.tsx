@@ -36,9 +36,9 @@ const PF_CON_FIRST_BLUE = new Set([1, 2, 5, 7]);
 
 // ─── Default sheet names ──────────────────────────────────────────────────────
 
-const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
-const SHEETS_ADVANTAGE = ['Adv 1', 'Adv 2', 'Adv 3', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
-const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
+export const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
+export const SHEETS_ADVANTAGE = ['Adv 1', 'Adv 2', 'Adv 3', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
+export const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
 
 export const NUM_ROWS = 60;
 const DEFAULT_COL_WIDTH = 185;
@@ -46,23 +46,27 @@ const DEFAULT_FONT_SIZE = 13;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PolicyVariant = 'stock-issues' | 'advantage';
-type PFOrder = 'pro-first' | 'con-first';
+export type PolicyVariant = 'stock-issues' | 'advantage';
+export type PFOrder = 'pro-first' | 'con-first';
 
-interface FlowArrow {
+export interface FlowArrow {
   id: string;
   from: string; // "ri-ci"
   to: string;   // "ri-ci"
 }
 
-interface SheetData {
+export interface SheetData {
   id: string;
   name: string;
   cells: Record<string, string>;
   arrows?: FlowArrow[];
 }
 
-interface StoredFlowData {
+// Exported so features that write into a flow from outside the editor (Auto
+// Flow) can build/read this shape without redefining it. Cell keys are
+// "ri-ci" (row index-col index); values are HTML strings (see lib/cellHtml.ts
+// for what's allowed in them — plain text is also accepted and upgraded).
+export interface StoredFlowData {
   event: 'policy' | 'pf';
   variant: PolicyVariant;
   pfOrder: PFOrder;

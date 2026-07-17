@@ -113,6 +113,12 @@ interface AppState {
   cardCutterOpen: boolean;
   setCardCutterOpen: (open: boolean) => void;
   openCardCutter: () => void;
+  // Auto Flow (build a flow from uploaded speech docs), opened from the Flow section.
+  // Rendered globally (App.tsx), not tied to any current view — unlike card cutter it
+  // doesn't need to navigate anywhere first, since it navigates to its own result flow
+  // when done.
+  autoFlowOpen: boolean;
+  setAutoFlowOpen: (open: boolean) => void;
   // Agent search registry — webview components register their search fns here
   agentSearchFns: { logos: AgentSearchFn | null; openev: AgentSearchFn | null };
   registerAgentSearch: (source: 'logos' | 'openev', fn: AgentSearchFn | null) => void;
@@ -159,6 +165,8 @@ export const useApp = create<AppState>((set, get) => ({
     const newHistory = [...trimmed, v].slice(-60);
     return { view: v, navHistory: newHistory, navHistoryIndex: newHistory.length - 1, cardCutterOpen: true };
   }),
+  autoFlowOpen: false,
+  setAutoFlowOpen: (open) => set({ autoFlowOpen: open }),
   unreadCount: 0,
   currentUser: null,
   currentTeam: null,

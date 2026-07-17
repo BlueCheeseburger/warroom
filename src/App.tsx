@@ -51,6 +51,7 @@ import OutweighGame from './components/OutweighGame';
 import ImpactLibrary from './components/ImpactLibrary';
 import SearchPalette from './components/SearchPalette';
 import ShortcutsOverlay from './components/ShortcutsOverlay';
+import AutoFlow from './components/AutoFlow';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 import { matchesShortcut } from './lib/shortcutPrefs';
 
@@ -59,7 +60,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen } = useApp();
+  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen, autoFlowOpen, setAutoFlowOpen } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -647,6 +648,7 @@ export default function App() {
       )}
       {showOnboarding && <Onboarding onDone={() => setShowOnboarding(false)} />}
       {searchOpen && <SearchPalette />}
+      {autoFlowOpen && <AutoFlow onClose={() => setAutoFlowOpen(false)} />}
       <ShortcutsOverlay />
       {/* Tabroom monitor toast */}
       {monitorToast && (
