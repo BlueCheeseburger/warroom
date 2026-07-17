@@ -203,7 +203,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/16/26
+          Last updated: 7/17/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -710,13 +710,21 @@ export default function Documentation() {
           <H2>Speech Timer</H2>
           <P>
             A built-in countdown timer lives in the title bar at the top of the app — always visible
-            without navigating anywhere. Click the speech-type dropdown (e.g. "Constructive",
-            "Cross-Ex") to select which speech to time, then click the time display to start or
-            pause the countdown. A reset button sits next to the timer.
+            without navigating anywhere. The speech-type is a <strong>cycle button</strong> — click it
+            to advance through the event's speeches in order (e.g. Constructive → Cross-Ex → Rebuttal →
+            back to Constructive for Policy). Use the play/pause and reset buttons next to the countdown
+            to run it.
+          </P>
+          <P>
+            <strong>Set a custom time:</strong> click the minutes or seconds — the digits turn into a
+            filled blue rounded box (the macOS time-field look) with the value selected, and you type a
+            new number. <Code>↑</Code>/<Code>↓</Code> nudge the value, <Code>Tab</Code> hops to the other
+            field, <Code>Enter</Code> or clicking away commits, <Code>Esc</Code> cancels. (Editing while
+            the timer is running pauses it first.)
           </P>
           <P>
             For Policy, a small <Code>HS</Code> / <Code>CLG</Code> pill to the left of the
-            dropdown switches between high school and college speech lengths. Speech times auto-match
+            speech button switches between high school and college speech lengths. Speech times auto-match
             the active debate event (Policy, PF, or LD). The display turns amber in the last 30
             seconds and red when time expires; it then counts up as overtime.
           </P>

@@ -247,7 +247,7 @@ Warroom's five watchers — followed-judge paradigm updates, opponent disclosure
 
 ## Speech Timer
 
-A countdown timer (`SpeechTimer` in `TitleBar.tsx`) lives in the title bar, always visible. A dropdown selects the speech type (auto-matched to the active debate event — Policy/PF/LD); clicking the time display starts/pauses it. For Policy, an `HS`/`CLG` pill switches speech lengths. Turns amber inside the last 30 seconds, red and counts up once time expires. Warroom AI can fully control it (start/pause/reset/select/switch level) via the `control_timer` agent tool.
+A countdown timer (`SpeechTimer` in `TitleBar.tsx`) lives in the title bar, always visible. The speech type is a **cycle button** (`cycleSlot`) — clicking advances through the active event's speech list in order, wrapping around (auto-matched to Policy/PF/LD; e.g. Constructive → Cross-Ex → Rebuttal for policy). Separate play/pause + reset buttons run it. Clicking the minutes or seconds opens an inline edit (`renderPart` / `editingPart`): the digit group becomes a filled blue (`#0a84ff`) rounded box with the value selected — the macOS time-field look — and the user types a custom time (`onEditKeyDown`: ↑/↓ nudge, Tab hops fields, Enter/blur commit, Esc cancels; editing pauses a running timer first). For Policy, an `HS`/`CLG` pill switches speech lengths. Turns amber inside the last 30 seconds, red and counts up once time expires. Warroom AI can fully control it (start/pause/reset/select/switch level) via the `control_timer` agent tool.
 
 ### Coin Flip
 

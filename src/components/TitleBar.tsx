@@ -45,11 +45,6 @@ function getSlots(event: DebateEvent, level: PolicyLevel): SpeechSlot[] {
   return SLOTS['ld'];
 }
 
-function fmt(secs: number): string {
-  const m = Math.floor(Math.abs(secs) / 60);
-  const s = Math.abs(secs) % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 // ─── SpeechTimer ──────────────────────────────────────────────────────────────
 
@@ -61,10 +56,8 @@ function SpeechTimer() {
   const [slotIdx, setSlotIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editingPart, setEditingPart] = useState<'min' | 'sec' | null>(null);
   const [editVal, setEditVal] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,22 +107,16 @@ function SpeechTimer() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [running, slot.secs]);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    function down(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
-        setDropdownOpen(false);
-    }
-    document.addEventListener('mousedown', down);
-    return () => document.removeEventListener('mousedown', down);
-  }, [dropdownOpen]);
-
   function selectSlot(i: number) {
     setSlotIdx(i);
     setRunning(false);
     setTimeLeft(null);
-    setDropdownOpen(false);
+  }
+
+  // Cycle button: advance to the next speech in this event's list, wrapping
+  // around (Constructive → Cross-Ex → Rebuttal → Constructive for policy).
+  function cycleSlot() {
+    selectSlot((safeIdx + 1) % slots.length);
   }
 
   function toggleRun() {
@@ -140,8 +127,10 @@ function SpeechTimer() {
   function reset() { setRunning(false); setTimeLeft(null); }
 
   function startEdit(part: 'min' | 'sec') {
-    if (running) return;
-    const cur = timeLeft ?? slot.secs;
+    // Editing a live-ticking value is meaningless — pause first, then edit the
+    // frozen value (rather than ignoring the click, which reads as "broken").
+    if (running) setRunning(false);
+    const cur = displayRef.current;
     const val = part === 'min'
       ? String(Math.floor(cur / 60))
       : String(cur % 60).padStart(2, '0');
@@ -152,7 +141,7 @@ function SpeechTimer() {
 
   function commitEdit() {
     if (!editingPart) return;
-    const cur = timeLeft ?? slot.secs;
+    const cur = displayRef.current;
     const parsed = parseInt(editVal, 10);
     if (!isNaN(parsed) && parsed >= 0) {
       const mins = editingPart === 'min' ? parsed : Math.floor(cur / 60);
@@ -161,6 +150,28 @@ function SpeechTimer() {
     }
     setEditingPart(null);
     setEditVal('');
+  }
+
+  function cancelEdit() { setEditingPart(null); setEditVal(''); }
+
+  // Apple time-field feel: type digits, ↑/↓ to nudge, Enter/Tab/click-away to
+  // commit, Esc to cancel. Tab commits and hops to the other part.
+  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      commitEdit();
+    } else if (e.key === 'Escape') {
+      cancelEdit();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const other = editingPart === 'min' ? 'sec' : 'min';
+      commitEdit();
+      setTimeout(() => startEdit(other), 0);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const delta = e.key === 'ArrowUp' ? 1 : -1;
+      const next = Math.max(0, (parseInt(editVal, 10) || 0) + delta);
+      setEditVal(String(editingPart === 'sec' ? Math.min(next, 59) : next));
+    }
   }
 
   useEffect(() => {
@@ -230,6 +241,46 @@ function SpeechTimer() {
 
   const nd: React.CSSProperties = { WebkitAppRegion: 'no-drag' } as any;
 
+  // One min/sec digit group. When it's the part being edited it becomes a
+  // filled blue rounded box with the digits selected (the macOS time-field
+  // look); otherwise it's a click-to-edit number with a faint hover chip.
+  function renderPart(part: 'min' | 'sec') {
+    const value = part === 'min'
+      ? String(Math.floor(display / 60))
+      : String(display % 60).padStart(2, '0');
+    if (editingPart === part) {
+      return (
+        <input
+          ref={editInputRef}
+          value={editVal}
+          onChange={(e) => setEditVal(e.target.value.replace(/\D/g, '').slice(0, 2))}
+          onBlur={commitEdit}
+          onKeyDown={onEditKeyDown}
+          className="font-mono font-bold tabular-nums text-center"
+          style={{
+            fontSize: 13, color: '#fff', background: '#0a84ff',
+            border: 'none', outline: 'none', borderRadius: 5,
+            width: 24, padding: '1px 0', ...nd,
+          }}
+          type="text"
+          inputMode="numeric"
+        />
+      );
+    }
+    return (
+      <span
+        onClick={() => startEdit(part)}
+        title={`Click to set ${part === 'min' ? 'minutes' : 'seconds'}`}
+        className="rounded transition"
+        style={{ cursor: 'text', padding: '1px 4px', ...nd }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        {value}
+      </span>
+    );
+  }
+
   return (
     <div className="flex items-center gap-0.5" style={{ ...nd, position: 'relative' }}>
 
@@ -252,103 +303,35 @@ function SpeechTimer() {
         </button>
       )}
 
-      {/* Speech type dropdown trigger */}
-      <div ref={dropdownRef} style={{ position: 'relative' }}>
-        <button
-          onClick={() => setDropdownOpen((v) => !v)}
-          className="flex items-center gap-1 px-2 py-0.5 rounded transition"
-          style={{
-            background: dropdownOpen ? 'var(--nav-hover-bg)' : 'transparent',
-            color: 'var(--titlebar-label)',
-            fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            border: 'none', cursor: 'pointer', minWidth: 90, ...nd,
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-          onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-        >
-          {slot.label}
-          <svg width="7" height="7" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-            <polyline points="1 1 4 5 7 1" />
-          </svg>
-        </button>
-
-        {dropdownOpen && (
-          <div
-            className="glass-popover absolute top-full mt-1 left-0 z-[9999] rounded-lg py-1 shadow-xl"
-            style={{
-              border: '1px solid var(--border-subtle)',
-              minWidth: 148,
-            }}
-          >
-            {slots.map((s, i) => (
-              <button
-                key={`${s.label}-${i}`}
-                onClick={() => selectSlot(i)}
-                className="w-full text-left flex items-center justify-between px-3 py-1.5 text-xs transition"
-                style={{
-                  background: i === safeIdx ? 'var(--nav-active-bg)' : 'transparent',
-                  color: i === safeIdx ? 'var(--nav-active-color)' : 'var(--ink)',
-                  border: 'none', cursor: 'pointer', ...nd,
-                }}
-                onMouseEnter={(e) => { if (i !== safeIdx) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                onMouseLeave={(e) => { if (i !== safeIdx) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >
-                <span>{s.label}</span>
-                <span className="font-mono ml-3" style={{ opacity: 0.45, fontSize: 11 }}>{fmt(s.secs)}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Countdown — click minutes or seconds to edit when paused */}
-      <span
-        className="font-mono font-bold tabular-nums px-1 flex items-center justify-end"
-        style={{ fontSize: 13, color: timeColor, width: 44, flexShrink: 0, transition: 'color 0.25s', gap: 0 }}
+      {/* Speech type — click to cycle through this event's speeches in order */}
+      <button
+        onClick={cycleSlot}
+        title="Click to cycle speech type"
+        className="flex items-center gap-1 px-2 py-0.5 rounded transition"
+        style={{
+          background: 'transparent',
+          color: 'var(--titlebar-label)',
+          fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+          border: 'none', cursor: 'pointer', minWidth: 84, justifyContent: 'center', ...nd,
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        {editingPart === 'min' ? (
-          <input
-            ref={editInputRef}
-            value={editVal}
-            onChange={(e) => setEditVal(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
-            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
-            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
-            type="text"
-            inputMode="numeric"
-          />
-        ) : (
-          <span
-            onClick={() => startEdit('min')}
-            title={running ? undefined : 'Click to edit minutes'}
-            style={{ cursor: running ? 'default' : 'text' }}
-          >
-            {String(Math.floor(display / 60))}
-          </span>
-        )}
+        {slot.label}
+        <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+          <path d="M10.5 2.5A5 5 0 1 0 11 6" />
+          <polyline points="10.5 1 10.5 4 7.5 4" />
+        </svg>
+      </button>
+
+      {/* Countdown — click minutes or seconds to type a custom time */}
+      <span
+        className="font-mono font-bold tabular-nums flex items-center justify-end"
+        style={{ fontSize: 13, color: timeColor, minWidth: 54, flexShrink: 0, transition: 'color 0.25s', gap: 1 }}
+      >
+        {renderPart('min')}
         <span>:</span>
-        {editingPart === 'sec' ? (
-          <input
-            ref={editInputRef}
-            value={editVal}
-            onChange={(e) => setEditVal(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
-            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
-            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
-            type="text"
-            inputMode="numeric"
-          />
-        ) : (
-          <span
-            onClick={() => startEdit('sec')}
-            title={running ? undefined : 'Click to edit seconds'}
-            style={{ cursor: running ? 'default' : 'text' }}
-          >
-            {String(display % 60).padStart(2, '0')}
-          </span>
-        )}
+        {renderPart('sec')}
       </span>
 
       {/* Play / Pause */}

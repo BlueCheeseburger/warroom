@@ -140,10 +140,11 @@ How it works:
 ## Speech Timer
 Built into the title bar at the top of the app — always visible, no need to navigate anywhere.
 
-- **Select speech type**: click the speech label dropdown (e.g. "Constructive", "Cross-Ex") to pick which speech to time
-- **Start / pause**: click the time display to start or pause the countdown
+- **Select speech type**: click the speech-type button to cycle through your event's speeches in order (e.g. Constructive → Cross-Ex → Rebuttal → back around)
+- **Start / pause**: use the play/pause button next to the countdown
 - **Reset**: click the reset button next to the timer
-- **HS / CLG toggle** (policy only): a small "HS" or "CLG" pill left of the dropdown switches between high school and college speech times
+- **Set a custom time**: click the minutes or seconds — it turns into a blue rounded box with the number selected (like the macOS clock), then type your own time. ↑/↓ nudge it, Tab jumps to the other field, Enter or clicking away saves, Esc cancels. (If the timer's running, editing pauses it first.)
+- **HS / CLG toggle** (policy only): a small "HS" or "CLG" pill left of the speech button switches between high school and college speech times
 - Times auto-match your debate event (policy, PF, or LD)
 
 Speech times by event:
