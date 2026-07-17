@@ -246,7 +246,9 @@ The two are interchangeable: you can start an arrow with ⌘L and finish it with
 
 Arrows are saved with the sheet, so they're there when you reopen the flow.
 
-**Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar. It searches every sheet in the flow at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close.
+**Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar — it searches **across all tabs** at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close. Stepping onto a match that lives on another tab switches you to that tab.
+
+Matches are **highlighted in amber** so you don't have to hunt through a cell to spot them: every hit on the tab you're looking at gets a soft wash, and the one you're currently on is painted solid. The highlighting is only drawn on screen — it never becomes part of your flow.
 
 **Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, and arrows.
 

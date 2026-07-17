@@ -831,8 +831,11 @@ export default function Documentation() {
             cancel. Arrows are saved per sheet.
           </P>
           <P>
-            <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all sheets in the
-            flow. Enter / Shift+Enter jump between matches; Esc closes. (Mirrors the speech-doc
+            <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all tabs in the flow.
+            Enter / Shift+Enter jump between matches; Esc closes. Every hit on the tab you're looking
+            at gets a soft amber wash and the one you're currently on is painted solid, so your eye
+            lands on it without hunting through the cell. Highlighting is drawn over the text rather
+            than written into it, so it never becomes part of the flow. (Mirrors the speech-doc
             viewer's find.)
           </P>
           <P>

@@ -304,7 +304,11 @@ Cell values are stored as HTML. The sanitizer, the clipboard cleaning, and the p
 
 Both drive the same draw-mode state, so an arrow can be started with `⌘L` and finished with a click, or vice versa. Click the `×` on an arrow's midpoint to delete it; press `Esc` to cancel. Arrows are saved per sheet.
 
-**Find (`⌘F`):** a find bar searches across all sheets in the flow. Enter / Shift+Enter jump between matches; Esc closes. (Mirrors the speech-doc viewer's find.)
+**Find (`⌘F`):** a find bar ("Find across all tabs…") searches every sheet in the flow. Enter / Shift+Enter jump between matches; Esc closes. Matches are per *cell*, and stepping to one on another sheet switches to it.
+
+Hits are painted with the **CSS Custom Highlight API** (`CSS.highlights` + `Highlight` + `Range`), the same approach as the speech-doc viewer's find — deliberately *not* by wrapping matches in `<mark>`, because cell HTML is user content that gets persisted and broadcast to live teammates, so mutating it to show a search hit would write the highlight into the document. Two registries: `flow-find` washes every hit on the active sheet, `flow-find-current` paints the one you're stepping through in solid amber; both are styled by `::highlight()` rules in `index.css` and cleared on close and unmount. Only the active sheet is mounted, so only its hits can be painted.
+
+`matchRangesIn` (`src/lib/cellHtml.ts`) builds the ranges. It **flattens the cell's text nodes into one string, searches that, then maps the offsets back** — searching each text node separately would miss any hit straddling a tag boundary, which is most of them in a real tag (`preventable <u>death</u>` is two text nodes). It lives in the lib rather than the component so `scripts/test-cell-paste.ts` can exercise the offset mapping headlessly.
 
 **Undo / redo:** `⌘Z` undoes and `⌘⇧Z` redoes, also available as toolbar buttons. Undo covers text edits, column changes, colors, and arrows.
 

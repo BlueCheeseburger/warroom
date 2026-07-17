@@ -187,3 +187,51 @@ export function cleanPastedHtml(html: string, text: string): string {
   // (e.g. it was all wrapper chrome), so the paste never silently no-ops.
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br>') : '';
 }
+
+// Every range in `el` matching `q` (already lowercased). Emphasis splits a cell's
+// text across nodes — "preventable <u>death</u>" is two of them — so searching
+// each text node on its own would miss any hit that straddles a tag, which is
+// exactly where a tag's underlined portion begins. Flatten to one string, search
+// that, then map the offsets back onto the nodes they came from.
+export function matchRangesIn(el: HTMLElement, q: string): Range[] {
+  const nodes: Text[] = [];
+  const starts: number[] = [];
+  let flat = '';
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const t = node as Text;
+    if (!t.length) continue;
+    starts.push(flat.length);
+    nodes.push(t);
+    flat += t.data;
+  }
+  if (!nodes.length) return [];
+
+  // `atEnd` picks the node a boundary belongs to when it lands exactly on a seam:
+  // a range's start opens the following node, its end closes the preceding one.
+  const locate = (pos: number, atEnd: boolean) => {
+    for (let k = nodes.length - 1; k >= 0; k--) {
+      const s = starts[k];
+      const e = s + nodes[k].length;
+      if (atEnd ? pos > s && pos <= e : pos >= s && pos < e) return { node: nodes[k], offset: pos - s };
+    }
+    const k = atEnd ? nodes.length - 1 : 0;
+    return { node: nodes[k], offset: atEnd ? nodes[k].length : 0 };
+  };
+
+  const hay = flat.toLowerCase();
+  const out: Range[] = [];
+  let i = hay.indexOf(q);
+  while (i !== -1) {
+    const end = i + q.length;
+    const a = locate(i, false);
+    const b = locate(end, true);
+    const r = document.createRange();
+    r.setStart(a.node, a.offset);
+    r.setEnd(b.node, b.offset);
+    out.push(r);
+    i = hay.indexOf(q, end);
+  }
+  return out;
+}

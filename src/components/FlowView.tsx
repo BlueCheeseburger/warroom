@@ -9,7 +9,11 @@ import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
 } from '../lib/flowDoc';
-import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml } from '../lib/cellHtml';
+import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
+
+// Highlight-registry names for find hits (see the ::highlight() rules in index.css).
+const FIND_HL = 'flow-find';
+const FIND_HL_CURRENT = 'flow-find-current';
 
 // Stable per-user cursor color (hash the user id into a fixed palette).
 const PRESENCE_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#0d9488'];
@@ -1063,6 +1067,43 @@ export default function FlowView() {
   }
   function closeFind() { setFindOpen(false); setFindQuery(''); setFindMatches([]); }
 
+  // Paint find hits with the CSS Custom Highlight API rather than wrapping them
+  // in <mark>. Cell HTML is user content that gets persisted and broadcast to
+  // live teammates, so mutating it to show a search hit would write the
+  // highlight into the document itself. Highlight ranges live outside the DOM
+  // and disappear the moment they're cleared, touching nothing.
+  useLayoutEffect(() => {
+    const highlights = (window as any).CSS?.highlights;
+    const Ctor = (window as any).Highlight;
+    if (!highlights || !Ctor) return; // engine without the API: scroll-into-view still works
+    highlights.delete(FIND_HL);
+    highlights.delete(FIND_HL_CURRENT);
+    const q = findQuery.trim().toLowerCase();
+    if (!findOpen || !q) return;
+
+    // Only the active sheet is mounted, so only its hits can be painted; the
+    // rest are reached by stepping through matches (which switches sheets).
+    const cur = findMatches[findIdx];
+    const currentKey = cur && cur.sheetIdx === activeSheetIdx ? cur.key : null;
+    const rest: Range[] = [];
+    const current: Range[] = [];
+
+    for (const [key, el] of Object.entries(cellEls.current)) {
+      if (!el || !el.isConnected) continue;
+      for (const r of matchRangesIn(el, q)) (key === currentKey ? current : rest).push(r);
+    }
+    if (rest.length) highlights.set(FIND_HL, new Ctor(...rest));
+    if (current.length) highlights.set(FIND_HL_CURRENT, new Ctor(...current));
+  }, [findOpen, findQuery, findIdx, findMatches, activeSheetIdx, cellNonce, reloadNonce]);
+
+  // Highlight registries are global to the document — drop ours on unmount so
+  // they can't outlive the flow view.
+  useEffect(() => () => {
+    const highlights = (window as any).CSS?.highlights;
+    highlights?.delete(FIND_HL);
+    highlights?.delete(FIND_HL_CURRENT);
+  }, []);
+
   // ── Sheet ops ─────────────────────────────────────────────────────────────
 
   function flushAndGetSheets(): SheetData[] {
@@ -1488,7 +1529,7 @@ export default function FlowView() {
               if (e.key === 'Enter') { e.preventDefault(); findNext(e.shiftKey ? -1 : 1); }
               if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
             }}
-            placeholder="Find in all sheets…"
+            placeholder="Find across all tabs…"
             className="input text-sm flex-1 max-w-xs"
             autoFocus
           />

@@ -9,7 +9,16 @@ import { JSDOM } from 'jsdom';
 const dom = new JSDOM('');
 (globalThis as any).DOMParser = dom.window.DOMParser;
 
-const { cleanPastedHtml, sanitizeCellHtml, cellToHtml, htmlToText } = await import('../src/lib/cellHtml');
+const { cleanPastedHtml, sanitizeCellHtml, cellToHtml, htmlToText, matchRangesIn } = await import('../src/lib/cellHtml');
+
+// matchRangesIn walks a live element, so give it a real document to walk.
+(globalThis as any).document = dom.window.document;
+(globalThis as any).NodeFilter = dom.window.NodeFilter;
+function cellWith(html: string) {
+  const el = dom.window.document.createElement('div');
+  el.innerHTML = html;
+  return el as unknown as HTMLElement;
+}
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean, extra = '') {
@@ -159,7 +168,36 @@ console.log('\n[9] Legacy Word markup renders without blank lines');
   check('intentional double space survives render', cellToHtml('<span>A  B</span>') === '<span>A  B</span>', cellToHtml('<span>A  B</span>'));
 }
 
-console.log('\n[10] htmlToText round-trip');
+// Find highlighting maps flat-string offsets back onto the cell's text nodes.
+// Emphasis splits that text up, so the interesting cases are hits that straddle
+// a tag boundary — which is most of them in a real tag.
+console.log('\n[10] Find match ranges (⌘F highlighting)');
+{
+  const cell = cellWith('The impact is preventable <u>death</u>, <u>psychological trauma</u>, and <u>financial strain</u>.');
+  const one = matchRangesIn(cell, 'preventable death');
+  check('match straddling a <u> boundary is found', one.length === 1, String(one.length));
+  check('straddling range covers exactly the query', one[0]?.toString() === 'preventable death', one[0]?.toString());
+
+  const inner = matchRangesIn(cell, 'trauma');
+  check('match inside a tag is found', inner.length === 1 && inner[0].toString() === 'trauma', inner[0]?.toString());
+
+  const multi = matchRangesIn(cellWith('death and more death'), 'death');
+  check('every occurrence is returned', multi.length === 2, String(multi.length));
+  check('occurrences do not overlap', multi.every((r) => r.toString() === 'death'));
+
+  check('no match yields nothing', matchRangesIn(cell, 'zzz').length === 0);
+  check('empty cell yields nothing', matchRangesIn(cellWith(''), 'x').length === 0);
+
+  // Boundary cases in the offset mapping: a hit that starts at the very first
+  // character, and one that ends at the very last.
+  const edge = cellWith('<b>alpha</b> mid <i>omega</i>');
+  check('hit at the very start maps correctly', matchRangesIn(edge, 'alpha')[0]?.toString() === 'alpha');
+  check('hit at the very end maps correctly', matchRangesIn(edge, 'omega')[0]?.toString() === 'omega');
+  check('hit spanning three nodes maps correctly', matchRangesIn(edge, 'alpha mid omega')[0]?.toString() === 'alpha mid omega', matchRangesIn(edge, 'alpha mid omega')[0]?.toString());
+  check('whole-content match maps correctly', matchRangesIn(cellWith('<b>x</b>'), 'x')[0]?.toString() === 'x');
+}
+
+console.log('\n[11] htmlToText round-trip');
 {
   check('tags stripped for text', htmlToText('<b>a</b><br><i>b</i>') === 'a\nb', JSON.stringify(htmlToText('<b>a</b><br><i>b</i>')));
   check('entities decoded', htmlToText('a &amp; b') === 'a & b', htmlToText('a &amp; b'));

@@ -696,6 +696,18 @@ html.dark .docx-viewer-wrap * {
   border-radius: 2px;
 }
 
+/* Flow find (⌘F) hits, painted via the CSS Custom Highlight API so the cell's own
+   HTML is never touched. Every hit on the sheet gets a soft wash; the one you're
+   currently stepping through gets a solid amber so the eye lands on it. Both force
+   dark ink — the wash sits under light text in dark mode, the solid one never does. */
+::highlight(flow-find) {
+  background-color: rgba(253, 230, 138, 0.3);
+}
+::highlight(flow-find-current) {
+  background-color: #fbbf24;
+  color: #1a1a1a;
+}
+
 /* A cell is one flowing run of text, not a document. New pastes are flattened to
    <br> (see cleanPastedHtml), but cells pasted before that existed still hold
    Word's <p> markup, whose default 1em margin reads as a blank line above and
