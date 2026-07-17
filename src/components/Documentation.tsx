@@ -809,6 +809,13 @@ export default function Documentation() {
             new sheet. These work whether or not a cell has focus.
           </P>
           <P>
+            <strong>Per-sheet scroll position:</strong> each sheet remembers where it was scrolled to,
+            so jumping to another tab and back returns you to the spot you left rather than carrying
+            the previous tab's offset over. A tab you haven't visited opens at the top. Positions are
+            tracked per sheet id (so deleting or reordering tabs can't mix them up) and last for the
+            session.
+          </P>
+          <P>
             <strong>Move an argument (<Code>⌘↑</Code> / <Code>⌘↓</Code>):</strong> swaps the cell's
             content with the cell above / below it in the same column and carries the caret along, so
             an argument can be nudged into position without cut-and-paste. It saves and records

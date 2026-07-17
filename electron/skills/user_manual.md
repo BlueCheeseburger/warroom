@@ -230,6 +230,8 @@ If you have cells you pasted *before* this was fixed, they'll fix themselves the
 - **⌘9** always jumps to the **last** sheet, however many you have.
 - **⌘T** makes a **new sheet** — for when they read an off-case position you didn't predict.
 
+**Each sheet remembers its own scroll position.** If you're halfway down the Politics DA and jump to the Case sheet, Case opens where *you* left it — not halfway down. A tab you haven't opened yet starts at the top.
+
 **Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
 
 The fastest way, without leaving the keyboard:

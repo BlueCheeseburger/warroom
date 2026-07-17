@@ -202,6 +202,11 @@ export default function FlowView() {
   const cellEls = useRef<Record<string, HTMLDivElement | null>>({});
   const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Scroll offset per sheet, keyed by sheet id (not index, so deleting or
+  // reordering a sheet can't hand one tab another's position). Sheets share one
+  // scroll container, so without this, switching tabs keeps wherever you were —
+  // scroll to the middle of the Politics DA and the Case sheet opens mid-page.
+  const sheetScroll = useRef<Record<string, { top: number; left: number }>>({});
   const gridContentRef = useRef<HTMLDivElement>(null);
   const flowNameInputRef = useRef<HTMLInputElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -892,6 +897,19 @@ export default function FlowView() {
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Restore each sheet's own scroll offset when it becomes active ──────────
+  // Layout effect, so the jump happens before paint rather than as a visible
+  // flick. A sheet never visited lands at the top, which is what you want when
+  // an off-case tab opens for the first time.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || !loaded) return;
+    const id = sheets[activeSheetIdx]?.id;
+    const pos = id ? sheetScroll.current[id] : null;
+    el.scrollTop = pos?.top ?? 0;
+    el.scrollLeft = pos?.left ?? 0;
+  }, [activeSheetIdx, loaded, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Recompute arrow geometry when layout/content changes ──────────────────
   useLayoutEffect(() => {
     recomputeArrows();
@@ -1053,8 +1071,16 @@ export default function FlowView() {
     );
   }
 
+  // Stash where the current sheet is scrolled to, before anything moves.
+  function rememberScroll() {
+    const el = containerRef.current;
+    const id = snap.current.sheets[snap.current.activeSheetIdx]?.id;
+    if (el && id) sheetScroll.current[id] = { top: el.scrollTop, left: el.scrollLeft };
+  }
+
   function switchSheet(idx: number) {
     if (idx === activeSheetIdx) return;
+    rememberScroll();
     const saved = flushAndGetSheets();
     setSheets(saved);
     // When live, the Y.Doc is the source of truth — a sheet we left may have
@@ -1076,6 +1102,7 @@ export default function FlowView() {
   }
 
   function addSheet() {
+    rememberScroll();
     const saved = flushAndGetSheets();
     const neo: SheetData = { id: crypto.randomUUID(), name: `Sheet ${saved.length + 1}`, cells: {} };
     const next = [...saved, neo];
@@ -1085,7 +1112,10 @@ export default function FlowView() {
 
   function deleteSheet(idx: number) {
     if (sheets.length <= 1) return;
+    rememberScroll();
     const saved = flushAndGetSheets();
+    const gone = saved[idx]?.id;
+    if (gone) delete sheetScroll.current[gone];
     const next = saved.filter((_, i) => i !== idx);
     // Keep pointing at the SAME sheet after removal: deleting a tab before the
     // active one shifts everything down by one, so decrement in that case.
@@ -1509,7 +1539,7 @@ export default function FlowView() {
         ref={containerRef}
         className="flex-1 overflow-auto scroll-thin"
         style={{ background: 'var(--bg-main)' }}
-        onScroll={() => requestAnimationFrame(recomputeArrows)}
+        onScroll={() => { rememberScroll(); requestAnimationFrame(recomputeArrows); }}
       >
         <div ref={gridContentRef} className="relative" style={{ minWidth: totalWidth + 'px' }}>
 
