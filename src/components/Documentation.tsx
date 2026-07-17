@@ -794,10 +794,13 @@ export default function Documentation() {
             in the cell. Bold, italic, underline and strikethrough survive; the source document's
             font, size, text color and background are dropped so the paste takes on the cell's own
             styling instead of arriving in Calibri-at-12pt (or, from a dark-themed doc, in invisible
-            white). Font, size and text color are stripped on <em>render</em> as well, not just on
-            paste — so cells pasted before this existed clean themselves up the next time the flow is
-            opened. Cleaning is shared with the sanitizer that guards remote and AI-written cell
-            content, in <Code>src/lib/cellHtml.ts</Code>.
+            white). Word's paragraph structure is flattened to a single line break, and the newlines
+            it pretty-prints between its tags are collapsed — otherwise a pasted tag arrives with
+            blank lines above it and a gap before its cite, because cells preserve typed whitespace.
+            Font, size and text color are stripped on <em>render</em> as well, not just on paste — so
+            cells pasted before this existed clean themselves up the next time the flow is opened.
+            Cleaning is shared with the sanitizer that guards remote and AI-written cell content, in{' '}
+            <Code>src/lib/cellHtml.ts</Code>.
           </P>
           <P>
             <strong>Sheets by keyboard:</strong> <Code>⌘1</Code>–<Code>⌘8</Code> jump straight to that

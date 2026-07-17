@@ -215,6 +215,8 @@ Cells grow automatically to fit whatever you type.
 
 **Pasting from Word.** Paste a tag straight out of a speech doc and it takes on the cell's own look — the doc's font, text size, text color and highlighting are all left behind, so nothing arrives in the wrong font, at the wrong size, or in unreadable dark-on-dark text. **Bold, italic, underline and strikethrough do carry over**, so a bolded tag stays bolded. If you want it highlighted, hit ⌘⇧H once it's in.
 
+Paragraph breaks from the doc become a single line break, so a tag and its cite land on two tight lines instead of arriving with blank space above and between them.
+
 If you have cells you pasted *before* this was fixed, they'll fix themselves the next time you open that flow — no need to retype them.
 
 **Move around with the keyboard.**

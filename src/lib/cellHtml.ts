@@ -68,10 +68,21 @@ function sanitizeStyle(style: string, props: Set<string>): string {
     .join('; ');
 }
 
+// Cells render with `white-space: pre-wrap` so typed spacing survives, which
+// means a literal newline in the markup becomes a real blank line on screen.
+// Word and Google Docs pretty-print their clipboard HTML — newlines and indent
+// between every tag — so pasted markup arrives carrying blank lines it never
+// intended. Collapse newlines/tabs (which can only come from that source; typing
+// produces <br>, never a raw newline in a text node) while leaving runs of
+// spaces alone, since pre-wrap preserves those on purpose.
+function collapseSourceWhitespace(s: string): string {
+  return s.replace(/[\n\r\t]+/g, ' ');
+}
+
 function sanitizeNode(node: Node, out: string[], props: Set<string>): void {
   node.childNodes.forEach((child) => {
     if (child.nodeType === 3 /* TEXT_NODE */) {
-      out.push(escapeHtml(child.textContent || ''));
+      out.push(escapeHtml(collapseSourceWhitespace(child.textContent || '')));
       return;
     }
     if (child.nodeType !== 1 /* ELEMENT_NODE */) return;
@@ -118,12 +129,61 @@ export function htmlToText(html: string): string {
   return (doc.body.textContent || '').replace(/\n{2,}/g, '\n').replace(/\n$/, '');
 }
 
+// Block-level tags in pasted markup. A cell is a single flowing run of text, not
+// a document, so these are flattened to a <br> rather than kept: a surviving <p>
+// brings Word's default 1em margin with it, which reads as a blank line above and
+// below every pasted paragraph.
+const BLOCK_TAGS = new Set([
+  'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'UL', 'OL',
+  'TABLE', 'TR', 'TD', 'TH', 'BLOCKQUOTE', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'PRE',
+]);
+
+// Paste-specific walk: like sanitizeNode, but flattens block structure to <br>
+// and collapses insignificant whitespace the way normal (non-pre-wrap) HTML
+// rendering would — pasted markup is authored for that model, not for a cell.
+function pasteNode(node: Node, out: string[]): void {
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === 3 /* TEXT_NODE */) {
+      out.push(escapeHtml((child.textContent || '').replace(/\s+/g, ' ')));
+      return;
+    }
+    if (child.nodeType !== 1 /* ELEMENT_NODE */) return;
+    const el = child as HTMLElement;
+    const tag = el.tagName;
+    if (DROP_SUBTREE.has(tag)) return;
+    if (tag === 'BR') { out.push('<br>'); return; }
+    const isBlock = BLOCK_TAGS.has(tag);
+    if (isBlock) out.push('<br>');
+    if (!isBlock && ALLOWED_TAGS.has(tag)) {
+      const name = tag.toLowerCase();
+      const style = sanitizeStyle(el.getAttribute('style') || '', PASTE_STYLE_PROPS);
+      out.push(style ? `<${name} style="${escapeAttr(style)}">` : `<${name}>`);
+      pasteNode(el, out);
+      out.push(`</${name}>`);
+    } else {
+      pasteNode(el, out); // unwrap: a block we're flattening, or an unknown tag
+    }
+    if (isBlock) out.push('<br>');
+  });
+}
+
 // Turn clipboard data into HTML safe to insert into a cell. Returns '' when
 // there is nothing to paste.
 export function cleanPastedHtml(html: string, text: string): string {
-  const cleanHtml = html ? sanitizeCellHtml(html, PASTE_STYLE_PROPS) : '';
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const out: string[] = [];
+    pasteNode(doc.body, out);
+    const cleaned = out.join('')
+      // Every block emitted a <br> on each side, and empty Word paragraphs emit
+      // nothing else — collapse each run down to a single line break.
+      .replace(/(?:\s*<br>\s*)+/g, '<br>')
+      // Drop the breaks/space now stranded at the very start and end.
+      .replace(/^(?:<br>|\s)+/, '')
+      .replace(/(?:<br>|\s)+$/, '');
+    if (cleaned.trim()) return cleaned;
+  }
   // Fall back to plain text when the clipboard HTML sanitizes down to nothing
   // (e.g. it was all wrapper chrome), so the paste never silently no-ops.
-  if (cleanHtml.trim()) return cleanHtml;
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br>') : '';
 }

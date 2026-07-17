@@ -285,6 +285,11 @@ Cell values are stored as HTML. The sanitizer, the clipboard cleaning, and the p
 
 `background-color` is allowed on the render path (it is how the ⌘⇧H highlight is stored) but dropped on paste, because Word and Google Docs stamp it on nearly every span with junk values (`transparent`, `white`) — left in, `background-color:transparent` would match the `.flow-cell span[style*="background-color"]` dark-ink rule intended for our own highlights and render pasted text near-black on a dark background.
 
+**Whitespace and block structure.** Cells render with `white-space: pre-wrap` so typed spacing survives — which means a literal newline in cell markup becomes a real blank line on screen. Word and Google Docs pretty-print their clipboard HTML (newlines + indentation between every tag), so pasted markup arrives carrying blank lines it never intended, and a surviving `<p>` adds its default 1em margin on top of that. Two defenses:
+
+- `pasteNode` (paste path) flattens every block tag to a single `<br>`, collapses whitespace the way normal non-pre-wrap rendering would, coalesces runs of `<br>` (empty Word paragraphs emit nothing else), and trims leading/trailing breaks. A pasted tag + cite becomes `tag<br>cite` — one flowing run, no `<p>` at all.
+- `collapseSourceWhitespace` (render path) turns newlines/tabs in text nodes into a space. Raw newlines can only come from pasted markup — typing produces `<br>` — so this is safe, and it leaves runs of *spaces* alone since pre-wrap preserves those on purpose. Paired with the `.flow-cell p, .flow-cell div { margin: 0 }` rule in `index.css`, it makes cells pasted *before* the paste fix render tight instead of blank-lined.
+
 **Sheets by keyboard:** `⌘1`–`⌘8` jump straight to that sheet by position and `⌘9` jumps to the *last* sheet (the browser-tab convention, so it still lands somewhere useful when a flow has more than nine sheets). `⌘T` creates a new sheet. Both live in the window-level shortcut handler rather than the cell handler, so they work whether or not a cell has focus.
 
 **Disabling shortcuts:** flow shortcuts are registered in `ShortcutsOverlay.tsx`'s `GROUPS` array with stable ids (`flow-bold`, `flow-highlight`, `flow-sheet-switch`, …) and each handler checks `isShortcutDisabled(id)` (`src/lib/shortcutPrefs.ts`) before acting, so the user can turn individual ones off from the `⌘/` overlay.

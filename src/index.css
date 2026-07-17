@@ -695,3 +695,12 @@ html.dark .docx-viewer-wrap * {
   color: #1a1a1a !important;
   border-radius: 2px;
 }
+
+/* A cell is one flowing run of text, not a document. New pastes are flattened to
+   <br> (see cleanPastedHtml), but cells pasted before that existed still hold
+   Word's <p> markup, whose default 1em margin reads as a blank line above and
+   below every paragraph. Zero it so those cells render tight too. */
+.flow-cell p,
+.flow-cell div {
+  margin: 0;
+}

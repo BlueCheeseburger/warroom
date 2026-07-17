@@ -100,7 +100,66 @@ console.log('\n[6] Legacy Word markup already in a cell is cleaned on render');
   check('font-weight still allowed', /font-weight:\s*bold/.test(cellToHtml('<span style="font-weight:bold">x</span>')), cellToHtml('<span style="font-weight:bold">x</span>'));
 }
 
-console.log('\n[7] htmlToText round-trip');
+// Cells render with `white-space: pre-wrap`, so a literal newline in the markup
+// is a real blank line on screen — and Word/Docs pretty-print their clipboard
+// HTML with newlines between every tag. Left alone, a pasted tag arrives with
+// blank lines above it and a gap before its cite (and <p> adds a 1em margin on
+// top of that). Paste must flatten to a single flowing run.
+console.log('\n[7] Word block structure is flattened, not blank-lined');
+{
+  const WORD_TAG_AND_CITE = `<html><head><style><!--p.MsoNormal{margin:0}--></style></head>
+<body lang=EN-US>
+
+<p class=MsoNormal><b><span style='font-size:12.0pt;color:black'>The impact is preventable <u>death</u>.</span></b></p>
+
+<p class=MsoNormal><b><span style='font-size:12.0pt;color:black'>Wright 17</span></b></p>
+
+</body></html>`;
+  const out = cleanPastedHtml(WORD_TAG_AND_CITE, '');
+  check('no literal newlines survive', !/[\n\r\t]/.test(out), JSON.stringify(out));
+  check('no <p> survives (it carries a 1em margin)', !/<p>/.test(out), out);
+  check('paragraphs become exactly one <br>', (out.match(/<br>/g) || []).length === 1, out);
+  check('no leading break or space', !/^(<br>|\s)/.test(out), JSON.stringify(out));
+  check('no trailing break or space', !/(<br>|\s)$/.test(out), JSON.stringify(out));
+  check('underline inside the tag survives', /<u>death<\/u>/.test(out), out);
+  check('bold survives', /<b>/.test(out), out);
+  check('both paragraphs kept', out.includes('preventable') && out.includes('Wright 17'), out);
+}
+
+console.log('\n[8] Empty paragraphs and stray whitespace collapse');
+{
+  check('empty Word paragraphs do not stack breaks',
+    cleanPastedHtml('<p>A</p><p></p><p>&nbsp;</p><p>B</p>', '') === 'A<br>B',
+    cleanPastedHtml('<p>A</p><p></p><p>&nbsp;</p><p>B</p>', ''));
+  check('nested blocks do not multiply breaks',
+    cleanPastedHtml('<div><div><p>A</p></div></div><p>B</p>', '') === 'A<br>B',
+    cleanPastedHtml('<div><div><p>A</p></div></div><p>B</p>', ''));
+  check('explicit <br><br> collapses to one',
+    cleanPastedHtml('A<br><br>B', '') === 'A<br>B',
+    cleanPastedHtml('A<br><br>B', ''));
+  check('inter-tag indentation does not become spaces-galore',
+    cleanPastedHtml('<p>A</p>\n\n    \n<p>B</p>', '') === 'A<br>B',
+    cleanPastedHtml('<p>A</p>\n\n    \n<p>B</p>', ''));
+  check('run of spaces inside a line collapses to one',
+    cleanPastedHtml('<span>A     B</span>', '') === '<span>A B</span>',
+    cleanPastedHtml('<span>A     B</span>', ''));
+}
+
+// Legacy cells still hold Word's <p> markup and its pretty-printing newlines.
+// The render path can't flatten blocks (that would rewrite stored content), but
+// it must not turn the source newlines into blank lines; the .flow-cell margin
+// reset in index.css handles the <p> margins.
+console.log('\n[9] Legacy Word markup renders without blank lines');
+{
+  const legacy = '\n\n<p><b>Tag text</b></p>\n\n<p>Wright 17</p>\n\n';
+  const out = cellToHtml(legacy);
+  check('source newlines never reach the DOM', !/[\n\r\t]/.test(out), JSON.stringify(out));
+  check('text preserved', out.includes('Tag text') && out.includes('Wright 17'), out);
+  // Runs of real spaces are pre-wrap's job and must not be collateral damage.
+  check('intentional double space survives render', cellToHtml('<span>A  B</span>') === '<span>A  B</span>', cellToHtml('<span>A  B</span>'));
+}
+
+console.log('\n[10] htmlToText round-trip');
 {
   check('tags stripped for text', htmlToText('<b>a</b><br><i>b</i>') === 'a\nb', JSON.stringify(htmlToText('<b>a</b><br><i>b</i>')));
   check('entities decoded', htmlToText('a &amp; b') === 'a & b', htmlToText('a &amp; b'));
