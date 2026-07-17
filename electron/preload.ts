@@ -137,6 +137,7 @@ const api = {
   },
   speechdoc: {
     extract: (filePath: string) => ipcRenderer.invoke('speechdoc:extract', filePath),
+    extractBlocks: (filePath: string) => ipcRenderer.invoke('speechdoc:extractBlocks', filePath),
     clearCache: (filePath?: string) => ipcRenderer.invoke('speechdoc:clearCache', filePath),
     headingStyles: (base64: string) => ipcRenderer.invoke('speechdoc:headingStyles', base64),
   },

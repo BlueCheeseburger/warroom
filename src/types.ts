@@ -637,6 +637,17 @@ export interface ExtractedCard {
   year: number;
 }
 
+// Mirrors ExtractedFlowCard in electron/main.ts (speechdoc:extractBlocks).
+// Named distinctly from ExtractedCard above — no body, on purpose: Auto Flow
+// only ever reads tags, cites, and heading structure, never card bodies.
+export interface ExtractedFlowCard {
+  pocket: string | null;
+  hat: string | null;
+  block: string | null;
+  tag: string;
+  cite: string;
+}
+
 // ─── Card cutter (guided cut from PDF / saved HTML) ─────────────────────────────
 
 export interface CutterImage {
@@ -666,6 +677,34 @@ export interface CutterEmphasis {
   highlight: string[];  // verbatim substrings to emphasize
   small: string[];      // verbatim substrings to keep but shrink (not read)
 }
+
+// ─── AI clarifying questions (shared: card cutter, Auto Flow, Round Analysis) ──
+// A generic contract for any one-shot AI JSON handler that would otherwise have
+// to guess on genuine ambiguity. Instead of committing to a possibly-wrong
+// result, the handler returns an AIQuestion; the caller shows it to the user
+// (via <AIQuestionPrompt>), then re-invokes the SAME handler with the answer
+// appended to `clarifications`. This mirrors how Claude can pause an agentic
+// task to ask the user a clarifying question rather than guessing — see
+// AskUserQuestion in the Claude Code tool set, which this is modeled on.
+//
+// Prompts using this contract must be told: ask at most ONE question per call,
+// never ask once `clarifications` already holds 2 prior answers (commit to a
+// best-effort final result instead), and prefer a reasonable default over
+// asking whenever the doc gives enough signal to infer one.
+
+export interface AIQuestion {
+  question: string;
+  options: string[]; // 2–4 short, concrete option labels. The UI always adds a free-text "Other".
+}
+
+export interface AIClarification {
+  question: string;
+  answer: string;
+}
+
+// A one-shot handler's result is either the real payload (T) or a pause.
+// `'question' in result` is the discriminant callers check.
+export type AIQuestionOr<T> = T | { question: AIQuestion };
 
 // ─── Impact calculus ──────────────────────────────────────────────────────────
 

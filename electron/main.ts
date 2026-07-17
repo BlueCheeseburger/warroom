@@ -22,6 +22,7 @@ import { Document, Packer, Paragraph, TextRun, UnderlineType, BorderStyle } from
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
+import { extractFlowCardsFromXml } from './docxFlowCards';
 
 const isDev = !app.isPackaged;
 
@@ -1568,6 +1569,30 @@ ipcMain.handle('speechdoc:clearCache', (_e, filePath?: string) => {
   if (filePath) speechDocCache.delete(filePath);
   else speechDocCache.clear();
   return sbOk(null);
+});
+
+// Structured tag+cite extraction for Auto Flow. Unlike speechdoc:extract (which
+// flattens everything to a joined string), this keeps the pocket/hat/block
+// heading hierarchy per card. Parsing logic lives in docxFlowCards.ts as a pure
+// function (headless-testable); this handler is just the file I/O around it.
+ipcMain.handle('speechdoc:extractBlocks', async (_e, filePath: string) => {
+  try {
+    checkPath(filePath);
+    const JSZip = require('jszip');
+    const buf = await fs.readFile(filePath);
+    const zip = await JSZip.loadAsync(buf);
+    const xml: string = await zip.file('word/document.xml')?.async('string') ?? '';
+    if (!xml) return sbErr('Could not read document XML');
+
+    const stylesXml: string = await zip.file('word/styles.xml')?.async('string') ?? '';
+    const headingLevels = resolveHeadingStyles(stylesXml);
+    if (headingLevels.size === 0) {
+      headingLevels.set('Heading1', 1); headingLevels.set('Heading2', 2);
+      headingLevels.set('Heading3', 3); headingLevels.set('Heading4', 4);
+    }
+
+    return sbOk({ cards: extractFlowCardsFromXml(xml, headingLevels) });
+  } catch (e: any) { return sbErr(e.message); }
 });
 
 // Extracts just the "guaranteed searchable" text from a docx: every heading
