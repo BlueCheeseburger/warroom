@@ -2012,21 +2012,34 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 // decide emphasis (underline = read aloud, highlight = most important, small =
 // kept-but-unread context) and propose 1–2 taglines. Emphasis is returned as EXACT
 // verbatim substrings so the renderer can apply it without altering the body text.
-ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite }: {
-  body: string; intent: string; highlightColor: string; cite?: string;
+ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications }: {
+  body: string; intent: string; highlightColor: string; cite?: string; clarifications?: { question: string; answer: string }[];
 }) => {
   const text = String(body ?? '').trim();
   if (!text) throw new Error('No card body text to cut.');
   const skill = (await readSkill('card_cutting')) ?? '';
+  const clar = clarifications ?? [];
 
   const prompt = await renderPrompt('cutter_emphasize', {
     CARD_CUTTING_SKILL: skill,
     CITE_NOTE: cite ? ` (cite: ${cite})` : '',
     INTENT_NOTE: intent ? `"${intent}"` : '(not specified — infer the strongest argument)',
     BODY_TEXT: text.slice(0, 40000),
+    CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
+    QUESTIONS_ASKED: String(clar.length),
   });
 
   const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
+
+  // Ambiguity escape hatch, shared with Auto Flow / Round Analysis (AIQuestion in
+  // src/types.ts) — the prompt is instructed to return a `question` field instead
+  // of committing to emphasis when the card genuinely supports more than one
+  // framing and intent wasn't specified. Caller shows it and re-calls with the
+  // answer appended to `clarifications`.
+  if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
+    return { ok: true, question: parsed.question, taglines: [], underline: [], highlight: [], small: [] };
+  }
+
   const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
   let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
   if (taglines.length === 0) taglines = ['Untitled card'];

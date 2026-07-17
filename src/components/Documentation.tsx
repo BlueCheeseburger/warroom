@@ -573,6 +573,12 @@ export default function Documentation() {
             yellow and cyan.
           </P>
           <P>
+            <strong>If Warroom AI is genuinely unsure</strong> how to cut a card — usually because you didn't say what it's
+            for and the passage supports more than one distinct argument — it can ask you one quick clarifying question with
+            a couple of concrete options, instead of guessing. Pick one (or type your own) and it finishes the cut using your
+            answer. It only asks once per card.
+          </P>
+          <P>
             <PromptLink name="cutter_read_source">View/edit the "read source" prompt →</PromptLink>
             {' · '}
             <PromptLink name="cutter_emphasize">View/edit the "emphasis &amp; taglines" prompt →</PromptLink>

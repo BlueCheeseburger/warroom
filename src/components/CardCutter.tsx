@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
-import { Card, CutterSource, FontSize, HighlightColor } from '../types';
+import { Card, CutterSource, FontSize, HighlightColor, AIClarification, AIQuestion } from '../types';
+import AIQuestionPrompt from './AIQuestionPrompt';
 import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { FormattedBody } from './CardBody';
@@ -57,12 +58,55 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   const [extraImages, setExtraImages] = useState<{ src: string; alt: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Ambiguity escape hatch (see AIQuestion in types.ts): cutterEmphasize can pause
+  // instead of guessing when intent is unspecified and the card supports more
+  // than one framing. `pendingCut` remembers the body/intent so the resume call
+  // uses the same inputs the question was asked about.
+  const [pendingQuestion, setPendingQuestion] = useState<AIQuestion | null>(null);
+  const [clarifications, setClarifications] = useState<AIClarification[]>([]);
+  const [pendingCut, setPendingCut] = useState<{ body: string; intent: string } | null>(null);
+  const [answering, setAnswering] = useState(false);
+
+  async function runEmphasize(bodyText: string, intentText: string, clars: AIClarification[]) {
+    setPendingCut({ body: bodyText, intent: intentText });
+    setPendingQuestion(null);
+    setStep('cutting');
+    setError('');
+    try {
+      const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars });
+      if (res.question) { setPendingQuestion(res.question); return; }
+      const attrs = buildAttrsFromSpans(bodyText, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
+      setEditText(bodyText);
+      setEditAttrs(attrs);
+      setTaglines(res.taglines || []);
+      setChosenTag((res.taglines && res.taglines[0]) || '');
+      setClarifications([]);
+      setPendingCut(null);
+      setStep('edit');
+    } catch (e: any) {
+      setError(humanizeGeminiError(e?.message) || e?.message || 'Could not cut the card.');
+      setStep('select');
+    }
+  }
+
+  async function answerQuestion(answer: string) {
+    if (!pendingQuestion || !pendingCut || answering) return;
+    setAnswering(true);
+    const next = [...clarifications, { question: pendingQuestion.question, answer }];
+    setClarifications(next);
+    await runEmphasize(pendingCut.body, pendingCut.intent, next);
+    setAnswering(false);
+  }
+
   async function pickFile() {
     let filePath: string | null = null;
     try { filePath = await window.warroom.dialog.openFile(['html', 'htm', 'xhtml', 'mhtml', 'mht', 'pdf']); } catch {}
     if (!filePath) return;
     setFileName(filePath.split(/[\\/]/).pop() || 'source');
     setError('');
+    setClarifications([]);
+    setPendingQuestion(null);
+    setPendingCut(null);
     setStep('reading');
     try {
       const src = await window.warroom.ai.cutterReadSource(filePath);
@@ -102,38 +146,12 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     const allIdxs = new Set(source.paragraphs.map((_, i) => i));
     setIncludedParas(allIdxs);
     const fullBody = source.paragraphs.join('\n\n');
-    setStep('cutting');
-    setError('');
-    try {
-      const res = await window.warroom.ai.cutterEmphasize({ body: fullBody, intent: '', highlightColor: color, cite });
-      const attrs = buildAttrsFromSpans(fullBody, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
-      setEditText(fullBody);
-      setEditAttrs(attrs);
-      setTaglines(res.taglines || []);
-      setChosenTag((res.taglines && res.taglines[0]) || '');
-      setStep('edit');
-    } catch (e: any) {
-      setError(humanizeGeminiError(e?.message) || e?.message || 'Could not cut the card.');
-      setStep('select');
-    }
+    await runEmphasize(fullBody, '', []);
   }
 
   async function cut() {
     if (!selectedBody.trim()) return;
-    setStep('cutting');
-    setError('');
-    try {
-      const res = await window.warroom.ai.cutterEmphasize({ body: selectedBody, intent, highlightColor: color, cite });
-      const attrs = buildAttrsFromSpans(selectedBody, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
-      setEditText(selectedBody);
-      setEditAttrs(attrs);
-      setTaglines(res.taglines || []);
-      setChosenTag((res.taglines && res.taglines[0]) || '');
-      setStep('edit');
-    } catch (e: any) {
-      setError(humanizeGeminiError(e?.message) || e?.message || 'Could not cut the card.');
-      setStep('select');
-    }
+    await runEmphasize(selectedBody, intent, []);
   }
 
   function applyFormat(kind: 'underline' | 'highlight' | 'fontSize' | 'clear', fs?: FontSize) {
@@ -351,7 +369,12 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           )}
 
           {/* STEP: cutting */}
-          {step === 'cutting' && (
+          {step === 'cutting' && pendingQuestion && (
+            <div className="py-6">
+              <AIQuestionPrompt question={pendingQuestion} onAnswer={answerQuestion} busy={answering} />
+            </div>
+          )}
+          {step === 'cutting' && !pendingQuestion && (
             <div className="py-14">
               <LoadingState messages={[
                 'Warroom AI is cutting the card…',

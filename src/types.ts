@@ -276,6 +276,7 @@ declare global {
           intent: string;
           highlightColor: HighlightColor;
           cite?: string;
+          clarifications?: AIClarification[];
         }) => Promise<CutterEmphasis>;
         readImageAsDataUrl: (filePath: string) => Promise<string>;
         suggestBlocks: (
@@ -672,6 +673,12 @@ export interface CutterSource {
 export interface CutterEmphasis {
   ok: boolean;
   error?: string;
+  // Set instead of the fields below when the AI would otherwise have to guess
+  // at genuine ambiguity (usually: intent wasn't specified and the card
+  // supports more than one distinct framing). The caller shows it via
+  // <AIQuestionPrompt>, then re-calls cutterEmphasize with the answer appended
+  // to `clarifications`. See AIQuestion / AIQuestionOr above.
+  question?: AIQuestion;
   taglines: string[];   // 1–2 declarative tag options
   underline: string[];  // verbatim substrings to read aloud
   highlight: string[];  // verbatim substrings to emphasize
