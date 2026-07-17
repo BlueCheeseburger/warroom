@@ -94,6 +94,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [setSearchOpen, setShortcutsOpen]);
 
+  // ── macOS Touch Bar bridge ──────────────────────────────────────────────────
+  // Touch Bar button presses arrive here from the main process (it has no
+  // renderer state of its own) and get forwarded to whichever piece already
+  // owns that behavior: the search palette directly, or the same
+  // warroom-timer-control / warroom-coinflip-control custom events the AI
+  // agent and the coin's own button already use — so there's exactly one
+  // implementation of "start the timer" or "flip the coin", not two.
+  useEffect(() => {
+    const unsubscribe = window.warroom?.touchBar?.onControl((data) => {
+      const { target, ...detail } = data;
+      if (target === 'search') setSearchOpen(true);
+      else if (target === 'timer') window.dispatchEvent(new CustomEvent('warroom-timer-control', { detail }));
+      else if (target === 'coin') window.dispatchEvent(new CustomEvent('warroom-coinflip-control', { detail }));
+    });
+    return unsubscribe;
+  }, [setSearchOpen]);
+
   // ── Background keyword extraction on app ready ─────────────────────────────
   // Distills the top keywords from every case docx + recent speech doc so the
   // global search can match on document contents. Runs once per file (cached by

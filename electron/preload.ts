@@ -355,6 +355,18 @@ const api = {
   daemon: {
     status: () => ipcRenderer.invoke('daemon:status'),
   },
+  touchBar: {
+    // Renderer -> main: push live timer state so Touch Bar labels stay in
+    // sync (the main process has no way to read renderer state itself).
+    updateTimer: (state: { speechLabel: string; display: string; running: boolean }) =>
+      ipcRenderer.send('touchbar:timerState', state),
+    // Main -> renderer: a Touch Bar button was pressed.
+    onControl: (cb: (data: { target: 'timer' | 'search' | 'coin'; action: string; [key: string]: any }) => void) => {
+      const h = (_e: any, d: any) => cb(d);
+      ipcRenderer.on('touchbar:control', h);
+      return () => ipcRenderer.removeListener('touchbar:control', h);
+    },
+  },
   notes: {
     get: (p: { teamId: string; entityType: string; entityId: string }) =>
       ipcRenderer.invoke('notes:get', p),

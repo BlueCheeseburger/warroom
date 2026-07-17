@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, session, clipboard, Notification as ElectronNotification, net } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, session, clipboard, Notification as ElectronNotification, net, TouchBar } from 'electron';
+import type { TouchBarButton, TouchBarLabel } from 'electron';
+// TouchBarButton/TouchBarLabel/TouchBarSpacer aren't separate module exports as
+// values — only TouchBar itself is a real class; the item constructors are
+// static properties on it (`TouchBar.TouchBarButton`, etc.) in Electron's
+// main-process typings. (The `import type` above and this destructure share
+// the same three names on purpose — type-space and value-space are separate,
+// so `TouchBarButton` means "the type" in an annotation and "the constructor"
+// as a value, same as this file's other type/value name pairs.)
+const { TouchBarButton, TouchBarLabel, TouchBarSpacer } = TouchBar;
 import { join, normalize, basename, sep } from 'path';
 import { promises as fs, existsSync } from 'fs';
 import { execFile, spawn } from 'child_process';
@@ -1264,6 +1273,82 @@ async function extractText(filePath: string): Promise<string> {
   throw new Error(`Unsupported file type: .${ext}`);
 }
 
+// ─── Touch Bar (macOS) ──────────────────────────────────────────────────────
+// Mirrors the title bar's global search, coin flip, and speech timer. The
+// timer's actual state lives in the renderer (SpeechTimer in TitleBar.tsx) —
+// this process has no copy of it, so these three items are updated live via
+// the touchbar:timerState IPC channel rather than computed here. Button
+// presses go the other way: touchbar:control tells the renderer which action
+// to run, and the renderer dispatches it through the SAME warroom-timer-control
+// / warroom-coinflip-control custom events the AI agent and the coin's own
+// button already use — one implementation of "start the timer", not two.
+//
+// Two real hardware constraints shaped this: no widget here can host the
+// renderer's actual CSS/canvas content (so the coin's 3D flip animation stays
+// on-screen — this button only triggers it), and there's no text-entry
+// widget (so custom time is set via +/- steps, not by typing a number).
+let tbSpeechButton: TouchBarButton | null = null;
+let tbTimeLabel: TouchBarLabel | null = null;
+let tbPlayPauseButton: TouchBarButton | null = null;
+
+function setupTouchBar(win: BrowserWindow) {
+  const send = (detail: { target: 'timer' | 'search' | 'coin'; action: string; [key: string]: any }) =>
+    win.webContents.send('touchbar:control', detail);
+
+  const searchButton = new TouchBarButton({
+    label: '🔍 Search',
+    click: () => send({ target: 'search', action: 'open' }),
+  });
+  const coinButton = new TouchBarButton({
+    label: '🪙 Flip',
+    click: () => send({ target: 'coin', action: 'flip' }),
+  });
+  tbSpeechButton = new TouchBarButton({
+    label: 'Constructive',
+    click: () => send({ target: 'timer', action: 'cycle' }),
+  });
+  const minusButton = new TouchBarButton({
+    label: '−15s',
+    click: () => send({ target: 'timer', action: 'nudge', deltaSeconds: -15 }),
+  });
+  tbTimeLabel = new TouchBarLabel({ label: '0:00' });
+  const plusButton = new TouchBarButton({
+    label: '+15s',
+    click: () => send({ target: 'timer', action: 'nudge', deltaSeconds: 15 }),
+  });
+  tbPlayPauseButton = new TouchBarButton({
+    label: '▶',
+    click: () => send({ target: 'timer', action: 'toggle' }),
+  });
+  const resetButton = new TouchBarButton({
+    label: '↺',
+    click: () => send({ target: 'timer', action: 'reset' }),
+  });
+
+  win.setTouchBar(new TouchBar({
+    items: [
+      searchButton,
+      coinButton,
+      new TouchBarSpacer({ size: 'small' }),
+      tbSpeechButton,
+      minusButton,
+      tbTimeLabel,
+      plusButton,
+      tbPlayPauseButton,
+      resetButton,
+    ],
+  }));
+}
+
+// Renderer -> main: live timer state, so the Touch Bar labels stay in sync.
+// One-way (ipcMain.on, not .handle) — no response needed, and this fires up
+// to once a second while the timer runs.
+ipcMain.on('touchbar:timerState', (_e, state: { speechLabel: string; display: string; running: boolean }) => {
+  if (tbSpeechButton) tbSpeechButton.label = state.speechLabel;
+  if (tbTimeLabel) tbTimeLabel.label = state.display;
+  if (tbPlayPauseButton) tbPlayPauseButton.label = state.running ? '⏸' : '▶';
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 function createWindow() {
@@ -1299,6 +1384,7 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   mainWin = win;
+  if (isMac) setupTouchBar(win);
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {

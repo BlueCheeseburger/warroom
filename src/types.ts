@@ -529,6 +529,10 @@ declare global {
         list: () => Promise<{ ok: boolean; prompts: { name: string; source: 'user' | 'bundled'; label?: string }[]; error?: string }>;
         openInEditor: (name: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
       };
+      touchBar: {
+        updateTimer: (state: { speechLabel: string; display: string; running: boolean }) => void;
+        onControl: (cb: (data: { target: 'timer' | 'search' | 'coin'; action: string; [key: string]: any }) => void) => () => void;
+      };
       notes: {
         get: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: SharedNote[]; error?: string }>;
         upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) => Promise<{ ok: boolean; error?: string }>;

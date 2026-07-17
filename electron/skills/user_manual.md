@@ -140,11 +140,10 @@ How it works:
 ## Speech Timer
 Built into the title bar at the top of the app — always visible, no need to navigate anywhere.
 
-- **Select speech type**: click the speech-type button to cycle through your event's speeches in order (e.g. Constructive → Cross-Ex → Rebuttal → back around)
-- **Start / pause**: use the play/pause button next to the countdown
+- **Select speech type**: click the speech label dropdown (e.g. "Constructive", "Cross-Ex") to pick which speech to time
+- **Start / pause**: click the time display to start or pause the countdown
 - **Reset**: click the reset button next to the timer
-- **Set a custom time**: click the minutes or seconds — it turns into a blue rounded box with the number selected (like the macOS clock), then type your own time. ↑/↓ nudge it, Tab jumps to the other field, Enter or clicking away saves, Esc cancels. (If the timer's running, editing pauses it first.)
-- **HS / CLG toggle** (policy only): a small "HS" or "CLG" pill left of the speech button switches between high school and college speech times
+- **HS / CLG toggle** (policy only): a small "HS" or "CLG" pill left of the dropdown switches between high school and college speech times
 - Times auto-match your debate event (policy, PF, or LD)
 
 Speech times by event:
@@ -182,6 +181,11 @@ The timer turns amber in the last 30 seconds and red when time is up (overtime c
 A photorealistic minted-coin icon sits just left of the timer. Click it, then click **Flip** — the coin spins and lands on heads or tails.
 
 **It's a genuine 50/50 flip.** The result is chosen randomly the instant you click, before the animation even starts — the spin you watch is just for show and never influences which side it lands on.
+
+### Touch Bar (macOS)
+If your Mac has a Touch Bar, the timer, coin flip, and search also show up there — the same controls, mirrored onto the hardware strip, not a separate feature. You get: a search button, a flip button, the current speech name (tap to move to the next speech), the live countdown, **−15s** / **+15s** buttons, play/pause, and reset.
+
+Two things work a little differently on the Touch Bar, both just because of what that hardware can do: the coin's spin animation plays on your actual screen (the Touch Bar can't show it), so tapping "Flip" there opens the same popup and flips it for you to watch normally. And since you can't type on the Touch Bar, custom times are set with the +/− buttons instead of typing a number.
 
 ---
 

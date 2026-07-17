@@ -103,6 +103,7 @@ const TOC_SECTIONS = [
   { id: 'tournaments', label: 'Tournaments & rounds' },
   { id: 'monitor',     label: 'Tabroom live monitor' },
   { id: 'background',  label: 'Background notifications' },
+  { id: 'speech-timer', label: 'Speech Timer' },
   { id: 'flows',       label: 'Flows' },
   { id: 'speech-doc',  label: 'Speech doc viewer' },
   { id: 'impact-calc', label: 'Impact Calc' },
@@ -710,21 +711,13 @@ export default function Documentation() {
           <H2>Speech Timer</H2>
           <P>
             A built-in countdown timer lives in the title bar at the top of the app — always visible
-            without navigating anywhere. The speech-type is a <strong>cycle button</strong> — click it
-            to advance through the event's speeches in order (e.g. Constructive → Cross-Ex → Rebuttal →
-            back to Constructive for Policy). Use the play/pause and reset buttons next to the countdown
-            to run it.
-          </P>
-          <P>
-            <strong>Set a custom time:</strong> click the minutes or seconds — the digits turn into a
-            filled blue rounded box (the macOS time-field look) with the value selected, and you type a
-            new number. <Code>↑</Code>/<Code>↓</Code> nudge the value, <Code>Tab</Code> hops to the other
-            field, <Code>Enter</Code> or clicking away commits, <Code>Esc</Code> cancels. (Editing while
-            the timer is running pauses it first.)
+            without navigating anywhere. Click the speech-type dropdown (e.g. "Constructive",
+            "Cross-Ex") to select which speech to time, then click the time display to start or
+            pause the countdown. A reset button sits next to the timer.
           </P>
           <P>
             For Policy, a small <Code>HS</Code> / <Code>CLG</Code> pill to the left of the
-            speech button switches between high school and college speech lengths. Speech times auto-match
+            dropdown switches between high school and college speech lengths. Speech times auto-match
             the active debate event (Policy, PF, or LD). The display turns amber in the last 30
             seconds and red when time expires; it then counts up as overtime.
           </P>
@@ -745,6 +738,22 @@ export default function Documentation() {
             (a random 4–7 extra full turns) is purely cosmetic; the coin is then told to land at the
             rotation angle that matches the result already chosen. Nothing about the visual weights
             the outcome toward either side.
+          </P>
+
+          <H3>Touch Bar <Badge color="blue">macOS</Badge></H3>
+          <P>
+            On a Touch Bar MacBook, the timer, coin flip, and global search also live on the physical
+            Touch Bar — a mirror of the title bar controls, not a replacement for them. It shows a
+            search button, a flip button, the speech-type name (tap to cycle to the next speech), a
+            live countdown, <Code>−15s</Code> / <Code>+15s</Code> stepper buttons, play/pause, and reset.
+          </P>
+          <P>
+            Two things intentionally work differently there, both hardware limits rather than
+            oversights: the coin's animation can't run on the Touch Bar itself (it has no way to host
+            the app's actual on-screen content), so the flip button opens the popup and runs the real
+            animation on your display, same as clicking it normally. And there's no way to type on the
+            Touch Bar, so instead of clicking a digit and entering a number, custom time is set with the
+            +/− steppers.
           </P>
         </section>
 

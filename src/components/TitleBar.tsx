@@ -45,6 +45,11 @@ function getSlots(event: DebateEvent, level: PolicyLevel): SpeechSlot[] {
   return SLOTS['ld'];
 }
 
+function fmt(secs: number): string {
+  const m = Math.floor(Math.abs(secs) / 60);
+  const s = Math.abs(secs) % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 // ─── SpeechTimer ──────────────────────────────────────────────────────────────
 
@@ -56,8 +61,10 @@ function SpeechTimer() {
   const [slotIdx, setSlotIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editingPart, setEditingPart] = useState<'min' | 'sec' | null>(null);
   const [editVal, setEditVal] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +83,8 @@ function SpeechTimer() {
   // `display` in its deps (which would re-register the window listener every tick).
   const displayRef = useRef(display);
   displayRef.current = display;
+  const runningRef = useRef(running);
+  runningRef.current = running;
 
   // Reset on event or level change
   useEffect(() => {
@@ -107,14 +116,28 @@ function SpeechTimer() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [running, slot.secs]);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function down(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
+        setDropdownOpen(false);
+    }
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [dropdownOpen]);
+
   function selectSlot(i: number) {
     setSlotIdx(i);
     setRunning(false);
     setTimeLeft(null);
+    setDropdownOpen(false);
   }
 
-  // Cycle button: advance to the next speech in this event's list, wrapping
-  // around (Constructive → Cross-Ex → Rebuttal → Constructive for policy).
+  // Advances to the next speech in this event's list, wrapping around. Not
+  // exposed as in-app UI (the title bar keeps its dropdown) — used by the
+  // macOS Touch Bar's speech-type button, which cycles rather than opening a
+  // menu (no equivalent widget on that hardware).
   function cycleSlot() {
     selectSlot((safeIdx + 1) % slots.length);
   }
@@ -127,10 +150,8 @@ function SpeechTimer() {
   function reset() { setRunning(false); setTimeLeft(null); }
 
   function startEdit(part: 'min' | 'sec') {
-    // Editing a live-ticking value is meaningless — pause first, then edit the
-    // frozen value (rather than ignoring the click, which reads as "broken").
-    if (running) setRunning(false);
-    const cur = displayRef.current;
+    if (running) return;
+    const cur = timeLeft ?? slot.secs;
     const val = part === 'min'
       ? String(Math.floor(cur / 60))
       : String(cur % 60).padStart(2, '0');
@@ -141,7 +162,7 @@ function SpeechTimer() {
 
   function commitEdit() {
     if (!editingPart) return;
-    const cur = displayRef.current;
+    const cur = timeLeft ?? slot.secs;
     const parsed = parseInt(editVal, 10);
     if (!isNaN(parsed) && parsed >= 0) {
       const mins = editingPart === 'min' ? parsed : Math.floor(cur / 60);
@@ -150,28 +171,6 @@ function SpeechTimer() {
     }
     setEditingPart(null);
     setEditVal('');
-  }
-
-  function cancelEdit() { setEditingPart(null); setEditVal(''); }
-
-  // Apple time-field feel: type digits, ↑/↓ to nudge, Enter/Tab/click-away to
-  // commit, Esc to cancel. Tab commits and hops to the other part.
-  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      commitEdit();
-    } else if (e.key === 'Escape') {
-      cancelEdit();
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const other = editingPart === 'min' ? 'sec' : 'min';
-      commitEdit();
-      setTimeout(() => startEdit(other), 0);
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      const delta = e.key === 'ArrowUp' ? 1 : -1;
-      const next = Math.max(0, (parseInt(editVal, 10) || 0) + delta);
-      setEditVal(String(editingPart === 'sec' ? Math.min(next, 59) : next));
-    }
   }
 
   useEffect(() => {
@@ -203,9 +202,19 @@ function SpeechTimer() {
     };
   });
 
+  // Push live state to the main process so the macOS Touch Bar's speech/time
+  // labels stay in sync — it has no way to read renderer state itself.
+  useEffect(() => {
+    window.warroom?.touchBar?.updateTimer({
+      speechLabel: slot.label,
+      display: `${Math.floor(display / 60)}:${String(display % 60).padStart(2, '0')}`,
+      running,
+    });
+  }, [slot.label, display, running]);
+
   useEffect(() => {
     function handleControl(e: Event) {
-      const { action, speech, level: lvl } = (e as CustomEvent).detail ?? {};
+      const { action, speech, level: lvl, deltaSeconds } = (e as CustomEvent).detail ?? {};
       if (action === 'start') {
         if (displayRef.current === 0) setTimeLeft(null);
         setRunning(true);
@@ -221,6 +230,14 @@ function SpeechTimer() {
         const needle = String(speech).toLowerCase();
         const idx = slots.findIndex((s) => s.label.toLowerCase().includes(needle) || needle.includes(s.label.toLowerCase()));
         if (idx >= 0) selectSlot(idx);
+      } else if (action === 'cycle') {
+        // Touch Bar: no dropdown widget there, so its speech button cycles instead.
+        cycleSlot();
+      } else if (action === 'nudge' && typeof deltaSeconds === 'number') {
+        // Touch Bar: no text entry there, so custom time is set via +/- steps
+        // instead of typing — same "editing pauses a running timer" rule.
+        if (runningRef.current) setRunning(false);
+        setTimeLeft(Math.max(0, displayRef.current + deltaSeconds));
       } else if (action === 'level' && (lvl === 'hs' || lvl === 'clg')) {
         localStorage.setItem(TIMER_LEVEL_KEY, lvl);
         setLevel(lvl);
@@ -240,46 +257,6 @@ function SpeechTimer() {
     : 'var(--titlebar-label)';
 
   const nd: React.CSSProperties = { WebkitAppRegion: 'no-drag' } as any;
-
-  // One min/sec digit group. When it's the part being edited it becomes a
-  // filled blue rounded box with the digits selected (the macOS time-field
-  // look); otherwise it's a click-to-edit number with a faint hover chip.
-  function renderPart(part: 'min' | 'sec') {
-    const value = part === 'min'
-      ? String(Math.floor(display / 60))
-      : String(display % 60).padStart(2, '0');
-    if (editingPart === part) {
-      return (
-        <input
-          ref={editInputRef}
-          value={editVal}
-          onChange={(e) => setEditVal(e.target.value.replace(/\D/g, '').slice(0, 2))}
-          onBlur={commitEdit}
-          onKeyDown={onEditKeyDown}
-          className="font-mono font-bold tabular-nums text-center"
-          style={{
-            fontSize: 13, color: '#fff', background: '#0a84ff',
-            border: 'none', outline: 'none', borderRadius: 5,
-            width: 24, padding: '1px 0', ...nd,
-          }}
-          type="text"
-          inputMode="numeric"
-        />
-      );
-    }
-    return (
-      <span
-        onClick={() => startEdit(part)}
-        title={`Click to set ${part === 'min' ? 'minutes' : 'seconds'}`}
-        className="rounded transition"
-        style={{ cursor: 'text', padding: '1px 4px', ...nd }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      >
-        {value}
-      </span>
-    );
-  }
 
   return (
     <div className="flex items-center gap-0.5" style={{ ...nd, position: 'relative' }}>
@@ -303,35 +280,103 @@ function SpeechTimer() {
         </button>
       )}
 
-      {/* Speech type — click to cycle through this event's speeches in order */}
-      <button
-        onClick={cycleSlot}
-        title="Click to cycle speech type"
-        className="flex items-center gap-1 px-2 py-0.5 rounded transition"
-        style={{
-          background: 'transparent',
-          color: 'var(--titlebar-label)',
-          fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-          border: 'none', cursor: 'pointer', minWidth: 84, justifyContent: 'center', ...nd,
-        }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      >
-        {slot.label}
-        <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-          <path d="M10.5 2.5A5 5 0 1 0 11 6" />
-          <polyline points="10.5 1 10.5 4 7.5 4" />
-        </svg>
-      </button>
+      {/* Speech type dropdown trigger */}
+      <div ref={dropdownRef} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setDropdownOpen((v) => !v)}
+          className="flex items-center gap-1 px-2 py-0.5 rounded transition"
+          style={{
+            background: dropdownOpen ? 'var(--nav-hover-bg)' : 'transparent',
+            color: 'var(--titlebar-label)',
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+            border: 'none', cursor: 'pointer', minWidth: 90, ...nd,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+          onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          {slot.label}
+          <svg width="7" height="7" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <polyline points="1 1 4 5 7 1" />
+          </svg>
+        </button>
 
-      {/* Countdown — click minutes or seconds to type a custom time */}
+        {dropdownOpen && (
+          <div
+            className="glass-popover absolute top-full mt-1 left-0 z-[9999] rounded-lg py-1 shadow-xl"
+            style={{
+              border: '1px solid var(--border-subtle)',
+              minWidth: 148,
+            }}
+          >
+            {slots.map((s, i) => (
+              <button
+                key={`${s.label}-${i}`}
+                onClick={() => selectSlot(i)}
+                className="w-full text-left flex items-center justify-between px-3 py-1.5 text-xs transition"
+                style={{
+                  background: i === safeIdx ? 'var(--nav-active-bg)' : 'transparent',
+                  color: i === safeIdx ? 'var(--nav-active-color)' : 'var(--ink)',
+                  border: 'none', cursor: 'pointer', ...nd,
+                }}
+                onMouseEnter={(e) => { if (i !== safeIdx) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                onMouseLeave={(e) => { if (i !== safeIdx) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              >
+                <span>{s.label}</span>
+                <span className="font-mono ml-3" style={{ opacity: 0.45, fontSize: 11 }}>{fmt(s.secs)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Countdown — click minutes or seconds to edit when paused */}
       <span
-        className="font-mono font-bold tabular-nums flex items-center justify-end"
-        style={{ fontSize: 13, color: timeColor, minWidth: 54, flexShrink: 0, transition: 'color 0.25s', gap: 1 }}
+        className="font-mono font-bold tabular-nums px-1 flex items-center justify-end"
+        style={{ fontSize: 13, color: timeColor, width: 44, flexShrink: 0, transition: 'color 0.25s', gap: 0 }}
       >
-        {renderPart('min')}
+        {editingPart === 'min' ? (
+          <input
+            ref={editInputRef}
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
+            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
+            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
+            type="text"
+            inputMode="numeric"
+          />
+        ) : (
+          <span
+            onClick={() => startEdit('min')}
+            title={running ? undefined : 'Click to edit minutes'}
+            style={{ cursor: running ? 'default' : 'text' }}
+          >
+            {String(Math.floor(display / 60))}
+          </span>
+        )}
         <span>:</span>
-        {renderPart('sec')}
+        {editingPart === 'sec' ? (
+          <input
+            ref={editInputRef}
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => { if (e.key === 'Enter') { commitEdit(); } else if (e.key === 'Escape') { setEditingPart(null); } }}
+            className="font-mono font-bold tabular-nums bg-transparent outline-none border-b text-center"
+            style={{ fontSize: 13, color: timeColor, width: 22, borderColor: 'var(--accent)', ...nd }}
+            type="text"
+            inputMode="numeric"
+          />
+        ) : (
+          <span
+            onClick={() => startEdit('sec')}
+            title={running ? undefined : 'Click to edit seconds'}
+            style={{ cursor: running ? 'default' : 'text' }}
+          >
+            {String(display % 60).padStart(2, '0')}
+          </span>
+        )}
       </span>
 
       {/* Play / Pause */}
@@ -397,6 +442,19 @@ function CoinFlip() {
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
   }, [open]);
+
+  // Touch Bar "flip" button: open the popover and run a real flip, visible
+  // on-screen (the animation itself can't live on the Touch Bar — see the
+  // "why can't we do the 3D animation" discussion).
+  useEffect(() => {
+    function onExternalFlip(e: Event) {
+      if ((e as CustomEvent).detail?.action !== 'flip') return;
+      setOpen(true);
+      flip();
+    }
+    window.addEventListener('warroom-coinflip-control', onExternalFlip);
+    return () => window.removeEventListener('warroom-coinflip-control', onExternalFlip);
+  }); // no deps: `flip` reads `flipping` fresh each render, same as its own button's onClick
 
   function flip() {
     if (flipping) return;
