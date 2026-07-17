@@ -1039,6 +1039,10 @@ export default function Settings() {
               />
             </div>
           </div>
+          <p className="text-[11px] text-ink/40 mt-2">
+            Only bold, italic, and underline actually reach the flow — a cell can't carry a custom
+            color or size, so those two only affect this preview.
+          </p>
           <button
             type="button"
             onClick={resetAutoFlowStyle}

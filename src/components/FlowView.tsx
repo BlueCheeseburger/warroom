@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
@@ -204,6 +204,13 @@ export default function FlowView() {
   const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  // Snapshot the flow once, when the panel opens — not on every FlowView render
+  // while it's open. flushAndGetSheets() is otherwise cheap to call, but FlowView
+  // re-renders on every keystroke anywhere in the flow, and re-flattening every
+  // cell on each of those (via buildFlowSummary in AnalyzeRound) is wasted work.
+  // It also means "analyze the round as it stood when I clicked Analyze" instead
+  // of a target that keeps shifting while the panel is open.
+  const analyzeSheets = useMemo(() => (analyzeOpen ? flushAndGetSheets() : null), [analyzeOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live collaboration ──────────────────────────────────────────────────────
   const [live, setLive] = useState(false);              // is this flow live-synced?
@@ -1597,9 +1604,9 @@ export default function FlowView() {
         />
       )}
 
-      {analyzeOpen && (
+      {analyzeOpen && analyzeSheets && (
         <AnalyzeRound
-          sheets={flushAndGetSheets()}
+          sheets={analyzeSheets}
           columns={columns}
           event={flowEvent}
           flowId={flowId}
