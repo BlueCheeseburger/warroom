@@ -840,7 +840,9 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> redoes, also
-            available as toolbar buttons. Undo covers text edits, column changes, colors, and arrows.
+            available as toolbar buttons. Undo covers text edits, column changes, colors, arrows, and
+            layout switches. It undoes what you <em>changed</em> and leaves you on the tab you're
+            looking at — switching tabs isn't an edit, so it's never something undo puts back.
           </P>
           <P>
             <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}

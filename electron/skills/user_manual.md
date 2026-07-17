@@ -250,7 +250,7 @@ Arrows are saved with the sheet, so they're there when you reopen the flow.
 
 Matches are **highlighted in amber** so you don't have to hunt through a cell to spot them: every hit on the tab you're looking at gets a soft wash, and the one you're currently on is painted solid. The highlighting is only drawn on screen — it never becomes part of your flow.
 
-**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, and arrows.
+**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too. Undo covers text edits, column changes, colors, arrows, and switching between Stock Issues and Advantage. It undoes the change and **leaves you on the tab you're on** — changing tabs isn't an edit, so undo never moves you.
 
 **Recolor a column.** Click the **▾** menu on any column header (it's always visible) and pick a color from the palette to recolor that column. Choose **Reset to default** to restore the side's standard color.
 

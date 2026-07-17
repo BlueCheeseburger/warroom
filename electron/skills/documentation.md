@@ -310,7 +310,9 @@ Hits are painted with the **CSS Custom Highlight API** (`CSS.highlights` + `High
 
 `matchRangesIn` (`src/lib/cellHtml.ts`) builds the ranges. It **flattens the cell's text nodes into one string, searches that, then maps the offsets back** — searching each text node separately would miss any hit straddling a tag boundary, which is most of them in a real tag (`preventable <u>death</u>` is two text nodes). It lives in the lib rather than the component so `scripts/test-cell-paste.ts` can exercise the offset mapping headlessly.
 
-**Undo / redo:** `⌘Z` undoes and `⌘⇧Z` redoes, also available as toolbar buttons. Undo covers text edits, column changes, colors, and arrows.
+**Undo / redo:** `⌘Z` undoes and `⌘⇧Z` redoes, also available as toolbar buttons. Undo covers text edits, column changes, colors, arrows, and the variant / PF-order / event layout switches.
+
+A `FlowSnapshot` holds document state only — **it deliberately carries no active-sheet index**, and `restoreSnapshot` keeps whatever tab the user is currently on (clamped, since undoing an "add sheet" can remove the tab they're standing on). Switching tabs records no snapshot, because navigation isn't an edit; when the index *was* stored and restored, an older snapshot still carried whatever tab happened to be open when it was taken, so undoing an edit made on tab 2 threw the user back to tab 1.
 
 **Column colors:** each column header has an always-visible `▾` menu with a color palette to recolor that column; "Reset to default" restores the side color. The default Aff/Pro and Neg/Con column colors can be set for all flows in **Settings → Flow colors**.
 

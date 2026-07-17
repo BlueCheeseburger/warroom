@@ -74,12 +74,13 @@ interface StoredFlowData {
   zoom: number;
 }
 
+// An undo step. Deliberately holds no active-sheet index: which tab is open is
+// navigation, not part of the document, and restoring it would move the user.
 interface FlowSnapshot {
   sheets: SheetData[];
   columnColors: (string | null)[];
   customColumns: string[] | null;
   columnWidths: number[];
-  activeSheetIdx: number;
   variant: PolicyVariant;
   pfOrder: PFOrder;
   event: 'policy' | 'pf';
@@ -636,7 +637,6 @@ export default function FlowView() {
       columnColors: [...s.columnColors],
       customColumns: s.customColumns ? [...s.customColumns] : null,
       columnWidths: [...s.columnWidths],
-      activeSheetIdx: s.activeSheetIdx,
       variant: s.variant,
       pfOrder: s.pfOrder,
       event: s.event,
@@ -654,7 +654,12 @@ export default function FlowView() {
 
   function restoreSnapshot(s: FlowSnapshot) {
     restoring.current = true;
-    const idx = Math.min(s.activeSheetIdx, s.sheets.length - 1);
+    // Stay on the tab the user is looking at. Undo is for edits, not navigation:
+    // switching tabs records no snapshot, so an older one still carries whatever
+    // tab happened to be open when it was taken — restoring that index yanked you
+    // back to tab 1 for undoing an edit you made on tab 2. Clamp, because undoing
+    // an "add sheet" can delete the tab we're standing on.
+    const idx = Math.max(0, Math.min(snap.current.activeSheetIdx, s.sheets.length - 1));
     setCustomColumns(s.customColumns);
     setColumnWidths(s.columnWidths);
     setColumnColors(s.columnColors);
