@@ -9,6 +9,7 @@ import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
 } from '../lib/flowDoc';
+import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml } from '../lib/cellHtml';
 
 // Stable per-user cursor color (hash the user id into a fixed palette).
 const PRESENCE_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#0d9488'];
@@ -86,102 +87,9 @@ const DEFAULT_AFF_COLOR = '#2563eb';
 const DEFAULT_NEG_COLOR = '#16a34a';
 const COLOR_SWATCHES = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#9333ea', '#0891b2', '#db2777', '#475569'];
 
-// Cell values are stored as HTML (to support bold/italic/underline/strikethrough).
-// Legacy plain-text values (and AI-written plain text) are upgraded on render.
-const HTML_RE = /<(br|div|span|b|i|u|s|strike|em|strong|p)[\s/>]/i;
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// ── Cell HTML sanitizer ──────────────────────────────────────────────────────
-// Cell content is rich text, but it is NOT all locally trusted: it arrives from
-// remote collaborators over the live broadcast channel (Y.Doc updates) and from
-// AI / MCP-written values, any of which could smuggle in <img onerror=…>,
-// <script>, event handlers, or javascript: URLs. Before any cell HTML reaches a
-// live innerHTML we parse it inertly (DOMParser never loads resources or runs
-// script), drop every element/attribute outside a small formatting allowlist,
-// and reserialize. execCommand-produced formatting (b/i/u/strike/br/spans) is
-// preserved; anything dangerous is stripped.
-// Highlighter color (amber). Cells force dark ink on any highlighted span (see
-// .flow-cell rule in index.css) so it stays readable in dark mode.
-const HILITE = '#fde68a';
-const HILITE_RGB = 'rgb(253,230,138)';
-
-const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'SUB', 'SUP']);
-const VOID_TAGS = new Set(['BR']);
-// Subtrees whose raw text must never be emitted (unwrapping would leak their contents).
-const DROP_SUBTREE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH']);
-const ALLOWED_STYLE_PROPS = new Set([
-  'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'color', 'background-color', 'vertical-align',
-]);
-
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function sanitizeStyle(style: string): string {
-  return style
-    .split(';')
-    .map((d) => d.trim())
-    .filter(Boolean)
-    .filter((decl) => {
-      const idx = decl.indexOf(':');
-      if (idx < 0) return false;
-      const prop = decl.slice(0, idx).trim().toLowerCase();
-      const val = decl.slice(idx + 1).trim().toLowerCase();
-      if (!ALLOWED_STYLE_PROPS.has(prop)) return false;
-      // Reject anything that could fetch a resource or execute.
-      if (/url\(|expression|javascript:|@import|[<>]/.test(val)) return false;
-      return true;
-    })
-    .join('; ');
-}
-function sanitizeNode(node: Node, out: string[]): void {
-  node.childNodes.forEach((child) => {
-    if (child.nodeType === Node.TEXT_NODE) {
-      out.push(escapeHtml(child.textContent || ''));
-      return;
-    }
-    if (child.nodeType !== Node.ELEMENT_NODE) return;
-    const el = child as HTMLElement;
-    const tag = el.tagName;
-    if (DROP_SUBTREE.has(tag)) return; // skip element and everything under it
-    if (!ALLOWED_TAGS.has(tag)) {
-      // Unknown-but-harmless wrapper: drop the tag, keep its (sanitized) children.
-      sanitizeNode(el, out);
-      return;
-    }
-    const name = tag.toLowerCase();
-    if (VOID_TAGS.has(tag)) { out.push(`<${name}>`); return; }
-    const style = sanitizeStyle(el.getAttribute('style') || '');
-    out.push(style ? `<${name} style="${escapeAttr(style)}">` : `<${name}>`);
-    sanitizeNode(el, out);
-    out.push(`</${name}>`);
-  });
-}
-function sanitizeCellHtml(html: string): string {
-  if (!html || !/[<&]/.test(html)) return html; // plain text — nothing to strip
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const out: string[] = [];
-  sanitizeNode(doc.body, out);
-  return out.join('');
-}
-
-function cellToHtml(value: string): string {
-  if (!value) return '';
-  if (HTML_RE.test(value)) return sanitizeCellHtml(value);
-  return escapeHtml(value).replace(/\n/g, '<br>');
-}
-function htmlToText(html: string): string {
-  if (!html) return '';
-  if (!HTML_RE.test(html) && !/[<&]/.test(html)) return html;
-  // Parse inertly rather than assigning to a live element, so a hostile
-  // <img onerror> in remote/AI content can't fire while we extract text.
-  const doc = new DOMParser().parseFromString(sanitizeCellHtml(html), 'text/html');
-  // Preserve line breaks the way innerText did (<br>/<div> → newline).
-  doc.body.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
-  doc.body.querySelectorAll('div, p').forEach((b) => { b.append('\n'); });
-  return (doc.body.textContent || '').replace(/\n{2,}/g, '\n').replace(/\n$/, '');
-}
+// Cell values are stored as HTML (to support bold/italic/underline/strikethrough
+// and highlight). Legacy plain-text values (and AI-written plain text) are
+// upgraded on render. The sanitizer and clipboard cleaning live in lib/cellHtml.
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   let h = (hex || '').replace('#', '').trim();
@@ -789,6 +697,27 @@ export default function FlowView() {
     scheduleSave();
   }
 
+  // Word and Google Docs put fully-styled HTML on the clipboard — font family,
+  // point size, and an explicit ink color. Pasting that natively drags all of it
+  // into the cell, so a tag copied out of a speech doc lands in the wrong font at
+  // the wrong size, and (from a dark-themed doc) in white-on-white. Intercept the
+  // paste and insert a cleaned copy: emphasis survives, everything else inherits
+  // the cell's own styling.
+  function handlePaste(ri: number, ci: number, e: React.ClipboardEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    const html = e.clipboardData.getData('text/html');
+    const text = e.clipboardData.getData('text/plain');
+    if (!html && !text) return;
+    e.preventDefault();
+    const insert = cleanPastedHtml(html, text);
+    if (!insert) return;
+    document.execCommand('insertHTML', false, insert);
+    const key = `${ri}-${ci}`;
+    cellsRef.current[key] = el.innerHTML;
+    pushLiveCell(key, el.innerHTML);
+    scheduleSave();
+  }
+
   // Apply rich-text emphasis to the focused cell (toolbar buttons).
   // Buttons call this from onMouseDown(preventDefault) so the cell keeps focus
   // and its selection, letting execCommand act on the selected text.
@@ -814,6 +743,29 @@ export default function FlowView() {
     const on = cur === HILITE_RGB || cur === HILITE;
     document.execCommand('hiliteColor', false, on ? 'transparent' : HILITE);
     document.execCommand('styleWithCSS', false, 'false');
+  }
+
+  // Screen rect of a collapsed range. Chromium gives a zero-width rect at the
+  // caret; an empty cell yields an all-zero rect, so fall back to the cell box.
+  function rectOf(range: Range, el: HTMLElement): DOMRect {
+    const r = range.getBoundingClientRect();
+    if (!r.top && !r.bottom && !r.left) return el.getBoundingClientRect();
+    return r;
+  }
+
+  // Is the caret on the cell's first / last *visual* line? Compared by y against
+  // a caret placed at the very start / end of the cell, because wrapped lines
+  // have no node boundary to test — only a position on screen.
+  function caretOnEdgeLine(el: HTMLDivElement, edge: 'first' | 'last'): boolean {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return true;
+    const cur = rectOf(sel.getRangeAt(0), el);
+    const probe = document.createRange();
+    probe.selectNodeContents(el);
+    probe.collapse(edge === 'first');
+    const target = rectOf(probe, el);
+    // Half a line of tolerance: same line ⇒ same top, next line ⇒ a full line away.
+    return Math.abs(cur.top - target.top) < Math.max(4, cur.height * 0.5);
   }
 
   // Focus a cell and place the caret at its start or end.
@@ -887,20 +839,13 @@ export default function FlowView() {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
-    // Arrow keys always jump to the neighbouring cell in that direction —
-    // they never move the caret inside the cell.
+    // Up / Down move a line within the cell, and only leave it once there is no
+    // line left to go to. Left / Right are never intercepted — they always just
+    // move the caret through the text (Tab moves between columns).
     } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (ri > 0) focusCell(`${ri - 1}-${ci}`);
+      if (ri > 0 && caretOnEdgeLine(el, 'first')) { e.preventDefault(); focusCell(`${ri - 1}-${ci}`); }
     } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      if (ci > 0) focusCell(`${ri}-${ci - 1}`);
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      if (ci < columns.length - 1) focusCell(`${ri}-${ci + 1}`, 'start');
+      if (ri < NUM_ROWS - 1 && caretOnEdgeLine(el, 'last')) { e.preventDefault(); focusCell(`${ri + 1}-${ci}`, 'start'); }
     }
   }
 
@@ -1493,7 +1438,7 @@ export default function FlowView() {
         </div>
 
         {/* Shortcuts help */}
-        <ToolBtn title={'Keyboard shortcuts:\n↑↓←→ → move to the next cell in that direction\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘1–⌘8 → jump to a sheet   ⌘9 → last sheet   ⌘T → new sheet\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline\n⌘⇧X → strikethrough   ⌘⇧H → highlight\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
+        <ToolBtn title={'Keyboard shortcuts:\n← → → move the cursor   ↑ ↓ → move a line, then to the next cell\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘1–⌘8 → jump to a sheet   ⌘9 → last sheet   ⌘T → new sheet\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline\n⌘⇧X → strikethrough   ⌘⇧H → highlight\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
           <IcoHelp />
         </ToolBtn>
       </div>
@@ -1782,6 +1727,7 @@ export default function FlowView() {
                       onFocus={() => { focusedCell.current = cellKey; syncRef.current?.setActiveCell(cellKey); }}
                       onBlur={(e) => { if (liveRef.current) { pushLiveCell(cellKey, e.currentTarget.innerHTML); syncRef.current?.setActiveCell(null); } }}
                       onInput={(e) => handleInput(ri, ci, e)}
+                      onPaste={(e) => handlePaste(ri, ci, e)}
                       onKeyDown={(e) => handleKeyDown(ri, ci, e)}
                       onMouseDown={(e) => { if (drawMode) { e.preventDefault(); handleArrowCellClick(cellKey); } }}
                       className="flow-cell w-full outline-none bg-transparent leading-snug whitespace-pre-wrap break-words"

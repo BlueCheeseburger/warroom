@@ -784,10 +784,18 @@ export default function Documentation() {
             the amber stays readable in dark mode. Cells <strong>auto-grow</strong> to fit their text.
           </P>
           <P>
-            <strong>Keyboard navigation:</strong> the arrow keys always jump to the neighbouring cell
-            in that direction — they never move the caret inside a cell, so moving around the flow is
-            one keypress per cell no matter how much text a cell holds. <Code>Tab</Code> and{' '}
-            <Code>Enter</Code> move to the next column / row.
+            <strong>Keyboard navigation:</strong> <Code>←</Code> / <Code>→</Code> move the cursor
+            through the text, like anywhere else. <Code>↑</Code> / <Code>↓</Code> move a line within
+            the cell, and jump to the cell above / below only once there is no line left to go to.{' '}
+            <Code>Tab</Code> and <Code>Enter</Code> move to the next column / row.
+          </P>
+          <P>
+            <strong>Pasting:</strong> text pasted from Word or Google Docs is cleaned before it lands
+            in the cell. Bold, italic, underline and strikethrough survive; the source document's
+            font, size, text color and background are dropped so the paste takes on the cell's own
+            styling instead of arriving in Calibri-at-12pt (or, from a dark-themed doc, in invisible
+            white). Cleaning is shared with the sanitizer that guards remote and AI-written cell
+            content, in <Code>src/lib/cellHtml.ts</Code>.
           </P>
           <P>
             <strong>Sheets by keyboard:</strong> <Code>⌘1</Code>–<Code>⌘8</Code> jump straight to that

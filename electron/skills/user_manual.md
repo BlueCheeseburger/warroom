@@ -213,9 +213,12 @@ The flow editor works like a paper flow, with some spreadsheet shortcuts on top.
 
 Cells grow automatically to fit whatever you type.
 
+**Pasting from Word.** Paste a tag straight out of a speech doc and it takes on the cell's own look — the doc's font, text size, text color and highlighting are all left behind, so nothing arrives in the wrong font or (from a dark-themed doc) in invisible white text. **Bold, italic, underline and strikethrough do carry over**, so a bolded tag stays bolded. If you want it highlighted, hit ⌘⇧H once it's in.
+
 **Move around with the keyboard.**
-1. Press the **arrow keys** to move to the next cell in that direction (Up/Down/Left/Right). They always jump cells — they never move your cursor around inside a cell — so getting anywhere on the flow is one keypress per cell.
-2. Press **Tab** or **Enter** to jump to the next column or row.
+1. **← / →** move your cursor through the text, exactly like anywhere else.
+2. **↑ / ↓** move up or down a line inside the cell. When there's no line left to move to, they jump to the cell above or below — so in a one-line cell they just move between cells.
+3. Press **Tab** or **Enter** to jump to the next column or row.
 3. Press **⌘↑** or **⌘↓** (Ctrl on Windows) to shift the argument in the current cell up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
 
 **Switch sheets without the mouse.** Mid-round you're constantly jumping between the sheet for each off-case position and the case sheet.
@@ -430,7 +433,8 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **⌘B / ⌘I / ⌘U / ⌘⇧X / ⌘⇧H**: bold / italic / underline / strikethrough / highlight in a cell
 - **⌘F**: find across all sheets in the flow
 - **⌘Z / ⌘⇧Z**: undo / redo
-- **Arrow keys**: move to the neighbouring cell in that direction (always — never moves the cursor inside a cell)
+- **← / →**: move the cursor through the text
+- **↑ / ↓**: move a line within the cell — or to the cell above / below when there's no line left
 - **Tab / Enter**: move to next column / row
 - **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
 - **⌘1 – ⌘8**: jump to that sheet; **⌘9** jumps to the last sheet
