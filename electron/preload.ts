@@ -70,6 +70,14 @@ const api = {
     extractCards: (filePath: string) => ipcRenderer.invoke('ai:extractCards', filePath),
     cutterReadSource: (filePath: string) => ipcRenderer.invoke('ai:cutterReadSource', filePath),
     cutterEmphasize: (params: any) => ipcRenderer.invoke('ai:cutterEmphasize', params),
+    analyzeRound: (params: {
+      flowSummary: string;
+      notes: string;
+      docs: { fileName: string; text: string }[];
+      event: 'policy' | 'pf';
+      clarifications: { question: string; answer: string }[];
+    }) => ipcRenderer.invoke('ai:analyzeRound', params),
+    autoFlowClassify: (params: any) => ipcRenderer.invoke('ai:autoFlowClassify', params),
     readImageAsDataUrl: (filePath: string) => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
     suggestBlocks: (positions: string, blocks: { id: string; title: string }[]) =>
       ipcRenderer.invoke('ai:suggestBlocks', positions, blocks),

@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
+import AnalyzeRound from './AnalyzeRound';
 import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser } from '../lib/flowSync';
 import { isShortcutDisabled, matchesShortcut } from '../lib/shortcutPrefs';
 import {
@@ -202,6 +203,7 @@ export default function FlowView() {
   const [colMenu, setColMenu] = useState<number | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
 
   // ── Live collaboration ──────────────────────────────────────────────────────
   const [live, setLive] = useState(false);              // is this flow live-synced?
@@ -1525,6 +1527,9 @@ export default function FlowView() {
           )}
         </div>
 
+        {/* Analyze round */}
+        <ToolBtn onClick={() => setAnalyzeOpen(true)} title="Analyze round with Warroom AI — dropped args, live clashes, next-speech suggestions"><IcoAnalyze /></ToolBtn>
+
         {/* Shortcuts help */}
         <ToolBtn title={'Keyboard shortcuts:\n← → → move the cursor   ↑ ↓ → move a line, then to the next cell\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘1–⌘8 → jump to a sheet   ⌘9 → last sheet   ⌘T → new sheet\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline\n⌘⇧X → strikethrough   ⌘⇧H → highlight\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
           <IcoHelp />
@@ -1589,6 +1594,16 @@ export default function FlowView() {
           onExportXlsx={exportXlsx}
           onOpenInExcel={openInExcel}
           onOpenInSheets={openInSheets}
+        />
+      )}
+
+      {analyzeOpen && (
+        <AnalyzeRound
+          sheets={flushAndGetSheets()}
+          columns={columns}
+          event={flowEvent}
+          flowId={flowId}
+          onClose={() => setAnalyzeOpen(false)}
         />
       )}
 
@@ -1988,6 +2003,17 @@ function IcoHelp() {
       <circle cx="10" cy="10" r="7" />
       <path d="M8 8a2 2 0 1 1 2.7 1.9c-.5.2-.7.6-.7 1.1v.4" />
       <circle cx="10" cy="14" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// A magnifying glass over a small spark — reads as "AI-inspect the round".
+function IcoAnalyze() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <path d="M12.7 12.7L17 17" />
+      <path d="M8.5 6v5M6 8.5h5" strokeWidth="1.2" />
     </svg>
   );
 }

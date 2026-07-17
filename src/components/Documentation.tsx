@@ -105,6 +105,7 @@ const TOC_SECTIONS = [
   { id: 'background',  label: 'Background notifications' },
   { id: 'speech-timer', label: 'Speech Timer' },
   { id: 'flows',       label: 'Flows' },
+  { id: 'auto-flow',   label: 'Auto Flow' },
   { id: 'speech-doc',  label: 'Speech doc viewer' },
   { id: 'impact-calc', label: 'Impact Calc' },
   { id: 'find-cards',  label: 'FindCards (Logos)' },
@@ -901,6 +902,83 @@ export default function Documentation() {
             keeps a local <Code>flow_data_*</Code> mirror so the flow still works offline. (Requires a
             configured Supabase backend and the <Code>flows</Code> table from{' '}
             <Code>supabase/schema.sql</Code>.)
+          </P>
+          <H3>Round Analysis</H3>
+          <P>
+            A magnifying-glass toolbar button next to Share opens <strong>Analyze Round</strong> — a
+            wizard that reads the debater's own flow as ground truth for what has been said and
+            where, and asks Warroom AI for a strategic read: what looks dropped or conceded, which
+            clashes are still live and who currently appears to be ahead on each, and concrete
+            suggestions for the next speech in the flow's own speech order.
+          </P>
+          <P>
+            The flow is automatically flattened into a plain-text summary — sheet by sheet, column
+            by column (in the flow's actual left-to-right speech order), one line per non-empty cell
+            in row order — using the same <Code>flushAndGetSheets()</Code> snapshot the Share panel
+            uses, so unsaved edits on the active tab are included. Before analyzing, the debater can
+            add free-text notes (which side they're on, the round number, what they think is
+            winning or losing — anything not already on the flow) and optionally drop in
+            supplementary <Code>.docx</Code> files (case docs, blocks) for extra context, extracted
+            the same way the speech doc viewer reads a document. <PromptLink name="analyze_round" />
+          </P>
+          <P>
+            If something essential is genuinely unclear — most often, which side the debater is
+            on, since that decides every "who's ahead" call — Warroom AI can pause and ask a single
+            clarifying question (the same ambiguity escape hatch the guided card cutter uses) instead
+            of guessing; the debater answers and the analysis re-runs with that context. The result
+            renders with full <strong>bold</strong>/<em>italic</em>/<u>underline</u> emphasis support.
+          </P>
+        </section>
+
+        {/* ── Auto Flow ──────────────────────────────────────────────── */}
+        <section id="doc-auto-flow">
+          <H2>Auto Flow</H2>
+          <P>
+            A wand-icon button next to the sidebar's Flow section opens <strong>Auto Flow</strong> — a
+            wizard that uploads one or more speech docs (<Code>.docx</Code>) and has Warroom AI sort
+            every card's tag into the right column and sheet of a flow, either a brand-new one or an
+            existing one.
+          </P>
+          <P>
+            Auto Flow reads only headings and cites, via the same{' '}
+            <Code>speechdoc:extractBlocks</Code> handler / <Code>ExtractedFlowCard</Code> shape used
+            elsewhere (pocket, hat, block, tag, cite) — it <strong>never</strong> reads or transmits a
+            card's body text, to Warroom AI or anywhere else. A doc that fails to parse or yields no
+            cards is shown but doesn't block the rest of the batch.
+          </P>
+          <H3>Choosing a destination</H3>
+          <P>
+            The user picks either a <strong>new flow</strong> — Auto Flow guesses policy vs. PF from
+            the uploaded docs' speech-label pockets (<Code>1AC</Code>/<Code>1NC</Code>-style labels vs.
+            "Pro Case"/"Con Rebuttal"-style labels), falling back to the app's current event when the
+            docs give no usable signal — or an <strong>existing flow</strong>, in which case Warroom AI
+            is told that flow's actual current column labels and sheet names (which may have been
+            renamed from the defaults) rather than assuming the standard set.
+          </P>
+          <H3>Sorting and review</H3>
+          <P>
+            For every card, Warroom AI picks a column by matching the card's pocket (speech label)
+            case-insensitively against the flow's real columns, and a sheet by matching the card's hat,
+            then block, then pocket topically against the flow's real sheet names — proposing a new
+            sheet tab when nothing plausibly fits. It can pause with a single clarifying question for
+            the whole batch (the same ambiguity escape hatch the guided card cutter uses) when a chunk
+            of cards has no usable pocket label, or two sheets are equally plausible — never to ask
+            permission for a routine new tab. <PromptLink name="auto_flow_classify" />
+          </P>
+          <P>
+            The review step groups proposed placements by destination sheet (new tabs marked{' '}
+            <strong>NEW</strong>), showing each card's tag and its "Sheet → Column" destination with a
+            checkbox to drop any placement before it's written.
+          </P>
+          <H3>Writing into the flow</H3>
+          <P>
+            Accepted placements are written straight to the flow's stored data (not through the live
+            Yjs sync path) — each card's tag and cite land in the first empty row of the matched
+            column. If a column runs out of room, that placement is skipped and surfaced in a summary
+            rather than silently dropped. The tag is wrapped in whatever emphasis is set in{' '}
+            <strong>Settings → Auto Flow tag style</strong> (bold/italic/underline — the only emphasis
+            a flow cell can carry, per <Code>src/lib/cellHtml.ts</Code>'s allowed tags); the cite line
+            underneath is always plain text.
           </P>
         </section>
 

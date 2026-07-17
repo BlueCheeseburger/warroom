@@ -15,7 +15,7 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "typecheck": "tsc --noEmit",
-    "test:flows": "tsx scripts/test-live-flows.ts && tsx scripts/test-live-stress.ts && tsx scripts/test-cell-paste.ts && tsx scripts/test-docx-flow-cards.ts"
+    "test:flows": "tsx scripts/test-live-flows.ts && tsx scripts/test-live-stress.ts && tsx scripts/test-cell-paste.ts && tsx scripts/test-docx-flow-cards.ts && tsx scripts/test-auto-flow-placement.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.0",

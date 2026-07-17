@@ -22,7 +22,7 @@ import { Document, Packer, Paragraph, TextRun, UnderlineType, BorderStyle } from
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
-import { extractFlowCardsFromXml } from './docxFlowCards';
+import { extractFlowCardsFromXml, ExtractedFlowCard } from './docxFlowCards';
 
 const isDev = !app.isPackaged;
 
@@ -1595,6 +1595,55 @@ ipcMain.handle('speechdoc:extractBlocks', async (_e, filePath: string) => {
   } catch (e: any) { return sbErr(e.message); }
 });
 
+// Given tag/cite/heading data pulled from one or more speech docs (never card
+// bodies — see docxFlowCards.ts / ExtractedFlowCard above), decides which of a
+// flow's ACTUAL current speech columns and sheet tabs each card belongs to.
+// Shares the ambiguity escape hatch with ai:cutterEmphasize (AIQuestion in
+// src/types.ts): returns a `question` instead of a placement list when the
+// batch is genuinely ambiguous, capped at one question per whole batch and
+// never once 2+ clarifications are already in hand. See the "Auto Flow" section
+// of DEBATE_DOC_STRUCTURE.md-adjacent docs for what this feature does overall.
+ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
+  docs: { fileName: string; cards: ExtractedFlowCard[] }[];
+  existingSheetNames: string[];
+  existingColumns: string[];
+  event: 'policy' | 'pf';
+  variant: string;
+  clarifications: { question: string; answer: string }[];
+}) => {
+  const { docs, existingSheetNames, existingColumns, event, variant, clarifications } = params;
+  const clar = clarifications ?? [];
+
+  const prompt = await renderPrompt('auto_flow_classify', {
+    EVENT: event,
+    VARIANT: variant || '',
+    EXISTING_COLUMNS_JSON: JSON.stringify(existingColumns ?? []),
+    EXISTING_SHEETS_JSON: JSON.stringify(existingSheetNames ?? []),
+    DOCS_JSON: JSON.stringify(docs ?? []).slice(0, 60000),
+    CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
+    QUESTIONS_ASKED: String(clar.length),
+  });
+
+  const parsed = parseJsonLoose(await callAI(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
+
+  if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
+    return { ok: true, question: parsed.question, placements: [] };
+  }
+
+  const placements = (Array.isArray(parsed.placements) ? parsed.placements : [])
+    .filter((p: any) => p && typeof p.tag === 'string' && typeof p.column === 'string' && typeof p.sheetName === 'string')
+    .map((p: any) => ({
+      fileName: String(p.fileName ?? ''),
+      tag: String(p.tag ?? '').trim(),
+      cite: String(p.cite ?? '').trim(),
+      column: String(p.column ?? '').trim(),
+      sheetName: String(p.sheetName ?? '').trim(),
+      isNewSheet: !!p.isNewSheet,
+    }));
+
+  return { ok: true, placements };
+});
+
 // Extracts just the "guaranteed searchable" text from a docx: every heading
 // (pocket/hat/block/tag) plus the cite line immediately following each tag
 // (author, quals, date, publication — see DEBATE_DOC_STRUCTURE.md §2). Used so
@@ -2050,6 +2099,52 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     highlight: arr(parsed.highlight),
     small: arr(parsed.small),
   };
+});
+
+// ─── Round Analysis (flow editor wizard) ─────────────────────────────────────
+// Treats the debater's own flow (flattened to plain text by the renderer, one
+// line per non-empty cell) as ground truth for what has been said and where,
+// combines it with any uploaded supplementary docs + free-text notes, and asks
+// Warroom AI for a strategic read: what's dropped/conceded, which clashes are
+// still live and who's ahead, and concrete suggestions for the next speech in
+// the flow's own speech order. Shares the AIQuestion ambiguity escape hatch
+// with the card cutter (see AIQuestion in src/types.ts) — most commonly used
+// to ask which side the debater is on, since that decides every "who's ahead"
+// call. Self-contained wizard in the flow editor (AnalyzeRound.tsx) — not a
+// Warroom Agent tool, so intentionally absent from AGENT_TOOLS/warroom-mcp.
+ipcMain.handle('ai:analyzeRound', async (_e, params: {
+  flowSummary: string;
+  notes: string;
+  docs: { fileName: string; text: string }[];
+  event: 'policy' | 'pf';
+  clarifications: { question: string; answer: string }[];
+}) => {
+  const { flowSummary, notes, docs, event, clarifications } = params;
+  const summary = String(flowSummary ?? '').trim();
+  if (!summary) throw new Error('No flow content to analyze.');
+  const clar = clarifications ?? [];
+  const docList = docs ?? [];
+
+  const prompt = await renderPrompt('analyze_round', {
+    EVENT: event === 'pf' ? 'Public Forum' : 'Policy',
+    FLOW_SUMMARY: summary.slice(0, 60000),
+    DOCS_TEXT: docList.length
+      ? docList.map((d) => `--- ${d.fileName} ---\n${String(d.text ?? '').slice(0, 20000)}`).join('\n\n')
+      : '(none uploaded)',
+    NOTES: notes?.trim() ? notes.trim() : '(none provided)',
+    CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
+    QUESTIONS_ASKED: String(clar.length),
+  });
+
+  const parsed = parseJsonLoose(await callAI(prompt, 'balanced')) || {};
+
+  if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
+    return { ok: true, question: parsed.question };
+  }
+
+  const analysis = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
+  if (!analysis) throw new Error('Warroom AI did not return an analysis.');
+  return { ok: true, analysis };
 });
 
 ipcMain.handle('ai:teamSummary', async (_e, {

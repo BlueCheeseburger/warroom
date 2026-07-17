@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
 import { signOut } from '../lib/supabase';
+import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 
 type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
@@ -313,6 +314,18 @@ export default function Settings() {
     setFlowAffColor('#2563eb');
     setFlowNegColor('#16a34a');
     window.dispatchEvent(new CustomEvent('warroom-flow-colors-changed'));
+  };
+
+  // Auto Flow tag style (display pref — plain localStorage, read live by AutoFlow's write step)
+  const [autoFlowStyle, setAutoFlowStyleState] = useState<AutoFlowTagStyle>(() => readAutoFlowTagStyle());
+  const setAutoFlowStyleProp = <K extends keyof AutoFlowTagStyle>(key: K, value: AutoFlowTagStyle[K]) => {
+    const next = { ...autoFlowStyle, [key]: value };
+    setAutoFlowStyleState(next);
+    writeAutoFlowTagStyle(next);
+  };
+  const resetAutoFlowStyle = () => {
+    setAutoFlowStyleState({ ...AUTOFLOW_STYLE_DEFAULTS });
+    writeAutoFlowTagStyle({ ...AUTOFLOW_STYLE_DEFAULTS });
   };
 
   useEffect(() => {
@@ -938,6 +951,98 @@ export default function Settings() {
             type="button"
             onClick={resetFlowColors}
             className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-1"
+          >
+            Reset to defaults
+          </button>
+        </div>
+      </div>
+
+      {/* Auto Flow tag style */}
+      <div id="settings-autoflow-style" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        <div>
+          <div className="label mb-1">Auto Flow tag style</div>
+          <p className="text-xs mb-3 text-ink/50">
+            How Auto Flow writes each card's tag into a flow cell when it sorts uploaded speech docs
+            into your flow. The cite line underneath the tag is always plain text.
+          </p>
+          <div
+            className="rounded-sm border border-line px-3 py-2.5 mb-3"
+            style={{ background: 'var(--bg-elevated)' }}
+          >
+            <div className="text-[10px] text-ink/40 mb-1">Preview</div>
+            <div
+              style={{
+                fontWeight: autoFlowStyle.bold ? 700 : 400,
+                fontStyle: autoFlowStyle.italic ? 'italic' : 'normal',
+                textDecoration: autoFlowStyle.underline ? 'underline' : 'none',
+                color: autoFlowStyle.color || 'inherit',
+                fontSize: `${autoFlowStyle.fontSize}px`,
+              }}
+            >
+              Guitteriez 25
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <label className="flex items-center gap-1.5 text-xs text-ink/70 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoFlowStyle.bold}
+                onChange={(e) => setAutoFlowStyleProp('bold', e.target.checked)}
+              />
+              Bold
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink/70 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoFlowStyle.italic}
+                onChange={(e) => setAutoFlowStyleProp('italic', e.target.checked)}
+              />
+              Italic
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink/70 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoFlowStyle.underline}
+                onChange={(e) => setAutoFlowStyleProp('underline', e.target.checked)}
+              />
+              Underline
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-ink/55">Color</span>
+              <input
+                type="color"
+                value={autoFlowStyle.color || '#111111'}
+                onChange={(e) => setAutoFlowStyleProp('color', e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer bg-transparent border-0 p-0"
+              />
+              {autoFlowStyle.color && (
+                <button
+                  type="button"
+                  onClick={() => setAutoFlowStyleProp('color', null)}
+                  className="text-[11px] text-ink/40 hover:text-ink/70 underline underline-offset-2"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-ink/55">Size</span>
+              <input
+                type="number"
+                min={8}
+                max={32}
+                value={autoFlowStyle.fontSize}
+                onChange={(e) => setAutoFlowStyleProp('fontSize', Number(e.target.value) || AUTOFLOW_STYLE_DEFAULTS.fontSize)}
+                className="input w-16 text-xs"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetAutoFlowStyle}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-2"
           >
             Reset to defaults
           </button>

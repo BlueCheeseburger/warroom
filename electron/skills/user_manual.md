@@ -270,6 +270,43 @@ Matches are **highlighted in amber** so you don't have to hunt through a cell to
 
 Realtime sync needs the team's Supabase backend set up (the same one team chat uses).
 
+### Round Analysis
+
+Get a strategic read on the round straight from your flow — what's dropped, what's still contested, and what to say next.
+
+1. Click the **magnifying-glass button** in the flow toolbar, next to Share.
+2. Warroom AI automatically reads your **entire flow** — every sheet, every column, every argument you've written down — so you don't have to re-type anything.
+3. Optionally add **notes** — which side you're on, the round number, what you think is winning or losing, or anything else that isn't already on the flow.
+4. Optionally drop in **supplementary docs** (case docs, blocks) — drag `.docx` files onto the drop zone or click it to pick several at once, the same way you'd add docs to the Speech Doc viewer.
+5. Click **Analyze round →**.
+
+Warroom AI comes back with:
+- What looks **dropped or conceded** — arguments made earlier with no answer showing up later.
+- Which **clashes are still live**, and who currently looks ahead on each one.
+- Concrete suggestions for your **next speech**, in the actual order your flow uses.
+
+If something essential is unclear — most often, which side you're on — Warroom AI asks **one quick question** with a few suggested answers (plus a free-text "Other") before finishing the analysis, instead of guessing.
+
+Click **← Analyze again** to start over with the same notes and docs, or **Done** to close.
+
+---
+
+## Auto Flow
+
+Turn a stack of speech docs into a flow automatically — Warroom AI reads the tags and cites (never the card bodies) and sorts each one into the right column and sheet.
+
+1. Click the **wand-icon button** next to **Flow** in the sidebar.
+2. **Upload your speech docs.** Drag several `.docx` files onto the drop zone at once, or click it to pick them from a file dialog.
+3. **Warroom AI reads the docs** — it pulls each card's tag, cite, and heading structure (pocket/hat/block). It never looks at the card body. A doc with no cards is shown but doesn't stop the rest of the batch.
+4. **Choose where they go:**
+   - **Create a new flow** — pick Policy or Public Forum (Auto Flow guesses this from the docs' speech labels, e.g. `1AC`/`2NC` vs. "Pro Case"/"Con Rebuttal", but you can change it), then Stock issues vs. Advantage sheets for policy, or Pro-first vs. Con-first order for PF.
+   - **Add to an existing flow** — pick one of your flows from the list. Auto Flow reads that flow's actual current column and sheet names (even if you've renamed them from the defaults) so cards land correctly.
+5. Click **Sort with Warroom AI →**. It matches each card's speech label to a column and its topic (hat/block) to a sheet, proposing a brand-new tab when nothing existing fits. If it's genuinely stuck — usually because a chunk of cards has no usable speech label — it asks **one quick question** for the whole batch instead of guessing.
+6. **Review the placements.** Cards are grouped by destination sheet (new ones marked **NEW**), each showing its tag and "Sheet → Column". Uncheck any you don't want before writing.
+7. Click **Write N cards to the flow**. Each card's tag and cite land in the first empty row of its column. If a column is completely full, that card is skipped and listed at the end instead of silently vanishing.
+
+**Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
+
 ---
 
 ## Speech Doc Viewer
