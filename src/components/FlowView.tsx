@@ -157,6 +157,14 @@ export default function FlowView() {
   const [cellNonce, setCellNonce] = useState(0);
   const [sheets, setSheets] = useState<SheetData[]>([]);
   const [activeSheetIdx, setActiveSheetIdx] = useState(0);
+
+  // Cancel an in-progress arrow draw whenever the active sheet changes. Cell
+  // keys are plain "row-col" with no sheet in them, and arrow endpoints are
+  // resolved against whatever is currently mounted (see recomputeArrows) — so a
+  // source cell armed with ⌘L on one tab, finished on another after switching,
+  // silently links to whatever cell happens to sit at that same grid position on
+  // the new tab instead of the one the user actually pointed at.
+  useEffect(() => { setDrawMode(false); setArrowFrom(null); }, [activeSheetIdx]);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [customColumns, setCustomColumns] = useState<string[] | null>(null);
   const [columnColors, setColumnColors] = useState<(string | null)[]>([]);
