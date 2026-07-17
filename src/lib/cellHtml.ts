@@ -22,21 +22,25 @@ const VOID_TAGS = new Set(['BR']);
 // Subtrees whose raw text must never be emitted (unwrapping would leak their contents).
 const DROP_SUBTREE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH']);
 
+// Note what is NOT here: `color`, `font-family`, and `font-size`. Nothing in the
+// app can legitimately set those on a cell — there is no text-color picker, the
+// per-column colors live on the cell's wrapper, and cell font size is a
+// view-level setting. So a run carrying any of them can only have come from
+// pasted Word / Google Docs markup, which is exactly what we want to shed: it is
+// why a pasted tag used to land in 22pt black-on-dark. Excluding them here (and
+// not just on the paste path) means cells pasted before that fix also come back
+// clean the next time they render.
 export const ALLOWED_STYLE_PROPS = new Set([
-  'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'color', 'background-color', 'vertical-align',
+  'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'background-color', 'vertical-align',
 ]);
 
-// Pasted content gets a stricter list: both colors are dropped so text pasted
-// out of Word inherits the cell's own ink and background rather than carrying
-// the source document's (a tag copied from a dark-themed doc arrives white —
-// invisible here). Dropping `background-color` also matters because Word and
-// Google Docs emit it constantly with junk values (`transparent`, `white`) that
-// would otherwise paint boxes inside cells and trip the `.flow-cell` dark-ink
-// rule, which exists for our own ⌘⇧H highlight spans. font-family / font-size
-// are already absent above, so a paste can't drag in Calibri-at-12pt either.
-// Emphasis (bold / italic / underline / strike / sub / sup) still survives; a
-// highlight can be re-applied in-cell with ⌘⇧H.
-const PASTE_DROPPED_PROPS = new Set(['color', 'background-color']);
+// Paste is stricter still: `background-color` is dropped too. Word and Google
+// Docs stamp it on nearly every span with junk values (`transparent`, `white`),
+// which would paint boxes inside cells and trip the `.flow-cell` dark-ink rule
+// that exists for our own ⌘⇧H highlight spans. Emphasis (bold / italic /
+// underline / strike / sub / sup) still survives; a highlight can be re-applied
+// in-cell with ⌘⇧H.
+const PASTE_DROPPED_PROPS = new Set(['background-color']);
 export const PASTE_STYLE_PROPS = new Set([...ALLOWED_STYLE_PROPS].filter((p) => !PASTE_DROPPED_PROPS.has(p)));
 
 export function escapeHtml(s: string): string {

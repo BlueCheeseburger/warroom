@@ -84,7 +84,23 @@ console.log('\n[5] Our own highlight survives the render path');
   check('paste path would strip it (by design)', !/background-color/.test(cleanPastedHtml(hi, 'dropped')));
 }
 
-console.log('\n[6] htmlToText round-trip');
+// Cells pasted before the paste-cleaning existed still hold raw Word markup in
+// storage. The render path must scrub them too, otherwise a 22pt black-on-dark
+// tag stays broken forever — reopening the flow would never repair it.
+console.log('\n[6] Legacy Word markup already in a cell is cleaned on render');
+{
+  const legacy = `<span style="font-size:22.0pt;font-family:Calibri;color:#000000"><b>The impact is preventable death</b></span>`;
+  const out = cellToHtml(legacy);
+  check('keeps the text', out.includes('The impact is preventable death'), out);
+  check('keeps bold', /<b>/.test(out), out);
+  check('strips the black ink', !/color\s*:/i.test(out), out);
+  check('strips the 22pt size', !/font-size/i.test(out), out);
+  check('strips the font family', !/font-family/i.test(out), out);
+  // font-weight is emphasis, not chrome — it must not be collateral damage.
+  check('font-weight still allowed', /font-weight:\s*bold/.test(cellToHtml('<span style="font-weight:bold">x</span>')), cellToHtml('<span style="font-weight:bold">x</span>'));
+}
+
+console.log('\n[7] htmlToText round-trip');
 {
   check('tags stripped for text', htmlToText('<b>a</b><br><i>b</i>') === 'a\nb', JSON.stringify(htmlToText('<b>a</b><br><i>b</i>')));
   check('entities decoded', htmlToText('a &amp; b') === 'a & b', htmlToText('a &amp; b'));
