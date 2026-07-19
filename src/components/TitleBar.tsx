@@ -138,8 +138,18 @@ function SpeechTimer() {
   // exposed as in-app UI (the title bar keeps its dropdown) — used by the
   // macOS Touch Bar's speech-type button, which cycles rather than opening a
   // menu (no equivalent widget on that hardware).
+  //
+  // Reads safeIdxRef/slotsLenRef, not safeIdx/slots.length directly: this is
+  // called from handleControl, whose effect has deps [slots] — and `slots`
+  // keeps the same array reference across re-renders (getSlots() returns a
+  // stable module-level SLOTS[...] array, not a new one), so that effect only
+  // re-runs when the event/level actually changes, not on every slot advance.
+  // Reading safeIdx directly here would close over whatever it was when the
+  // effect last ran (often mount, i.e. always 0) — so every press after the
+  // first would "cycle" from that same stale index and appear to do nothing
+  // whenever it recomputed the same target slot.
   function cycleSlot() {
-    selectSlot((safeIdx + 1) % slots.length);
+    selectSlot((safeIdxRef.current + 1) % slotsLenRef.current);
   }
 
   function toggleRun() {
