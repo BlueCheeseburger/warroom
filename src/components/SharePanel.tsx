@@ -20,13 +20,13 @@ interface Props {
   onOpenInExcel?: () => Promise<void>;
   onOpenInSheets?: () => Promise<void>;
   onOpenInWord?: () => void;
-  // Live collaboration entry point (flows only) — folded in here so there's one
-  // button ("Share") instead of a separate "Collaborate" button that just led to
-  // this same panel anyway. Omit onGoLive entirely when going live isn't possible
-  // right now (not signed into a team) rather than showing a disabled control.
+  // Live collaboration status (flows only). There's no manual "Go live" trigger
+  // here anymore — sharing a flow always goes live on its own (getData() in
+  // FlowView calls startLiveCollab() before building the payload), so a separate
+  // button that did the same thing up front would just be a second way to
+  // trigger something that already happens automatically. `live` is still used
+  // to skip the "sending starts a live session" note once it already has.
   live?: boolean;
-  liveStarting?: boolean;
-  onGoLive?: () => Promise<boolean>;
 }
 
 function dmChannelTitle(ch: DMChannel, myId?: string) {
@@ -35,7 +35,7 @@ function dmChannelTitle(ch: DMChannel, myId?: string) {
 
 interface EmailRecipient { userId: string; displayName: string; email: string; }
 
-export default function SharePanel({ type, id, name, getData, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord, collabNote, live, liveStarting, onGoLive }: Props) {
+export default function SharePanel({ type, id, name, getData, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord, collabNote, live }: Props) {
   const { currentUser, currentTeam, teamMembers, defaultSharePermission, flowsIndex, setFlowsIndex, update, setView } = useApp();
   const [dmChannels, setDmChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,13 +45,6 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
   const [sharing, setSharing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
-  const [goingLive, setGoingLive] = useState(false);
-
-  async function handleGoLive() {
-    if (!onGoLive || goingLive) return;
-    setGoingLive(true);
-    try { await onGoLive(); } finally { setGoingLive(false); }
-  }
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportDocxDone, setExportDocxDone] = useState(false);
   const [openingExcel, setOpeningExcel] = useState(false);
@@ -224,34 +217,6 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
             </div>
           )}
 
-          {/* Go live — offered instead of collabNote (mutually exclusive: this
-              flow either already IS live, or can be started here). */}
-          {!live && onGoLive && (
-            <button
-              onClick={handleGoLive}
-              disabled={goingLive || liveStarting}
-              className="w-full flex items-start gap-2 px-3 py-2 rounded-lg text-left transition"
-              style={{ background: 'var(--bg-hover)', cursor: (goingLive || liveStarting) ? 'default' : 'pointer' }}
-            >
-              <span className="shrink-0 mt-0.5" style={{ color: 'var(--nav-active-color)' }}>
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="7" cy="7" r="2.4" />
-                  <path d="M2.8 15c0-2.3 1.9-3.8 4.2-3.8s4.2 1.5 4.2 3.8" />
-                  <circle cx="13.6" cy="6.2" r="2" />
-                  <path d="M13.2 11.3c2 0 3.9 1.3 3.9 3.7" />
-                </svg>
-              </span>
-              <span className="flex-1">
-                <div className="text-xs font-semibold" style={{ color: 'var(--ink)' }}>
-                  {goingLive || liveStarting ? 'Going live…' : 'Go live'}
-                </div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-                  Flow this round together with your team in realtime.
-                </div>
-              </span>
-            </button>
-          )}
-
           {/* ── Open & Export section ── */}
           {(onOpenInWord || onExportDocx || onOpenInExcel || onOpenInSheets || onExportXlsx) && (
             <div>
@@ -420,7 +385,7 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
               {/* Recipients */}
               <div>
                 <div className="label mb-2">Send to</div>
-                {type === 'flow' && !live && onGoLive && (
+                {type === 'flow' && !live && currentUser && currentTeam && (
                   <p className="text-[11px] mb-2" style={{ color: 'var(--nav-inactive-color)' }}>
                     Sending starts a live session — recipients join and edit with you in realtime.
                   </p>

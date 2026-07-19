@@ -1602,8 +1602,6 @@ export default function FlowView() {
           onOpenInExcel={openInExcel}
           onOpenInSheets={openInSheets}
           live={live}
-          liveStarting={liveStarting}
-          onGoLive={currentUser && currentTeam ? async () => startLiveCollab() : undefined}
         />
       )}
 

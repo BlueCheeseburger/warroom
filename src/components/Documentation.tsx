@@ -876,15 +876,15 @@ export default function Documentation() {
           </P>
           <H3>Live collaboration (realtime co-flowing)</H3>
           <P>
-            <strong>Go live from the Share panel</strong> — open <strong>Share</strong> (there's no
-            separate "Collaborate" button anymore; both used to lead to the same panel, so they're
-            one button now) and pick <strong>Go live</strong> to turn the flow into a shared
-            realtime session. Two or more teammates can then type into the same flow at once and see
-            each other's edits appear <strong>character-by-character</strong>, like Google Docs.
-            Once live, that same panel shows a status banner instead of the prompt, so inviting
-            someone is still one continuous flow. A green <strong>Live</strong> pill in the toolbar
-            shows who else is present and lets you leave the session — it's a status readout, not a
-            button — and each teammate's active cell is ringed and tagged in their color.
+            <strong>Sharing a flow starts a live session automatically</strong> — there's no
+            separate "Collaborate" button, and no "Go live" button either; both used to lead to (or
+            trigger) the same thing sharing now does on its own. Open <strong>Share</strong>, pick
+            who to send it to, and hitting <strong>Share</strong> is the moment it goes live (if it
+            wasn't already) — recipients join the exact same document instead of getting a copy, and
+            can type into it at once with edits appearing <strong>character-by-character</strong>,
+            like Google Docs. A green <strong>Live</strong> pill in the toolbar shows who else is
+            present and lets you leave the session — it's a status readout, not a button — and each
+            teammate's active cell is ringed and tagged in their color.
           </P>
           <P>
             Under the hood the flow's editable state is mapped onto a <strong>Yjs CRDT</strong>{' '}
