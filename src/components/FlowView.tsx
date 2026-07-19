@@ -1578,10 +1578,22 @@ export default function FlowView() {
           id={flowId}
           name={flowMeta?.name ?? 'Untitled Flow'}
           getData={async () => {
+            // Sharing a flow now always goes live first (if it isn't already) —
+            // there's no more "send a frozen copy" path when a team is signed in,
+            // so recipients always land in the same realtime doc as the sharer
+            // instead of an independent copy that could silently diverge. Runs
+            // right before the share actually sends (SharePanel calls getData()
+            // only from handleShare), not on every render. `live` is a closure
+            // variable that won't reflect startLiveCollab()'s setLive(true) within
+            // this same call, so track success off its own return value instead.
+            const isLive = live || (currentTeam ? await startLiveCollab() : false);
             const data = (await window.warroom?.storage.read(`flow_data_${flowId}`)) ?? {};
             // A live flow shares a *pointer* (same id + team) so recipients join the
-            // very same realtime doc rather than getting a frozen copy.
-            if (live && currentTeam) return { ...data, live: true, flowId, teamId: currentTeam.id };
+            // very same realtime doc rather than getting a frozen copy. Falls back
+            // to a plain snapshot if going live failed (offline, promote error) —
+            // better than silently pointing a recipient at a doc that never got
+            // promoted.
+            if (isLive && currentTeam) return { ...data, live: true, flowId, teamId: currentTeam.id };
             return data;
           }}
           onClose={() => setShareOpen(false)}

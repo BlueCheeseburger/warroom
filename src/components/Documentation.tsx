@@ -907,6 +907,15 @@ export default function Documentation() {
             configured Supabase backend and the <Code>flows</Code> table from{' '}
             <Code>supabase/schema.sql</Code>.)
           </P>
+          <P>
+            <strong>Sharing a flow now always goes live first</strong> if it isn't already and a team
+            is signed in — there's no path left that hands a recipient an independent copy. Without
+            this, a plain share created a brand-new flow id on the recipient's side, so if both people
+            happened to have their own copy open at the same time, there was no shared document
+            underneath — just two flows silently drifting apart with no way to reconcile them. Sending
+            now starts (or reuses) the live session before building the share payload, so every
+            recipient always lands in the exact same document from the moment they open it.
+          </P>
           <H3>Round Analysis</H3>
           <P>
             A magnifying-glass toolbar button next to Share opens <strong>Analyze Round</strong> — a

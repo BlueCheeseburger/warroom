@@ -420,6 +420,11 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
               {/* Recipients */}
               <div>
                 <div className="label mb-2">Send to</div>
+                {type === 'flow' && !live && onGoLive && (
+                  <p className="text-[11px] mb-2" style={{ color: 'var(--nav-inactive-color)' }}>
+                    Sending starts a live session — recipients join and edit with you in realtime.
+                  </p>
+                )}
                 <div className="space-y-1.5">
                   {/* Team room */}
                   <label

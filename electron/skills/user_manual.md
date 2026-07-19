@@ -262,9 +262,11 @@ Matches are **highlighted in amber** so you don't have to hunt through a cell to
 **Set default flow colors.** To change the colors used for new flows, go to **Settings → Flow colors** and set the default Aff/Pro and Neg/Con column colors. These apply to all your flows.
 
 **Flow together in realtime (live collaboration).** You and a teammate can type into the *same* flow at the same time and watch each other's edits appear letter-by-letter — perfect for splitting a round (one person flows aff, the other neg) or for a coach watching live.
-1. Click **Share** in the flow toolbar (there's no separate "Collaborate" button — both used to open the same panel, so they're one button now), then pick **Go live**. You need to be signed in to a team.
-2. The panel switches to a live-session banner, and a green **"Live"** pill appears in the toolbar showing who else is in the flow. Each teammate's cursor cell is outlined and labeled in their own color.
-3. **Share it** with your partner right there in the same panel (pick them / your team room). When they open it, they join the *same* live flow — not a copy — and start seeing your edits instantly.
+
+**Sharing a flow now always makes it live** (as long as you're signed into a team) — you don't need to click "Go live" separately anymore. Click **Share** in the flow toolbar, pick who to send it to, and hit **Share**; going live happens automatically right before it sends. This matters because a plain (non-live) share used to hand your teammate an independent copy — editing theirs never touched yours, and if you both had your own copy open at once there was nothing tying them together. Now every share puts you both in the exact same document from the start.
+1. Click **Share** in the flow toolbar (there's no separate "Collaborate" button anymore — both used to open the same panel, so they're one button now).
+2. Pick who to send it to and click **Share** — this is the moment it goes live, if it wasn't already. A green **"Live"** pill appears in the toolbar showing who else is in the flow, and each teammate's cursor cell is outlined and labeled in their own color. (If you'd rather go live *before* deciding who to send it to, there's still a **Go live** button in the panel for that.)
+3. When your teammate opens what you sent, they join the *same* live flow — not a copy — and start seeing your edits instantly.
 4. Edits in different cells always merge cleanly. If you both edit the *exact same cell* at once, nothing is lost — the text merges; you just won't see their changes to a cell while your cursor is sitting in it (they show up when you click away).
 5. Click the **✕** on the Live pill to leave the live session on your device (your teammates keep collaborating). The flow keeps working offline either way.
 
