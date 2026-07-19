@@ -1383,13 +1383,14 @@ export default function FlowView() {
             className="input text-sm font-semibold w-40"
           />
         ) : (
-          <button
-            className="text-sm font-semibold text-ink hover:opacity-70 transition-opacity truncate max-w-[140px]"
-            onDoubleClick={() => { setRenamingFlow(true); setRenameValue(flowMeta?.name ?? 'Untitled Flow'); }}
-            title="Double-click to rename"
-          >
-            {flowMeta?.name ?? 'Untitled Flow'}
-          </button>
+          <FlowTooltip text="Double-click to rename">
+            <button
+              className="text-sm font-semibold text-ink hover:opacity-70 transition-opacity truncate max-w-[140px]"
+              onDoubleClick={() => { setRenamingFlow(true); setRenameValue(flowMeta?.name ?? 'Untitled Flow'); }}
+            >
+              {flowMeta?.name ?? 'Untitled Flow'}
+            </button>
+          </FlowTooltip>
         )}
 
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
@@ -1444,14 +1445,15 @@ export default function FlowView() {
 
         {/* Zoom */}
         <ToolBtn onClick={() => changeZoom(zoom - 10)} title="Zoom out"><span style={{ fontSize: 15 }}>−</span></ToolBtn>
-        <button
-          className="text-xs w-9 text-center tabular-nums transition hover:opacity-70 shrink-0"
-          style={{ color: 'var(--label-color)' }}
-          onClick={fitZoom}
-          title="Click to fit columns to window width"
-        >
-          {zoom}%
-        </button>
+        <FlowTooltip text="Click to fit columns to window width">
+          <button
+            className="text-xs w-9 text-center tabular-nums transition hover:opacity-70 shrink-0"
+            style={{ color: 'var(--label-color)' }}
+            onClick={fitZoom}
+          >
+            {zoom}%
+          </button>
+        </FlowTooltip>
         <ToolBtn onClick={() => changeZoom(zoom + 10)} title="Zoom in"><span style={{ fontSize: 14 }}>+</span></ToolBtn>
         <ToolBtn onClick={fitZoom} title="Fit columns to window"><IcoFit /></ToolBtn>
 
@@ -1504,12 +1506,13 @@ export default function FlowView() {
                 >{c.user.name[0]?.toUpperCase()}</span>
               ))}
             </div>
-            <button
-              onClick={stopLiveCollab}
-              className="text-[10px] leading-none ml-0.5 opacity-70 hover:opacity-100"
-              style={{ color: 'var(--nav-active-color)' }}
-              title="Leave the live session (stops syncing your edits)"
-            >✕</button>
+            <FlowTooltip text="Leave the live session (stops syncing your edits)">
+              <button
+                onClick={stopLiveCollab}
+                className="text-[10px] leading-none ml-0.5 opacity-70 hover:opacity-100"
+                style={{ color: 'var(--nav-active-color)' }}
+              >✕</button>
+            </FlowTooltip>
           </div>
         ) : (
           <ToolBtn
@@ -1709,17 +1712,22 @@ export default function FlowView() {
                       style={{ color: 'var(--nav-active-color)' }}
                     />
                   ) : (
-                    <span
-                      className="text-xs font-bold truncate px-5"
-                      style={{ color: 'var(--nav-active-color)', cursor: 'default' }}
-                      onDoubleClick={() => startRenameCol(ci)}
-                      title="Double-click to rename"
-                    >
-                      {col}
-                    </span>
+                    <FlowTooltip text="Double-click to rename">
+                      <span
+                        className="text-xs font-bold truncate px-5"
+                        style={{ color: 'var(--nav-active-color)', cursor: 'default' }}
+                        onDoubleClick={() => startRenameCol(ci)}
+                      >
+                        {col}
+                      </span>
+                    </FlowTooltip>
                   )}
 
-                  {/* Column menu trigger — always visible for discoverability */}
+                  {/* Column menu trigger — always visible for discoverability.
+                      Kept on native `title` (not FlowTooltip): this button is
+                      itself `position: absolute` against the column header cell,
+                      and FlowTooltip's wrapper span would introduce a *closer*
+                      positioned ancestor, silently repositioning it. */}
                   <button
                     data-col-menu
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded transition"
@@ -1919,14 +1927,15 @@ export default function FlowView() {
 
         {/* Add sheet — RIGHT side */}
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
-        <button
-          className="flex items-center justify-center w-8 h-8 shrink-0 text-lg font-light transition"
-          style={{ color: 'var(--label-color)' }}
-          onClick={addSheet}
-          title="Add sheet"
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)')}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--label-color)')}
-        >+</button>
+        <FlowTooltip text="Add sheet">
+          <button
+            className="flex items-center justify-center w-8 h-8 shrink-0 text-lg font-light transition"
+            style={{ color: 'var(--label-color)' }}
+            onClick={addSheet}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--label-color)')}
+          >+</button>
+        </FlowTooltip>
       </div>
     </div>
   );
@@ -2025,30 +2034,87 @@ function IcoAnalyze() {
   );
 }
 
+// Styled hover tooltip, matching the app's own bubble (see Home.tsx's Tooltip) —
+// native `title` attributes technically work in Electron, but render as a slow,
+// easy-to-miss OS tooltip that's inconsistent with how tooltips look everywhere
+// else in Warroom. Every flow-editor button routes through this now, either via
+// ToolBtn below or by wrapping directly. A short show-delay keeps a dense toolbar
+// from flashing a tooltip for every icon the cursor passes over.
+function FlowTooltip({ text, children, up = false, disabled }: {
+  text?: string; children: React.ReactNode; up?: boolean; disabled?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  if (!text || disabled) return <>{children}</>;
+  function onEnter() {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setShow(true), 350);
+  }
+  function onLeave() {
+    if (timer.current) clearTimeout(timer.current);
+    setShow(false);
+  }
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      {children}
+      {show && (
+        <span
+          style={{
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            ...(up ? { bottom: 'calc(100% + 7px)' } : { top: 'calc(100% + 7px)' }),
+            zIndex: 9999,
+            whiteSpace: 'pre-line',
+            textAlign: 'center',
+            borderRadius: 8,
+            padding: '5px 10px',
+            fontSize: 11,
+            pointerEvents: 'none',
+            background: 'color-mix(in srgb, var(--bg-popover, var(--bg-sidebar)) 88%, transparent)',
+            backdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
+            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--ink)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Shared compact toolbar icon button with a consistent hover background.
 function ToolBtn({ children, onClick, onMouseDown, title, active, disabled }: {
   children: React.ReactNode; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
   title?: string; active?: boolean; disabled?: boolean;
 }) {
   return (
-    <button
-      onClick={onClick}
-      onMouseDown={onMouseDown}
-      title={title}
-      disabled={disabled}
-      className="flex items-center justify-center rounded-md transition shrink-0"
-      style={{
-        width: 26, height: 26,
-        background: active ? 'var(--nav-active-bg)' : 'transparent',
-        color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
-        opacity: disabled ? 0.4 : 1,
-        cursor: disabled ? 'default' : 'pointer',
-      }}
-      onMouseEnter={(e) => { if (!active && !disabled) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-      onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-    >
-      {children}
-    </button>
+    <FlowTooltip text={title} disabled={disabled}>
+      <button
+        onClick={onClick}
+        onMouseDown={onMouseDown}
+        disabled={disabled}
+        className="flex items-center justify-center rounded-md transition shrink-0"
+        style={{
+          width: 26, height: 26,
+          background: active ? 'var(--nav-active-bg)' : 'transparent',
+          color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+          opacity: disabled ? 0.4 : 1,
+          cursor: disabled ? 'default' : 'pointer',
+        }}
+        onMouseEnter={(e) => { if (!active && !disabled) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        {children}
+      </button>
+    </FlowTooltip>
   );
 }
 
@@ -2120,30 +2186,32 @@ function SheetTab({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <button
-          className="flex-1 text-left truncate text-xs font-medium px-3"
-          style={{ color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          title="Double-click to rename"
-        >
-          {name}
-        </button>
+        <FlowTooltip text="Double-click to rename">
+          <button
+            className="flex-1 text-left truncate text-xs font-medium px-3"
+            style={{ color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}
+            onClick={onClick}
+            onDoubleClick={onDoubleClick}
+          >
+            {name}
+          </button>
+        </FlowTooltip>
       )}
       {onDelete && !renaming && (
-        <button
-          className="shrink-0 mr-1.5 w-4 h-4 flex items-center justify-center rounded text-xs transition"
-          style={{
-            color: 'var(--nav-inactive-color)',
-            opacity: (hovered || active) ? 0.5 : 0,
-            pointerEvents: (hovered || active) ? 'auto' : 'none',
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = (hovered || active) ? '0.5' : '0')}
-          title="Delete sheet"
-        >×</button>
+        <FlowTooltip text="Delete sheet">
+          <button
+            className="shrink-0 mr-1.5 w-4 h-4 flex items-center justify-center rounded text-xs transition"
+            style={{
+              color: 'var(--nav-inactive-color)',
+              opacity: (hovered || active) ? 0.5 : 0,
+              pointerEvents: (hovered || active) ? 'auto' : 'none',
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = (hovered || active) ? '0.5' : '0')}
+          >×</button>
+        </FlowTooltip>
       )}
     </div>
   );
