@@ -1445,7 +1445,7 @@ export default function FlowView() {
 
         {/* Zoom */}
         <ToolBtn onClick={() => changeZoom(zoom - 10)} title="Zoom out"><span style={{ fontSize: 15 }}>−</span></ToolBtn>
-        <FlowTooltip text="Click to fit columns to window width">
+        <FlowTooltip text="Fit to window">
           <button
             className="text-xs w-9 text-center tabular-nums transition hover:opacity-70 shrink-0"
             style={{ color: 'var(--label-color)' }}
@@ -1455,10 +1455,10 @@ export default function FlowView() {
           </button>
         </FlowTooltip>
         <ToolBtn onClick={() => changeZoom(zoom + 10)} title="Zoom in"><span style={{ fontSize: 14 }}>+</span></ToolBtn>
-        <ToolBtn onClick={fitZoom} title="Fit columns to window"><IcoFit /></ToolBtn>
+        <ToolBtn onClick={fitZoom} title="Fit to window"><IcoFit /></ToolBtn>
 
         {customColumns && (
-          <ToolBtn onClick={resetColumns} title="Reset columns to default"><IcoResetCols /></ToolBtn>
+          <ToolBtn onClick={resetColumns} title="Reset columns"><IcoResetCols /></ToolBtn>
         )}
 
         <ToolDivider />
@@ -1506,7 +1506,7 @@ export default function FlowView() {
                 >{c.user.name[0]?.toUpperCase()}</span>
               ))}
             </div>
-            <FlowTooltip text="Leave the live session (stops syncing your edits)">
+            <FlowTooltip text="Leave live session">
               <button
                 onClick={stopLiveCollab}
                 className="text-[10px] leading-none ml-0.5 opacity-70 hover:opacity-100"
@@ -1538,12 +1538,7 @@ export default function FlowView() {
         </div>
 
         {/* Analyze round */}
-        <ToolBtn onClick={() => setAnalyzeOpen(true)} title="Analyze round with Warroom AI — dropped args, live clashes, next-speech suggestions"><IcoAnalyze /></ToolBtn>
-
-        {/* Shortcuts help */}
-        <ToolBtn title={'Keyboard shortcuts:\n← → → move the cursor   ↑ ↓ → move a line, then to the next cell\n⌘↑ / ⌘↓ → move an argument up/down a row\nTab → next column   Enter → next row   Shift+Enter → line break\n⌘1–⌘8 → jump to a sheet   ⌘9 → last sheet   ⌘T → new sheet\n⌘L → draw an arrow (⌘L on the source, then ⌘L on the target)\n⌘B / ⌘I / ⌘U → bold · italic · underline\n⌘⇧X → strikethrough   ⌘⇧H → highlight\n⌘Z / ⌘⇧Z → undo · redo   ⌘F → find   Esc → cancel arrow\nDouble-click a column header to rename · click ▾ for color'}>
-          <IcoHelp />
-        </ToolBtn>
+        <ToolBtn onClick={() => setAnalyzeOpen(true)} title="Analyze round (Warroom AI)"><IcoAnalyze /></ToolBtn>
       </div>
 
       {/* Find bar */}
@@ -1866,30 +1861,32 @@ export default function FlowView() {
                         style={{ top: 2, right: 2, gap: 1, zIndex: 5, pointerEvents: 'auto' }}
                       >
                         {ri > 0 && (
-                          <button
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => moveCell(ri, ci, 'up')}
-                            className="flex items-center justify-center rounded transition"
-                            style={{
-                              width: 14, height: 14, fontSize: 8, lineHeight: 1,
-                              background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
-                              color: 'var(--label-color)', cursor: 'pointer',
-                            }}
-                            title="Move content up one row"
-                          >▲</button>
+                          <FlowTooltip text="Move up (⌘↑)" up>
+                            <button
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => moveCell(ri, ci, 'up')}
+                              className="flex items-center justify-center rounded transition"
+                              style={{
+                                width: 14, height: 14, fontSize: 8, lineHeight: 1,
+                                background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
+                                color: 'var(--label-color)', cursor: 'pointer',
+                              }}
+                            >▲</button>
+                          </FlowTooltip>
                         )}
                         {ri < NUM_ROWS - 1 && (
-                          <button
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => moveCell(ri, ci, 'down')}
-                            className="flex items-center justify-center rounded transition"
-                            style={{
-                              width: 14, height: 14, fontSize: 8, lineHeight: 1,
-                              background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
-                              color: 'var(--label-color)', cursor: 'pointer',
-                            }}
-                            title="Move content down one row"
-                          >▼</button>
+                          <FlowTooltip text="Move down (⌘↓)">
+                            <button
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => moveCell(ri, ci, 'down')}
+                              className="flex items-center justify-center rounded transition"
+                              style={{
+                                width: 14, height: 14, fontSize: 8, lineHeight: 1,
+                                background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
+                                color: 'var(--label-color)', cursor: 'pointer',
+                              }}
+                            >▼</button>
+                          </FlowTooltip>
                         )}
                       </div>
                     )}
@@ -1927,7 +1924,7 @@ export default function FlowView() {
 
         {/* Add sheet — RIGHT side */}
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
-        <FlowTooltip text="Add sheet">
+        <FlowTooltip text="Add sheet (⌘T)">
           <button
             className="flex items-center justify-center w-8 h-8 shrink-0 text-lg font-light transition"
             style={{ color: 'var(--label-color)' }}
@@ -2013,16 +2010,6 @@ function IcoResetCols() {
     </svg>
   );
 }
-function IcoHelp() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="10" cy="10" r="7" />
-      <path d="M8 8a2 2 0 1 1 2.7 1.9c-.5.2-.7.6-.7 1.1v.4" />
-      <circle cx="10" cy="14" r="0.6" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 // A magnifying glass over a small spark — reads as "AI-inspect the round".
 function IcoAnalyze() {
   return (
@@ -2069,7 +2056,16 @@ function FlowTooltip({ text, children, up = false, disabled }: {
             transform: 'translateX(-50%)',
             ...(up ? { bottom: 'calc(100% + 7px)' } : { top: 'calc(100% + 7px)' }),
             zIndex: 9999,
-            whiteSpace: 'pre-line',
+            // width: 'max-content' is load-bearing: without it, an absolutely
+            // positioned span with only `left` set shrink-to-fits against the
+            // ANCHOR's width (often a 26px icon button), not its own text — so
+            // a short label like "Draw arrow (⌘L)" would wrap one word per
+            // line instead of sizing to itself. maxWidth is just a sane ceiling
+            // in case a tooltip is ever accidentally long — it wraps wide, not
+            // narrow-and-tall.
+            width: 'max-content',
+            maxWidth: 220,
+            whiteSpace: 'normal',
             textAlign: 'center',
             borderRadius: 8,
             padding: '5px 10px',
