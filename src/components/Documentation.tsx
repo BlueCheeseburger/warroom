@@ -876,11 +876,15 @@ export default function Documentation() {
           </P>
           <H3>Live collaboration (realtime co-flowing)</H3>
           <P>
-            The <strong>Live</strong> toolbar button (two-people icon) turns a flow into a shared
-            realtime session — two or more teammates can type into the same flow at once and see
+            <strong>Go live from the Share panel</strong> — open <strong>Share</strong> (there's no
+            separate "Collaborate" button anymore; both used to lead to the same panel, so they're
+            one button now) and pick <strong>Go live</strong> to turn the flow into a shared
+            realtime session. Two or more teammates can then type into the same flow at once and see
             each other's edits appear <strong>character-by-character</strong>, like Google Docs.
-            A green "Live" pill shows who else is present, and each teammate's active cell is ringed
-            and tagged in their color.
+            Once live, that same panel shows a status banner instead of the prompt, so inviting
+            someone is still one continuous flow. A green <strong>Live</strong> pill in the toolbar
+            shows who else is present and lets you leave the session — it's a status readout, not a
+            button — and each teammate's active cell is ringed and tagged in their color.
           </P>
           <P>
             Under the hood the flow's editable state is mapped onto a <strong>Yjs CRDT</strong>{' '}

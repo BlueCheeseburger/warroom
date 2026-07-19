@@ -1481,8 +1481,10 @@ export default function FlowView() {
           <IcoArrow />
         </ToolBtn>
 
-        {/* Live collaboration */}
-        {live ? (
+        {/* Live status — present only while live; the entry point into going live
+            lives inside the Share panel now (see "Combine Share and Collaborate"
+            below), so this is purely a glanceable status readout + leave button. */}
+        {live && (
           <div
             className="flex items-center gap-1.5 shrink-0 px-2 h-[26px] rounded-md"
             style={{ background: 'var(--nav-active-bg)' }}
@@ -1514,24 +1516,12 @@ export default function FlowView() {
               >✕</button>
             </FlowTooltip>
           </div>
-        ) : (
-          <ToolBtn
-            onClick={async () => {
-              if (!currentUser || !currentTeam) { setShareOpen(true); return; }
-              // Go live, then open Share so inviting a teammate is the same motion.
-              const ok = await startLiveCollab();
-              if (ok) setShareOpen(true);
-            }}
-            disabled={liveStarting}
-            title={currentUser && currentTeam ? 'Collaborate live — flow this round together with your team in realtime' : 'Sign in to a team to collaborate live'}
-          >
-            <IcoLive />
-          </ToolBtn>
         )}
 
-        {/* Share */}
+        {/* Share — also where going live now starts (was a separate button; both
+            led to the same panel, so they're one button now). */}
         <div className="relative shrink-0">
-          <ToolBtn onClick={() => setShareOpen(true)} title="Share / Open / Export"><ShareIcon /></ToolBtn>
+          <ToolBtn onClick={() => setShareOpen(true)} title="Share / Collaborate"><ShareIcon /></ToolBtn>
           {flowMeta?.shared && (
             <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: '#0077ed' }} />
           )}
@@ -1599,6 +1589,9 @@ export default function FlowView() {
           onExportXlsx={exportXlsx}
           onOpenInExcel={openInExcel}
           onOpenInSheets={openInSheets}
+          live={live}
+          liveStarting={liveStarting}
+          onGoLive={currentUser && currentTeam ? async () => startLiveCollab() : undefined}
         />
       )}
 
@@ -1941,17 +1934,6 @@ export default function FlowView() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 // Two people / live-collab glyph.
-function IcoLive() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="7" cy="7" r="2.4" />
-      <path d="M2.8 15c0-2.3 1.9-3.8 4.2-3.8s4.2 1.5 4.2 3.8" />
-      <circle cx="13.6" cy="6.2" r="2" />
-      <path d="M13.2 11.3c2 0 3.9 1.3 3.9 3.7" />
-    </svg>
-  );
-}
-
 function ShareIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
