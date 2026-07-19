@@ -8,6 +8,28 @@ import { htmlToText } from '../lib/cellHtml';
 
 type Step = 'setup' | 'analyzing' | 'question' | 'result';
 
+// Same localStorage keys FlowView/Settings use for the user's actual aff/neg
+// (or pro/con) column colors — read here too so the verdict banner and clash
+// cards use the SAME colors the debater already sees on their flow, rather than
+// a hardcoded pair that could clash with a customized palette.
+const AFF_COLOR_KEY = 'warroom-flow-aff-color';
+const NEG_COLOR_KEY = 'warroom-flow-neg-color';
+const DEFAULT_AFF_COLOR = '#2563eb';
+const DEFAULT_NEG_COLOR = '#16a34a';
+
+interface Verdict { leading: 'A' | 'B' | 'even'; reason: string }
+interface DroppedItem { side: 'A' | 'B'; argument: string; sheet: string }
+interface ClashItem { topic: string; claimA: string | null; claimB: string | null; winner: 'A' | 'B' | 'even'; reasoning: string }
+interface NextSpeechItem { action: string; why: string }
+interface AnalysisResult {
+  sideALabel: string;
+  sideBLabel: string;
+  verdict: Verdict;
+  dropped: DroppedItem[];
+  clashes: ClashItem[];
+  nextSpeech: NextSpeechItem[];
+}
+
 interface UploadedDoc {
   fileName: string;
   text: string;
@@ -64,6 +86,109 @@ function RichText({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
+// ── Card UI — deliberately styled to match Impact Calc's result view
+// (ImpactCalcView.tsx: verdict banner, side colors, clash cards with claims
+// side-by-side and a winner badge) rather than a wall of prose. ──────────────
+
+function Tag({ children, color, bg }: { children: React.ReactNode; color?: string; bg?: string }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, borderRadius: 4, padding: '2px 7px',
+      color: color ?? 'var(--nav-inactive-color)',
+      background: bg ?? 'var(--bg-hover)',
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </span>
+  );
+}
+
+function SectionHeader({ children, count }: { children: React.ReactNode; count?: number }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--nav-inactive-color)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 12 }}>
+      {children} {count !== undefined && <span style={{ fontWeight: 400, opacity: 0.6 }}>({count})</span>}
+    </div>
+  );
+}
+
+function DroppedCard({ item, sideLabel, sideColor }: { item: DroppedItem; sideLabel: string; sideColor: string }) {
+  return (
+    <div style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+      borderRadius: 8, padding: '10px 12px', marginBottom: 8, borderLeft: `3px solid ${sideColor}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+        <Tag color={sideColor} bg={`${sideColor}18`}>{sideLabel}</Tag>
+        {item.sheet && <Tag>{item.sheet}</Tag>}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.5 }}>
+        <RichText text={item.argument} />
+      </div>
+    </div>
+  );
+}
+
+function ClashCard({ clash, labelA, labelB, colorA, colorB }: {
+  clash: ClashItem; labelA: string; labelB: string; colorA: string; colorB: string;
+}) {
+  const wc = clash.winner === 'A' ? colorA : clash.winner === 'B' ? colorB : 'var(--nav-inactive-color)';
+  const winnerName = clash.winner === 'A' ? labelA : clash.winner === 'B' ? labelB : 'Even';
+
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: wc, background: `${wc}15`, borderRadius: 5, padding: '3px 9px' }}>
+          {clash.winner === 'even' ? 'Even' : `${winnerName} ahead`}
+        </span>
+        <Tag>{clash.topic}</Tag>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'start', marginBottom: 12 }}>
+        <div style={{ background: 'var(--bg-main)', borderRadius: 6, padding: '8px 10px', border: `1px solid ${clash.winner === 'A' ? colorA + '40' : 'var(--border-subtle)'}` }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: colorA, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{labelA}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink)', lineHeight: 1.4 }}>
+            {clash.claimA ? <RichText text={clash.claimA} /> : <span style={{ color: 'var(--nav-inactive-color)', fontStyle: 'italic' }}>Never addressed</span>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--nav-inactive-color)', fontSize: 11, fontWeight: 600, paddingTop: 20 }}>vs</div>
+        <div style={{ background: 'var(--bg-main)', borderRadius: 6, padding: '8px 10px', border: `1px solid ${clash.winner === 'B' ? colorB + '40' : 'var(--border-subtle)'}` }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: colorB, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{labelB}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink)', lineHeight: 1.4 }}>
+            {clash.claimB ? <RichText text={clash.claimB} /> : <span style={{ color: 'var(--nav-inactive-color)', fontStyle: 'italic' }}>Never addressed</span>}
+          </div>
+        </div>
+      </div>
+      {clash.reasoning && (
+        <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--ink)', borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+          <RichText text={clash.reasoning} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NextSpeechCard({ item, index }: { item: NextSpeechItem; index: number }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+      <div style={{
+        flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: 'var(--nav-active-bg)',
+        color: 'var(--nav-active-color)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {index + 1}
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 2 }}>
+          <RichText text={item.action} />
+        </div>
+        {item.why && (
+          <div style={{ fontSize: 11.5, color: 'var(--nav-inactive-color)', lineHeight: 1.5 }}>
+            <RichText text={item.why} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyzeRound({
   sheets, columns, event, flowId, onClose,
 }: {
@@ -83,7 +208,10 @@ export default function AnalyzeRound({
   const [pendingQuestion, setPendingQuestion] = useState<AIQuestion | null>(null);
   const [clarifications, setClarifications] = useState<AIClarification[]>([]);
   const [answering, setAnswering] = useState(false);
-  const [analysis, setAnalysis] = useState('');
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+
+  const affColor = useMemo(() => localStorage.getItem(AFF_COLOR_KEY) || DEFAULT_AFF_COLOR, []);
+  const negColor = useMemo(() => localStorage.getItem(NEG_COLOR_KEY) || DEFAULT_NEG_COLOR, []);
 
   const flowSummary = useMemo(() => buildFlowSummary(sheets, columns), [sheets, columns]);
 
@@ -127,7 +255,11 @@ export default function AnalyzeRound({
         setStep('question');
         return;
       }
-      setAnalysis(String(res?.analysis ?? ''));
+      if (!res?.ok || !res.verdict) throw new Error('Warroom AI did not return an analysis.');
+      setAnalysis({
+        sideALabel: res.sideALabel, sideBLabel: res.sideBLabel,
+        verdict: res.verdict, dropped: res.dropped ?? [], clashes: res.clashes ?? [], nextSpeech: res.nextSpeech ?? [],
+      });
       setClarifications([]);
       setStep('result');
     } catch (e: any) {
@@ -146,7 +278,7 @@ export default function AnalyzeRound({
   }
 
   function startOver() {
-    setAnalysis('');
+    setAnalysis(null);
     setClarifications([]);
     setPendingQuestion(null);
     setError('');
@@ -252,9 +384,63 @@ export default function AnalyzeRound({
           )}
 
           {/* STEP: result */}
-          {step === 'result' && (
-            <div className="text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">
-              <RichText text={analysis} />
+          {step === 'result' && analysis && (
+            <div>
+              {/* Verdict banner */}
+              {(() => {
+                const vc = analysis.verdict.leading === 'A' ? affColor : analysis.verdict.leading === 'B' ? negColor : 'var(--nav-inactive-color)';
+                const vName = analysis.verdict.leading === 'A' ? analysis.sideALabel : analysis.verdict.leading === 'B' ? analysis.sideBLabel : null;
+                return (
+                  <div style={{
+                    background: analysis.verdict.leading === 'A' ? `${affColor}12` : analysis.verdict.leading === 'B' ? `${negColor}12` : 'var(--bg-card)',
+                    border: `1.5px solid ${vc}40`, borderRadius: 12, padding: '18px 20px', marginBottom: 24,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: vc, letterSpacing: '-0.02em' }}>
+                        {vName ? `${vName} ahead` : 'Even'}
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: vc, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        right now
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6 }}>
+                      <RichText text={analysis.verdict.reason} />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Dropped / conceded */}
+              {analysis.dropped.length > 0 && (
+                <section className="mb-6">
+                  <SectionHeader count={analysis.dropped.length}>Dropped &amp; Conceded</SectionHeader>
+                  {analysis.dropped.map((d, i) => (
+                    <DroppedCard
+                      key={i} item={d}
+                      sideLabel={d.side === 'A' ? analysis.sideALabel : analysis.sideBLabel}
+                      sideColor={d.side === 'A' ? affColor : negColor}
+                    />
+                  ))}
+                </section>
+              )}
+
+              {/* Live clashes */}
+              {analysis.clashes.length > 0 && (
+                <section className="mb-6">
+                  <SectionHeader count={analysis.clashes.length}>Live Clashes</SectionHeader>
+                  {analysis.clashes.map((c, i) => (
+                    <ClashCard key={i} clash={c} labelA={analysis.sideALabel} labelB={analysis.sideBLabel} colorA={affColor} colorB={negColor} />
+                  ))}
+                </section>
+              )}
+
+              {/* Next speech */}
+              {analysis.nextSpeech.length > 0 && (
+                <section>
+                  <SectionHeader>For Your Next Speech</SectionHeader>
+                  {analysis.nextSpeech.map((n, i) => <NextSpeechCard key={i} item={n} index={i} />)}
+                </section>
+              )}
             </div>
           )}
         </div>

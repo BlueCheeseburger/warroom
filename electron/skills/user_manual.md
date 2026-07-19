@@ -282,10 +282,13 @@ Get a strategic read on the round straight from your flow — what's dropped, wh
 4. Optionally drop in **supplementary docs** (case docs, blocks) — drag `.docx` files onto the drop zone or click it to pick several at once, the same way you'd add docs to the Speech Doc viewer.
 5. Click **Analyze round →**.
 
-Warroom AI comes back with:
-- What looks **dropped or conceded** — arguments made earlier with no answer showing up later.
-- Which **clashes are still live**, and who currently looks ahead on each one.
-- Concrete suggestions for your **next speech**, in the actual order your flow uses.
+Warroom AI comes back with an actual result screen, not a paragraph to read through — it's built to look like **Impact Calc's** results:
+- A colored **verdict banner** up top — who's ahead right now, and why, at a glance.
+- **Dropped & Conceded** — every abandoned argument as its own small card, tagged by side and which sheet it's on.
+- **Live Clashes** — each contested argument as a card, both sides' positions shown side-by-side with a winner badge, just like an Impact Calc clash card.
+- **For Your Next Speech** — a short numbered list of concrete things to say, referencing your actual arguments, not generic advice.
+
+The banner and clash cards use your real Aff/Neg (or Pro/Con) column colors — the same ones set in **Settings → Flow colors** — so it looks like it belongs to your flow, not a generic report.
 
 If something essential is unclear — most often, which side you're on — Warroom AI asks **one quick question** with a few suggested answers (plus a free-text "Other") before finishing the analysis, instead of guessing.
 

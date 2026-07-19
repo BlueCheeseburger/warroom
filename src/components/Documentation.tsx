@@ -938,8 +938,20 @@ export default function Documentation() {
             If something essential is genuinely unclear — most often, which side the debater is
             on, since that decides every "who's ahead" call — Warroom AI can pause and ask a single
             clarifying question (the same ambiguity escape hatch the guided card cutter uses) instead
-            of guessing; the debater answers and the analysis re-runs with that context. The result
-            renders with full <strong>bold</strong>/<em>italic</em>/<u>underline</u> emphasis support.
+            of guessing; the debater answers and the analysis re-runs with that context.
+          </P>
+          <P>
+            <strong>The result is structured, not a wall of prose</strong> — it's built to look and
+            read like <strong>Impact Calc's</strong> result view. A colored <strong>verdict banner</strong>{' '}
+            shows who's ahead right now and why; a <strong>Dropped &amp; Conceded</strong> section lists
+            each abandoned argument as its own card, tagged by side and sheet; a{' '}
+            <strong>Live Clashes</strong> section shows each contested argument as a card with both
+            sides' positions side-by-side and a winner badge, exactly like Impact Calc's clash cards;
+            and a numbered <strong>For Your Next Speech</strong> list gives concrete, flow-specific
+            next steps. The banner and clash cards use your <em>actual</em> Aff/Neg (or Pro/Con) column
+            colors from <strong>Settings → Flow colors</strong>, so the analysis matches what you
+            already see on your flow. Every piece of AI-written text still supports{' '}
+            <strong>bold</strong>/<em>italic</em>/<u>underline</u> emphasis.
           </P>
         </section>
 

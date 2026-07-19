@@ -348,11 +348,21 @@ A magnifying-glass toolbar button next to Share opens **`AnalyzeRound.tsx`**, a 
 
 **Notes + supplementary docs.** A textarea lets the debater add free-text context (which side they're on, the round number, what they think is winning or losing — anything not already on the flow). A drop zone mirroring `SpeechDocViewer.tsx`'s `pickFile()`/drop pattern accepts multiple `.docx` uploads (case docs, blocks); each is read via `speechdoc:extract` and its `.full` text is capped to 20,000 characters per doc before being sent.
 
-**IPC handler:** `ai:analyzeRound` in `electron/main.ts`, prompt template `electron/prompts/analyze_round.txt`. Takes `{ flowSummary, notes, docs, event, clarifications }` and returns `{ ok: true, analysis }` or `{ ok: true, question }`. Uses the `'balanced'` model tier.
+**IPC handler:** `ai:analyzeRound` in `electron/main.ts`, prompt template `electron/prompts/analyze_round.txt`. Takes `{ flowSummary, notes, docs, event, clarifications }` and returns either `{ ok: true, question }` or the full structured result:
+```ts
+{ ok: true, sideALabel, sideBLabel,
+  verdict: { leading: 'A'|'B'|'even', reason },
+  dropped: { side: 'A'|'B', argument, sheet }[],
+  clashes: { topic, claimA, claimB, winner: 'A'|'B'|'even', reasoning }[],
+  nextSpeech: { action, why }[] }
+```
+Uses the `'balanced'` model tier. `sideALabel`/`sideBLabel` default to `Aff`/`Neg` (policy) or `Pro`/`Con` (PF) if the model omits them. The handler coerces defensively the same way `ai:autoFlowClassify` does — drops any `dropped`/`clashes`/`nextSpeech` entry missing its required text field rather than letting one malformed entry break the render, and throws if `verdict.reason` is empty (nothing usable to show).
+
+**This is a structured result, not prose.** The prompt is explicitly told the response feeds a card UI, not a paragraph — every field must be its own short, separate piece. This was a deliberate redesign: the first version returned one `analysis: string` field of flowing prose, which read as a wall of text with no way to scan it quickly. The renderer now mirrors Impact Calc's result view (`ImpactCalcView.tsx`) closely on purpose — a verdict banner, drop cards, and side-by-side clash cards with a winner badge — reusing that same visual language (`Tag`, winner-color banner, claim-vs-claim card layout) rather than inventing a new one, and the two features now look and read the same way. Colors: the verdict banner and clash cards read the debater's *actual* aff/neg (or pro/con) column colors from `localStorage` (`warroom-flow-aff-color`/`warroom-flow-neg-color`, same keys `FlowView.tsx`/`Settings.tsx` use — see "Flow colors" in Settings), not a hardcoded pair, so the analysis visually matches whatever the debater already sees on their flow.
 
 **Ambiguity escape hatch.** Shares the `AIQuestion`/`AIClarification` contract in `src/types.ts` with the guided card cutter (`ai:cutterEmphasize`) — if something essential is genuinely unclear (most commonly which side the debater is on, since that decides every "who's ahead" call), the model can return a `question` field instead of committing to a guess. The UI shows it via `AIQuestionPrompt`, the debater answers, and the same handler is re-invoked with the answer appended to `clarifications`. Capped at one question per session (never asked once `clarifications.length >= 1`) — mirrors `cutter_emphasize.txt`'s `{{QUESTIONS_ASKED}}` convention.
 
-The result renders through a local `RichText` copy (every AI-output panel in this codebase defines its own — no shared component exists yet) supporting `**bold**`, `*italic*`, `__underline__`, and `` `code` ``, per the "AI feature results always support emphasis" rule.
+Every text field (verdict reason, argument text, clash reasoning, next-speech action/why) renders through a local `RichText` copy (every AI-output panel in this codebase defines its own — no shared component exists yet) supporting `**bold**`, `*italic*`, `__underline__`, and `` `code` ``, per the "AI feature results always support emphasis" rule.
 
 Round Analysis is a self-contained wizard inside the flow editor, not a Warroom Agent tool — its IPC handler is intentionally absent from `AGENT_TOOLS` and `warroom-mcp/server.js`, the same way the card cutter's handlers are.
 

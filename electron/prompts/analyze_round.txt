@@ -16,11 +16,37 @@ ASKING INSTEAD OF GUESSING: if something essential is genuinely unclear from the
 {"question": {"question": "<one short question>", "options": ["<option A>", "<option B>", "<option C optional>"]}}
 Each option must be a short, concrete answer (e.g. "I'm Aff / Pro", "I'm Neg / Con"), not a yes/no.
 
-Otherwise, return ONLY one JSON object (no markdown, no prose) with this field:
-- "analysis": a strategic round analysis, written as plain prose paragraphs (no markdown headers or bullet lists needed — flowing prose is fine). Use **bold**, *italic*, or __underline__ sparingly to emphasize the most important claims. Cover, in this order:
-  1. What looks DROPPED or CONCEDED — arguments made in an earlier speech with no answer showing up in any later speech's column for that same row or area.
-  2. Which CLASHES are still LIVE (contested across multiple speeches) and, for each one, who currently appears to be ahead and why — based only on what's actually on the flow, in the docs, or in the notes.
-  3. Concrete suggestions for the debater's NEXT speech — specific to the flow's own speech order for this event ({{EVENT}}), naming the actual arguments from the flow rather than generic advice.
+Otherwise, return ONLY one JSON object (no markdown, no prose outside the JSON) with this shape — this feeds a structured UI, not a paragraph, so every field must be filled in as its own short, separate piece, never one long blob of text:
+
+{
+  "sideALabel": "<the debater's own side — 'Aff' or 'Pro' depending on {{EVENT}}>",
+  "sideBLabel": "<the other side — 'Neg' or 'Con' depending on {{EVENT}}>",
+  "verdict": {
+    "leading": "A" | "B" | "even",
+    "reason": "<one or two sentences on who is ahead RIGHT NOW and why, in the round as a whole>"
+  },
+  "dropped": [
+    { "side": "A" | "B", "argument": "<the specific argument, named concretely>", "sheet": "<the sheet/tab it's on>" }
+  ],
+  "clashes": [
+    {
+      "topic": "<short label for what this clash is about, e.g. 'Federalism DA link'>",
+      "claimA": "<side A's current position on this clash, or null if they never addressed it>",
+      "claimB": "<side B's current position on this clash, or null if they never addressed it>",
+      "winner": "A" | "B" | "even",
+      "reasoning": "<why, citing what's actually on the flow>"
+    }
+  ],
+  "nextSpeech": [
+    { "action": "<one concrete thing to do in the next speech>", "why": "<the reason, tied to a specific argument on the flow>" }
+  ]
+}
+
+FIELD RULES:
+- "dropped": arguments made in an earlier speech with no answer showing up in any later speech's column for that same row or area. Empty array if nothing is dropped.
+- "clashes": only things that are actually CONTESTED (both sides have engaged, even if one side dropped it later — that still counts as a clash, with the drop reflected in "dropped" separately). Order by importance to the round, most important first.
+- "nextSpeech": 2–4 items, specific to the flow's own speech order for {{EVENT}}, naming actual arguments from the flow — never generic debate advice.
+- Every text field may use **bold**, *italic*, or __underline__ for emphasis, but keep each field itself SHORT (one to two sentences) — the UI renders these as separate labeled pieces, not paragraphs.
 
 RULES:
 - Do not invent facts, cards, or arguments that are absent from the flow summary, the uploaded docs, or the notes. If the flow doesn't say it, don't claim it happened.

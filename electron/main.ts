@@ -2142,9 +2142,41 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     return { ok: true, question: parsed.question };
   }
 
-  const analysis = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
-  if (!analysis) throw new Error('Warroom AI did not return an analysis.');
-  return { ok: true, analysis };
+  // Structured result, not prose — feeds the same card/verdict-banner UI as
+  // Impact Calc (ImpactCalcView.tsx) rather than a single text blob. Coerce
+  // defensively the same way ai:autoFlowClassify does: drop any entry missing
+  // its required fields instead of letting a malformed one break the render.
+  const side = (v: any): 'A' | 'B' | 'even' => (v === 'A' || v === 'B' ? v : 'even');
+  const str = (v: any) => (typeof v === 'string' ? v.trim() : '');
+
+  const sideALabel = str(parsed.sideALabel) || (event === 'pf' ? 'Pro' : 'Aff');
+  const sideBLabel = str(parsed.sideBLabel) || (event === 'pf' ? 'Con' : 'Neg');
+
+  const verdict = {
+    leading: side(parsed.verdict?.leading),
+    reason: str(parsed.verdict?.reason),
+  };
+  if (!verdict.reason) throw new Error('Warroom AI did not return an analysis.');
+
+  const dropped = (Array.isArray(parsed.dropped) ? parsed.dropped : [])
+    .filter((d: any) => d && str(d.argument))
+    .map((d: any) => ({ side: d.side === 'B' ? 'B' : 'A', argument: str(d.argument), sheet: str(d.sheet) }));
+
+  const clashes = (Array.isArray(parsed.clashes) ? parsed.clashes : [])
+    .filter((c: any) => c && str(c.topic))
+    .map((c: any) => ({
+      topic: str(c.topic),
+      claimA: str(c.claimA) || null,
+      claimB: str(c.claimB) || null,
+      winner: side(c.winner),
+      reasoning: str(c.reasoning),
+    }));
+
+  const nextSpeech = (Array.isArray(parsed.nextSpeech) ? parsed.nextSpeech : [])
+    .filter((n: any) => n && str(n.action))
+    .map((n: any) => ({ action: str(n.action), why: str(n.why) }));
+
+  return { ok: true, sideALabel, sideBLabel, verdict, dropped, clashes, nextSpeech };
 });
 
 ipcMain.handle('ai:teamSummary', async (_e, {
