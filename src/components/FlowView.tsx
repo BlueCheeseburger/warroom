@@ -204,13 +204,6 @@ export default function FlowView() {
   const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
-  // Snapshot the flow once, when the panel opens — not on every FlowView render
-  // while it's open. flushAndGetSheets() is otherwise cheap to call, but FlowView
-  // re-renders on every keystroke anywhere in the flow, and re-flattening every
-  // cell on each of those (via buildFlowSummary in AnalyzeRound) is wasted work.
-  // It also means "analyze the round as it stood when I clicked Analyze" instead
-  // of a target that keeps shifting while the panel is open.
-  const analyzeSheets = useMemo(() => (analyzeOpen ? flushAndGetSheets() : null), [analyzeOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live collaboration ──────────────────────────────────────────────────────
   const [live, setLive] = useState(false);              // is this flow live-synced?
@@ -1137,6 +1130,23 @@ export default function FlowView() {
       i === snap.current.activeSheetIdx ? { ...sh, cells: { ...cellsRef.current } } : sh
     );
   }
+
+  // Snapshot the flow once, when the Analyze Round panel opens — not on every
+  // FlowView render while it's open. FlowView re-renders on every keystroke
+  // anywhere in the flow, and re-flattening every cell on each of those (via
+  // buildFlowSummary in AnalyzeRound) is wasted work. It also means "analyze the
+  // round as it stood when I clicked Analyze" instead of a target that keeps
+  // shifting while the panel is open.
+  //
+  // Placement matters here: useMemo's factory runs SYNCHRONOUSLY at this point
+  // in render (unlike useEffect, which is deferred until after commit) — so this
+  // has to sit after flushAndGetSheets/snap/cellsRef are actually initialized in
+  // this render pass. It used to live right after the `analyzeOpen` useState
+  // near the top of the component, which crashed the whole page the first time
+  // Analyze Round was opened: ReferenceError, "snap"/"cellsRef" accessed before
+  // initialization, since those are `const`s declared later in this same
+  // function and aren't hoisted the way flushAndGetSheets itself is.
+  const analyzeSheets = useMemo(() => (analyzeOpen ? flushAndGetSheets() : null), [analyzeOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stash where the current sheet is scrolled to, before anything moves.
   function rememberScroll() {
