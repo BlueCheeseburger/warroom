@@ -4,7 +4,7 @@ import gdriveLogo from '../assets/gdrive-logo.png';
 import { importFlowFromXlsx } from '../utils/flowImport';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
-  isSelfOrDescendant, CaseFolder,
+  isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
 } from '../utils/caseFolders';
 import { buildCaseItems, CaseItem } from '../utils/caseItems';
 
@@ -797,6 +797,36 @@ function CasesSection({ view, setView, db, mode }: {
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [dropId, setDropId] = useState<string | null>(null);
 
+  // Full breadcrumb per folder (e.g. "Districts / Neg") rather than indentation —
+  // this list renders flat inside a context menu, where indentation alone reads
+  // as accidental whitespace once the menu is only ~200px wide.
+  const folderChoices = useMemo(
+    () => flattenFolders(folders).map((f) => ({
+      id: f.id,
+      label: folderTrail(folders, f.id).map((t) => t.name).join(' / '),
+    })),
+    [folders],
+  );
+
+  /**
+   * "Move to folder" menu entries for one item — the fallback for when the
+   * correct folder isn't a visible drop target (collapsed, or nested under a
+   * collapsed ancestor). Excludes the item's current folder; includes "Top
+   * level" only when the item is actually filed somewhere.
+   */
+  function moveOptionsFor(item: CaseItem) {
+    const currentFolderId = resolveItemFolder(folders, item.key);
+    const opts: { key: string; label: string; onClick: () => void }[] = [];
+    if (currentFolderId !== null) {
+      opts.push({ key: '__top__', label: 'Top level (no folder)', onClick: () => update((d) => moveItem(d, item.key, null)) });
+    }
+    for (const f of folderChoices) {
+      if (f.id === currentFolderId) continue;
+      opts.push({ key: f.id, label: f.label, onClick: () => update((d) => moveItem(d, item.key, f.id)) });
+    }
+    return opts;
+  }
+
   // buildCaseItems reads the speech-doc recents out of localStorage, which React
   // can't see change. Bumping this tick is what re-reads them.
   const [docsTick, setDocsTick] = useState(0);
@@ -882,6 +912,7 @@ function CasesSection({ view, setView, db, mode }: {
             renameInRecents(item.path!, name);
             bumpDocs();
           } : undefined}
+          moveOptions={moveOptionsFor(item)}
         >
           <span className="truncate">{item.name}</span>
         </NavItem>
@@ -1083,12 +1114,20 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
 
 function NavItem({
   active, onClick, children, itemId, itemType, itemName, busyLabel,
-  onDeleteOverride, onRenameOverride, iconEl,
+  onDeleteOverride, onRenameOverride, iconEl, moveOptions,
 }: {
   active?: boolean; onClick?: () => void; children?: React.ReactNode;
   itemId?: string; itemType?: string; itemName?: string; busyLabel?: string;
   onDeleteOverride?: () => void; onRenameOverride?: (name: string) => void;
   iconEl?: React.ReactNode;
+  /**
+   * "Move to folder" entries in the item's context menu — a click-driven,
+   * always-reachable alternative to dragging. Filing an item into a folder that's
+   * currently collapsed (or a folder that's itself buried under a collapsed
+   * ancestor) has no drag target to drop on, so drag alone can strand an item
+   * with no way to re-file it. This menu works regardless of what's expanded.
+   */
+  moveOptions?: { key: string; label: string; onClick: () => void }[];
 }) {
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1224,7 +1263,29 @@ function NavItem({
 
       {menuOpen && (
         <div ref={menuRef} className="glass-popover absolute left-2 z-50 rounded-lg py-1 text-xs shadow-xl"
-          style={{ top: '100%', minWidth: '120px', border: '1px solid var(--border-subtle)' }}>
+          style={{ top: '100%', minWidth: '160px', maxWidth: '240px', border: '1px solid var(--border-subtle)' }}>
+          {moveOptions && moveOptions.length > 0 && (
+            <>
+              <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--nav-inactive-color)', opacity: 0.7 }}>
+                Move to
+              </div>
+              <div style={{ maxHeight: 176, overflowY: 'auto' }}>
+                {moveOptions.map((opt) => (
+                  <button key={opt.key}
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen(false); opt.onClick(); }}
+                    className="w-full text-left px-3 py-1.5 transition truncate block"
+                    title={opt.label}
+                    style={{ color: 'var(--nav-active-color)' }}
+                    onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                    onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
+            </>
+          )}
           <button onClick={startRename} className="w-full text-left px-3 py-1.5 transition"
             style={{ color: 'var(--nav-active-color)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}

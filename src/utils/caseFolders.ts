@@ -121,6 +121,24 @@ export function folderTrail(data: CaseFoldersData, id: string | null): CaseFolde
   return trail;
 }
 
+/**
+ * Every folder in stable depth-first order, alphabetical within each level.
+ * For flat pickers (e.g. a "Move to folder" menu) where there's no room for a
+ * real nested tree widget — pair each entry with `folderTrail` for a full
+ * breadcrumb label so nesting is still legible without indentation.
+ */
+export function flattenFolders(data: CaseFoldersData): CaseFolder[] {
+  const out: CaseFolder[] = [];
+  const walk = (parentId: string | null) => {
+    for (const f of childFolders(data, parentId)) {
+      out.push(f);
+      walk(f.id);
+    }
+  };
+  walk(null);
+  return out;
+}
+
 /** Every folder beneath `id`, not including `id` itself. */
 export function descendantFolderIds(data: CaseFoldersData, id: string): string[] {
   const out: string[] = [];
