@@ -205,7 +205,7 @@ export default function ImpactCalcPanel() {
       <button
         onClick={analyze}
         disabled={!canAnalyze}
-        className="btn-primary"
+        className="ai-glow-ring btn-primary"
         style={{ width: '100%', padding: '9px 0', fontSize: 13, gap: 7 }}
       >
         {loading ? (

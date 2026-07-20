@@ -1013,7 +1013,7 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, 
         <button
           onClick={genMore}
           disabled={moreLoading}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition"
+          className="ai-glow-ring flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition"
           style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-subtle)', cursor: moreLoading ? 'default' : 'pointer', opacity: moreLoading ? 0.6 : 1 }}
           onMouseEnter={e => { if (!moreLoading) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -1732,7 +1732,7 @@ function TrapDrill({ event, highlighted, full, docKey, onExit }: {
                 <button
                   onClick={grade}
                   disabled={grading || !answer.trim()}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+                  className="ai-glow-ring w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
                   style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: grading || !answer.trim() ? 'default' : 'pointer', opacity: grading || !answer.trim() ? 0.55 : 1 }}
                 >
                   {grading ? <Spinner className="w-3.5 h-3.5" /> : <IcoTrap />}
@@ -1960,7 +1960,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
             <button
               onClick={generate}
               disabled={loading}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
+              className="ai-glow-ring flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12.5px] font-semibold transition"
               style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.65 : 1 }}
             >
               {loading ? <Spinner className="w-3.5 h-3.5" /> : <IcoSparkle />}
@@ -1969,7 +1969,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
             <button
               onClick={openTrapDrill}
               disabled={loading}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-semibold transition"
+              className="ai-glow-ring flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-semibold transition"
               style={{ background: 'transparent', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.55 : 1 }}
               onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}

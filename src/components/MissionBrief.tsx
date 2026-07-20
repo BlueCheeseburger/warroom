@@ -558,7 +558,7 @@ function MissionBriefAI({ round, opponent }: { round: Round; opponent: any }) {
           </svg>
           <div className="label" style={{ color: 'rgba(66,133,244,0.9)' }}>Briefing</div>
         </div>
-        <button className="btn text-xs" onClick={generate} disabled={loading}>
+        <button className="ai-glow-ring btn text-xs" onClick={generate} disabled={loading}>
           {loading ? <Dots /> : storedBrief ? 'Regenerate' : 'Generate briefing'}
         </button>
       </div>
@@ -652,7 +652,7 @@ function SuggestedBlocks({ round, opponent }: { round: Round; opponent: any }) {
       <div className="flex items-center justify-between mb-3">
         <div className="label">Suggested blocks</div>
         {allBlocks.length > 0 && (
-          <button className="btn text-xs" onClick={loadSuggestions} disabled={loading}>
+          <button className="ai-glow-ring btn text-xs" onClick={loadSuggestions} disabled={loading}>
             {loading ? <Dots /> : suggestedIds.length ? 'Refresh' : 'Load suggestions'}
           </button>
         )}

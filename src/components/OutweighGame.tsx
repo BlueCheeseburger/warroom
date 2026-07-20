@@ -269,7 +269,7 @@ export default function OutweighGame() {
           <div style={{ textAlign: 'center', padding: '52px 0 20px' }}>
             <div style={{ fontSize: 14, color: 'var(--nav-inactive-color)', marginBottom: 22 }}>Ready to spar? Choose how to start.</div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={() => loadScenario()} className="btn-primary" style={{ fontSize: 13, padding: '11px 22px' }}>🎲 Surprise me</button>
+              <button onClick={() => loadScenario()} className="ai-glow-ring btn-primary" style={{ fontSize: 13, padding: '11px 22px' }}>🎲 Surprise me</button>
               <button onClick={() => setCustomOpen(true)} className="btn" style={{ fontSize: 13, padding: '11px 22px' }}>📝 Pick my own topic</button>
               <button onClick={startCurrentTopicRound} disabled={loadingTopic} className="btn" style={{ fontSize: 13, padding: '11px 22px' }}>
                 {loadingTopic ? 'Loading topic…' : `📰 Use current ${eventMeta.label} topic`}
@@ -324,7 +324,7 @@ export default function OutweighGame() {
               <button
                 onClick={submitImpact}
                 disabled={!userImpact.trim() || !userCalc.trim()}
-                className="btn-primary"
+                className="ai-glow-ring btn-primary"
                 style={{ fontSize: 13, padding: '9px 20px' }}
               >
                 Send to Warroom AI →
@@ -371,7 +371,7 @@ export default function OutweighGame() {
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button
                 onClick={submitFinal}
-                className="btn-primary"
+                className="ai-glow-ring btn-primary"
                 style={{ fontSize: 13, padding: '9px 20px' }}
               >
                 Lock it in — get the decision
@@ -706,7 +706,7 @@ function CustomSetupForm({ db, onBack, onStart }: {
       <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <button
           onClick={() => onStart({ yourDocValue, oppDocValue, sidePreference, userNotes })}
-          className="btn-primary"
+          className="ai-glow-ring btn-primary"
           style={{ fontSize: 13, padding: '9px 20px' }}
         >
           Start round →

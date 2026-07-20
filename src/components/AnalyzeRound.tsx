@@ -500,7 +500,7 @@ export default function AnalyzeRound({
           )}
           {ready && step === 'setup' && (
             <>
-              <button className="btn-primary text-sm" onClick={() => runAnalyze(clarifications)}>Analyze round →</button>
+              <button className="ai-glow-ring btn-primary text-sm" onClick={() => runAnalyze(clarifications)}>Analyze round →</button>
               <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
             </>
           )}

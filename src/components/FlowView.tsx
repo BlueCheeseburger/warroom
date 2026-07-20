@@ -1538,7 +1538,7 @@ export default function FlowView() {
         </div>
 
         {/* Analyze round */}
-        <ToolBtn onClick={() => setAnalyzeOpen(true)} title="Analyze round (Warroom AI)"><IcoAnalyze /></ToolBtn>
+        <ToolBtn onClick={() => setAnalyzeOpen(true)} title="Analyze round (Warroom AI)" className="ai-glow-ring"><IcoAnalyze /></ToolBtn>
       </div>
 
       {/* Find bar */}
@@ -2089,9 +2089,9 @@ function FlowTooltip({ text, children, up = false, disabled }: {
 }
 
 // Shared compact toolbar icon button with a consistent hover background.
-function ToolBtn({ children, onClick, onMouseDown, title, active, disabled }: {
+function ToolBtn({ children, onClick, onMouseDown, title, active, disabled, className }: {
   children: React.ReactNode; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
-  title?: string; active?: boolean; disabled?: boolean;
+  title?: string; active?: boolean; disabled?: boolean; className?: string;
 }) {
   return (
     <FlowTooltip text={title} disabled={disabled}>
@@ -2099,7 +2099,7 @@ function ToolBtn({ children, onClick, onMouseDown, title, active, disabled }: {
         onClick={onClick}
         onMouseDown={onMouseDown}
         disabled={disabled}
-        className="flex items-center justify-center rounded-md transition shrink-0"
+        className={`flex items-center justify-center rounded-md transition shrink-0${className ? ` ${className}` : ''}`}
         style={{
           width: 26, height: 26,
           background: active ? 'var(--nav-active-bg)' : 'transparent',

@@ -339,7 +339,7 @@ function PFLDTab({
             </p>
             <button
               onClick={() => onGenerateBrief(eventType)}
-              className="btn-primary"
+              className="ai-glow-ring btn-primary"
             >
               Generate Topic Brief
             </button>

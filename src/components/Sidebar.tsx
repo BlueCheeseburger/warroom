@@ -601,7 +601,7 @@ function ExpandedNav({
           title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
           extraAction={importFlow} extraBusy={importing}
           extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
-          extraActions={[{ onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs' }]}
+          extraActions={[{ onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs', className: 'ai-glow-ring' }]}
         >
           {flowsIndex.length === 0 && <Empty>No flows yet</Empty>}
           {flowsIndex.map((f: any) => (
@@ -951,7 +951,7 @@ function CasesSection({ view, setView, db, mode }: {
 
 // ── Section ───────────────────────────────────────────────────────────────────
 
-interface SectionExtraAction { onClick: () => void; icon: React.ReactNode; title?: string; busy?: boolean }
+interface SectionExtraAction { onClick: () => void; icon: React.ReactNode; title?: string; busy?: boolean; className?: string }
 
 function Section({ title, children, action, actionLabel, icon, defaultOpen = true,
   extraAction, extraIcon, extraTitle, extraBusy, extraActions, onTitleClick }: {
@@ -1043,7 +1043,7 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
               onClick={a.onClick}
               disabled={a.busy}
               title={a.title}
-              className="flex items-center justify-center transition rounded"
+              className={`flex items-center justify-center transition rounded${a.className ? ` ${a.className}` : ''}`}
               style={{
                 width: 22, height: 22, flexShrink: 0,
                 background: 'transparent', border: 'none', cursor: a.busy ? 'default' : 'pointer',

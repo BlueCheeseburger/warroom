@@ -842,8 +842,8 @@ function ImportFromEmailModal({ tournamentId, onDone }: { tournamentId: string; 
         </div>
 
         <div className="flex gap-2">
-          <button className="btn text-xs flex-1" onClick={handleClipboard}>Paste from clipboard</button>
-          <button className="btn text-xs flex-1" onClick={handleUpload}>Upload image</button>
+          <button className="ai-glow-ring btn text-xs flex-1" onClick={handleClipboard}>Paste from clipboard</button>
+          <button className="ai-glow-ring btn text-xs flex-1" onClick={handleUpload}>Upload image</button>
         </div>
 
         {usedFallback && (

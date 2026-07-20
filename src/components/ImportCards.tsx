@@ -86,7 +86,7 @@ export default function ImportCards({ blockId, onDone }: Props) {
 
   if (step === 'idle') {
     return (
-      <button className="btn text-sm border-dashed text-ink/50 hover:text-ink" onClick={pickFile}>
+      <button className="ai-glow-ring btn text-sm border-dashed text-ink/50 hover:text-ink" onClick={pickFile}>
         Import from file (.pdf / .docx)
       </button>
     );

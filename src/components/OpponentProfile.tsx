@@ -644,7 +644,7 @@ function GeminiTeamSummary({ disc, teamName, oppId }: { disc: any; teamName: str
           <span className="text-xs font-medium text-ink/70">Gemini analysis</span>
         </div>
         {(status === 'done' || status === 'error') && (
-          <button className="btn text-[11px]" onClick={generate}>Regenerate</button>
+          <button className="ai-glow-ring btn text-[11px]" onClick={generate}>Regenerate</button>
         )}
       </div>
 

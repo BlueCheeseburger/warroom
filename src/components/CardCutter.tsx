@@ -269,7 +269,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                 </p>
                 <p className="text-xs text-ink/40">Warroom AI reads it, then you guide what goes in the card.</p>
               </div>
-              <button className="btn-primary text-sm" onClick={pickFile}>Choose a saved page (.html) or PDF…</button>
+              <button className="ai-glow-ring btn-primary text-sm" onClick={pickFile}>Choose a saved page (.html) or PDF…</button>
             </div>
           )}
 
@@ -486,9 +486,9 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
         <div className="px-5 py-3 border-t border-line flex items-center gap-2 shrink-0">
           {step === 'select' && (
             <>
-              <button className="btn-primary text-sm" disabled={!selectedBody.trim()} onClick={cut}>Cut card →</button>
+              <button className="ai-glow-ring btn-primary text-sm" disabled={!selectedBody.trim()} onClick={cut}>Cut card →</button>
               <button className="btn text-sm" onClick={() => setIncludedParas(new Set())} disabled={!includedParas.size}>Clear</button>
-              <button className="btn text-sm ml-auto opacity-60 hover:opacity-100" onClick={skipToAI} title="Let Warroom AI pick everything — selects the full article and cuts with no guidance">
+              <button className="ai-glow-ring btn text-sm ml-auto opacity-60 hover:opacity-100" onClick={skipToAI} title="Let Warroom AI pick everything — selects the full article and cuts with no guidance">
                 Skip — AI decides →
               </button>
             </>

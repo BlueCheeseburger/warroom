@@ -516,7 +516,7 @@ function Contribute({ db, entries, onDone }: { db: DB; entries: ImpactLibraryEnt
           </select>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={draftWithAI} disabled={busy || (!docValue && !ideaText.trim())} className="btn-primary" style={{ fontSize: 13, padding: '9px 20px' }}>
+            <button onClick={draftWithAI} disabled={busy || (!docValue && !ideaText.trim())} className="ai-glow-ring btn-primary" style={{ fontSize: 13, padding: '9px 20px' }}>
               {busy ? 'Drafting…' : 'Draft with AI →'}
             </button>
           </div>
@@ -615,7 +615,7 @@ function EditDraft({ draft, setDraft, busy, onBack, onNext }: {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
         <button onClick={onBack} className="btn" style={{ fontSize: 13, padding: '9px 18px' }}>Back</button>
-        <button onClick={onNext} disabled={busy || !draft.title.trim() || !draft.claim.trim()} className="btn-primary" style={{ fontSize: 13, padding: '9px 20px' }}>
+        <button onClick={onNext} disabled={busy || !draft.title.trim() || !draft.claim.trim()} className="ai-glow-ring btn-primary" style={{ fontSize: 13, padding: '9px 20px' }}>
           {busy ? 'Reviewing…' : 'Review with AI →'}
         </button>
       </div>

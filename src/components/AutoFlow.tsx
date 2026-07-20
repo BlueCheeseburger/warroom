@@ -544,7 +544,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           {step === 'target' && (
             <>
               <button
-                className="btn-primary text-sm"
+                className="ai-glow-ring btn-primary text-sm"
                 disabled={totalCards === 0 || (targetMode === 'existing' && !selectedFlowId)}
                 onClick={confirmTarget}
               >
