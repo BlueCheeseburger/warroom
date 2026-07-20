@@ -460,7 +460,15 @@ function CoinFlip() {
     function onExternalFlip(e: Event) {
       if ((e as CustomEvent).detail?.action !== 'flip') return;
       setOpen(true);
-      flip();
+      // If the popover wasn't already open, the coin div is mounting for the
+      // first time this tick — calling flip() synchronously would set its
+      // rotateY transform on that very first paint, and CSS transitions only
+      // animate a *change* to an already-painted element, so it'd just snap
+      // to the final angle with no spin. Deferring past the mount's paint
+      // (double rAF: one for the commit, one for the browser to register the
+      // resting transform) gives the next transform a prior value to animate
+      // from. Already-open popovers still flip instantly for real interactivity.
+      requestAnimationFrame(() => requestAnimationFrame(flip));
     }
     window.addEventListener('warroom-coinflip-control', onExternalFlip);
     return () => window.removeEventListener('warroom-coinflip-control', onExternalFlip);
