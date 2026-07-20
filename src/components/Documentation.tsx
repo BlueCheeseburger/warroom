@@ -205,7 +205,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/17/26
+          Last updated: 7/19/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1125,6 +1125,11 @@ export default function Documentation() {
             model answer that stays hidden behind a <strong>Show answer</strong> dropdown until you
             reveal it. Warroom AI is automatically fed the skill for whichever event you're doing
             (Policy, LD, or PF) so the questions use the right vocabulary and strategy.
+          </P>
+          <P>
+            The answer is the <strong>likely opponent response only</strong>, in their voice. The
+            strategic follow-up is shown separately underneath in its own <strong>Press next</strong>{' '}
+            box, so advice meant for you never reads as part of what the opponent said.
           </P>
           <P>
             If a document contains both <strong>aff and neg</strong> content, questions are split into{' '}

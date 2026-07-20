@@ -348,7 +348,7 @@ Built-in skills: cx_debate, pf_debate, ld_debate, card_cutting, user_manual, doc
 server.tool(
   'cross_ex_questions',
   `Prepare targeted cross-examination questions (with model answers) for a speech document, the same way the in-app Cross-Ex Practice panel does.
-Pass the document text. Returns the guide for the user's event plus a brief telling you to write pointed CX questions, each with a model answer the questioner should keep hidden until ready.
+Pass the document text. Returns the guide for the user's event plus a brief telling you to write pointed CX questions, each with the likely opponent answer (kept hidden until ready) and a separate one-line "Press next" follow-up to run after that answer.
 Use 'based_on' to generate more questions like a specific one.`,
   {
     highlighted_text: z.string().describe('Highlighted/underlined text from the speech document (tags, cites, emphasized runs)'),
@@ -389,9 +389,10 @@ Use 'based_on' to generate more questions like a specific one.`,
       `RULES:`,
       `1. Questions must target claims in the HIGHLIGHTED TEXT only.`,
       `2. ONE EXCEPTION: if un-highlighted small text DIRECTLY and COMPLETELY CONTRADICTS highlighted text in the SAME card, you may question that contradiction.`,
-      `3. Each question: 1-3 sentences MAX. Each answer: 2-4 sentences MAX.`,
-      `4. No markdown emphasis (no **, *, __). Plain text only. Use single quotes around key phrases.`,
-      `5. Be strategic — missing warrants, weak links, unqualified authors, contradictions, non-unique impacts, overclaims.`,
+      `3. Each question: 1-3 sentences MAX. Each answer: 2-3 sentences MAX — write ONLY the likely opponent response, in the opponent's voice.`,
+      `4. Do NOT fold your own strategy advice into the answer. Give the follow-up separately, as a "Press next:" line: ONE sentence addressed to the reader naming the best follow-up to run after that answer, starting with a verb ("Push on…", "Make them defend…").`,
+      `5. No markdown emphasis (no **, *, __). Plain text only. Use single quotes around key phrases.`,
+      `6. Be strategic — missing warrants, weak links, unqualified authors, contradictions, non-unique impacts, overclaims.`,
       ``,
       `## Telling Aff from Neg`,
       `- AFF speeches: 1AC, 2AC, 1AR, 2AR. NEG speeches: 1NC, 2NC, 1NR, 2NR.`,

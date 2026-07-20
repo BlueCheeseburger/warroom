@@ -2516,12 +2516,23 @@ function parseAIJson<T = any>(raw: string): T {
   throw lastErr instanceof Error ? lastErr : new Error('Could not parse AI JSON');
 }
 
-function cxParseQuestions(raw: string): { question: string; answer: string; cardCite?: string }[] {
+interface CxParsedQuestion { question: string; answer: string; press?: string; cardCite?: string }
+
+// Normalize one AI-returned cross-ex question. "press" (the one-line follow-up to
+// run after the opponent's answer) is a separate field from "answer" so the UI can
+// label it distinctly instead of gluing coaching onto the opponent's response.
+const cxMapQuestion = (q: any): CxParsedQuestion => ({
+  question: String(q.question),
+  answer: String(q.answer),
+  press: typeof q.press === 'string' && q.press.trim() ? String(q.press).trim().slice(0, 300) : undefined,
+  cardCite: q.cardCite ? String(q.cardCite) : undefined,
+});
+const cxIsQuestion = (q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string';
+
+function cxParseQuestions(raw: string): CxParsedQuestion[] {
   const parsed = parseAIJson(raw);
   if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
-  return parsed
-    .filter((q) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-    .map((q) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }));
+  return parsed.filter(cxIsQuestion).map(cxMapQuestion);
 }
 
 ipcMain.handle('ai:crossExQuestions', async (_e, {
@@ -2578,23 +2589,17 @@ ${full}`;
     const raw = await callAI(prompt, 'balanced');
     const parsed = parseAIJson(raw);
 
-    let groups: { side: string; questions: { question: string; answer: string; cardCite?: string }[] }[] = [];
+    let groups: { side: string; questions: CxParsedQuestion[] }[] = [];
     if (parsed && Array.isArray(parsed.groups)) {
       groups = parsed.groups
         .map((g: any) => ({
           side: ['Aff', 'Neg', 'General'].includes(g?.side) ? g.side : 'General',
-          questions: Array.isArray(g?.questions)
-            ? g.questions
-                .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-                .map((q: any) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }))
-            : [],
+          questions: Array.isArray(g?.questions) ? g.questions.filter(cxIsQuestion).map(cxMapQuestion) : [],
         }))
         .filter((g: any) => g.questions.length > 0);
     } else if (Array.isArray(parsed)) {
       // Fallback: model returned a flat array — treat as one undifferentiated group.
-      const qs = parsed
-        .filter((q: any) => q && typeof q.question === 'string' && typeof q.answer === 'string')
-        .map((q: any) => ({ question: String(q.question), answer: String(q.answer), cardCite: q.cardCite ? String(q.cardCite) : undefined }));
+      const qs = parsed.filter(cxIsQuestion).map(cxMapQuestion);
       if (qs.length) groups = [{ side: 'General', questions: qs }];
     }
 

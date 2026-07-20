@@ -2,7 +2,7 @@ RULES:
 1. Questions must target claims made in the HIGHLIGHTED TEXT only — that is what the opponent reads aloud and must defend.
 2. ONE EXCEPTION: if the un-highlighted small text DIRECTLY and COMPLETELY CONTRADICTS a claim in the highlighted text WITHIN THE SAME CARD, you may ask about that contradiction. That is the ONLY reason to ever reference small text.
 3. Each question: 1-3 sentences MAX. Be direct and pointed. No preamble, no "Can you explain…".
-4. Each answer: 2-4 sentences MAX. Give the likely opponent response, then one sentence on what to press next.
+4. Each answer: 2-3 sentences MAX. Write ONLY the likely opponent response, in the opponent's own voice. Do NOT append your own strategy advice and do NOT tell the reader what to press next — that belongs in the separate "press" field.
 5. Do NOT use markdown emphasis (no **, *, or __). Plain text only. You may wrap key phrases in 'single quotes'.
 6. Be STRATEGIC — expose missing warrants, weak internal links, unqualified authors, in-card contradictions, non-unique impacts, or overclaims.
 7. When a question targets a specific card, name that card by its cite (author last name + year) VERBATIM inside the question text — exactly the same string you put in "cardCite" (e.g. write "Your Brady 25 evidence…"). This lets the reader click the cite to jump to the card.

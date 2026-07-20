@@ -14,6 +14,7 @@ TASK:
 - If only one side is present, return a single group for that side ("Aff", "Neg", or "General" if genuinely undeterminable).
 - Do not duplicate or overlap questions across sides.
 - For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if the question targets the case generally rather than a specific card.
+- For each question, set "press" to ONE sentence addressed to the reader naming the single best follow-up to run after that answer. Start with a verb ("Push on…", "Make them defend…"). Omit press only if there is genuinely no good follow-up.
 
 Return ONLY this JSON (no markdown fences, no preamble):
-{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "cardCite": "Brady 25"}]}]}
+{"groups": [{"side": "Aff" | "Neg" | "General", "questions": [{"question": "...", "answer": "...", "press": "...", "cardCite": "Brady 25"}]}]}

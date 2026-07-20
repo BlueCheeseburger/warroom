@@ -843,7 +843,10 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
 
 // ── Cross-ex practice panel ─────────────────────────────────────────────────
 
-interface CxQuestion { id: string; question: string; answer: string; cardCite?: string }
+// `press` — the one-line follow-up to run AFTER the opponent's answer. Kept
+// separate from `answer` (which is the opponent's voice) so the UI can label it.
+// Optional: questions saved before the split have it folded into `answer`.
+interface CxQuestion { id: string; question: string; answer: string; press?: string; cardCite?: string }
 type CxSide = 'Aff' | 'Neg' | 'General';
 interface CxGroup { side: CxSide; questions: CxQuestion[] }
 
@@ -876,7 +879,7 @@ function loadCxGroups(path: string): CxGroup[] {
     }
     return (v as any[])
       .filter((g) => g && Array.isArray(g.questions) && g.questions.length > 0)
-      .map((g) => ({ side: (['Aff', 'Neg', 'General'].includes(g.side) ? g.side : 'General') as CxSide, questions: (g.questions as any[]).map((q: any) => ({ id: q.id ?? crypto.randomUUID(), question: q.question, answer: q.answer, cardCite: q.cardCite })) }));
+      .map((g) => ({ side: (['Aff', 'Neg', 'General'].includes(g.side) ? g.side : 'General') as CxSide, questions: (g.questions as any[]).map((q: any) => ({ id: q.id ?? crypto.randomUUID(), question: q.question, answer: q.answer, press: q.press, cardCite: q.cardCite })) }));
   } catch { return []; }
 }
 function saveCxGroups(path: string, groups: CxGroup[]) {
@@ -968,6 +971,7 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, 
         id: `${q.id}-m${Date.now()}-${i}`,
         question: x.question,
         answer: x.answer,
+        press: x.press,
         cardCite: x.cardCite,
       })));
     } catch (e: any) {
@@ -1026,6 +1030,14 @@ function CrossExPill({ q, event, side, highlightedText, fullText, onInsertMore, 
           style={{ color: 'rgb(var(--ink-rgb))', opacity: 0.82, borderTop: '1px solid var(--border-subtle)' }}
         >
           <CxText text={q.answer} />
+          {/* The follow-up to run after their answer — labeled so it reads as your
+              own next move, not part of the opponent's response. */}
+          {q.press && (
+            <div className="mt-2.5 rounded-lg px-2.5 py-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--nav-inactive-color)' }}>Press next</div>
+              <CxText text={q.press} className="text-[12px] leading-relaxed block" style={{ color: 'rgb(var(--ink-rgb))' }} />
+            </div>
+          )}
         </div>
       )}
 
@@ -1833,6 +1845,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
           id: `q${stamp}-${gi}-${i}`,
           question: x.question,
           answer: x.answer,
+          press: x.press,
           cardCite: x.cardCite,
         })),
       })));

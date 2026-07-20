@@ -11,6 +11,7 @@ Generate 3 NEW questions in the same spirit as this seed — same line of attack
 SEED: {{SEED}}
 
 For each question, set "cardCite" to the author last name + 2-digit year exactly as it appears in the highlighted text (e.g. "Brady 25"). Omit cardCite only if not targeting a specific card.
+For each question, set "press" to ONE sentence addressed to the reader naming the single best follow-up to run after that answer. Start with a verb ("Push on…", "Make them defend…"). Omit press only if there is genuinely no good follow-up.
 
 Return ONLY a JSON array of exactly 3 objects, no markdown fences, no preamble:
-[{"question": "short pointed question", "answer": "short answer + one-line follow-up", "cardCite": "Brady 25"}]
+[{"question": "short pointed question", "answer": "likely opponent response only", "press": "one-sentence follow-up to run next", "cardCite": "Brady 25"}]
