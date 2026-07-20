@@ -684,7 +684,7 @@ function ToolbarPill({ active, label, icon, onClick, title }: {
     <button
       onClick={onClick}
       title={title ?? label}
-      className="flex items-center gap-1.5 h-8 px-3 rounded-lg transition text-[12px] font-medium shrink-0"
+      className="ai-glow-ring flex items-center gap-1.5 h-8 px-3 rounded-lg transition text-[12px] font-medium shrink-0"
       style={{
         background: active ? 'var(--nav-active-bg)' : 'transparent',
         boxShadow: active ? 'var(--nav-active-shadow)' : 'none',

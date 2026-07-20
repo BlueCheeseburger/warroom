@@ -292,7 +292,7 @@ The banner and clash cards use your real Aff/Neg (or Pro/Con) column colors — 
 
 If something essential is unclear — most often, which side you're on — Warroom AI asks **one quick question** with a few suggested answers (plus a free-text "Other") before finishing the analysis, instead of guessing.
 
-Click **← Analyze again** to start over with the same notes and docs, or **Done** to close.
+**Your analysis is saved — closing the panel never loses it.** Open Round Analysis again for the same flow and you'll see your last result right away, with a small note at the top telling you when it was run (your flow may have moved on since then). Click **New analysis** when you want a real do-over — it clears your notes and uploaded docs too, not just the result — or **Done** to close and keep what you've got.
 
 ---
 

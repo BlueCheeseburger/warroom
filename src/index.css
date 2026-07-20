@@ -485,6 +485,32 @@ body {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
+/* Marks a button as triggering an AI/API call — a thin blue→pink gradient ring
+   drawn as a masked ::before "donut" behind the element, so it never disturbs
+   the button's own background/border/content (many of these buttons already
+   set an inline `background`, which a plain gradient-border trick would just
+   get painted over by). Always visible, not hover-only — the point is to let
+   users spot AI buttons at a glance, not discover them by hovering. Works with
+   any border-radius (inherits it), including fully round buttons.
+   Add this class to every button that leads to an AI/LLM API call. */
+.ai-glow-ring { position: relative; isolation: isolate; }
+.ai-glow-ring::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(135deg, #3b82f6, #ec4899);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+.ai-glow-ring:hover::before { opacity: 1; }
+
 /* Accessibility: when the user asks the OS to reduce transparency, fall back to
    the fully opaque surfaces and drop the blur. */
 @media (prefers-reduced-transparency: reduce) {

@@ -953,6 +953,14 @@ export default function Documentation() {
             already see on your flow. Every piece of AI-written text still supports{' '}
             <strong>bold</strong>/<em>italic</em>/<u>underline</u> emphasis.
           </P>
+          <P>
+            <strong>Your analysis is saved automatically</strong> — closing the panel never loses it.
+            Reopening it for the same flow shows the last result right away instead of an empty setup
+            screen, with a small note above the verdict banner telling you when it was run (your flow
+            may have changed since). Click <strong>New analysis</strong> when you actually want a fresh
+            read — it clears your notes and uploaded docs too, not just the result, so it's a real
+            restart rather than a re-run.
+          </P>
         </section>
 
         {/* ── Auto Flow ──────────────────────────────────────────────── */}

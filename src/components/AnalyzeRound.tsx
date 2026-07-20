@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { SheetData } from './FlowView';
 import type { AIClarification, AIQuestion } from '../types';
 import AIQuestionPrompt from './AIQuestionPrompt';
@@ -209,11 +209,36 @@ export default function AnalyzeRound({
   const [clarifications, setClarifications] = useState<AIClarification[]>([]);
   const [answering, setAnswering] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
 
   const affColor = useMemo(() => localStorage.getItem(AFF_COLOR_KEY) || DEFAULT_AFF_COLOR, []);
   const negColor = useMemo(() => localStorage.getItem(NEG_COLOR_KEY) || DEFAULT_NEG_COLOR, []);
 
   const flowSummary = useMemo(() => buildFlowSummary(sheets, columns), [sheets, columns]);
+
+  // Load a cached analysis for this flow, if one exists, so it's never lost by
+  // just closing the panel. Keyed per-flow so switching flows doesn't show a
+  // stale result from a different round. Gated behind `ready` rather than
+  // defaulting straight to the 'setup' step, so there's no flash of the setup
+  // screen before a cached result swaps in.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!flowId) { setReady(true); return; }
+      try {
+        const cached = await window.warroom?.storage.read(`analyze_round_${flowId}`);
+        if (cancelled) return;
+        if (cached?.result?.verdict) {
+          setAnalysis(cached.result);
+          setCachedAt(typeof cached.savedAt === 'number' ? cached.savedAt : null);
+          setStep('result');
+        }
+      } catch { /* no cache, or unreadable — just start fresh */ }
+      if (!cancelled) setReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, [flowId]);
 
   async function addDocs(paths: string[]) {
     if (!paths.length) return;
@@ -256,12 +281,16 @@ export default function AnalyzeRound({
         return;
       }
       if (!res?.ok || !res.verdict) throw new Error('Warroom AI did not return an analysis.');
-      setAnalysis({
+      const result: AnalysisResult = {
         sideALabel: res.sideALabel, sideBLabel: res.sideBLabel,
         verdict: res.verdict, dropped: res.dropped ?? [], clashes: res.clashes ?? [], nextSpeech: res.nextSpeech ?? [],
-      });
+      };
+      setAnalysis(result);
       setClarifications([]);
       setStep('result');
+      const savedAt = Date.now();
+      setCachedAt(savedAt);
+      if (flowId) window.warroom?.storage.write(`analyze_round_${flowId}`, { result, notes, savedAt });
     } catch (e: any) {
       setError(humanizeGeminiError(e?.message) || e?.message || 'Could not analyze the round.');
       setStep('setup');
@@ -277,12 +306,19 @@ export default function AnalyzeRound({
     setAnswering(false);
   }
 
-  function startOver() {
+  // "New analysis" — a genuinely fresh start, not just a re-run: clears the
+  // notes/docs too, and drops the cached result so reopening the panel later
+  // doesn't bring back what this just discarded.
+  function startNewAnalysis() {
     setAnalysis(null);
     setClarifications([]);
     setPendingQuestion(null);
     setError('');
+    setNotes('');
+    setDocs([]);
+    setCachedAt(null);
     setStep('setup');
+    if (flowId) window.warroom?.storage.write(`analyze_round_${flowId}`, null);
   }
 
   return (
@@ -298,12 +334,18 @@ export default function AnalyzeRound({
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-thin p-5">
-          {error && (
+          {!ready && (
+            <div className="py-14">
+              <LoadingState messages={['Checking for a saved analysis…']} />
+            </div>
+          )}
+
+          {ready && error && (
             <div className="mb-3 border border-danger/30 rounded-sm bg-danger/5 p-2.5 text-sm text-danger">{error}</div>
           )}
 
           {/* STEP: setup */}
-          {step === 'setup' && (
+          {ready && step === 'setup' && (
             <div className="space-y-4">
               <div>
                 <button
@@ -386,6 +428,12 @@ export default function AnalyzeRound({
           {/* STEP: result */}
           {step === 'result' && analysis && (
             <div>
+              {cachedAt && (
+                <p className="text-[11px] text-ink/40 mb-3">
+                  Saved analysis from {new Date(cachedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} —
+                  your flow may have changed since then. <button className="underline decoration-dotted hover:text-ink/70" onClick={startNewAnalysis}>Run a new one</button>.
+                </p>
+              )}
               {/* Verdict banner */}
               {(() => {
                 const vc = analysis.verdict.leading === 'A' ? affColor : analysis.verdict.leading === 'B' ? negColor : 'var(--nav-inactive-color)';
@@ -447,7 +495,10 @@ export default function AnalyzeRound({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-line flex items-center gap-2 shrink-0">
-          {step === 'setup' && (
+          {!ready && (
+            <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
+          )}
+          {ready && step === 'setup' && (
             <>
               <button className="btn-primary text-sm" onClick={() => runAnalyze(clarifications)}>Analyze round →</button>
               <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
@@ -458,7 +509,7 @@ export default function AnalyzeRound({
           )}
           {step === 'result' && (
             <>
-              <button className="btn text-sm" onClick={startOver}>← Analyze again</button>
+              <button className="btn text-sm" onClick={startNewAnalysis}>New analysis</button>
               <button className="btn-primary text-sm ml-auto" onClick={onClose}>Done</button>
             </>
           )}
