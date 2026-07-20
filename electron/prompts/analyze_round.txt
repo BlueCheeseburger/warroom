@@ -43,10 +43,10 @@ Otherwise, return ONLY one JSON object (no markdown, no prose outside the JSON) 
 }
 
 FIELD RULES:
-- "dropped": arguments made in an earlier speech with no answer showing up in any later speech's column for that same row or area. Empty array if nothing is dropped.
-- "clashes": only things that are actually CONTESTED (both sides have engaged, even if one side dropped it later — that still counts as a clash, with the drop reflected in "dropped" separately). Order by importance to the round, most important first.
+- "dropped": arguments made in an earlier speech with no answer showing up in any later speech's column for that same row or area. Empty array if nothing is dropped. Cap at the 8 MOST STRATEGICALLY IMPORTANT drops if there are more — this is a scannable list, not an exhaustive audit.
+- "clashes": only things that are actually CONTESTED (both sides have engaged, even if one side dropped it later — that still counts as a clash, with the drop reflected in "dropped" separately). Order by importance to the round, most important first. Cap at the 8 most important clashes.
 - "nextSpeech": 2–4 items, specific to the flow's own speech order for {{EVENT}}, naming actual arguments from the flow — never generic debate advice.
-- Every text field may use **bold**, *italic*, or __underline__ for emphasis, but keep each field itself SHORT (one to two sentences) — the UI renders these as separate labeled pieces, not paragraphs.
+- Every text field may use **bold**, *italic*, or __underline__ for emphasis, but keep each field itself SHORT (one to two sentences) — the UI renders these as separate labeled pieces, not paragraphs. This matters even more on a round with a lot on the flow: your whole response must fit in one pass, so stay terse everywhere rather than writing long on the first few items and running out of room for the rest.
 
 RULES:
 - Do not invent facts, cards, or arguments that are absent from the flow summary, the uploaded docs, or the notes. If the flow doesn't say it, don't claim it happened.

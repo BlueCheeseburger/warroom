@@ -2136,7 +2136,14 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     QUESTIONS_ASKED: String(clar.length),
   });
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'balanced')) || {};
+  // The structured result (verdict + dropped[] + clashes[] + nextSpeech[], each
+  // with its own reasoning text) runs noticeably longer than the old single
+  // analysis:string ever did. The default Gemini cap (8192 tokens, see callAI)
+  // was enough for prose but not for a full round's worth of JSON — a large
+  // round would get cut off mid-generation, fail to parse, and land on the
+  // generic "did not return an analysis" error below with no clue why.
+  const raw = await callAI(prompt, 'balanced', { maxOutputTokens: 32768 });
+  const parsed = parseJsonLoose(raw) || {};
 
   if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
     return { ok: true, question: parsed.question };
@@ -2156,7 +2163,20 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     leading: side(parsed.verdict?.leading),
     reason: str(parsed.verdict?.reason),
   };
-  if (!verdict.reason) throw new Error('Warroom AI did not return an analysis.');
+  if (!verdict.reason) {
+    // Most likely cause even after the token bump above: a non-Gemini provider
+    // (OpenAI/Anthropic/Grok) — callAI's extraConfig.maxOutputTokens only
+    // reaches the Gemini branch; the other three providers hardcode 8192 with
+    // no override path, so a large round can still truncate mid-JSON for those.
+    // Surface *why* instead of a bare "didn't work" so this is diagnosable if
+    // it recurs, rather than a dead end.
+    const looksTruncated = raw.trim().length > 0 && !/[}\]]\s*$/.test(raw.trim());
+    throw new Error(
+      looksTruncated
+        ? 'Warroom AI\'s response got cut off before it finished — this round may have too much on it. Try again, or switch to a Gemini model in Settings (it has more headroom for a large flow).'
+        : 'Warroom AI did not return a usable analysis. Try again.'
+    );
+  }
 
   const dropped = (Array.isArray(parsed.dropped) ? parsed.dropped : [])
     .filter((d: any) => d && str(d.argument))
