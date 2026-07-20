@@ -641,7 +641,7 @@ function GeminiTeamSummary({ disc, teamName, oppId }: { disc: any; teamName: str
           >
             AI Scout
           </span>
-          <span className="text-xs font-medium text-ink/70">Gemini analysis</span>
+          <span className="text-xs font-medium text-ink/70">Warroom AI analysis</span>
         </div>
         {(status === 'done' || status === 'error') && (
           <button className="ai-glow-ring btn text-[11px]" onClick={generate}>Regenerate</button>
