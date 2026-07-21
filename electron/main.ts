@@ -1639,6 +1639,11 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
       column: String(p.column ?? '').trim(),
       sheetName: String(p.sheetName ?? '').trim(),
       isNewSheet: !!p.isNewSheet,
+      // Best-effort hints for the write step's same-row/arrow placement and the
+      // plan-goes-first convention — both optional, both degrade gracefully to
+      // "place normally" if the model left them out or they don't resolve.
+      respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
+      isPlan: !!p.isPlan,
     }));
 
   return { ok: true, placements };

@@ -251,6 +251,10 @@ The two are interchangeable: you can start an arrow with ⌘L and finish it with
 
 Arrows are saved with the sheet, so they're there when you reopen the flow.
 
+**Insert a cell between two others.** Hover the line between two stacked cells in the same column and a tiny **+** appears on it. Click it to slot a blank cell in there — everything below shifts down one row in that column, so you can drop in an argument you missed without re-typing the ones under it. It's undoable with ⌘Z.
+
+**Peek at a tab's contents.** Hover a tab at the bottom and a tooltip shows the top few arguments on it, so you can tell "Federalism DA" from "Politics DA" without clicking into each one.
+
 **Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar — it searches **across all tabs** at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close. Stepping onto a match that lives on another tab switches you to that tab.
 
 Matches are **highlighted in amber** so you don't have to hunt through a cell to spot them: every hit on the tab you're looking at gets a soft wash, and the one you're currently on is painted solid. The highlighting is only drawn on screen — it never becomes part of your flow.
@@ -304,11 +308,18 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 2. **Upload your speech docs.** Drag several `.docx` files onto the drop zone at once, or click it to pick them from a file dialog.
 3. **Warroom AI reads the docs** — it pulls each card's tag, cite, and heading structure (pocket/hat/block). It never looks at the card body. A doc with no cards is shown but doesn't stop the rest of the batch.
 4. **Choose where they go:**
-   - **Create a new flow** — pick Policy or Public Forum (Auto Flow guesses this from the docs' speech labels, e.g. `1AC`/`2NC` vs. "Pro Case"/"Con Rebuttal", but you can change it), then Stock issues vs. Advantage sheets for policy, or Pro-first vs. Con-first order for PF.
+   - **Create a new flow** — pick Policy or Public Forum (Auto Flow guesses this from the docs' speech labels, e.g. `1AC`/`2NC` vs. "Pro Case"/"Con Rebuttal", but you can change it), then Stock issues vs. Advantage sheets for policy (**also guessed** — from whether the aff's structured as named advantages or as inherency/harms), or Pro-first vs. Con-first order for PF.
    - **Add to an existing flow** — pick one of your flows from the list. Auto Flow reads that flow's actual current column and sheet names (even if you've renamed them from the defaults) so cards land correctly.
 5. Click **Sort with Warroom AI →**. It matches each card's speech label to a column and its topic (hat/block) to a sheet, proposing a brand-new tab when nothing existing fits. If it's genuinely stuck — usually because a chunk of cards has no usable speech label — it asks **one quick question** for the whole batch instead of guessing.
 6. **Review the placements.** Cards are grouped by destination sheet (new ones marked **NEW**), each showing its tag and "Sheet → Column". Uncheck any you don't want before writing.
-7. Click **Write N cards to the flow**. Each card's tag and cite land in the first empty row of its column. If a column is completely full, that card is skipped and listed at the end instead of silently vanishing.
+7. Click **Write N cards to the flow**. Each card's tag and a **short cite** (just author and year — "Price '26", not the whole credentials paragraph) land in its column.
+
+**What Auto Flow does when it writes:**
+- **Cites are shortened.** Warroom AI turns a card's full cite paragraph into the way a debater actually writes it on a flow — author surname plus a 2-digit year, or an abbreviated source name if there's no individual author.
+- **New tabs use the doc's own shorthand.** If your case calls a position "Federalism DA" once but "Fism DA" everywhere after, the new tab is named "Fism DA" — the form you actually use.
+- **Answers line up with what they answer.** When a card directly answers another (a perm, a no-link, an impact defense), Auto Flow puts it on the **same row** as the argument it answers. If two cards answer the same one, the second goes on the next row with an **arrow drawn back** to it, so the connection stays clear.
+- **The plan goes first.** For policy, the plan text always lands in the very first cell of the first sheet.
+- If a column is completely full, a card is skipped and listed at the end instead of silently vanishing.
 
 **Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
 

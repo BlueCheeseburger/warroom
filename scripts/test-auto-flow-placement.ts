@@ -6,7 +6,7 @@
 //
 // Run:  npx tsx scripts/test-auto-flow-placement.ts
 
-import { findColumnIndex, firstEmptyRow, inferEventFromPockets } from '../src/lib/autoFlowPlacement';
+import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../src/lib/autoFlowPlacement';
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean, extra = '') {
@@ -48,6 +48,19 @@ console.log('\n[3] inferEventFromPockets — policy vs PF default for a new flow
   check('empty array returns null', inferEventFromPockets([]) === null);
   check('mixed signals tie-break to policy', inferEventFromPockets(['1AC', 'Pro Case']) === 'policy');
   check('"pro"/"con" alone (no keyword) is not a PF hit', inferEventFromPockets(['Pro Choice Advantage']) === null);
+}
+
+console.log('\n[4] inferVariantFromHats — stock-issues vs advantage default for a new policy flow');
+{
+  check('advantage hats detected', inferVariantFromHats(['Advantage 1', 'Redundancy Advantage']) === 'advantage');
+  check('"adv" abbreviation detected', inferVariantFromHats(['Adv 2 — Economy']) === 'advantage');
+  check('stock-issue hats detected', inferVariantFromHats(['Inherency', 'Harms', 'Solvency']) === 'stock-issues');
+  check('significance counts as stock', inferVariantFromHats(['Significance']) === 'stock-issues');
+  check('solvency alone is NOT a stock signal (advantage affs have it too)', inferVariantFromHats(['Solvency']) === null);
+  check('DA/CP/K neg hats give no aff-structure signal', inferVariantFromHats(['Politics DA', 'States CP', 'Cap K']) === null);
+  check('mixed signals tie-break to advantage', inferVariantFromHats(['Advantage 1', 'Inherency']) === 'advantage');
+  check('no signal returns null', inferVariantFromHats(['Uniqueness', null, undefined]) === null);
+  check('empty array returns null', inferVariantFromHats([]) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

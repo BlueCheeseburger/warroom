@@ -6,7 +6,7 @@ import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { escapeHtml } from '../lib/cellHtml';
 import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
-import { findColumnIndex, firstEmptyRow, inferEventFromPockets } from '../lib/autoFlowPlacement';
+import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
 import {
   StoredFlowData, SheetData, PolicyVariant, PFOrder,
   POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS,
@@ -38,6 +38,11 @@ interface Placement {
   column: string;
   sheetName: string;
   isNewSheet: boolean;
+  // The tag text of the card this one directly answers (from the classify step),
+  // or null. Drives same-row alignment + arrow drawing in the write step.
+  respondsTo: string | null;
+  // The plan text (policy) — forced to the first cell of the first sheet.
+  isPlan: boolean;
   removed: boolean;
 }
 
@@ -96,6 +101,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const [newVariant, setNewVariant] = useState<PolicyVariant>('stock-issues');
   const [newPfOrder, setNewPfOrder] = useState<PFOrder>('pro-first');
   const [targetInferred, setTargetInferred] = useState(false);
+  const [variantInferred, setVariantInferred] = useState(false);
 
   // Classify / question-pause-resume (mirrors CardCutter's runEmphasize/answerQuestion)
   const [clarifications, setClarifications] = useState<AIClarification[]>([]);
@@ -139,8 +145,16 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     // the user can still change it on the target step.
     const allPockets = results.flatMap((d) => d.cards.map((c) => c.pocket));
     const inferred = inferEventFromPockets(allPockets);
-    setNewEvent(inferred ?? (event === 'pf' ? 'pf' : 'policy'));
+    const resolvedEvent = inferred ?? (event === 'pf' ? 'pf' : 'policy');
+    setNewEvent(resolvedEvent);
     setTargetInferred(!!inferred);
+
+    // For a policy flow, also pre-select Stock Issues vs. Advantage from the aff's
+    // hat/block structure — same "infer a default the user reviews" idea as event.
+    const allHats = results.flatMap((d) => d.cards.flatMap((c) => [c.hat, c.block]));
+    const inferredVariant = resolvedEvent === 'policy' ? inferVariantFromHats(allHats) : null;
+    setNewVariant(inferredVariant ?? 'stock-issues');
+    setVariantInferred(!!inferredVariant);
 
     setStep('target');
   }
@@ -178,6 +192,8 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         column: p.column,
         sheetName: p.sheetName,
         isNewSheet: !!p.isNewSheet,
+        respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
+        isPlan: !!p.isPlan,
         removed: false,
       }));
       setPlacements(list);
@@ -255,33 +271,88 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       }
 
       const columns = data.customColumns ?? columnsForEvent(data.event, data.pfOrder);
-      const sheets: SheetData[] = data.sheets.map((s) => ({ ...s, cells: { ...s.cells } }));
+      const sheets: SheetData[] = data.sheets.map((s) => ({
+        ...s, cells: { ...s.cells }, arrows: s.arrows ? [...s.arrows] : undefined,
+      }));
       const sheetIndexByName = new Map<string, number>();
       sheets.forEach((s, i) => sheetIndexByName.set(s.name.trim().toLowerCase(), i));
 
       const skipped: SkippedPlacement[] = [];
       let written = 0;
+      // Where each written card landed, keyed by its tag — so a card that answers
+      // another can align to it and/or draw an arrow back.
+      const placedByTag = new Map<string, { sheetIdx: number; ri: number; ci: number }>();
 
-      for (const p of accepted) {
-        let sheetIdx = sheetIndexByName.get(p.sheetName.trim().toLowerCase());
-        if (sheetIdx === undefined) {
-          const newSheet: SheetData = { id: crypto.randomUUID(), name: p.sheetName, cells: {} };
-          sheets.push(newSheet);
-          sheetIdx = sheets.length - 1;
-          sheetIndexByName.set(p.sheetName.trim().toLowerCase(), sheetIdx);
+      const ensureSheet = (name: string): number => {
+        const key = name.trim().toLowerCase();
+        let idx = sheetIndexByName.get(key);
+        if (idx === undefined) {
+          sheets.push({ id: crypto.randomUUID(), name, cells: {} });
+          idx = sheets.length - 1;
+          sheetIndexByName.set(key, idx);
         }
-        const colIdx = findColumnIndex(columns, p.column);
-        if (colIdx === -1) {
-          skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: "column not found" });
-          continue;
-        }
-        const row = firstEmptyRow(sheets[sheetIdx].cells, colIdx, NUM_ROWS);
-        if (row === -1) {
-          skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: "column is full" });
-          continue;
-        }
-        sheets[sheetIdx].cells[`${row}-${colIdx}`] = buildCellHtml(p.tag, p.cite);
+        return idx;
+      };
+      const writeCard = (sheetIdx: number, ri: number, ci: number, p: Placement) => {
+        sheets[sheetIdx].cells[`${ri}-${ci}`] = buildCellHtml(p.tag, p.cite);
+        placedByTag.set(p.tag.trim().toLowerCase(), { sheetIdx, ri, ci });
         written++;
+      };
+      const addArrow = (sheetIdx: number, from: string, to: string) => {
+        const arrows = sheets[sheetIdx].arrows ?? [];
+        arrows.push({ id: crypto.randomUUID(), from, to });
+        sheets[sheetIdx].arrows = arrows;
+      };
+
+      // Pass 0 — the plan text (policy) always goes to the very first cell of the
+      // very first sheet, regardless of what column/sheet the AI proposed for it.
+      // Falls back to the first empty row of column 0 if 0-0 is already taken
+      // (adding into an existing flow that already has a plan there).
+      const planCard = accepted.find((p) => p.isPlan);
+      if (planCard && sheets.length > 0) {
+        const c0Empty = !((sheets[0].cells['0-0'] ?? '').trim());
+        const ri = c0Empty ? 0 : firstEmptyRow(sheets[0].cells, 0, NUM_ROWS);
+        if (ri !== -1) writeCard(0, ri, 0, planCard);
+        else skipped.push({ tag: planCard.tag, sheetName: sheets[0].name, column: columns[0] ?? '1AC', reason: 'first column is full' });
+      }
+
+      // Pass 1 — every card that does NOT answer another card (originals). Placed
+      // first so their positions are known when Pass 2 aligns answers to them.
+      for (const p of accepted) {
+        if (p.isPlan || p.respondsTo) continue;
+        const sheetIdx = ensureSheet(p.sheetName);
+        const colIdx = findColumnIndex(columns, p.column);
+        if (colIdx === -1) { skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: 'column not found' }); continue; }
+        const row = firstEmptyRow(sheets[sheetIdx].cells, colIdx, NUM_ROWS);
+        if (row === -1) { skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: 'column is full' }); continue; }
+        writeCard(sheetIdx, row, colIdx, p);
+      }
+
+      // Pass 2 — answering cards. Try to sit an answer on the SAME ROW as the
+      // card it answers (so they line up like a paper flow). When that row is
+      // already taken (e.g. a second card answering the same one), it drops to
+      // the next empty row and an arrow is drawn from the answered card to it, so
+      // the connection stays visible. Only same-sheet answers can align/arrow —
+      // arrow endpoints are cell keys within one sheet.
+      for (const p of accepted) {
+        if (p.isPlan || !p.respondsTo) continue;
+        const sheetIdx = ensureSheet(p.sheetName);
+        const colIdx = findColumnIndex(columns, p.column);
+        if (colIdx === -1) { skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: 'column not found' }); continue; }
+
+        const answered = placedByTag.get(p.respondsTo.trim().toLowerCase());
+        const cells = sheets[sheetIdx].cells;
+
+        if (answered && answered.sheetIdx === sheetIdx && answered.ci !== colIdx && !((cells[`${answered.ri}-${colIdx}`] ?? '').trim())) {
+          writeCard(sheetIdx, answered.ri, colIdx, p); // same row, adjacency IS the link — no arrow
+          continue;
+        }
+        const row = firstEmptyRow(cells, colIdx, NUM_ROWS);
+        if (row === -1) { skipped.push({ tag: p.tag, sheetName: p.sheetName, column: p.column, reason: 'column is full' }); continue; }
+        writeCard(sheetIdx, row, colIdx, p);
+        if (answered && answered.sheetIdx === sheetIdx) {
+          addArrow(sheetIdx, `${answered.ri}-${answered.ci}`, `${row}-${colIdx}`);
+        }
       }
 
       const updated: StoredFlowData = { ...data, sheets };
@@ -423,7 +494,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                   </div>
                   {newEvent === 'policy' ? (
                     <div className="space-y-1.5">
-                      <label className="text-xs text-ink/55 font-medium">Sheet layout</label>
+                      <label className="text-xs text-ink/55 font-medium">
+                        Sheet layout {variantInferred && <span className="text-ink/35 font-normal">(guessed from the doc's structure)</span>}
+                      </label>
                       <div className="flex gap-2">
                         <button className={`btn text-xs flex-1 ${newVariant === 'stock-issues' ? 'btn-primary' : ''}`} onClick={() => setNewVariant('stock-issues')}>Stock issues</button>
                         <button className={`btn text-xs flex-1 ${newVariant === 'advantage' ? 'btn-primary' : ''}`} onClick={() => setNewVariant('advantage')}>Advantage</button>

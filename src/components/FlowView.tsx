@@ -898,6 +898,45 @@ export default function FlowView() {
     scheduleSave();
   }
 
+  // Insert a blank cell between rows `afterRi` and `afterRi+1` in a single column,
+  // pushing that column's cells (and any arrow endpoints in it) down one. Single
+  // column, not a full row — matches the hover "+" between two stacked cells: you
+  // slot a missed argument into one speech's column without disturbing the others.
+  function insertRowBetween(afterRi: number, ci: number) {
+    const insertAt = afterRi + 1;
+    if (insertAt >= NUM_ROWS) return;
+    // Shift bottom-up so we never overwrite a source before copying it.
+    const cells = { ...cellsRef.current };
+    for (let r = NUM_ROWS - 1; r > insertAt; r--) {
+      const src = cells[`${r - 1}-${ci}`];
+      if (src !== undefined) cells[`${r}-${ci}`] = src; else delete cells[`${r}-${ci}`];
+    }
+    delete cells[`${insertAt}-${ci}`]; // the new blank
+    cellsRef.current = cells;
+
+    // Move arrow endpoints in this column at/below the insert point down with it.
+    const bump = (key: string) => {
+      const [rs, cs] = key.split('-'); const r = Number(rs), c = Number(cs);
+      if (c === ci && r >= insertAt && r < NUM_ROWS - 1) return `${r + 1}-${c}`;
+      return key;
+    };
+    const s = snap.current;
+    const updated = s.sheets.map((sh, i) =>
+      i === s.activeSheetIdx
+        ? { ...sh, cells: { ...cells }, arrows: (sh.arrows ?? []).map((a) => ({ ...a, from: bump(a.from), to: bump(a.to) })) }
+        : sh
+    );
+    setSheets(updated);
+    snap.current = { ...snap.current, sheets: updated };
+    persist({ sheets: updated });
+    recordHistory();
+    if (liveRef.current) {
+      for (let r = insertAt; r < NUM_ROWS; r++) pushLiveCell(`${r}-${ci}`, cellToHtml(cells[`${r}-${ci}`] ?? ''));
+    }
+    setCellNonce((n) => n + 1);
+    requestAnimationFrame(recomputeArrows);
+  }
+
   // ── Column resize ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1202,6 +1241,37 @@ export default function FlowView() {
     const newIdx = Math.max(0, Math.min(shifted, next.length - 1));
     setSheets(next); cellsRef.current = next[newIdx]?.cells ?? {}; setActiveSheetIdx(newIdx);
     persist({ sheets: next });
+  }
+
+  // Short, wide summary of a tab's content for its hover tooltip — the top few
+  // argument tags on it, so you can tell tabs apart without clicking through.
+  // Deliberately NOT AI-generated: it fires on every hover, so it's a cheap
+  // local read of the cells (first line of each = the tag). For the ACTIVE tab
+  // the live edits live in cellsRef, not the (stale-until-save) sheet.cells.
+  function sheetSummary(idx: number): string {
+    const s = snap.current;
+    const sheet = s.sheets[idx];
+    if (!sheet) return '';
+    const cells = idx === s.activeSheetIdx ? cellsRef.current : sheet.cells;
+    const entries = Object.entries(cells)
+      .map(([key, html]) => {
+        const [r, c] = key.split('-').map(Number);
+        return { r, c, text: htmlToText(String(html ?? '')).split('\n')[0].trim() };
+      })
+      .filter((e) => e.text)
+      .sort((a, b) => a.c - b.c || a.r - b.r);
+    if (entries.length === 0) return 'Empty tab · double-click to rename';
+    const seen = new Set<string>();
+    const tags: string[] = [];
+    for (const e of entries) {
+      const k = e.text.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      tags.push(e.text.length > 54 ? e.text.slice(0, 53) + '…' : e.text);
+      if (tags.length >= 4) break;
+    }
+    const more = entries.length - tags.length;
+    return tags.join('\n') + (more > 0 ? `\n+${more} more` : '');
   }
 
   function startRenameSheet(idx: number) { setRenamingSheet(idx); setRenameValue(sheets[idx]?.name ?? ''); }
@@ -1903,6 +1973,26 @@ export default function FlowView() {
                         )}
                       </div>
                     )}
+                    {/* Insert-row "+" — straddles the bottom border, on hover. */}
+                    {isHovered && !drawMode && ri < NUM_ROWS - 1 && (
+                      <div
+                        className="absolute left-1/2"
+                        style={{ bottom: -6, transform: 'translateX(-50%)', zIndex: 6, pointerEvents: 'auto' }}
+                      >
+                        <FlowTooltip text="Insert row below">
+                          <button
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => insertRowBetween(ri, ci)}
+                            className="flex items-center justify-center rounded-full transition"
+                            style={{
+                              width: 13, height: 13, fontSize: 11, lineHeight: 1,
+                              background: 'var(--nav-active-bg)', border: '1px solid var(--border-med)',
+                              color: 'var(--nav-active-color)', cursor: 'pointer',
+                            }}
+                          >+</button>
+                        </FlowTooltip>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1931,6 +2021,7 @@ export default function FlowView() {
               onClick={() => switchSheet(idx)}
               onDoubleClick={() => startRenameSheet(idx)}
               onDelete={sheets.length > 1 ? () => deleteSheet(idx) : undefined}
+              getSummary={() => sheetSummary(idx)}
             />
           ))}
         </div>
@@ -2029,8 +2120,12 @@ function IcoAnalyze() {
 // else in Warroom. Every flow-editor button routes through this now, either via
 // ToolBtn below or by wrapping directly. A short show-delay keeps a dense toolbar
 // from flashing a tooltip for every icon the cursor passes over.
-function FlowTooltip({ text, children, up = false, disabled }: {
+function FlowTooltip({ text, children, up = false, disabled, wide = false }: {
   text?: string; children: React.ReactNode; up?: boolean; disabled?: boolean;
+  // `wide`: for multi-line content (e.g. a tab's content summary) — wider box,
+  // left-aligned, and preserves the `\n`s in `text` as separate lines instead of
+  // wrapping everything into one narrow column.
+  wide?: boolean;
 }) {
   const [show, setShow] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2066,9 +2161,10 @@ function FlowTooltip({ text, children, up = false, disabled }: {
             // in case a tooltip is ever accidentally long — it wraps wide, not
             // narrow-and-tall.
             width: 'max-content',
-            maxWidth: 220,
-            whiteSpace: 'normal',
-            textAlign: 'center',
+            maxWidth: wide ? 360 : 220,
+            whiteSpace: wide ? 'pre-line' : 'normal',
+            textAlign: wide ? 'left' : 'center',
+            lineHeight: wide ? 1.5 : undefined,
             borderRadius: 8,
             padding: '5px 10px',
             fontSize: 11,
@@ -2152,14 +2248,17 @@ function DropBtn({ children, onClick, danger }: { children: React.ReactNode; onC
 
 function SheetTab({
   name, active, renaming, renameValue, onRenameChange, onCommitRename, onCancelRename,
-  onClick, onDoubleClick, onDelete,
+  onClick, onDoubleClick, onDelete, getSummary,
 }: {
   name: string; active: boolean; renaming: boolean;
   renameValue: string; onRenameChange: (v: string) => void;
   onCommitRename: () => void; onCancelRename: () => void;
   onClick: () => void; onDoubleClick: () => void; onDelete?: () => void;
+  getSummary?: () => string;
 }) {
   const [hovered, setHovered] = useState(false);
+  // Computed on hover (not every render) since it reads every cell on the tab.
+  const [summary, setSummary] = useState<string | null>(null);
   return (
     <div
       className="flex items-center shrink-0"
@@ -2169,7 +2268,7 @@ function SheetTab({
         background: active ? 'var(--bg-card)' : 'transparent',
         minWidth: 72, maxWidth: 130,
       }}
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={() => { setHovered(true); if (getSummary) setSummary(getSummary()); }}
       onMouseLeave={() => setHovered(false)}
     >
       {renaming ? (
@@ -2184,7 +2283,7 @@ function SheetTab({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <FlowTooltip text="Double-click to rename">
+        <FlowTooltip text={summary ?? 'Double-click to rename'} up wide>
           <button
             className="flex-1 text-left truncate text-xs font-medium px-3"
             style={{ color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}

@@ -205,7 +205,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/19/26
+          Last updated: 7/20/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -855,6 +855,17 @@ export default function Documentation() {
             cancel. Arrows are saved per sheet.
           </P>
           <P>
+            <strong>Insert a cell between two others:</strong> hover a cell and a small <Code>+</Code>{' '}
+            appears on its bottom edge — click it to slot a blank cell into that column between the two,
+            shifting everything below it down one row. It's a single-column insert (the other columns
+            stay put), so you can drop in a missed argument without re-typing the ones under it.
+            Undoable with <Code>⌘Z</Code>.
+          </P>
+          <P>
+            <strong>Tab previews:</strong> hover a tab at the bottom and a tooltip shows the top few
+            arguments on it, so you can tell your sheets apart at a glance without clicking into each.
+          </P>
+          <P>
             <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all tabs in the flow.
             Enter / Shift+Enter jump between matches; Esc closes. Every hit on the tab you're looking
             at gets a soft amber wash and the one you're currently on is painted solid, so your eye
@@ -983,20 +994,27 @@ export default function Documentation() {
           <P>
             The user picks either a <strong>new flow</strong> — Auto Flow guesses policy vs. PF from
             the uploaded docs' speech-label pockets (<Code>1AC</Code>/<Code>1NC</Code>-style labels vs.
-            "Pro Case"/"Con Rebuttal"-style labels), falling back to the app's current event when the
-            docs give no usable signal — or an <strong>existing flow</strong>, in which case Warroom AI
-            is told that flow's actual current column labels and sheet names (which may have been
-            renamed from the defaults) rather than assuming the standard set.
+            "Pro Case"/"Con Rebuttal"-style labels), and for policy also guesses Stock Issues vs.
+            Advantage from the aff's structure (named advantages vs. inherency/harms headings) — both
+            shown with a "guessed" badge and both overridable, falling back to sensible defaults when
+            the docs give no usable signal — or an <strong>existing flow</strong>, in which case
+            Warroom AI is told that flow's actual current column labels and sheet names (which may have
+            been renamed from the defaults) rather than assuming the standard set.
           </P>
           <H3>Sorting and review</H3>
           <P>
             For every card, Warroom AI picks a column by matching the card's pocket (speech label)
             case-insensitively against the flow's real columns, and a sheet by matching the card's hat,
             then block, then pocket topically against the flow's real sheet names — proposing a new
-            sheet tab when nothing plausibly fits. It can pause with a single clarifying question for
-            the whole batch (the same ambiguity escape hatch the guided card cutter uses) when a chunk
-            of cards has no usable pocket label, or two sheets are equally plausible — never to ask
-            permission for a routine new tab. <PromptLink name="auto_flow_classify" />
+            sheet tab when nothing plausibly fits, and naming that tab with the doc's own shorthand for
+            the position when it uses one (a case that says "Federalism DA" once but "Fism DA"
+            afterward gets a "Fism DA" tab). It also shortens each card's cite to how a debater
+            actually writes it — author and year ("Price '26"), not the full credentials paragraph —
+            and flags which cards answer which (a perm, a no-link) and which card is the plan text. It
+            can pause with a single clarifying question for the whole batch (the same ambiguity escape
+            hatch the guided card cutter uses) when a chunk of cards has no usable pocket label, or two
+            sheets are equally plausible — never to ask permission for a routine new tab.{' '}
+            <PromptLink name="auto_flow_classify" />
           </P>
           <P>
             The review step groups proposed placements by destination sheet (new tabs marked{' '}
@@ -1006,12 +1024,18 @@ export default function Documentation() {
           <H3>Writing into the flow</H3>
           <P>
             Accepted placements are written straight to the flow's stored data (not through the live
-            Yjs sync path) — each card's tag and cite land in the first empty row of the matched
-            column. If a column runs out of room, that placement is skipped and surfaced in a summary
-            rather than silently dropped. The tag is wrapped in whatever emphasis is set in{' '}
-            <strong>Settings → Auto Flow tag style</strong> (bold/italic/underline — the only emphasis
-            a flow cell can carry, per <Code>src/lib/cellHtml.ts</Code>'s allowed tags); the cite line
-            underneath is always plain text.
+            Yjs sync path) in three passes so answers line up with what they answer. The{' '}
+            <strong>plan</strong> goes first — always the very first cell of the first sheet. Then
+            every <strong>original</strong> card lands in the first empty row of its column. Finally
+            each <strong>answering</strong> card is placed: on the <em>same row</em> as the card it
+            answers when that spot is free (so they read across like a paper flow), or — when a second
+            card answers the same one — on the next row with an <strong>arrow drawn back</strong> to
+            what it answers, so the connection stays visible. If a column runs out of room, that
+            placement is skipped and surfaced in a summary rather than silently dropped. The tag is
+            wrapped in whatever emphasis is set in <strong>Settings → Auto Flow tag style</strong>{' '}
+            (bold/italic/underline — the only emphasis a flow cell can carry, per{' '}
+            <Code>src/lib/cellHtml.ts</Code>'s allowed tags); the shortened cite underneath is always
+            plain text.
           </P>
         </section>
 

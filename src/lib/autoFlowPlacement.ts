@@ -56,3 +56,27 @@ export function inferEventFromPockets(pockets: (string | null | undefined)[]): '
   if (policyHit && pfHit) return 'policy';
   return null; // no usable signal — caller falls back to the app's current event
 }
+
+// Same idea as inferEventFromPockets, one level deeper: for a NEW *policy* flow,
+// pre-select Stock Issues vs. Advantage from the aff's own structure. The tell is
+// in the hat/block heading text, NOT the pocket (speech label):
+//   - Advantage affs name their contentions "Advantage 1", "Adv 2", "Economy
+//     Advantage", etc.
+//   - Stock-issues affs use the classic "Inherency" / "Harms" (a.k.a.
+//     "Significance") headings.
+// "Solvency" is deliberately NOT a stock-issues signal — advantage affs have a
+// solvency contention too, so it doesn't distinguish the two. DA/CP/K/T headings
+// are neg/off-case and say nothing about the aff's structure, so they're ignored.
+// Best-effort only — this just picks the default for a toggle the user reviews.
+const ADVANTAGE_HAT_RE = /\badv(antage)?s?\b/i;         // "advantage", "adv", "advantages", "adv 1"
+const STOCK_HAT_RE = /\b(inherency|significance|harms)\b/i;
+
+export function inferVariantFromHats(hats: (string | null | undefined)[]): 'stock-issues' | 'advantage' | null {
+  const text = hats.filter((h): h is string => !!h).join(' | ');
+  const advHit = ADVANTAGE_HAT_RE.test(text);
+  const stockHit = STOCK_HAT_RE.test(text);
+  if (advHit && !stockHit) return 'advantage';
+  if (stockHit && !advHit) return 'stock-issues';
+  if (advHit && stockHit) return 'advantage'; // tie-break: modern policy is overwhelmingly advantage-structured
+  return null; // no usable signal — caller keeps the app's default (stock-issues)
+}
