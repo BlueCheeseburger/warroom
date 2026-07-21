@@ -862,7 +862,8 @@ export default function Documentation() {
             Undoable with <Code>⌘Z</Code>.
           </P>
           <P>
-            <strong>Tab previews:</strong> hover a tab at the bottom and a tooltip shows the top few
+            <strong>Tab previews:</strong> long tab names truncate with an ellipsis instead of
+            overflowing. Hover a tab at the bottom and a tooltip shows its full name plus the top few
             arguments on it, so you can tell your sheets apart at a glance without clicking into each.
           </P>
           <P>
@@ -875,9 +876,16 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> redoes, also
-            available as toolbar buttons. Undo covers text edits, column changes, colors, arrows, and
-            layout switches. It undoes what you <em>changed</em> and leaves you on the tab you're
-            looking at — switching tabs isn't an edit, so it's never something undo puts back.
+            available as toolbar buttons — which grey out when there's nothing left to undo or redo.
+            Undo covers text edits, column changes, colors, arrows, inserted rows, and layout switches.
+            It undoes what you <em>changed</em> and leaves you on the tab you're looking at — switching
+            tabs isn't an edit, so it's never something undo puts back.
+          </P>
+          <P>
+            <strong>Stock Issues vs. Advantage</strong> is only offered as a toggle while the flow is
+            still empty — switching rebuilds the sheets for that layout, so once there's any content
+            the toggle disappears rather than risk wiping tabs you've added, renamed, or filled. (The
+            Policy/PF event toggle isn't shown at all — a flow's event is set when it's created.)
           </P>
           <P>
             <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}
@@ -992,14 +1000,15 @@ export default function Documentation() {
           </P>
           <H3>Choosing a destination</H3>
           <P>
-            The user picks either a <strong>new flow</strong> — Auto Flow guesses policy vs. PF from
+            The user picks either a <strong>new flow</strong> — Auto Flow infers policy vs. PF from
             the uploaded docs' speech-label pockets (<Code>1AC</Code>/<Code>1NC</Code>-style labels vs.
-            "Pro Case"/"Con Rebuttal"-style labels), and for policy also guesses Stock Issues vs.
-            Advantage from the aff's structure (named advantages vs. inherency/harms headings) — both
-            shown with a "guessed" badge and both overridable, falling back to sensible defaults when
-            the docs give no usable signal — or an <strong>existing flow</strong>, in which case
-            Warroom AI is told that flow's actual current column labels and sheet names (which may have
-            been renamed from the defaults) rather than assuming the standard set.
+            "Pro Case"/"Con Rebuttal"-style labels; there's no manual event toggle), and for policy
+            also guesses Stock Issues vs. Advantage from the aff's structure (named advantages vs.
+            inherency/harms headings), shown with a "guessed" badge and overridable — both falling back
+            to sensible defaults when the docs give no usable signal — or an <strong>existing
+            flow</strong>, in which case Warroom AI is told that flow's actual current column labels and
+            sheet names (which may have been renamed from the defaults) rather than assuming the
+            standard set.
           </P>
           <H3>Sorting and review</H3>
           <P>

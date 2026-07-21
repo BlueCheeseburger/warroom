@@ -100,7 +100,6 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const [newEvent, setNewEvent] = useState<'policy' | 'pf'>('policy');
   const [newVariant, setNewVariant] = useState<PolicyVariant>('stock-issues');
   const [newPfOrder, setNewPfOrder] = useState<PFOrder>('pro-first');
-  const [targetInferred, setTargetInferred] = useState(false);
   const [variantInferred, setVariantInferred] = useState(false);
 
   // Classify / question-pause-resume (mirrors CardCutter's runEmphasize/answerQuestion)
@@ -141,13 +140,13 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     }
     setDocs(results);
 
-    // Pre-select event for a NEW flow from the pockets seen across every doc —
-    // the user can still change it on the target step.
+    // Infer the event for a NEW flow from the pockets seen across every doc. The
+    // Policy/PF switcher was removed from the UI, so this inference (falling back
+    // to the app's current event) is what actually decides the layout.
     const allPockets = results.flatMap((d) => d.cards.map((c) => c.pocket));
     const inferred = inferEventFromPockets(allPockets);
     const resolvedEvent = inferred ?? (event === 'pf' ? 'pf' : 'policy');
     setNewEvent(resolvedEvent);
-    setTargetInferred(!!inferred);
 
     // For a policy flow, also pre-select Stock Issues vs. Advantage from the aff's
     // hat/block structure — same "infer a default the user reviews" idea as event.
@@ -483,15 +482,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
 
               {targetMode === 'new' && (
                 <div className="space-y-3 rounded-sm border border-line p-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-ink/55 font-medium">
-                      Event {targetInferred && <span className="text-ink/35 font-normal">(guessed from the doc's speech labels)</span>}
-                    </label>
-                    <div className="flex gap-2">
-                      <button className={`btn text-xs flex-1 ${newEvent === 'policy' ? 'btn-primary' : ''}`} onClick={() => setNewEvent('policy')}>Policy</button>
-                      <button className={`btn text-xs flex-1 ${newEvent === 'pf' ? 'btn-primary' : ''}`} onClick={() => setNewEvent('pf')}>Public Forum</button>
-                    </div>
-                  </div>
+                  {/* Policy vs. PF is inferred from the docs' speech labels, not
+                      toggled here — the event switcher was removed from the UI
+                      (the inference + newEvent state stay wired for the future). */}
                   {newEvent === 'policy' ? (
                     <div className="space-y-1.5">
                       <label className="text-xs text-ink/55 font-medium">

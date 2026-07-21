@@ -235,6 +235,14 @@ export default function FlowView() {
   const history = useRef<FlowSnapshot[]>([]);
   const histIdx = useRef(-1);
   const restoring = useRef(false);
+  // Mirrored to state so the Undo/Redo toolbar buttons can grey out when there's
+  // nothing to undo/redo (the underlying counters are refs, which don't re-render).
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  function syncHistButtons() {
+    setCanUndo(histIdx.current > 0);
+    setCanRedo(histIdx.current < history.current.length - 1);
+  }
 
   // Always-current snapshot for use in async/event callbacks
   const snap = useRef({ sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: 'policy' as 'policy' | 'pf' });
@@ -664,6 +672,7 @@ export default function FlowView() {
     history.current.push(snapshot);
     if (history.current.length > 120) history.current.shift();
     histIdx.current = history.current.length - 1;
+    syncHistButtons();
   }
 
   function restoreSnapshot(s: FlowSnapshot) {
@@ -695,10 +704,10 @@ export default function FlowView() {
   }
 
   function undo() {
-    if (histIdx.current > 0) { histIdx.current -= 1; restoreSnapshot(history.current[histIdx.current]); }
+    if (histIdx.current > 0) { histIdx.current -= 1; restoreSnapshot(history.current[histIdx.current]); syncHistButtons(); }
   }
   function redo() {
-    if (histIdx.current < history.current.length - 1) { histIdx.current += 1; restoreSnapshot(history.current[histIdx.current]); }
+    if (histIdx.current < history.current.length - 1) { histIdx.current += 1; restoreSnapshot(history.current[histIdx.current]); syncHistButtons(); }
   }
 
   function scheduleSave() {
@@ -1260,7 +1269,7 @@ export default function FlowView() {
       })
       .filter((e) => e.text)
       .sort((a, b) => a.c - b.c || a.r - b.r);
-    if (entries.length === 0) return 'Empty tab · double-click to rename';
+    if (entries.length === 0) return 'Empty';
     const seen = new Set<string>();
     const tags: string[] = [];
     for (const e of entries) {
@@ -1268,7 +1277,7 @@ export default function FlowView() {
       if (seen.has(k)) continue;
       seen.add(k);
       tags.push(e.text.length > 54 ? e.text.slice(0, 53) + '…' : e.text);
-      if (tags.length >= 4) break;
+      if (tags.length >= 3) break; // leave room for the tab-name line above
     }
     const more = entries.length - tags.length;
     return tags.join('\n') + (more > 0 ? `\n+${more} more` : '');
@@ -1313,7 +1322,23 @@ export default function FlowView() {
 
   // ── Variant / PF order ────────────────────────────────────────────────────
 
+  // Is there any text anywhere in the flow? (active sheet reads live cellsRef,
+  // other sheets read their saved cells.) Used to hide the variant switcher once
+  // there's content, since switching variant rebuilds sheets from defaults.
+  function flowHasAnyContent(): boolean {
+    const s = snap.current;
+    return s.sheets.some((sh, i) => {
+      const cells = i === s.activeSheetIdx ? cellsRef.current : (sh.cells ?? {});
+      return Object.values(cells).some((v) => typeof v === 'string' && v.trim() !== '');
+    });
+  }
+
   function changeVariant(v: PolicyVariant) {
+    // Refuse once there's content — switching rebuilds sheets from the default
+    // names for the variant, which would drop extra/renamed tabs. The toolbar
+    // hides the switcher in this case; this is the safety net for the brief
+    // window before a re-render catches up.
+    if (flowHasAnyContent()) return;
     // Flush the active sheet's live edits into the sheets array first
     const flushedSheets = flushAndGetSheets();
     // Rebuild with new tab names but carry cell content forward by position
@@ -1443,6 +1468,8 @@ export default function FlowView() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  const flowHasContent = flowHasAnyContent();
+
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
 
@@ -1475,20 +1502,21 @@ export default function FlowView() {
 
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
 
-        {/* Event toggle */}
-        <div className="flex rounded-lg p-0.5" style={{ background: 'var(--mode-toggle-bg)' }}>
-          <SmallBtn label="Policy" active={flowEvent === 'policy'} onClick={() => changeFlowEvent('policy')} />
-          <SmallBtn label="PF" active={flowEvent === 'pf'} onClick={() => changeFlowEvent('pf')} />
-        </div>
+        {/* Policy/PF event switching is intentionally not surfaced in the UI —
+            changeFlowEvent stays wired for future use, but a flow's event is set
+            at creation (and by Auto Flow's inference), not toggled here. */}
 
-        {/* Variant sub-toggle */}
-        {flowEvent === 'policy' && (
+        {/* Stock Issues / Advantage — only while the flow is still empty. Switching
+            variant rebuilds the sheets from the default names for that variant, so
+            offering it once there's content would silently drop extra/renamed tabs
+            and their contents. Once anything's on the flow, this disappears. */}
+        {flowEvent === 'policy' && !flowHasContent && (
           <div className="flex rounded-lg p-0.5" style={{ background: 'var(--mode-toggle-bg)' }}>
             <SmallBtn label="Stock Issues" active={variant === 'stock-issues'} onClick={() => changeVariant('stock-issues')} />
             <SmallBtn label="Advantage" active={variant === 'advantage'} onClick={() => changeVariant('advantage')} />
           </div>
         )}
-        {flowEvent === 'pf' && (
+        {flowEvent === 'pf' && !flowHasContent && (
           <div className="flex rounded-lg p-0.5" style={{ background: 'var(--mode-toggle-bg)' }}>
             <SmallBtn label="Pro First" active={pfOrder === 'pro-first'} onClick={() => changePfOrder('pro-first')} />
             <SmallBtn label="Con First" active={pfOrder === 'con-first'} onClick={() => changePfOrder('con-first')} />
@@ -1544,8 +1572,8 @@ export default function FlowView() {
         <ToolDivider />
 
         {/* Undo / Redo */}
-        <ToolBtn onClick={undo} title="Undo (⌘Z)"><IcoUndo /></ToolBtn>
-        <ToolBtn onClick={redo} title="Redo (⌘⇧Z)"><IcoRedo /></ToolBtn>
+        <ToolBtn onClick={undo} title="Undo (⌘Z)" disabled={!canUndo}><IcoUndo /></ToolBtn>
+        <ToolBtn onClick={redo} title="Redo (⌘⇧Z)" disabled={!canRedo}><IcoRedo /></ToolBtn>
 
         <ToolDivider />
 
@@ -2120,12 +2148,15 @@ function IcoAnalyze() {
 // else in Warroom. Every flow-editor button routes through this now, either via
 // ToolBtn below or by wrapping directly. A short show-delay keeps a dense toolbar
 // from flashing a tooltip for every icon the cursor passes over.
-function FlowTooltip({ text, children, up = false, disabled, wide = false }: {
+function FlowTooltip({ text, children, up = false, disabled, wide = false, className }: {
   text?: string; children: React.ReactNode; up?: boolean; disabled?: boolean;
   // `wide`: for multi-line content (e.g. a tab's content summary) — wider box,
   // left-aligned, and preserves the `\n`s in `text` as separate lines instead of
   // wrapping everything into one narrow column.
   wide?: boolean;
+  // Extra classes for the wrapper span — e.g. `flex-1 min-w-0` so a truncating
+  // child (a long tab name) can actually shrink instead of overflowing.
+  className?: string;
 }) {
   const [show, setShow] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2140,6 +2171,7 @@ function FlowTooltip({ text, children, up = false, disabled, wide = false }: {
   }
   return (
     <span
+      className={className}
       style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
@@ -2283,9 +2315,9 @@ function SheetTab({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <FlowTooltip text={summary ?? 'Double-click to rename'} up wide>
+        <FlowTooltip text={summary ? `${name}\n${summary}` : name} up wide className="flex-1 min-w-0">
           <button
-            className="flex-1 text-left truncate text-xs font-medium px-3"
+            className="w-full text-left truncate text-xs font-medium px-3"
             style={{ color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}
             onClick={onClick}
             onDoubleClick={onDoubleClick}

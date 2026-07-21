@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { DB, emptyDB, ChatUser, ChatTeam, ChatMember } from '../types';
 import { loadDB, saveDB } from '../utils/storage';
 
-export type Mode = 'prep' | 'round';
 export type Theme = 'system' | 'light' | 'dark';
 /** Visual direction (look & feel) — independent of light/dark mode. */
 export type Direction = 'calm' | 'paper' | 'editorial';
@@ -60,7 +59,6 @@ export type AgentSearchFn = (query: string) => Promise<string>;
 
 interface AppState {
   db: DB;
-  mode: Mode;
   view: View;
   theme: Theme;
   direction: Direction;
@@ -80,7 +78,6 @@ interface AppState {
   defaultSharePermission: 'edit' | 'view';
   navHistory: View[];
   navHistoryIndex: number;
-  setMode: (m: Mode) => void;
   setView: (v: View) => void;
   goBack: () => void;
   goForward: () => void;
