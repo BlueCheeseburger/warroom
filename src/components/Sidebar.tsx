@@ -5,6 +5,7 @@ import { importFlowFromXlsx } from '../utils/flowImport';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
+  ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
 } from '../utils/caseFolders';
 import { buildCaseItems, CaseItem } from '../utils/caseItems';
 
@@ -771,8 +772,10 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
           role="button" tabIndex={0}
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(); } }}
-          className="shrink-0 flex items-center justify-center"
-          style={{ width: 9 }}
+          className="shrink-0 flex items-center justify-center rounded transition"
+          style={{ width: 18, height: 18, margin: '0 -4.5px' }}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
         >
           <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
             className="transition-transform duration-150"
@@ -866,13 +869,35 @@ function CasesSection({ view, setView, db, mode }: {
     setDropId(null);
     const d = dragging;
     setDragging(null);
-    if (!d || !canDrop(target)) return;
-    if (d.kind === 'item') update((data) => moveItem(data, d.id, target));
-    else update((data) => moveFolder(data, d.id, target));
+    if (d) {
+      if (!canDrop(target)) return;
+      if (d.kind === 'item') update((data) => moveItem(data, d.id, target));
+      else update((data) => moveFolder(data, d.id, target));
+      return;
+    }
+    // No local drag state — this drop came from the Cases grid (a separate React
+    // tree, so it never touched `dragging` here). Read the real payload off
+    // dataTransfer instead, the one thing both trees can see.
+    const itemKey = e.dataTransfer.getData(ITEM_DRAG_MIME);
+    if (itemKey) { update((data) => moveItem(data, itemKey, target)); return; }
+    const folderId = e.dataTransfer.getData(FOLDER_DRAG_MIME);
+    if (folderId && (target === null || !isSelfOrDescendant(folders, folderId, target))) {
+      update((data) => moveFolder(data, folderId, target));
+    }
   }
 
   function onDragOverTarget(e: React.DragEvent, target: string | null) {
-    if (!canDrop(target)) return;
+    if (dragging) {
+      if (!canDrop(target)) return;
+    } else {
+      // No local drag — likely a cross-tree drag from the grid. dataTransfer's
+      // actual values aren't readable until drop, but `.types` already lists
+      // which MIME types are present, which is enough to decide whether to
+      // accept the hover. (A folder-onto-its-own-descendant drag from the grid
+      // can't be caught here — only at drop, once the id is readable.)
+      const types = e.dataTransfer.types;
+      if (!types.includes(ITEM_DRAG_MIME) && !types.includes(FOLDER_DRAG_MIME)) return;
+    }
     e.preventDefault(); // without this the drop event never fires
     e.stopPropagation();
     setDropId(target ?? TOP_LEVEL_DROP);
@@ -880,23 +905,86 @@ function CasesSection({ view, setView, db, mode }: {
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
     e.stopPropagation();
-    setDragging(payload);
+    setDragging(payload); // drives this tree's own hover/opacity feedback
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', payload.id);
+    // The real payload goes on dataTransfer (not just React state) so a drop
+    // handler in the Cases grid — a separate tree — can read it too.
+    e.dataTransfer.setData(payload.kind === 'item' ? ITEM_DRAG_MIME : FOLDER_DRAG_MIME, payload.id);
+  }
+
+  // ── Multi-select ─────────────────────────────────────────────────────────
+  // Cmd/Ctrl+click toggles an item in/out of the selection without navigating,
+  // so the sidebar keeps its normal "single click opens it" behavior for the
+  // common case. Selection drives a small bulk-action bar (delete / move to).
+  const { update: updateDb } = useApp();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+  function clearSelection() { setSelected(new Set()); }
+
+  function bulkDelete() {
+    const keys = new Set(selected);
+    const docPaths = items.filter((i) => keys.has(i.key) && i.kind === 'speech-doc').map((i) => i.path!);
+    const caseIds = items.filter((i) => keys.has(i.key) && i.kind !== 'speech-doc').map((i) => i.id);
+    for (const p of docPaths) removeFromRecents(p);
+    if (docPaths.length) bumpDocs();
+    if (caseIds.length) {
+      updateDb((d) => {
+        const cases = { ...d.cases };
+        const blocks = { ...d.blocks };
+        for (const id of caseIds) {
+          delete cases[id];
+          for (const b of Object.values(d.blocks)) { if (b.caseId === id) delete blocks[b.id]; }
+        }
+        return { ...d, cases, blocks };
+      });
+    }
+    if (view.kind === 'speech-doc' && docPaths.includes((view as any).docPath)) setView({ kind: 'home' });
+    if (view.kind === 'case' && caseIds.includes((view as any).caseId)) setView({ kind: 'home' });
+    clearSelection();
+  }
+
+  function bulkMoveTo(folderId: string | null) {
+    const keys = selected;
+    update((d) => {
+      let next = d;
+      for (const key of keys) next = moveItem(next, key, folderId);
+      return next;
+    });
+    clearSelection();
   }
 
   function renderItem(item: CaseItem, depth: number) {
     const isDoc = item.kind === 'speech-doc';
+    const isSelected = selected.has(item.key);
     return (
       <div
         key={item.key}
-        style={{ paddingLeft: depth * INDENT_PX, opacity: dragging?.id === item.key ? 0.45 : 1 }}
+        style={{
+          paddingLeft: depth * INDENT_PX,
+          opacity: dragging?.id === item.key ? 0.45 : 1,
+          background: isSelected ? 'var(--nav-hover-bg)' : undefined,
+          borderRadius: 8,
+        }}
         draggable
         onDragStart={(e) => startDrag(e, { kind: 'item', id: item.key })}
         onDragEnd={() => { setDragging(null); setDropId(null); }}
+        // Cmd/Ctrl+click toggles selection instead of navigating. Capture phase so
+        // this runs before NavItem's own button onClick and can swallow the event.
+        onClickCapture={(e) => {
+          if (!e.metaKey && !e.ctrlKey) return;
+          e.preventDefault();
+          e.stopPropagation();
+          toggleSelect(item.key);
+        }}
       >
         <NavItem
-          active={isItemActive(item)}
+          active={isItemActive(item) || isSelected}
           onClick={() => setView(isDoc
             ? { kind: 'speech-doc', docPath: item.path }
             : { kind: 'case', caseId: item.id })}
@@ -961,6 +1049,15 @@ function CasesSection({ view, setView, db, mode }: {
       onTitleClick={() => setView({ kind: 'cases-grid' })}
       action={mode === 'prep' ? () => setView({ kind: 'speech-doc' }) : undefined} actionLabel="+"
     >
+      {selected.size > 0 && (
+        <SelectionBar
+          count={selected.size}
+          folderChoices={folderChoices}
+          onMove={bulkMoveTo}
+          onDelete={bulkDelete}
+          onClear={clearSelection}
+        />
+      )}
       {/* Anything not dropped on a folder row falls through to here = top level. */}
       <div
         onDragOver={(e) => onDragOverTarget(e, null)}
@@ -977,6 +1074,74 @@ function CasesSection({ view, setView, db, mode }: {
         {looseItems.map((i) => renderItem(i, 0))}
       </div>
     </Section>
+  );
+}
+
+/** Bulk-action bar shown above the tree while a multi-selection (Cmd/Ctrl+click) is active. */
+function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
+  count: number;
+  folderChoices: { id: string; label: string }[];
+  onMove: (folderId: string | null) => void;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1 rounded-lg text-[11px]"
+      style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)' }}>
+      <span className="font-semibold pl-0.5">{count} selected</span>
+      <div className="flex-1" />
+      <div className="relative" ref={menuRef}>
+        <button onClick={() => setMenuOpen((v) => !v)}
+          className="px-2 py-1 rounded-md transition font-medium"
+          style={{ background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))' }}>
+          Move to
+        </button>
+        {menuOpen && (
+          <div className="glass-popover absolute right-0 top-full mt-1 z-50 rounded-lg py-1 text-xs shadow-xl"
+            style={{ minWidth: 170, maxWidth: 260, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              <button onClick={() => { onMove(null); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 transition block"
+                style={{ color: 'var(--nav-active-color)' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                Top level (no folder)
+              </button>
+              {folderChoices.map((f) => (
+                <button key={f.id} onClick={() => { onMove(f.id); setMenuOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 transition truncate block" title={f.label}
+                  style={{ color: 'var(--nav-active-color)' }}
+                  onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                  onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <button onClick={onDelete} className="px-2 py-1 rounded-md transition font-medium" style={{ color: 'rgb(var(--danger-rgb))' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgb(var(--danger-rgb) / 0.15)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        Delete
+      </button>
+      <button onClick={onClear} title="Clear selection"
+        className="w-5 h-5 flex items-center justify-center rounded-md transition"
+        style={{ color: 'var(--nav-active-color)' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        ✕
+      </button>
+    </div>
   );
 }
 

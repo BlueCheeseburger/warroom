@@ -15,14 +15,15 @@ import {
   moveItem,
   pruneAssignments,
   CaseFolder,
+  ITEM_DRAG_MIME as ITEM_MIME,
+  FOLDER_DRAG_MIME as FOLDER_MIME,
 } from '../utils/caseFolders';
 import CasePreview from './CasePreview';
 
-// Two MIME types rather than one payload with a discriminator: dataTransfer.getData
-// is unreadable during dragover, so the *type* is the only thing a drop target can
-// inspect while deciding whether to accept.
-const ITEM_MIME = 'application/x-warroom-item';
-const FOLDER_MIME = 'application/x-warroom-folder';
+// ITEM_MIME/FOLDER_MIME are imported (aliased) from caseFolders.ts rather than
+// declared locally — the sidebar tree is a separate React tree that also drags
+// items/folders onto this grid and vice versa, so both sides must agree on the
+// exact same MIME strings for a cross-view drop to be readable at all.
 
 const KIND_LABEL: Record<CaseItemKind, string> = {
   case: 'Case',
@@ -136,7 +137,18 @@ export default function CasesGrid() {
   }
 
   function handleDragOver(e: React.DragEvent, targetId: string | null, token: string) {
-    if (!canDrop(targetId)) return;
+    if (drag) {
+      if (!canDrop(targetId)) return;
+    } else {
+      // No local drag — this hover is likely a cross-tree drag from the sidebar
+      // (a separate React tree, so it never touched `drag` here). dataTransfer's
+      // values aren't readable until drop, but `.types` lists which MIME types
+      // are present, which is enough to accept the hover. (A folder dragged onto
+      // its own descendant can't be caught until drop, where the id is readable —
+      // handleDrop's moveFolder call already no-ops on that case internally.)
+      const types = e.dataTransfer.types;
+      if (!types.includes(ITEM_MIME) && !types.includes(FOLDER_MIME)) return;
+    }
     e.preventDefault(); // without this the drop event never fires
     e.dataTransfer.dropEffect = 'move';
     setDropTarget(token);

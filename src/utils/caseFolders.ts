@@ -15,6 +15,18 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
+/**
+ * Shared HTML5 drag-and-drop MIME types for items/folders. The sidebar tree and
+ * the Cases grid are separate React trees, each with their own local drag state
+ * for visual feedback (hover highlight, drag opacity) — but that local state is
+ * invisible across trees. The only thing a drop handler in ONE tree can see about
+ * a drag that started in the OTHER is whatever's on the native `DataTransfer`, so
+ * both trees must read and write the exact same MIME strings for cross-view drags
+ * (grid tile -> sidebar folder, or vice versa) to work at all.
+ */
+export const ITEM_DRAG_MIME = 'application/x-warroom-item';
+export const FOLDER_DRAG_MIME = 'application/x-warroom-folder';
+
 export interface CaseFolder {
   id: string;
   name: string;
