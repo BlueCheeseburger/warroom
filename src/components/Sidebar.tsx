@@ -222,7 +222,7 @@ export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [driveConfigured, setDriveConfigured] = useState(false);
   const [importing, setImporting] = useState(false);
-  const { db, view, setView, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
+  const { db, view, setView, event, flowsIndex, setFlowsIndex } = useApp();
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});
@@ -298,7 +298,6 @@ export default function Sidebar() {
       {collapsed ? (
         <CollapsedNav
           view={view} setView={setView}
-          chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           flowsIndex={flowsIndex} createFlow={createFlow}
           toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
         />
@@ -306,8 +305,7 @@ export default function Sidebar() {
         <ExpandedNav
           view={view} setView={setView}
           tournaments={tournaments} opponents={opponents}
-          flowsIndex={flowsIndex} busyViews={busyViews}
-          chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
+          flowsIndex={flowsIndex}
           createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
           importFlow={importFlow} importing={importing}
           db={db} toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
@@ -319,7 +317,7 @@ export default function Sidebar() {
 
 // ── Collapsed navigation (icons only) ────────────────────────────────────────
 
-function CollapsedNav({ view, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
+function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
   const { setSearchOpen } = useApp();
   const isHome       = view.kind === 'home';
   const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid';
@@ -328,7 +326,6 @@ function CollapsedNav({ view, setView, chatOpen, setChatOpen, unreadCount, flows
   const isTournament = view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
   const isFlow       = view.kind === 'flow';
   const isDrive      = view.kind === 'gdrive';
-  const isSpeech     = view.kind === 'block' && (view as any).blockId === '__speech__';
   const isSettings   = view.kind === 'settings';
   const isTopics     = view.kind === 'topics';
 
@@ -385,21 +382,6 @@ function CollapsedNav({ view, setView, chatOpen, setChatOpen, unreadCount, flows
         <CIcon label="Topics" active={isTopics} onClick={() => setView({ kind: 'topics' })}>
           <IcoTopics />
         </CIcon>
-
-        <CIcon label="Speech doc" active={isSpeech} onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}>
-          <IcoSpeechDoc />
-        </CIcon>
-        <CIcon label={chatOpen ? 'Close chat' : 'Chat'} active={chatOpen} onClick={() => setChatOpen(true)}>
-          <span className="relative inline-flex">
-            <IcoChat />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full text-[8px] font-bold text-white flex items-center justify-center"
-                style={{ background: '#b3261e' }}>
-                {unreadCount > 9 ? '9' : unreadCount}
-              </span>
-            )}
-          </span>
-        </CIcon>
       </nav>
 
       {/* Settings at bottom */}
@@ -444,7 +426,7 @@ function CIcon({ label, active, onClick, children }: {
 
 function ExpandedNav({
   view, setView, tournaments, opponents,
-  flowsIndex, busyViews, chatOpen, setChatOpen, unreadCount,
+  flowsIndex,
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
   const judges = Object.values(db.judges ?? {});
@@ -605,25 +587,6 @@ function ExpandedNav({
               )}
             </NavItem>
           ))}
-        </Section>
-
-        <Section title="Speech doc" icon={<IcoSpeechDoc />}>
-          <NavItem
-            active={view.kind === 'block' && (view as any).blockId === '__speech__'}
-            onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}
-            busyLabel={busyViews['speech-doc']}>Open speech doc</NavItem>
-        </Section>
-
-        <Section title="Chat" icon={<IcoChat />}>
-          <NavItem active={chatOpen} onClick={() => setChatOpen(!chatOpen)}>
-            <span className="truncate">{chatOpen ? 'Close chat' : 'Open chat'}</span>
-            {unreadCount > 0 && (
-              <span className="ml-auto min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                style={{ background: '#b3261e' }}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </NavItem>
         </Section>
 
         {/* NSDA Topics — at the bottom of the nav */}
