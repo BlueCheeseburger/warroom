@@ -46,6 +46,23 @@ export function readSpeechDocRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(SPEECH_RECENTS_KEY) ?? '[]'); } catch { return []; }
 }
 
+function writeSpeechDocRecents(next: RecentDoc[]) {
+  localStorage.setItem(SPEECH_RECENTS_KEY, JSON.stringify(next));
+  // Sidebar.tsx and SpeechDocViewer.tsx both listen for this to re-read recents —
+  // a same-tab localStorage write doesn't fire a native 'storage' event, so it has
+  // to be dispatched by hand for other mounted components to notice.
+  window.dispatchEvent(new StorageEvent('storage', { key: SPEECH_RECENTS_KEY, newValue: JSON.stringify(next) }));
+}
+
+/** Remove an imported speech doc from the library. Deletes nothing on disk — only the recents entry. */
+export function removeFromRecents(path: string) {
+  writeSpeechDocRecents(readSpeechDocRecents().filter((r) => r.path !== path));
+}
+
+export function renameInRecents(path: string, displayName: string) {
+  writeSpeechDocRecents(readSpeechDocRecents().map((r) => (r.path === path ? { ...r, name: displayName } : r)));
+}
+
 /**
  * Aff/neg for imported docs, from the cache the home Cases tile fills in (it tallies
  * 1AC/2AC/1AR/2AR against 1NC/2NC/1NR/2NR). Read-only here: the grid shows a side
@@ -87,4 +104,17 @@ export function buildCaseItems(db: DB): CaseItem[] {
   }
 
   return items;
+}
+
+/**
+ * Delete a case (yours or an imported OC one) and every block that belonged to
+ * it. Pure — callers apply it via `update(db => deleteCaseAndBlocks(db, id))`.
+ * Kept here so the sidebar, the grid, and any future bulk-action UI can't drift
+ * out of sync on what "delete a case" actually does.
+ */
+export function deleteCaseAndBlocks(db: DB, caseId: string): DB {
+  const { [caseId]: _removed, ...cases } = db.cases;
+  const blocks = { ...db.blocks };
+  for (const b of Object.values(db.blocks)) { if (b.caseId === caseId) delete blocks[b.id]; }
+  return { ...db, cases, blocks };
 }

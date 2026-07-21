@@ -7,7 +7,7 @@ import {
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
   ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
 } from '../utils/caseFolders';
-import { buildCaseItems, CaseItem } from '../utils/caseItems';
+import { buildCaseItems, CaseItem, deleteCaseAndBlocks } from '../utils/caseItems';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string; cardCount?: number }
@@ -934,15 +934,7 @@ function CasesSection({ view, setView, db, mode }: {
     for (const p of docPaths) removeFromRecents(p);
     if (docPaths.length) bumpDocs();
     if (caseIds.length) {
-      updateDb((d) => {
-        const cases = { ...d.cases };
-        const blocks = { ...d.blocks };
-        for (const id of caseIds) {
-          delete cases[id];
-          for (const b of Object.values(d.blocks)) { if (b.caseId === id) delete blocks[b.id]; }
-        }
-        return { ...d, cases, blocks };
-      });
+      updateDb((d) => caseIds.reduce((acc, id) => deleteCaseAndBlocks(acc, id), d));
     }
     if (view.kind === 'speech-doc' && docPaths.includes((view as any).docPath)) setView({ kind: 'home' });
     if (view.kind === 'case' && caseIds.includes((view as any).caseId)) setView({ kind: 'home' });
