@@ -25,9 +25,22 @@ export interface ExtractedFlowCard {
   block: string | null;
   tag: string;
   cite: string;
+  // Only populated when extractFlowCardsFromXml is called with includeBody=true
+  // — the card's evidence body (every Normal paragraph after the cite, up to the
+  // next heading), capped. Used ONLY by the opt-in AI-summary path; the default
+  // Auto Flow path never requests it, preserving the "routes tags, never reads
+  // bodies" invariant. Even when requested, bodies stay in the main process (the
+  // summarize handler consumes them and returns only short summaries).
+  body?: string;
 }
 
-export function extractFlowCardsFromXml(xml: string, headingLevels: Map<string, number>): ExtractedFlowCard[] {
+const BODY_CAP = 4000; // chars per card — enough for a good summary, bounds payload
+
+export function extractFlowCardsFromXml(
+  xml: string,
+  headingLevels: Map<string, number>,
+  includeBody = false,
+): ExtractedFlowCard[] {
   const strip = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
   const getStyle = (p: string) => (p.match(/w:pStyle\s+w:val="([^"]+)"/) ?? [])[1] ?? 'Normal';
   const levelOfStyle = (style: string) => headingLevels.get(style) ?? 0;
@@ -74,6 +87,9 @@ export function extractFlowCardsFromXml(xml: string, headingLevels: Map<string, 
   const cards: ExtractedFlowCard[] = [];
   let pendingTag: string | null = null;
   let pendingAncestors: typeof ancestors | null = null;
+  // When includeBody, the card currently accumulating body paragraphs (all the
+  // Normal paragraphs after its cite, up to the next heading).
+  let bodyCard: ExtractedFlowCard | null = null;
 
   for (const paraMatch of paras) {
     const p = paraMatch[0];
@@ -83,9 +99,11 @@ export function extractFlowCardsFromXml(xml: string, headingLevels: Map<string, 
 
     if (level > 0) {
       // A new heading closes out any tag still waiting for its cite — a bare
-      // tag with nothing under it is a label, not a card (drop it).
+      // tag with nothing under it is a label, not a card (drop it) — and ends
+      // the previous card's body accumulation.
       pendingTag = null;
       pendingAncestors = null;
+      bodyCard = null;
 
       const depth = depthOf(level);
       if (depth === tagDepth) {
@@ -101,12 +119,18 @@ export function extractFlowCardsFromXml(xml: string, headingLevels: Map<string, 
         }
       }
     } else if (pendingTag !== null && pendingAncestors) {
-      cards.push({ ...pendingAncestors, tag: pendingTag, cite: text });
+      // First Normal paragraph after a tag = the cite.
+      const card: ExtractedFlowCard = { ...pendingAncestors, tag: pendingTag, cite: text };
+      if (includeBody) card.body = '';
+      cards.push(card);
+      bodyCard = includeBody ? card : null;
       pendingTag = null;
       pendingAncestors = null;
+    } else if (includeBody && bodyCard && (bodyCard.body?.length ?? 0) < BODY_CAP) {
+      // Subsequent Normal paragraphs are the card body — collected only when
+      // includeBody is set (the opt-in summary path).
+      bodyCard.body = ((bodyCard.body ? bodyCard.body + ' ' : '') + text).slice(0, BODY_CAP);
     }
-    // Non-heading paragraphs beyond the cite (the card body) are the very
-    // thing this module must never read — deliberately not walked further.
   }
 
   return cards;

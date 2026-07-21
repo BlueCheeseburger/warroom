@@ -61,6 +61,10 @@ export interface SheetData {
   name: string;
   cells: Record<string, string>;
   arrows?: FlowArrow[];
+  // Cell keys ("ri-ci") whose content is an AI-generated summary (Auto Flow's
+  // opt-in summary mode). Rendered with the blue→pink AI ring until the user
+  // edits the cell, at which point the key is dropped (the content is now theirs).
+  aiCells?: string[];
 }
 
 // Exported so features that write into a flow from outside the editor (Auto
@@ -726,10 +730,24 @@ export default function FlowView() {
 
   // ── Cell input / keyboard ─────────────────────────────────────────────────
 
+  // Drop a cell from the active sheet's AI-summary set (removes its ring) — once
+  // the user edits an AI-written cell, the content is theirs, not the AI's.
+  function clearAiCell(key: string) {
+    const s = snap.current;
+    const sh = s.sheets[s.activeSheetIdx];
+    if (!sh?.aiCells?.includes(key)) return;
+    const updated = s.sheets.map((x, i) =>
+      i === s.activeSheetIdx ? { ...x, aiCells: (x.aiCells ?? []).filter((k) => k !== key) } : x
+    );
+    setSheets(updated);
+    snap.current = { ...snap.current, sheets: updated };
+  }
+
   function handleInput(ri: number, ci: number, e: React.FormEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     const key = `${ri}-${ci}`;
     cellsRef.current[key] = el.innerHTML;
+    clearAiCell(key);
     pushLiveCell(key, el.innerHTML);
     scheduleSave();
   }
@@ -904,6 +922,18 @@ export default function FlowView() {
     if (targetEl) targetEl.innerHTML = cellToHtml(a);
     pushLiveCell(key, cellToHtml(b));
     pushLiveCell(targetKey, cellToHtml(a));
+    // Swap the AI-ring membership so it follows the moved content.
+    const sh = snap.current.sheets[snap.current.activeSheetIdx];
+    const ai = sh?.aiCells ?? [];
+    const keyAi = ai.includes(key), targetAi = ai.includes(targetKey);
+    if (keyAi !== targetAi) {
+      const next = ai.filter((k) => k !== key && k !== targetKey);
+      if (keyAi) next.push(targetKey);
+      if (targetAi) next.push(key);
+      const updated = snap.current.sheets.map((x, i) => i === snap.current.activeSheetIdx ? { ...x, aiCells: next } : x);
+      setSheets(updated);
+      snap.current = { ...snap.current, sheets: updated };
+    }
     scheduleSave();
   }
 
@@ -932,7 +962,11 @@ export default function FlowView() {
     const s = snap.current;
     const updated = s.sheets.map((sh, i) =>
       i === s.activeSheetIdx
-        ? { ...sh, cells: { ...cells }, arrows: (sh.arrows ?? []).map((a) => ({ ...a, from: bump(a.from), to: bump(a.to) })) }
+        ? {
+            ...sh, cells: { ...cells },
+            arrows: (sh.arrows ?? []).map((a) => ({ ...a, from: bump(a.from), to: bump(a.to) })),
+            aiCells: sh.aiCells?.map(bump),
+          }
         : sh
     );
     setSheets(updated);
@@ -1469,6 +1503,8 @@ export default function FlowView() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const flowHasContent = flowHasAnyContent();
+  // AI-summary cells on the active sheet — get the blue→pink AI ring.
+  const aiCellSet = new Set(activeSheet?.aiCells ?? []);
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
@@ -1916,10 +1952,11 @@ export default function FlowView() {
                 const isHovered = hoveredCell?.ri === ri && hoveredCell?.ci === ci;
                 const isArrowSrc = drawMode && arrowFrom === cellKey;
                 const remoteCur = remoteCursorMap.get(cellKey);
+                const isAiCell = aiCellSet.has(cellKey);
                 return (
                   <div
                     key={ci}
-                    className="relative"
+                    className={`relative${isAiCell ? ' ai-glow-ring' : ''}`}
                     style={{
                       background: colBg(colColor(ci), dark, false),
                       borderRight: ci < columns.length - 1 ? '1px solid var(--border-subtle)' : 'none',

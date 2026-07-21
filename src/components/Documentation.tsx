@@ -1026,6 +1026,21 @@ export default function Documentation() {
             <strong>NEW</strong>), showing each card's tag and its "Sheet → Column" destination with a
             checkbox to drop any placement before it's written.
           </P>
+          <H3>Optional AI card summaries</H3>
+          <P>
+            A checkbox on the destination step (<strong>off by default</strong>) swaps each card's
+            tagline + cite for a <strong>short AI summary of the card</strong>, written from both its
+            tagline and its actual evidence, and forced to be <em>fewer words than the tagline itself</em>
+            {' '}— Warroom AI is given the tagline's exact word count as a ceiling, and the result is
+            hard-truncated if it overshoots anyway. The word counts are computed the moment the docs are
+            uploaded, so nothing has to be recalculated when the option is switched on.
+          </P>
+          <P>
+            This is the one part of Auto Flow that reads card bodies, and they never leave the main
+            process — the evidence is re-read there, summarized, and only the short summaries come back.
+            Summarized cells carry the blue/pink <strong>AI ring</strong> in the flow, which clears as
+            soon as you edit that cell. It costs an extra Warroom AI call, which is why it's opt-in.
+          </P>
           <H3>Writing into the flow</H3>
           <P>
             Accepted placements are written straight to the flow's stored data (not through the live

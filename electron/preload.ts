@@ -41,6 +41,7 @@ const api = {
   dialog: {
     openFile: (accept: string[]) => ipcRenderer.invoke('dialog:openFile', accept),
     openFiles: (accept: string[]) => ipcRenderer.invoke('dialog:openFiles', accept),
+    openFolderOfDocx: () => ipcRenderer.invoke('dialog:openFolderOfDocx'),
     /**
      * Resolve OS-dragged File objects to real paths and trust them for the
      * file-read IPC handlers.
@@ -78,6 +79,10 @@ const api = {
       clarifications: { question: string; answer: string }[];
     }) => ipcRenderer.invoke('ai:analyzeRound', params),
     autoFlowClassify: (params: any) => ipcRenderer.invoke('ai:autoFlowClassify', params),
+    autoFlowSummarize: (params: {
+      files: { fileName: string; path: string }[];
+      cards: { fileName: string; tag: string; maxWords: number }[];
+    }) => ipcRenderer.invoke('ai:autoFlowSummarize', params),
     readImageAsDataUrl: (filePath: string) => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
     suggestBlocks: (positions: string, blocks: { id: string; title: string }[]) =>
       ipcRenderer.invoke('ai:suggestBlocks', positions, blocks),

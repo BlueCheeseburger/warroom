@@ -8,7 +8,7 @@ import type { TouchBarButton, TouchBarLabel } from 'electron';
 // so `TouchBarButton` means "the type" in an annotation and "the constructor"
 // as a value, same as this file's other type/value name pairs.)
 const { TouchBarButton, TouchBarLabel, TouchBarSpacer } = TouchBar;
-import { join, normalize, basename, sep } from 'path';
+import { join, normalize, basename, sep, extname } from 'path';
 import { promises as fs, existsSync } from 'fs';
 import { execFile, spawn } from 'child_process';
 import https from 'https';
@@ -1649,6 +1649,73 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   return { ok: true, placements };
 });
 
+// Opt-in Auto Flow summaries: for each card, an ultra-short AI summary built from
+// the tag AND the card body, capped to strictly fewer words than the tag itself.
+// The card bodies are re-extracted here (with includeBody) and NEVER leave the
+// main process — only the short summaries are returned. maxWords per card is the
+// tag's own word count, preloaded in the renderer at upload time.
+ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
+  files: { fileName: string; path: string }[];
+  cards: { fileName: string; tag: string; maxWords: number }[];
+}) => {
+  try {
+    const files = params.files ?? [];
+    const cards = params.cards ?? [];
+    if (cards.length === 0) return sbOk({ summaries: [] });
+
+    const JSZip = require('jszip');
+    const keyOf = (fileName: string, tag: string) => `${fileName} ${tag.trim().toLowerCase()}`;
+    const bodyByKey = new Map<string, string>();
+    for (const f of files) {
+      try {
+        checkPath(f.path);
+        const buf = await fs.readFile(f.path);
+        const zip = await JSZip.loadAsync(buf);
+        const xml: string = await zip.file('word/document.xml')?.async('string') ?? '';
+        if (!xml) continue;
+        const stylesXml: string = await zip.file('word/styles.xml')?.async('string') ?? '';
+        const headingLevels = resolveHeadingStyles(stylesXml);
+        if (headingLevels.size === 0) {
+          headingLevels.set('Heading1', 1); headingLevels.set('Heading2', 2);
+          headingLevels.set('Heading3', 3); headingLevels.set('Heading4', 4);
+        }
+        for (const c of extractFlowCardsFromXml(xml, headingLevels, true)) {
+          bodyByKey.set(keyOf(f.fileName, c.tag), c.body ?? '');
+        }
+      } catch { /* skip a file we can't re-read; its cards summarize from the tag alone */ }
+    }
+
+    const items = cards.map((c) => ({
+      tag: c.tag,
+      body: bodyByKey.get(keyOf(c.fileName, c.tag)) ?? '',
+      maxWords: Math.max(2, Number(c.maxWords) || 2),
+    }));
+
+    const prompt = await renderPrompt('auto_flow_summarize', {
+      CARDS_JSON: JSON.stringify(items).slice(0, 100000),
+    });
+    const parsed = parseJsonLoose(await callAI(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
+    const raw = Array.isArray(parsed.summaries) ? parsed.summaries : [];
+    const byTag = new Map<string, string>();
+    for (const s of raw) {
+      if (s && typeof s.tag === 'string' && typeof s.summary === 'string') byTag.set(s.tag.trim().toLowerCase(), s.summary.trim());
+    }
+
+    const summaries = cards.map((c) => {
+      let summary = byTag.get(c.tag.trim().toLowerCase()) ?? '';
+      // Enforce the word cap defensively (strictly fewer than the tag's words),
+      // in case the model overshoots — hard-truncate rather than trust it.
+      const cap = Math.max(1, (Number(c.maxWords) || 2) - 1);
+      if (summary) {
+        const words = summary.split(/\s+/).filter(Boolean);
+        if (words.length > cap) summary = words.slice(0, cap).join(' ');
+      }
+      return { fileName: c.fileName, tag: c.tag, summary };
+    });
+    return sbOk({ summaries });
+  } catch (e: any) { return sbErr(e.message); }
+});
+
 // Extracts just the "guaranteed searchable" text from a docx: every heading
 // (pocket/hat/block/tag) plus the cite line immediately following each tag
 // (author, quals, date, publication — see DEBATE_DOC_STRUCTURE.md §2). Used so
@@ -1837,6 +1904,49 @@ ipcMain.handle('dialog:openFiles', async (_e, accept: string[]) => {
     persistTrustedPath(p);
   }
   return result.filePaths;
+});
+
+// Directory picker for bulk speech-doc import — walks the chosen folder
+// recursively and trusts every .docx found, so the renderer can read them all
+// immediately via fs:readDocxBytes without a second per-file trust round trip.
+ipcMain.handle('dialog:openFolderOfDocx', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const rootDir = result.filePaths[0];
+
+  const DOCX_WALK_CAP = 2000; // safety net against a user picking their entire home folder
+  const paths: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    if (paths.length >= DOCX_WALK_CAP) return;
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable dir (permissions, symlink loop, etc.) — skip rather than fail the whole walk
+    }
+    for (const entry of entries) {
+      if (paths.length >= DOCX_WALK_CAP) return;
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue; // skip dotfiles/dirs and stray node_modules
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile() && extname(entry.name).toLowerCase() === '.docx') {
+        paths.push(full);
+      }
+    }
+  }
+  await walk(rootDir);
+
+  // Same trust anchor as dialog:openFile/openFiles: the user explicitly picked
+  // this folder through a native dialog, so every .docx found inside it is
+  // trusted the same way individually-picked files are.
+  for (const p of paths) {
+    trustPath(p);
+    await persistTrustedPath(p);
+  }
+
+  return { folderName: basename(rootDir), paths };
 });
 
 // Trust paths recovered from a genuine OS drag-drop.

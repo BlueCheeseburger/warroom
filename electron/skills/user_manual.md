@@ -316,6 +316,8 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 6. **Review the placements.** Cards are grouped by destination sheet (new ones marked **NEW**), each showing its tag and "Sheet → Column". Uncheck any you don't want before writing.
 7. Click **Write N cards to the flow**. Each card's tag and a **short cite** (just author and year — "Price '26", not the whole credentials paragraph) land in its column.
 
+**Optional: summarize each card with AI.** On the same step there's a checkbox, **off by default**, called "Summarize each card with Warroom AI". Turn it on and instead of writing the tagline + cite, Auto Flow writes a **short AI summary of the card** — built from *both* its tagline and the actual evidence in the card, and always **fewer words than the tagline itself** (Warroom AI is told the tagline's exact word count and has to come in under it). Summarized cells are marked with the blue/pink **AI ring** in your flow, which disappears the moment you edit that cell — once you've touched it, it's yours. This is the one part of Auto Flow that reads card bodies, and it costs an extra Warroom AI call, which is why it's off unless you ask for it.
+
 **What Auto Flow does when it writes:**
 - **Cites are shortened.** Warroom AI turns a card's full cite paragraph into the way a debater actually writes it on a flow — author surname plus a 2-digit year, or an abbreviated source name if there's no individual author.
 - **New tabs use the doc's own shorthand.** If your case calls a position "Federalism DA" once but "Fism DA" everywhere after, the new tab is named "Fism DA" — the form you actually use.

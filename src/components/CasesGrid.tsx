@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import { buildCaseItems, CaseItem, CaseItemKind } from '../utils/caseItems';
+import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks } from '../utils/caseItems';
 import {
   useCaseFolders,
   childFolders,
   folderTrail,
+  flattenFolders,
   findFolder,
   resolveItemFolder,
   isSelfOrDescendant,
@@ -68,6 +69,26 @@ export default function CasesGrid() {
   const [drag, setDrag] = useState<Drag>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
+  // Multi-select mirrors Sidebar.tsx's tree: Cmd/Ctrl+click toggles a tile in/out
+  // without opening it, driving the same bulk move/delete bar pattern.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const updateDb = useApp((s) => s.update);
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+  function clearSelection() { setSelected(new Set()); }
+
+  // Full breadcrumb per folder, same as Sidebar.tsx's folderChoices — flat list
+  // reads better than indentation once it's inside a narrow popover.
+  const folderChoices = useMemo(
+    () => flattenFolders(folders).map((f) => ({ id: f.id, label: folderTrail(folders, f.id).map((t) => t.name).join(' / ') })),
+    [folders],
+  );
+
   // Prune once per mount. Guarded on the db being loaded too — pruning against an
   // empty db would read every assignment as stale and wipe the user's folders.
   const prunedRef = useRef(false);
@@ -126,6 +147,45 @@ export default function CasesGrid() {
     setConfirmDelete(null);
     // The open folder just stopped existing — follow its documents up to the parent.
     if (currentFolderId === folder.id) navigate(folder.parentId);
+  }
+
+  /** True if the currently-open view is showing one of the given item ids/paths. */
+  function viewPointsAt(deletedItems: CaseItem[]): boolean {
+    if (view.kind === 'speech-doc') return deletedItems.some((i) => i.kind === 'speech-doc' && i.path === view.docPath);
+    if (view.kind === 'case') return deletedItems.some((i) => i.kind !== 'speech-doc' && i.id === view.caseId);
+    return false;
+  }
+
+  /** Shared by the bulk-delete bar and the per-tile context menu's Delete entry. */
+  function deleteItems(keys: string[]) {
+    const keySet = new Set(keys);
+    const targets = items.filter((i) => keySet.has(i.key));
+    for (const t of targets) {
+      if (t.kind === 'speech-doc') removeFromRecents(t.path!);
+    }
+    const caseIds = targets.filter((t) => t.kind !== 'speech-doc').map((t) => t.id);
+    if (caseIds.length) updateDb((d) => caseIds.reduce((acc, id) => deleteCaseAndBlocks(acc, id), d));
+    if (targets.some((t) => t.kind === 'speech-doc')) setTick((t) => t + 1);
+    // Follow the user away from whatever tile they were looking at if it just disappeared.
+    if (viewPointsAt(targets)) navigate(currentFolderId);
+    setSelected((prev) => { const next = new Set(prev); for (const k of keys) next.delete(k); return next; });
+  }
+
+  /** Shared by the bulk-move bar and the per-tile context menu's "Move to" rows. */
+  function moveItems(keys: string[], folderId: string | null) {
+    update((d) => keys.reduce((acc, key) => moveItem(acc, key, folderId), d));
+    setSelected((prev) => { const next = new Set(prev); for (const k of keys) next.delete(k); return next; });
+  }
+
+  function renameItem(item: CaseItem, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === item.name) return;
+    if (item.kind === 'speech-doc') {
+      renameInRecents(item.path!, trimmed);
+      setTick((t) => t + 1);
+    } else {
+      updateDb((d) => ({ ...d, cases: { ...d.cases, [item.id]: { ...d.cases[item.id], name: trimmed } } }));
+    }
   }
 
   /** Whether the in-flight drag may land on `targetId` (null = top level). */
@@ -275,6 +335,16 @@ export default function CasesGrid() {
           </div>
         )}
 
+        {selected.size > 0 && (
+          <ItemSelectionBar
+            count={selected.size}
+            folderChoices={folderChoices}
+            onMove={(folderId) => moveItems([...selected], folderId)}
+            onDelete={() => deleteItems([...selected])}
+            onClear={clearSelection}
+          />
+        )}
+
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="label">{searching ? 'Results' : 'Documents'}</div>
@@ -300,13 +370,20 @@ export default function CasesGrid() {
                     item={item}
                     folderName={searching ? (home?.name ?? 'Cases') : undefined}
                     dimmed={drag?.type === 'item' && drag.key === item.key}
+                    selected={selected.has(item.key)}
                     onOpen={() => openItem(item)}
+                    onToggleSelect={() => toggleSelect(item.key)}
                     onDragStart={(e) => {
                       e.dataTransfer.setData(ITEM_MIME, item.key);
                       e.dataTransfer.effectAllowed = 'move';
                       setDrag({ type: 'item', key: item.key });
                     }}
                     onDragEnd={() => { setDrag(null); setDropTarget(null); }}
+                    folderChoices={folderChoices}
+                    currentFolderId={homeId}
+                    onMoveTo={(folderId) => moveItems([item.key], folderId)}
+                    onRename={(name) => renameItem(item, name)}
+                    onDelete={() => deleteItems([item.key])}
                   />
                 );
               })}
@@ -487,43 +564,110 @@ function TileAction({ label, danger, onClick, children }: {
 
 // ─── Item tile ────────────────────────────────────────────────────────────────
 
-function ItemTile({ item, folderName, dimmed, onOpen, onDragStart, onDragEnd }: {
+function ItemTile({
+  item, folderName, dimmed, selected, onOpen, onToggleSelect, onDragStart, onDragEnd,
+  folderChoices, currentFolderId, onMoveTo, onRename, onDelete,
+}: {
   item: CaseItem;
   /** Set only while searching — tells the user where the hit actually lives. */
   folderName?: string;
   dimmed: boolean;
+  selected: boolean;
   onOpen: () => void;
+  onToggleSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  folderChoices: { id: string; label: string }[];
+  currentFolderId: string | null;
+  onMoveTo: (folderId: string | null) => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
 }) {
+  const [hover, setHover] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(item.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const kindTitle = item.kind === 'oc-case' && item.teamName
     ? `Imported from ${item.teamName}`
     : KIND_LABEL[item.kind];
+
+  function startRename() {
+    setMenuOpen(false);
+    setRenameDraft(item.name);
+    setRenaming(true);
+  }
+  function commitRename() {
+    onRename(renameDraft);
+    setRenaming(false);
+  }
+
+  useEffect(() => {
+    if (renaming) { inputRef.current?.focus(); inputRef.current?.select(); }
+  }, [renaming]);
+
+  function handleClick(e: React.MouseEvent) {
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      onToggleSelect();
+      return;
+    }
+    onOpen();
+  }
+
+  if (renaming) {
+    return (
+      <div
+        className="rounded-lg p-2"
+        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
+      >
+        <div style={{ pointerEvents: 'none' }}><CasePreview item={item} /></div>
+        <input
+          ref={inputRef}
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename();
+            if (e.key === 'Escape') setRenaming(false);
+          }}
+          className="mt-2 w-full text-xs font-medium outline-none rounded px-1 py-0.5"
+          style={{ background: 'var(--nav-active-bg)', border: '1px solid var(--border-med)', color: 'rgb(var(--ink-rgb))' }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
       role="button"
       tabIndex={0}
       draggable
-      onClick={onOpen}
+      onClick={handleClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+      onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="rounded-lg p-2 select-none"
-      style={{
-        background: 'var(--bg-elevated)',
-        border: '1px solid var(--border-subtle)',
-        opacity: dimmed ? 0.45 : 1,
-        cursor: 'pointer',
-        ...CARD_BASE,
-      }}
       onMouseEnter={(e) => {
+        setHover(true);
         e.currentTarget.style.borderColor = 'var(--accent)';
         e.currentTarget.style.transform = 'translateY(-1px)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--border-subtle)';
+        setHover(false);
+        e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-subtle)';
         e.currentTarget.style.transform = '';
+      }}
+      className="rounded-lg p-2 select-none relative"
+      style={{
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-subtle)',
+        boxShadow: selected ? '0 0 0 2px var(--accent)' : 'none',
+        opacity: dimmed ? 0.45 : 1,
+        cursor: 'pointer',
+        ...CARD_BASE,
       }}
     >
       {/* Previews are drag images by default; letting the browser drag the <img>
@@ -531,6 +675,27 @@ function ItemTile({ item, folderName, dimmed, onOpen, onDragStart, onDragEnd }: 
       <div style={{ pointerEvents: 'none' }}>
         <CasePreview item={item} />
       </div>
+
+      {(hover || menuOpen) && (
+        <div className="absolute top-1.5 right-1.5">
+          <TileAction label="More" onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <circle cx="2" cy="6" r="1.1" /><circle cx="6" cy="6" r="1.1" /><circle cx="10" cy="6" r="1.1" />
+            </svg>
+          </TileAction>
+        </div>
+      )}
+
+      {menuOpen && (
+        <ItemMenu
+          folderChoices={folderChoices}
+          currentFolderId={currentFolderId}
+          onMoveTo={(id) => { setMenuOpen(false); onMoveTo(id); }}
+          onRename={() => startRename()}
+          onDelete={() => { setMenuOpen(false); onDelete(); }}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
 
       <div className="mt-2 px-0.5">
         <div className="text-xs font-medium truncate text-ink" title={item.name}>{item.name}</div>
@@ -548,6 +713,142 @@ function ItemTile({ item, folderName, dimmed, onOpen, onDragStart, onDragEnd }: 
           <div className="mt-1 text-[10px] text-ink/40 truncate" title={folderName}>in {folderName}</div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Right-click / "⋯" popover for a single tile — the grid's equivalent of
+ * Sidebar.tsx's NavItem context menu (Move to / Rename / Delete), rebuilt here
+ * rather than imported since NavItem is coupled to sidebar-only item types
+ * (opponents, tournaments, judges) that don't exist in this grid.
+ */
+function ItemMenu({ folderChoices, currentFolderId, onMoveTo, onRename, onDelete, onClose }: {
+  folderChoices: { id: string; label: string }[];
+  currentFolderId: string | null;
+  onMoveTo: (folderId: string | null) => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onDown(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [onClose]);
+
+  const moveOptions = folderChoices.filter((f) => f.id !== currentFolderId);
+
+  return (
+    <div
+      ref={ref}
+      className="glass-popover absolute top-7 right-1.5 z-50 rounded-lg py-1 text-xs shadow-xl"
+      style={{ minWidth: 170, maxWidth: 240, border: '1px solid var(--border-subtle)' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--placeholder)' }}>
+        Move to
+      </div>
+      <div style={{ maxHeight: 176, overflowY: 'auto' }}>
+        {currentFolderId !== null && (
+          <button onClick={() => onMoveTo(null)} className="w-full text-left px-3 py-1.5 transition block"
+            style={{ color: 'rgb(var(--ink-rgb))' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+            Top level (no folder)
+          </button>
+        )}
+        {moveOptions.map((f) => (
+          <button key={f.id} onClick={() => onMoveTo(f.id)} className="w-full text-left px-3 py-1.5 transition truncate block"
+            title={f.label} style={{ color: 'rgb(var(--ink-rgb))' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
+      <button onClick={onRename} className="w-full text-left px-3 py-1.5 transition"
+        style={{ color: 'rgb(var(--ink-rgb))' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        Rename
+      </button>
+      <button onClick={onDelete} className="w-full text-left px-3 py-1.5 transition"
+        style={{ color: 'rgb(var(--danger-rgb))' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        Delete
+      </button>
+    </div>
+  );
+}
+
+/** Bulk-action bar shown above the grid while a multi-selection (Cmd/Ctrl+click) is active. */
+function ItemSelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
+  count: number;
+  folderChoices: { id: string; label: string }[];
+  onMove: (folderId: string | null) => void;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px]"
+      style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)' }}>
+      <span className="font-semibold pl-0.5">{count} selected</span>
+      <div className="flex-1" />
+      <div className="relative" ref={menuRef}>
+        <button onClick={() => setMenuOpen((v) => !v)}
+          className="px-2.5 py-1 rounded-md transition font-medium"
+          style={{ background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))' }}>
+          Move to
+        </button>
+        {menuOpen && (
+          <div className="glass-popover absolute right-0 top-full mt-1 z-50 rounded-lg py-1 text-xs shadow-xl"
+            style={{ minWidth: 180, maxWidth: 260, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              <button onClick={() => { onMove(null); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 transition block"
+                style={{ color: 'rgb(var(--ink-rgb))' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                Top level (no folder)
+              </button>
+              {folderChoices.map((f) => (
+                <button key={f.id} onClick={() => { onMove(f.id); setMenuOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 transition truncate block" title={f.label}
+                  style={{ color: 'rgb(var(--ink-rgb))' }}
+                  onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+                  onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <button onClick={onDelete} className="px-2.5 py-1 rounded-md transition font-medium" style={{ color: 'rgb(var(--danger-rgb))' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgb(var(--danger-rgb) / 0.15)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        Delete
+      </button>
+      <button onClick={onClear} title="Clear selection"
+        className="w-5 h-5 flex items-center justify-center rounded-md transition"
+        style={{ color: 'rgb(var(--ink-rgb))' }}
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+        onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+        ✕
+      </button>
     </div>
   );
 }

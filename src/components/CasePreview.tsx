@@ -172,6 +172,21 @@ async function renderFirstPageHtml(base64: string, cls: string): Promise<string 
   // to serif Times New Roman. Runs with an explicit font still win on specificity.
   page.style.fontFamily = DOC_FONT_STACK;
 
+  // Word's built-in Heading5–9 styles default to Times New Roman, and templates
+  // that only customize the shallow levels a debate doc actually uses (1–4) leave
+  // that stale default on any tag that happens to nest deep enough. That font is
+  // set inline, so it beats the page-level default above — force it back to
+  // match SpeechDocViewer.tsx's forceHeadingFont. Regex-only (no styles.xml
+  // round-trip here): it catches literal Heading1–9 style ids, which covers the
+  // built-in-style case this exists for; a custom, non-"HeadingN"-named style
+  // would need the full styles.xml resolution SpeechDocViewer.tsx does, not worth
+  // an extra IPC call per thumbnail for what's already a live-viewer-only edge case.
+  page.querySelectorAll<HTMLElement>('p').forEach((p) => {
+    if (/heading[\s_-]?[1-9]/i.test(p.className)) {
+      p.style.setProperty('font-family', DOC_FONT_STACK, 'important');
+    }
+  });
+
   const styles = Array.from(off.querySelectorAll(':scope > style'))
     .map((s) => s.outerHTML)
     .join('');

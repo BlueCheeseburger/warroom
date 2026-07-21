@@ -265,6 +265,7 @@ declare global {
       dialog: {
         openFile: (accept: string[]) => Promise<string | null>;
         openFiles: (accept: string[]) => Promise<string[] | null>;
+        openFolderOfDocx: () => Promise<{ folderName: string; paths: string[] } | null>;
         resolveDroppedFiles: (files: File[], accept: string[]) => Promise<string[]>;
         saveBuffer: (base64: string, defaultName: string, filters: { name: string; extensions: string[] }[]) => Promise<{ ok: boolean; canceled?: boolean; error?: string }>;
       };

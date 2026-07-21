@@ -7,6 +7,7 @@ import SharePanel from './SharePanel';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './FlowView';
 import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 import { matchesShortcut } from '../lib/shortcutPrefs';
+import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -15,6 +16,10 @@ type Step = 'idle' | 'loading' | 'viewing' | 'error';
 let outlineAutoShownThisSession = false;
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
+
+// Shared with the injected #wr-docx-fonts CSS block AND forceHeadingFont below —
+// keep both in sync with this one definition rather than duplicating the string.
+const DOC_FONT_STACK = "'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif";
 
 interface RecentDoc { path: string; name: string; cardCount?: number }
 
@@ -327,8 +332,8 @@ function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?
     const spans = Array.from(para.querySelectorAll<HTMLElement>('span'));
     if (spans.length === 0) return;
 
-    // Hat / tag / cite paragraphs: every span is bold and none are highlighted.
-    // These are always shown in full regardless of mode.
+    // Hat / tag paragraphs: every span is bold and none are highlighted. These
+    // are always shown in full regardless of mode.
     const allBold = spans.every(s => parseInt(window.getComputedStyle(s).fontWeight) >= 600);
     const anyHighlight = spans.some(s => {
       const rgb = parseRgb(window.getComputedStyle(s).backgroundColor);
@@ -336,9 +341,15 @@ function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?
     });
     if (allBold && !anyHighlight) return;
 
-    // In a cite paragraph (right after a tag), the leading-bold spans are the
-    // author name + date — always shown in focus mode because they are read aloud.
-    let citeLeadingBold = isCite;
+    // Cite paragraphs are structural metadata (author, quals, date, publication),
+    // not evidence subject to underline/highlight cutting — always shown in full,
+    // regardless of bold pattern. This used to only keep the LEADING bold run
+    // (the assumed author+date), hiding everything after the first non-bold span —
+    // but plenty of cites don't bold the author at all, so that span never existed
+    // and the entire cite silently vanished. A highlighted cite is the one
+    // exception: if a debater deliberately highlighted part of it, normal
+    // highlight/underline rules should govern, same as any other paragraph.
+    if (isCite && !anyHighlight) return;
 
     // Body paragraph — hide spans that don't meet the mode criteria
     spans.forEach(span => {
@@ -346,14 +357,8 @@ function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?
       const rgb = parseRgb(cs.backgroundColor);
       const highlighted = !!(rgb && isBrightHighlight(rgb));
       const underlined  = cs.textDecoration.includes('underline');
-      const bold = parseInt(cs.fontWeight, 10) >= 600;
 
-      // Once a non-bold span with real text appears, the leading-bold section ends
-      if (citeLeadingBold && !bold && (span.textContent ?? '').trim()) citeLeadingBold = false;
-
-      const keep = highlighted ||
-        (mode === 'highlight+underline' && underlined) ||
-        (isCite && bold && citeLeadingBold);
+      const keep = highlighted || (mode === 'highlight+underline' && underlined);
       if (!keep) {
         span.dataset.focusHidden = '1';
         span.style.setProperty('opacity', '0', 'important');
@@ -443,6 +448,28 @@ function buildOutlineHeuristic(container: HTMLElement): OutlineItem[] {
   return items;
 }
 
+/** A node in the tree built from the flat, document-order OutlineItem list. */
+interface OutlineNode { item: OutlineItem; children: OutlineNode[] }
+
+// Reconstructs parent/child structure from the flat heading list: each item's
+// parent is the nearest PRECEDING item with a strictly smaller level, exactly
+// how Word's own Navigation Pane infers nesting from heading levels alone (there
+// is no explicit parent pointer in the source doc). Built from raw `level`, not
+// the depth-collapsed rank below — a level skip (H1 straight to H4, common in
+// debate docs) still nests correctly; the collapsed rank is a display-only
+// concern for indentation and the depth-cycle cap, layered on afterward.
+function buildOutlineTree(items: OutlineItem[]): OutlineNode[] {
+  const roots: OutlineNode[] = [];
+  const stack: OutlineNode[] = [];
+  for (const item of items) {
+    const node: OutlineNode = { item, children: [] };
+    while (stack.length && stack[stack.length - 1].item.level >= item.level) stack.pop();
+    (stack.length ? stack[stack.length - 1].children : roots).push(node);
+    stack.push(node);
+  }
+  return roots;
+}
+
 function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onDismiss }: {
   items: OutlineItem[];
   activeId: string | null;
@@ -471,7 +498,112 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
   // Reset whenever the document's heading structure changes.
   useEffect(() => { setVisibleDepths(depths.length); }, [depths.length]);
   const cycleDepths = () => setVisibleDepths(v => (v >= depths.length ? 1 : v + 1));
-  const shown = items.filter(it => depthOf(it.level) < visibleDepths);
+
+  // Per-branch expand/collapse (Word Navigation Pane style) — independent of the
+  // depth-cycle cap above: that one caps how many LEVELS show everywhere at once,
+  // this one lets you fold one specific branch while leaving its siblings open.
+  // Collapsed = a Set of item ids whose children are currently hidden.
+  const tree = React.useMemo(() => buildOutlineTree(items), [items]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Starts fully expanded for each newly-loaded doc, matching the depth-cycle
+  // reset just above (items.length changing is the same "new doc" heuristic it
+  // already relies on).
+  useEffect(() => { setCollapsed(new Set()); }, [items.length]);
+  function toggleCollapsed(id: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const shownCount = React.useMemo(() => {
+    let n = 0;
+    const walk = (nodes: OutlineNode[]) => {
+      for (const node of nodes) {
+        if (depthOf(node.item.level) >= visibleDepths) continue;
+        n++;
+        if (!collapsed.has(node.item.id)) walk(node.children);
+      }
+    };
+    walk(tree);
+    return n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree, collapsed, visibleDepths, depths.length]);
+
+  // depth = structural nesting (parent/child), used only to decide whether a
+  // node's children are hidden by a collapsed ancestor. Indentation width and
+  // the depth-cycle cap both use depthOf(item.level) instead — the level-RANK
+  // depth — exactly as the old flat-list version did, so that feature's meaning
+  // doesn't change; a level skip means structural depth and rank depth can differ.
+  function renderNode(node: OutlineNode, depth: number, extraTopMargin = 0): React.ReactNode {
+    const it = node.item;
+    const rankDepth = depthOf(it.level);
+    if (rankDepth >= visibleDepths) return null;
+    const active = it.id === activeId;
+    const topLevel = rankDepth === 0;
+    // A chevron only promises something the depth-cycle cap won't immediately
+    // hide again — children beyond the current cap don't count as "expandable".
+    const visibleChildren = node.children.filter(c => depthOf(c.item.level) < visibleDepths);
+    const hasChildren = visibleChildren.length > 0;
+    const isCollapsed = collapsed.has(it.id);
+
+    return (
+      <React.Fragment key={it.id}>
+        <div
+          className="flex items-center rounded-md transition"
+          style={{
+            marginTop: extraTopMargin,
+            background: active ? 'var(--nav-active-bg)' : 'transparent',
+            borderLeft: active ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
+          }}
+          onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+          onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          {hasChildren ? (
+            <span
+              role="button" tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleCollapsed(it.id); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); toggleCollapsed(it.id); } }}
+              className="shrink-0 flex items-center justify-center rounded transition"
+              style={{ width: 18, height: 18, marginLeft: 8 + rankDepth * 13 - 4 }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              title={isCollapsed ? 'Expand' : 'Collapse'}
+            >
+              <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
+                className="transition-transform duration-150"
+                style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', color: 'var(--nav-inactive-color)' }}>
+                <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </span>
+          ) : (
+            <span className="shrink-0" style={{ width: 18, marginLeft: 8 + rankDepth * 13 - 4 }} />
+          )}
+          <button
+            ref={active ? activeRef : undefined}
+            onClick={() => onPick(it.id)}
+            className="flex-1 text-left text-[12px] leading-snug py-1.5 truncate min-w-0"
+            style={{
+              paddingLeft: 4,
+              color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontWeight: active || topLevel ? 600 : 400,
+            }}
+            title={it.text}
+          >
+            {it.text}
+          </button>
+          {it.warn && !dismissed.has(it.text) && (
+            <div className="shrink-0 pr-1.5">
+              <WarnBadge type={it.warn} onDismiss={() => onDismiss(it.text)} />
+            </div>
+          )}
+        </div>
+        {hasChildren && !isCollapsed && visibleChildren.map(c => renderNode(c, depth + 1))}
+      </React.Fragment>
+    );
+  }
 
   return (
     <div
@@ -481,7 +613,7 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
       <div className="flex items-center gap-1 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
         <span className="text-[12.5px] font-semibold shrink-0 ml-1" style={{ color: 'rgb(var(--ink-rgb))' }}>Outline</span>
-        <span className="text-[11px] shrink-0 tabular-nums ml-1.5" style={{ color: 'var(--nav-inactive-color)' }}>{shown.length}</span>
+        <span className="text-[11px] shrink-0 tabular-nums ml-1.5" style={{ color: 'var(--nav-inactive-color)' }}>{shownCount}</span>
         <div className="flex-1" />
         {depths.length > 1 && (
           <button
@@ -525,44 +657,7 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
             No headings found in this document. Outline navigation works with docs that use Word/Verbatim heading styles (pockets, hats, blocks, tags).
           </div>
         ) : (
-          shown.map((it, idx) => {
-            const active = it.id === activeId;
-            const depth = depthOf(it.level);
-            const topLevel = depth === 0;
-            return (
-              <div
-                key={it.id}
-                className="flex items-center rounded-md transition"
-                style={{
-                  marginTop: topLevel && idx > 0 ? 6 : 0,
-                  background: active ? 'var(--nav-active-bg)' : 'transparent',
-                  borderLeft: active ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
-                }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >
-                <button
-                  ref={active ? activeRef : undefined}
-                  onClick={() => onPick(it.id)}
-                  className="flex-1 text-left text-[12px] leading-snug py-1.5 truncate min-w-0"
-                  style={{
-                    paddingLeft: 8 + depth * 13,
-                    color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontWeight: active || topLevel ? 600 : 400,
-                  }}
-                  title={it.text}
-                >
-                  {it.text}
-                </button>
-                {it.warn && !dismissed.has(it.text) && (
-                  <div className="shrink-0 pr-1.5">
-                    <WarnBadge type={it.warn} onDismiss={() => onDismiss(it.text)} />
-                  </div>
-                )}
-              </div>
-            );
-          })
+          tree.map((root, i) => renderNode(root, 0, i > 0 ? 6 : 0))
         )}
       </div>
     </div>
@@ -1145,6 +1240,31 @@ function headingLevelOf(el: Element | null, headingClasses?: HeadingClasses): nu
     }
   }
   return 0;
+}
+
+/**
+ * Force every heading paragraph (pocket/hat/block/tag) to the doc's Calibri
+ * stack, even when its resolved style carries an explicit non-Calibri font.
+ *
+ * This is a different problem than the theme-inheritance gap the page-level CSS
+ * default (#wr-docx-fonts, section.docx-render) already handles: THAT gap is
+ * runs with no resolved font at all. THIS is runs with an explicit, *wrong* one —
+ * Word's built-in Heading5–9 styles ship with Times New Roman by default, and
+ * templates that only ever customize the shallow levels a debate doc actually
+ * uses (Heading1–4) leave that stale default sitting on any paragraph that
+ * happens to nest deep enough to hit Heading5+. The result: a tag several
+ * levels deep renders in Times New Roman while everything else on the page is
+ * Calibri, even though nothing about the document intended a different font
+ * there — by Verbatim convention every heading level is the same font. Since
+ * the font is set inline (not just via a class), it beats the page-level CSS
+ * default on specificity, so it has to be forced per-paragraph in JS instead.
+ */
+function forceHeadingFont(container: HTMLElement, headingClasses?: HeadingClasses) {
+  container.querySelectorAll<HTMLElement>('p').forEach((p) => {
+    if (headingLevelOf(p, headingClasses) > 0) {
+      p.style.setProperty('font-family', DOC_FONT_STACK, 'important');
+    }
+  });
 }
 
 function isHighlightedEl(el: HTMLElement): boolean {
@@ -2198,6 +2318,10 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
 
 export default function SpeechDocViewer() {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
+  // Folder-of-docx import files every doc it finds into a new Warroom folder
+  // named after the OS folder it came from — aliased to avoid colliding with
+  // useApp()'s own `update` above, which mutates the db, not folder assignments.
+  const { update: updateFolders } = useCaseFolders();
   const pendingFindQuery = useApp((s) => s.pendingFindQuery);
   const setPendingFindQuery = useApp((s) => s.setPendingFindQuery);
   // OpenCaseList-imported case (carries a docx via ocSource). Derived from the
@@ -2234,6 +2358,9 @@ export default function SpeechDocViewer() {
   // Refs so the loadFile closure can read latest focus state without stale capture
   const focusActiveRef = useRef(false);
   const focusTypeRef   = useRef<FocusType>('highlight');
+  // Epoch-ms deadline until which the scroll-driven active-heading tracker defers
+  // to whatever scrollToHeading last set, instead of overriding it. See scrollToHeading.
+  const pinnedActiveUntilRef = useRef(0);
   // Heading-style map for the current doc, resolved from styles.xml in the main
   // process. Lets all the structural features (outline, cards, focus mode,
   // reading time, send-to-flow) detect headings even when the doc's heading style
@@ -2335,7 +2462,7 @@ export default function SpeechDocViewer() {
          Times-New-Roman body) keep it — docx-preview styles those per-element, which
          beats this selector. Class must match renderAsync's className option. */
       section.docx-render {
-        font-family: 'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif;
+        font-family: ${DOC_FONT_STACK};
       }
     `;
     document.head.appendChild(el);
@@ -2546,6 +2673,15 @@ export default function SpeechDocViewer() {
     if (!el) return;
     el.scrollIntoView({ behavior: 'auto', block: 'start' });
     setActiveHeadingId(id);
+    // Pin the clicked heading as active for a moment. scrollIntoView fires a real
+    // scroll event, which re-runs the scroll-driven "active heading" tracker below
+    // — and short/bare headings (an organizational tag with no body under it, e.g.
+    // "Case" immediately followed by "Procedurals") land within that tracker's 90px
+    // detection window right alongside the NEXT heading down. Without this pin, the
+    // tracker's "last heading within the window wins" rule silently overrides the
+    // just-clicked heading with its neighbor a frame later — the reported "flashes
+    // then jumps to the next heading down" bug.
+    pinnedActiveUntilRef.current = Date.now() + 500;
     const prevBg = el.style.backgroundColor;
     const prevTrans = el.style.transition;
     el.style.transition = 'background-color 0.25s ease';
@@ -2573,6 +2709,7 @@ export default function SpeechDocViewer() {
     let raf = 0;
     const update = () => {
       raf = 0;
+      if (Date.now() < pinnedActiveUntilRef.current) return; // a click just set this — don't fight it
       const cont = containerRef.current;
       if (!cont) return;
       const threshold = wrap.getBoundingClientRect().top + 90;
@@ -2756,6 +2893,7 @@ export default function SpeechDocViewer() {
           } catch { /* fall back to built-in heading detection */ }
         }
         headingClassesRef.current = headingClasses;
+        forceHeadingFont(containerRef.current, headingClasses);
 
         // Apply focus mode if it was already active when this doc loaded
         if (focusActiveRef.current) applyFocusMode(containerRef.current, focusTypeRef.current, headingClasses);
@@ -2924,6 +3062,32 @@ export default function SpeechDocViewer() {
   }
 
   /**
+   * Import every .docx found (recursively) inside a folder the user picks, filed
+   * into a brand-new Warroom folder named after that OS folder. `folderName` isn't
+   * guaranteed unique among existing folders — that's fine, folders here are just
+   * labels (see caseFolders.ts), so a duplicate name is harmless, not a conflict.
+   */
+  async function pickFolder() {
+    const res = await window.warroom.dialog.openFolderOfDocx();
+    if (!res) return; // user canceled
+    if (res.paths.length === 0) {
+      setError(`No .docx files found in "${res.folderName}".`);
+      setStep('error');
+      return;
+    }
+    const docs = res.paths.map(p => ({ path: p, name: p.split(/[/\\]/).pop() ?? p }));
+    addRecents(docs);
+    setRecents(getRecents());
+    updateFolders((data) => {
+      const withFolder = createFolder(data, res.folderName, null);
+      const newFolder = withFolder.folders[withFolder.folders.length - 1];
+      return docs.reduce((d, doc) => moveItem(d, itemKeyForDoc(doc.path), newFolder.id), withFolder);
+    });
+    loadedPath.current = '';
+    await loadFile(docs[0].path);
+  }
+
+  /**
    * Import one or more speech docs: every doc is saved to recents immediately (so
    * the whole batch shows up in the sidebar under Cases at once), then the first
    * one is opened. Saving before loading means a doc that fails to render still
@@ -2988,6 +3152,12 @@ export default function SpeechDocViewer() {
         >
           <div className="text-sm font-medium text-ink/60 mb-2">Drop speech docs here (.docx)</div>
           <div className="text-xs text-ink/40">drop several at once, or click to open file picker</div>
+          <button
+            onClick={(e) => { e.stopPropagation(); pickFolder(); }}
+            className="mt-3 text-xs underline text-ink/50 hover:text-ink/80 transition"
+          >
+            or import a whole folder of speech docs
+          </button>
         </div>
 
         {recents.length > 0 && (
