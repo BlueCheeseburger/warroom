@@ -137,7 +137,6 @@ interface AppState {
 
 export const useApp = create<AppState>((set, get) => ({
   db: emptyDB(),
-  mode: 'prep',
   view: { kind: 'home' },
   navHistory: [{ kind: 'home' }],
   navHistoryIndex: 0,
@@ -184,7 +183,6 @@ export const useApp = create<AppState>((set, get) => ({
   setPendingFindQuery: (q) => set({ pendingFindQuery: q }),
   pendingDisclosureQuery: '',
   setPendingDisclosureQuery: (q) => set({ pendingDisclosureQuery: q }),
-  setMode: (m) => set({ mode: m }),
   setView: (v) => set((s) => {
     const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);
     const newHistory = [...trimmed, v].slice(-60);

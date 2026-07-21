@@ -53,9 +53,9 @@ Relationships use string ID references (e.g. `Block.cards` is an array of Card I
 
 ---
 
-## Navigation & Modes
+## Navigation
 
-Navigation is view-stack-free: one active `View` at a time, stored in Zustand. The sidebar provides top-level navigation; views are rendered by a `Router` function in `App.tsx`. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews) are always mounted but hidden so they don't reload on navigation.
+Navigation is view-stack-free: one active `View` at a time, stored in Zustand. The sidebar provides top-level navigation to everything — Cases, Tournaments, Scouting, Cards, Google Drive, Flow, Speech doc, Chat, and Topics are all reachable at once; there's no separate mode to switch between. Views are rendered by a `Router` function in `App.tsx`. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews) are always mounted but hidden so they don't reload on navigation.
 
 ### Views
 - `home` — Dashboard with stats, live/upcoming tournament card, recent cases
@@ -74,9 +74,6 @@ Navigation is view-stack-free: one active `View` at a time, stored in Zustand. T
 - `open-ev` — Open Evidence webview (persistent)
 - `gdrive` — Google Drive file browser
 - `docs` — In-app documentation page
-
-### App modes
-Two modes toggled in the sidebar: **Prep** (default, for case building and scouting) and **Round** (tournament day, streamlined view focused on current round). The mode is persisted per session.
 
 ---
 
@@ -719,7 +716,7 @@ The preload script exposes a typed `window.warroom` namespace with these sub-nam
 | `onFileOpen` | subscribe to file-open events from the OS |
 
 ### Zustand store (`src/store/appStore.ts`)
-Single global store (`useApp`) holds: DB state, current view, mode, theme, event type, flows index, chat state (user, team, members, unread count), Gemini panel state (geminiOpen, geminiActiveId), onboarding state, and the agent search function registry.
+Single global store (`useApp`) holds: DB state, current view, theme, event type, flows index, chat state (user, team, members, unread count), Gemini panel state (geminiOpen, geminiActiveId), onboarding state, and the agent search function registry.
 
 ### Persistent webviews
 Three Electron `<webview>` elements are always mounted to avoid reloads: `FindCards` (Logos), `OpenEvView` (openev.net), and two agent search webviews in `AgentSearchViews`. They use CSS `display: none` (not React unmounting) to hide/show.

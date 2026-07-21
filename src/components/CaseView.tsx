@@ -18,7 +18,7 @@ const BLOCK_TYPES = [
 type BlockType = (typeof BLOCK_TYPES)[number]['value'];
 
 export default function CaseView() {
-  const { db, update, setView, view, mode } = useApp();
+  const { db, update, setView, view } = useApp();
   if (view.kind !== 'case') return null;
   const c = db.cases[view.caseId];
   if (!c) return <NotFound />;
@@ -31,19 +31,19 @@ export default function CaseView() {
     type: value,
     label,
     blocks: blocks.filter((b) => b.type === value),
-  })).filter((g) => g.blocks.length > 0 || mode === 'prep');
+  }));
 
   return (
     <div className="flex flex-col h-full">
       <CaseHeader c={c} blockCount={blocks.length} cardCount={c.blocks.reduce((n, id) => n + (db.blocks[id]?.cards.length ?? 0), 0)} />
       <div className="flex-1 overflow-y-auto scroll-thin p-6">
-        {blocks.length === 0 && mode === 'prep' && (
+        {blocks.length === 0 && (
           <div className="text-sm text-ink/40 italic mb-6">No blocks yet — add one below.</div>
         )}
         {grouped.map(({ type, label, blocks: bs }) => (
           <BlockGroup key={type} label={label} blocks={bs} type={type as BlockType} caseId={c.id} />
         ))}
-        {mode === 'prep' && <AddBlockForm caseId={c.id} />}
+        <AddBlockForm caseId={c.id} />
       </div>
     </div>
   );
@@ -52,7 +52,7 @@ export default function CaseView() {
 // ─── Block-based case header ──────────────────────────────────────────────────
 
 function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; cardCount: number }) {
-  const { update, setView, mode, db } = useApp();
+  const { update, setView, db } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
@@ -87,7 +87,6 @@ function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; 
           <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm font-medium ${c.side === 'aff' ? 'badge-aff' : 'badge-neg'}`}>
             {c.side}
           </span>
-          {mode === 'round' && <span className="text-[10px] text-ink/40 uppercase tracking-wider">read-only</span>}
         </div>
         {editing ? (
           <input
@@ -111,12 +110,8 @@ function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; 
         >
           <ShareIcon />
         </button>
-        {mode === 'prep' && (
-          <>
-            <button className="btn btn-icon w-7 h-7" title="Rename" onClick={() => setEditing(true)}><EditIcon /></button>
-            <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={deleteCase}><TrashIcon /></button>
-          </>
-        )}
+        <button className="btn btn-icon w-7 h-7" title="Rename" onClick={() => setEditing(true)}><EditIcon /></button>
+        <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={deleteCase}><TrashIcon /></button>
       </div>
       {shareOpen && (
         <SharePanel
@@ -145,7 +140,6 @@ function ShareIcon() {
 }
 
 function BlockGroup({ label, blocks, type, caseId }: { label: string; blocks: Block[]; type: BlockType; caseId: string }) {
-  const { mode } = useApp();
   if (blocks.length === 0) return null;
   return (
     <div className="mb-6">
@@ -158,7 +152,7 @@ function BlockGroup({ label, blocks, type, caseId }: { label: string; blocks: Bl
 }
 
 function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
-  const { db, update, setView, mode } = useApp();
+  const { db, update, setView } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
@@ -211,12 +205,10 @@ function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
           )}
         </div>
       </button>
-      {mode === 'prep' && (
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-          <button className="btn btn-icon w-7 h-7" title="Edit" onClick={(e) => { e.stopPropagation(); setEditing(true); }}><EditIcon /></button>
-          <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={(e) => { e.stopPropagation(); deleteBlock(); }}><TrashIcon /></button>
-        </div>
-      )}
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+        <button className="btn btn-icon w-7 h-7" title="Edit" onClick={(e) => { e.stopPropagation(); setEditing(true); }}><EditIcon /></button>
+        <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={(e) => { e.stopPropagation(); deleteBlock(); }}><TrashIcon /></button>
+      </div>
       <span className="text-ink/30">›</span>
     </div>
   );

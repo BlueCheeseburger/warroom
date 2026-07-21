@@ -60,7 +60,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, mode, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen, autoFlowOpen, setAutoFlowOpen } = useApp();
+  const { init, ready, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen, autoFlowOpen, setAutoFlowOpen } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -671,14 +671,14 @@ export default function App() {
 }
 
 function Router() {
-  const { view, mode, db } = useApp();
+  const { view, db } = useApp();
 
   // OpenCaseList-imported cases carry a docx (ocSource) and are rendered by the
   // full SpeechDocViewer (outline, find, credibility, cross-ex, etc.), not the
   // block-based CaseView. Route them to the always-mounted speech slot.
   const ocCaseActive = view.kind === 'case' && !!db.cases[(view as any).caseId]?.ocSource;
 
-  const isSpeech = (mode === 'round' && view.kind === 'block' && (view as any).blockId === '__speech__')
+  const isSpeech = (view.kind === 'block' && (view as any).blockId === '__speech__')
     || view.kind === 'speech-doc' || ocCaseActive;
   const isLogos = view.kind === 'logos';
   const isOpenEv = view.kind === 'open-ev';

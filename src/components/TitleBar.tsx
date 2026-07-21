@@ -636,7 +636,7 @@ function NavArrow({ direction, enabled, onClick, title }: {
 // ─── TitleBar ─────────────────────────────────────────────────────────────────
 
 export default function TitleBar() {
-  const { mode, setMode, setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
+  const { setView, chatOpen, setChatOpen, unreadCount, geminiOpen, setGeminiOpen, navHistory, navHistoryIndex, goBack, goForward } = useApp();
   const canGoBack = navHistoryIndex > 0;
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
@@ -684,13 +684,9 @@ export default function TitleBar() {
       <NavArrow direction="back"    enabled={canGoBack}    onClick={goBack}    title="Go back" />
       <NavArrow direction="forward" enabled={canGoForward} onClick={goForward} title="Go forward" />
 
-      {/* Center: mode toggle */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex rounded-lg p-0.5" style={{ background: 'var(--mode-toggle-bg)' }}>
-          <ModeBtn label="Prep"  active={mode === 'prep'}  onClick={() => setMode('prep')} />
-          <ModeBtn label="Round" active={mode === 'round'} onClick={() => setMode('round')} danger />
-        </div>
-      </div>
+      {/* Spacer — pushes the coin/timer/AI/chat cluster to the right, same as
+          when the Prep/Round toggle used to sit here. */}
+      <div className="flex-1" />
 
       {/* Divider */}
       <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
@@ -751,22 +747,3 @@ function ChatIcon() {
   );
 }
 
-function ModeBtn({ label, active, onClick, danger }: {
-  label: string; active: boolean; onClick: () => void; danger?: boolean;
-}) {
-  const activeStyle = danger
-    ? { background: '#b3261e', color: '#ffffff' }
-    : { background: 'var(--bg-card)', color: 'var(--nav-active-color)' };
-  return (
-    <button
-      onClick={onClick}
-      className="px-4 py-1 text-[11px] uppercase tracking-wider rounded-md transition font-bold"
-      style={{
-        ...(active ? activeStyle : { background: 'transparent', color: 'var(--nav-inactive-color)' }),
-        boxShadow: active ? (danger ? '0 1px 4px rgba(179,38,30,0.3)' : 'var(--nav-active-shadow)') : 'none',
-      }}
-    >
-      {label}
-    </button>
-  );
-}

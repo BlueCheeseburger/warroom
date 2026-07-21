@@ -222,7 +222,7 @@ export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [driveConfigured, setDriveConfigured] = useState(false);
   const [importing, setImporting] = useState(false);
-  const { db, view, setView, mode, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
+  const { db, view, setView, busyViews, event, flowsIndex, setFlowsIndex, chatOpen, setChatOpen, unreadCount } = useApp();
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});
@@ -297,14 +297,14 @@ export default function Sidebar() {
     >
       {collapsed ? (
         <CollapsedNav
-          view={view} mode={mode} setView={setView}
+          view={view} setView={setView}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
           flowsIndex={flowsIndex} createFlow={createFlow}
           toggleCollapsed={toggleCollapsed} driveConfigured={driveConfigured}
         />
       ) : (
         <ExpandedNav
-          view={view} mode={mode} setView={setView}
+          view={view} setView={setView}
           tournaments={tournaments} opponents={opponents}
           flowsIndex={flowsIndex} busyViews={busyViews}
           chatOpen={chatOpen} setChatOpen={setChatOpen} unreadCount={unreadCount}
@@ -319,7 +319,7 @@ export default function Sidebar() {
 
 // ── Collapsed navigation (icons only) ────────────────────────────────────────
 
-function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
+function CollapsedNav({ view, setView, chatOpen, setChatOpen, unreadCount, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
   const { setSearchOpen } = useApp();
   const isHome       = view.kind === 'home';
   const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid';
@@ -363,55 +363,43 @@ function CollapsedNav({ view, mode, setView, chatOpen, setChatOpen, unreadCount,
           <IcoCases />
         </CIcon>
 
-        {mode === 'prep' && (
-          <>
-            <CIcon label="Cards" active={isLibrary} onClick={() => setView({ kind: 'library' })}>
-              <IcoLibrary />
-            </CIcon>
-            <CIcon label="Scouting" active={isOpponents} onClick={() => setView({ kind: 'opponents' })}>
-              <IcoOpponents />
-            </CIcon>
-            <CIcon label="Tournaments" active={isTournament} onClick={() => setView({ kind: 'tournaments' })}>
-              <IcoTournament />
-            </CIcon>
-          </>
-        )}
+        <CIcon label="Cards" active={isLibrary} onClick={() => setView({ kind: 'library' })}>
+          <IcoLibrary />
+        </CIcon>
+        <CIcon label="Scouting" active={isOpponents} onClick={() => setView({ kind: 'opponents' })}>
+          <IcoOpponents />
+        </CIcon>
+        <CIcon label="Tournaments" active={isTournament} onClick={() => setView({ kind: 'tournaments' })}>
+          <IcoTournament />
+        </CIcon>
 
         <CIcon label="Flow" active={isFlow} onClick={goFlow}>
           <IcoFlow />
         </CIcon>
 
-        {mode === 'prep' && (
-          <>
-            {driveConfigured && (
-              <CIcon label="Google Drive" active={isDrive} onClick={() => setView({ kind: 'gdrive' })}>
-                <IcoDrive />
-              </CIcon>
-            )}
-            <CIcon label="Topics" active={isTopics} onClick={() => setView({ kind: 'topics' })}>
-              <IcoTopics />
-            </CIcon>
-          </>
+        {driveConfigured && (
+          <CIcon label="Google Drive" active={isDrive} onClick={() => setView({ kind: 'gdrive' })}>
+            <IcoDrive />
+          </CIcon>
         )}
+        <CIcon label="Topics" active={isTopics} onClick={() => setView({ kind: 'topics' })}>
+          <IcoTopics />
+        </CIcon>
 
-        {mode === 'round' && (
-          <>
-            <CIcon label="Speech doc" active={isSpeech} onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}>
-              <IcoSpeechDoc />
-            </CIcon>
-            <CIcon label={chatOpen ? 'Close chat' : 'Chat'} active={chatOpen} onClick={() => setChatOpen(true)}>
-              <span className="relative inline-flex">
-                <IcoChat />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full text-[8px] font-bold text-white flex items-center justify-center"
-                    style={{ background: '#b3261e' }}>
-                    {unreadCount > 9 ? '9' : unreadCount}
-                  </span>
-                )}
+        <CIcon label="Speech doc" active={isSpeech} onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}>
+          <IcoSpeechDoc />
+        </CIcon>
+        <CIcon label={chatOpen ? 'Close chat' : 'Chat'} active={chatOpen} onClick={() => setChatOpen(true)}>
+          <span className="relative inline-flex">
+            <IcoChat />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full text-[8px] font-bold text-white flex items-center justify-center"
+                style={{ background: '#b3261e' }}>
+                {unreadCount > 9 ? '9' : unreadCount}
               </span>
-            </CIcon>
-          </>
-        )}
+            )}
+          </span>
+        </CIcon>
       </nav>
 
       {/* Settings at bottom */}
@@ -455,7 +443,7 @@ function CIcon({ label, active, onClick, children }: {
 // ── Expanded navigation (icons + text) ────────────────────────────────────────
 
 function ExpandedNav({
-  view, mode, setView, tournaments, opponents,
+  view, setView, tournaments, opponents,
   flowsIndex, busyViews, chatOpen, setChatOpen, unreadCount,
   createFlow, deleteFlow, renameFlow, importFlow, importing, db, toggleCollapsed, driveConfigured,
 }: any) {
@@ -528,76 +516,71 @@ function ExpandedNav({
       <nav className="flex-1 overflow-y-auto sidebar-scroll py-2 px-2">
 
         {/* Cases — nested folder tree; the section title opens the full grid */}
-        <CasesSection view={view} setView={setView} db={db} mode={mode} />
+        <CasesSection view={view} setView={setView} db={db} />
 
-        {mode === 'prep' && (
-          <>
-            {/* Tournament */}
-            <Section title="Tournament" icon={<IcoTournament />}>
-              <NavItem active={view.kind === 'tournaments'} onClick={() => setView({ kind: 'tournaments' })}>
-                All tournaments
-              </NavItem>
-              {tournaments.map((t: any) => (
-                <NavItem key={t.id}
-                  active={view.kind === 'tournament' && (view as any).tournamentId === t.id}
-                  onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
-                  itemId={t.id} itemType="tournament" itemName={t.name}>
-                  <span className="truncate">{t.name}</span>
-                </NavItem>
-              ))}
-            </Section>
+        {/* Tournament */}
+        <Section title="Tournament" icon={<IcoTournament />}>
+          <NavItem active={view.kind === 'tournaments'} onClick={() => setView({ kind: 'tournaments' })}>
+            All tournaments
+          </NavItem>
+          {tournaments.map((t: any) => (
+            <NavItem key={t.id}
+              active={view.kind === 'tournament' && (view as any).tournamentId === t.id}
+              onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
+              itemId={t.id} itemType="tournament" itemName={t.name}>
+              <span className="truncate">{t.name}</span>
+            </NavItem>
+          ))}
+        </Section>
 
-            {/* Scouting */}
-            <Section title="Scouting" icon={<IcoOpponents />}>
-              <NavItem active={view.kind === 'opponents'} onClick={() => setView({ kind: 'opponents' })}>
-                Search / all
-              </NavItem>
-              {opponents.slice(0, 5).map((o: any) => (
-                <NavItem key={o.id}
-                  active={view.kind === 'opponent' && (view as any).opponentId === o.id}
-                  onClick={() => setView({ kind: 'opponent', opponentId: o.id })}
-                  itemId={o.id} itemType="opponent" itemName={o.teamName}>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{o.teamName}</span>
-                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(59,130,246,0.12)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(59,130,246,0.2)' }}>Team</span>
-                  </span>
-                </NavItem>
-              ))}
-              {judges.slice(0, 4).map((j: any) => (
-                <NavItem key={j.id}
-                  active={view.kind === 'judge' && (view as any).judgeId === j.id}
-                  onClick={() => setView({ kind: 'judge', judgeId: j.id })}
-                  itemId={j.id} itemType="judge" itemName={j.name}>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{j.name}</span>
-                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(168,85,247,0.12)', color: 'rgba(192,132,252,0.9)', border: '1px solid rgba(168,85,247,0.2)' }}>Judge</span>
-                  </span>
-                </NavItem>
-              ))}
-            </Section>
+        {/* Scouting */}
+        <Section title="Scouting" icon={<IcoOpponents />}>
+          <NavItem active={view.kind === 'opponents'} onClick={() => setView({ kind: 'opponents' })}>
+            Search / all
+          </NavItem>
+          {opponents.slice(0, 5).map((o: any) => (
+            <NavItem key={o.id}
+              active={view.kind === 'opponent' && (view as any).opponentId === o.id}
+              onClick={() => setView({ kind: 'opponent', opponentId: o.id })}
+              itemId={o.id} itemType="opponent" itemName={o.teamName}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{o.teamName}</span>
+                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(59,130,246,0.12)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(59,130,246,0.2)' }}>Team</span>
+              </span>
+            </NavItem>
+          ))}
+          {judges.slice(0, 4).map((j: any) => (
+            <NavItem key={j.id}
+              active={view.kind === 'judge' && (view as any).judgeId === j.id}
+              onClick={() => setView({ kind: 'judge', judgeId: j.id })}
+              itemId={j.id} itemType="judge" itemName={j.name}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{j.name}</span>
+                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(168,85,247,0.12)', color: 'rgba(192,132,252,0.9)', border: '1px solid rgba(168,85,247,0.2)' }}>Judge</span>
+              </span>
+            </NavItem>
+          ))}
+        </Section>
 
-            {/* Cards */}
-            <Section title="Cards" icon={<IcoLibrary />}
-              action={mode === 'prep' ? openCardCutter : undefined} actionLabel="+">
-              <NavItem active={view.kind === 'library'} onClick={() => setView({ kind: 'library' })}>All cards</NavItem>
-              <NavItem active={view.kind === 'logos'} onClick={() => setView({ kind: 'logos' })}>Logos</NavItem>
-              <NavItem active={view.kind === 'open-ev'} onClick={() => setView({ kind: 'open-ev' })}>Open Ev</NavItem>
-              <NavItem active={view.kind === 'google-scholar'} onClick={() => setView({ kind: 'google-scholar' })}>Google Scholar</NavItem>
-            </Section>
+        {/* Cards */}
+        <Section title="Cards" icon={<IcoLibrary />}
+          action={openCardCutter} actionLabel="+">
+          <NavItem active={view.kind === 'library'} onClick={() => setView({ kind: 'library' })}>All cards</NavItem>
+          <NavItem active={view.kind === 'logos'} onClick={() => setView({ kind: 'logos' })}>Logos</NavItem>
+          <NavItem active={view.kind === 'open-ev'} onClick={() => setView({ kind: 'open-ev' })}>Open Ev</NavItem>
+          <NavItem active={view.kind === 'google-scholar'} onClick={() => setView({ kind: 'google-scholar' })}>Google Scholar</NavItem>
+        </Section>
 
-            {/* Google Drive */}
-            {driveConfigured && (
-              <Section title="Drive" icon={<IcoDrive />}>
-                <NavItem active={view.kind === 'gdrive'} onClick={() => setView({ kind: 'gdrive' })}>
-                  My files
-                </NavItem>
-              </Section>
-            )}
-
-          </>
+        {/* Google Drive */}
+        {driveConfigured && (
+          <Section title="Drive" icon={<IcoDrive />}>
+            <NavItem active={view.kind === 'gdrive'} onClick={() => setView({ kind: 'gdrive' })}>
+              My files
+            </NavItem>
+          </Section>
         )}
 
-        {/* Flow — both modes */}
+        {/* Flow */}
         <Section
           title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
           extraAction={importFlow} extraBusy={importing}
@@ -624,28 +607,24 @@ function ExpandedNav({
           ))}
         </Section>
 
-        {mode === 'round' && (
-          <Section title="Speech doc" icon={<IcoSpeechDoc />}>
-            <NavItem
-              active={view.kind === 'block' && (view as any).blockId === '__speech__'}
-              onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}
-              busyLabel={busyViews['speech-doc']}>Open speech doc</NavItem>
-          </Section>
-        )}
+        <Section title="Speech doc" icon={<IcoSpeechDoc />}>
+          <NavItem
+            active={view.kind === 'block' && (view as any).blockId === '__speech__'}
+            onClick={() => setView({ kind: 'block', blockId: '__speech__' } as any)}
+            busyLabel={busyViews['speech-doc']}>Open speech doc</NavItem>
+        </Section>
 
-        {mode === 'round' && (
-          <Section title="Chat" icon={<IcoChat />}>
-            <NavItem active={chatOpen} onClick={() => setChatOpen(!chatOpen)}>
-              <span className="truncate">{chatOpen ? 'Close chat' : 'Open chat'}</span>
-              {unreadCount > 0 && (
-                <span className="ml-auto min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                  style={{ background: '#b3261e' }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </NavItem>
-          </Section>
-        )}
+        <Section title="Chat" icon={<IcoChat />}>
+          <NavItem active={chatOpen} onClick={() => setChatOpen(!chatOpen)}>
+            <span className="truncate">{chatOpen ? 'Close chat' : 'Open chat'}</span>
+            {unreadCount > 0 && (
+              <span className="ml-auto min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                style={{ background: '#b3261e' }}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </NavItem>
+        </Section>
 
         {/* NSDA Topics — at the bottom of the nav */}
         <Section title="Topics" icon={<IcoTopics />}>
@@ -659,16 +638,14 @@ function ExpandedNav({
       </nav>
 
       {/* Bottom bar: Settings */}
-      {mode === 'prep' && (
-        <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
-          <NavRowPrimary
-            active={view.kind === 'settings'}
-            onClick={() => setView({ kind: 'settings' })}
-            icon={<IcoSettings />}
-            label="Settings"
-          />
-        </div>
-      )}
+      <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '4px 8px' }}>
+        <NavRowPrimary
+          active={view.kind === 'settings'}
+          onClick={() => setView({ kind: 'settings' })}
+          icon={<IcoSettings />}
+          label="Settings"
+        />
+      </div>
     </div>
   );
 }
@@ -792,8 +769,8 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
   );
 }
 
-function CasesSection({ view, setView, db, mode }: {
-  view: any; setView: (v: any) => void; db: any; mode: string;
+function CasesSection({ view, setView, db }: {
+  view: any; setView: (v: any) => void; db: any;
 }) {
   const { folders, update } = useCaseFolders();
   const [openIds, toggleOpen] = useOpenFolders();
@@ -1039,7 +1016,7 @@ function CasesSection({ view, setView, db, mode }: {
     <Section
       title="Cases" icon={<IcoCases />}
       onTitleClick={() => setView({ kind: 'cases-grid' })}
-      action={mode === 'prep' ? () => setView({ kind: 'speech-doc' }) : undefined} actionLabel="+"
+      action={() => setView({ kind: 'speech-doc' })} actionLabel="+"
     >
       {selected.size > 0 && (
         <SelectionBar

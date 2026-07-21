@@ -25,7 +25,7 @@ function isOutdated(year: number) {
 }
 
 export default function BlockView() {
-  const { db, view, mode } = useApp();
+  const { db, view } = useApp();
   if (view.kind !== 'block') return null;
   const block = db.blocks[view.blockId];
   if (!block) return <NotFound />;
@@ -35,17 +35,13 @@ export default function BlockView() {
   return (
     <div className="flex flex-col h-full">
       <BlockHeader block={block} parentCase={parentCase} cardCount={cards.length} />
-      {mode === 'round' ? (
-        <RoundCardList cards={cards} />
-      ) : (
-        <PrepCardList block={block} cards={cards} />
-      )}
+      <PrepCardList block={block} cards={cards} />
     </div>
   );
 }
 
 function BlockHeader({ block, parentCase, cardCount }: any) {
-  const { update, setView, mode } = useApp();
+  const { update, setView } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
@@ -104,12 +100,10 @@ function BlockHeader({ block, parentCase, cardCount }: any) {
         )}
         <div className="text-xs text-ink/40 mt-1">{cardCount} card{cardCount !== 1 ? 's' : ''}</div>
       </div>
-      {mode === 'prep' && (
-        <div className="flex gap-2 pt-1 shrink-0">
-          <button className="btn btn-icon w-7 h-7" title="Rename" onClick={() => setEditing(true)}><EditIcon /></button>
-          <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={deleteBlock}><TrashIcon /></button>
-        </div>
-      )}
+      <div className="flex gap-2 pt-1 shrink-0">
+        <button className="btn btn-icon w-7 h-7" title="Rename" onClick={() => setEditing(true)}><EditIcon /></button>
+        <button className={`btn btn-icon w-7 h-7 ${dangerCls}`} title="Delete" onClick={deleteBlock}><TrashIcon /></button>
+      </div>
     </div>
   );
 }
@@ -127,27 +121,6 @@ function PrepCardList({ block, cards }: { block: any; cards: Card[] }) {
         <AddCardForm blockId={block.id} />
         <ImportCards blockId={block.id} onDone={() => {}} />
       </div>
-    </div>
-  );
-}
-
-function RoundCardList({ cards }: { cards: Card[] }) {
-  return (
-    <div className="flex-1 overflow-y-auto scroll-thin p-8 space-y-8 max-w-3xl">
-      {cards.length === 0 && <div className="text-base text-ink/40 italic">No cards in this block.</div>}
-      {cards.map((card) => (
-        <div key={card.id} className="space-y-2">
-          <div className="text-base font-semibold leading-snug mb-0.5">{card.tag}</div>
-          <div className="text-base font-semibold mb-0.5">{shortCite(card.cite)}</div>
-          {longCite(card.cite) && <div className="text-xs text-ink/45 mb-1">{longCite(card.cite)}</div>}
-          <div className="text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">{card.body}</div>
-          {isOutdated(card.year) && (
-            <span className="inline-block text-[11px] px-1.5 py-0.5 bg-warn/10 text-warn rounded-sm">
-              Outdated — {card.year}
-            </span>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

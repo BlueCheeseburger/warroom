@@ -4,7 +4,7 @@
 Warroom is a desktop debate prep app for Policy, LD, and PF. All core data (cases, cards, opponents, tournaments) is stored locally — no account needed for prep features. Team chat and sharing use a cloud backend. Includes Warroom AI, an agentic AI assistant.
 
 ## Navigation
-Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments, Flows, Find Cards (Logos), Open Evidence, Google Drive, Settings. Bottom of sidebar toggles **Prep mode** (default) ↔ **Round mode** (tournament day). AI panel = star icon in title bar. Team chat = chat icon next to it.
+Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments, Flows, Speech doc, Chat, Find Cards (Logos), Open Evidence, Google Drive, Topics, Settings — everything is always reachable at once, there's no mode to switch. AI panel = star icon in title bar. Team chat = chat icon next to it.
 
 ---
 

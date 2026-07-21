@@ -84,7 +84,7 @@ function useSpeechDocCounts(): { count: number; aff: number; neg: number } {
 }
 
 export default function Home() {
-  const { db, mode } = useApp();
+  const { db } = useApp();
 
   const cases = Object.values(db.cases);
   const cards = Object.values(db.cards);
@@ -445,7 +445,7 @@ function getSpeechDocs(): RecentDoc[] {
 }
 
 function CasesPanel() {
-  const { db, update, setView, mode } = useApp();
+  const { db, update, setView } = useApp();
   const cases = Object.values(db.cases);
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
   const [name, setName] = useState('');
@@ -516,11 +516,9 @@ function CasesPanel() {
     <div className="glass-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="label">Cases</div>
-        {mode === 'prep' && (
-          <button className="btn text-[11px]" onClick={() => setCreating((v) => !v)}>
-            {creating ? 'Cancel' : '+ New case'}
-          </button>
-        )}
+        <button className="btn text-[11px]" onClick={() => setCreating((v) => !v)}>
+          {creating ? 'Cancel' : '+ New case'}
+        </button>
       </div>
 
       {creating && (
@@ -1070,17 +1068,14 @@ function GeminiConvRow({ conv, onOpen, onRename, onDelete }: {
 // ─── Quick actions ────────────────────────────────────────────────────────────
 
 function QuickActions() {
-  const { setView, mode, chatOpen, setChatOpen } = useApp();
+  const { setView, chatOpen, setChatOpen } = useApp();
 
   const actions = [
     { label: 'Flow sheet', icon: '⌨', onClick: () => setView({ kind: 'flow' }) },
     { label: 'Card library', icon: '🗂', onClick: () => setView({ kind: 'library' }) },
-    ...(mode === 'prep' ? [
-      { label: 'Opponents', icon: '🔍', onClick: () => setView({ kind: 'opponents' }) },
-      { label: 'Import doc', icon: '↓', onClick: () => setView({ kind: 'speech-doc' }) },
-    ] : [
-      { label: 'Speech doc', icon: '📄', onClick: () => setView({ kind: 'block', blockId: '__speech__' } as any) },
-    ]),
+    { label: 'Opponents', icon: '🔍', onClick: () => setView({ kind: 'opponents' }) },
+    { label: 'Import doc', icon: '↓', onClick: () => setView({ kind: 'speech-doc' }) },
+    { label: 'Speech doc', icon: '📄', onClick: () => setView({ kind: 'block', blockId: '__speech__' } as any) },
     { label: 'Tournaments', icon: '🏆', onClick: () => setView({ kind: 'tournaments' }) },
     { label: 'Chat', icon: '💬', onClick: () => setChatOpen(true) },
   ];

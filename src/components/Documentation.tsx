@@ -93,7 +93,7 @@ const TOC_SECTIONS = [
   { id: 'overview',    label: 'Overview' },
   { id: 'stack',       label: 'Tech stack' },
   { id: 'data-model',  label: 'Data model' },
-  { id: 'navigation',  label: 'Navigation & modes' },
+  { id: 'navigation',  label: 'Navigation' },
   { id: 'global-search', label: 'Global search (⌘K)' },
   { id: 'shortcuts',   label: 'Keyboard shortcuts (⌘/)' },
   { id: 'cases',       label: 'Cases & blocks' },
@@ -308,11 +308,13 @@ export default function Documentation() {
 
         {/* ── Navigation ────────────────────────────────────────────── */}
         <section id="doc-navigation">
-          <H2>Navigation & modes</H2>
+          <H2>Navigation</H2>
           <P>
             Navigation is view-stack-free: one active <Code>View</Code> at a time, stored in Zustand.
-            The sidebar provides top-level navigation; views are rendered by a <Code>Router</Code>{' '}
-            function in <Code>App.tsx</Code>. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews)
+            The sidebar provides top-level navigation to everything — Cases, Tournaments, Scouting,
+            Cards, Google Drive, Flow, Speech doc, Chat, and Topics are all reachable at once; there's
+            no separate mode to switch between. Views are rendered by a <Code>Router</Code> function
+            in <Code>App.tsx</Code>. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews)
             are always mounted but hidden so they don't reload on navigation.
           </P>
           <H3>Views</H3>
@@ -334,12 +336,6 @@ export default function Documentation() {
             <LI><Code>gdrive</Code> — Google Drive file browser</LI>
             <LI><Code>docs</Code> — This documentation page</LI>
           </UL>
-          <H3>App modes</H3>
-          <P>
-            Two modes toggled in the sidebar: <strong>Prep</strong> (default, for case building and
-            scouting) and <strong>Round</strong> (tournament day, streamlined view focused on current
-            round). The mode is persisted per session.
-          </P>
         </section>
 
         {/* ── Global search ──────────────────────────────────────────── */}
@@ -1653,7 +1649,7 @@ export default function Documentation() {
           </UL>
           <H3>Zustand store (<Code>src/store/appStore.ts</Code>)</H3>
           <P>
-            Single global store (<Code>useApp</Code>) holds: DB state, current view, mode, theme,
+            Single global store (<Code>useApp</Code>) holds: DB state, current view, theme,
             event type, flows index, chat state (user, team, members, unread count), Warroom AI panel
             state, onboarding state, and the agent search function registry.
           </P>
