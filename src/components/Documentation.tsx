@@ -545,6 +545,40 @@ export default function Documentation() {
             mock laid out from the case's own tags and cites — so the grid reads as one consistent
             wall of documents rather than a mix of pages and placeholders.
           </P>
+          <P>
+            <strong>Cross-view drag-and-drop.</strong> The sidebar tree and the grid are separate
+            React trees, so a drag started in one can't see the other's local state — only the
+            native <Code>DataTransfer</Code> is shared ground. <Code>ITEM_DRAG_MIME</Code> /{' '}
+            <Code>FOLDER_DRAG_MIME</Code> (<Code>caseFolders.ts</Code>) are the MIME strings both
+            sides write on drag-start and read on drop. The subtler half of the fix is on{' '}
+            <Code>dragover</Code>: each tree's <Code>canDrop</Code> check originally required{' '}
+            <em>local</em> drag state, which a cross-tree drag never sets — both sides now fall
+            back to inspecting <Code>e.dataTransfer.types</Code> (readable during{' '}
+            <Code>dragover</Code>, unlike <Code>.getData()</Code>) when there's no local drag,
+            so the hover is still accepted and the drop fires.
+          </P>
+          <P>
+            <strong>Multi-select and bulk actions.</strong> Cmd/Ctrl+click toggles an item into a
+            selection <Code>Set&lt;string&gt;</Code> without navigating — intercepted in the click
+            capture phase so it never reaches the item's own click handler. A selection bar offers{' '}
+            <strong>Move to</strong> (every folder, breadcrumb-labeled) and <strong>Delete</strong>,
+            folding over the selected keys. Right-click (or a hover "⋯" button in the grid) gives
+            the same three actions — Move to / Rename / Delete — for one item at a time, in both
+            the sidebar and the grid. Deleting a case and deleting a speech doc are different
+            operations under the hood (db mutation vs. a recents entry); both are unified behind
+            small exported helpers in <Code>caseItems.ts</Code> (
+            <Code>deleteCaseAndBlocks</Code>, <Code>removeFromRecents</Code>,{' '}
+            <Code>renameInRecents</Code>) so every UI surface agrees on what "delete a case"
+            actually means.
+          </P>
+          <P>
+            <strong>Import a whole folder.</strong> <Code>dialog:openFolderOfDocx</Code> opens a
+            native directory picker and recursively walks it (capped at 2000 files) for{' '}
+            <Code>.docx</Code> files, trusting each one the same way a file dialog does.{' '}
+            <Code>pickFolder()</Code> in <Code>SpeechDocViewer.tsx</Code> imports every result,
+            then creates one new folder named after the picked directory and files every doc into
+            it in a single update — so a folder import always lands as one correctly-named group.
+          </P>
         </section>
 
         {/* ── Library ────────────────────────────────────────────────── */}
@@ -1086,6 +1120,13 @@ export default function Documentation() {
             the same way dialog picks are trusted.
           </P>
           <P>
+            <strong>Import a whole folder.</strong> <Code>dialog:openFolderOfDocx</Code> opens a
+            native directory picker and recursively walks it (capped at 2000 files) for{' '}
+            <Code>.docx</Code> files, trusting each one the same way. <Code>pickFolder()</Code>{' '}
+            imports every result, then creates one new Cases folder named after the picked
+            directory and files every doc into it in a single update.
+          </P>
+          <P>
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
             structure and highlighted / underlined runs), <strong>Outline</strong> (heading
             navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
@@ -1101,6 +1142,23 @@ export default function Documentation() {
             <Code>local()</Code> source chains that resolve to real Office fonts when installed, else
             metric-compatible open fonts, else a clean system sans-serif — so Calibri docs render
             sans-serif everywhere.
+          </P>
+          <P>
+            <strong>Stale Times New Roman on deep headings.</strong> Word's built-in Heading5–9
+            styles default to Times New Roman, and templates that only customize the shallow
+            levels a debate doc actually uses (1–4) leave that stale default on any tag nested
+            deep enough to hit it. That font is set inline, so it beats a CSS class selector —{' '}
+            <Code>forceHeadingFont()</Code> walks every paragraph after render and forces any
+            heading it identifies back to the Calibri stack with <Code>!important</Code>,
+            regardless of what the paragraph's own style says. Thumbnails in the Cases grid get
+            the same fix.
+          </P>
+          <P>
+            <strong>Focus mode always shows cites in full.</strong> A cite paragraph (right after
+            a tag) is treated the same as the tag itself — always visible — unless the debater
+            actually highlighted part of it. It used to only keep the paragraph's leading{' '}
+            <em>bold</em> run visible on the assumption a cite always bolds its author; plenty of
+            cites don't, so that span never existed and the whole cite silently vanished.
           </P>
           <H3>OpenCaseList-imported cases</H3>
           <P>
@@ -1161,10 +1219,24 @@ export default function Documentation() {
             styles.
           </P>
           <P>
+            <strong>Click-to-jump pin.</strong> Clicking an entry sets a 500ms deadline (
+            <Code>pinnedActiveUntilRef</Code>) before scrolling. Without it, the scroll event the
+            jump itself causes re-triggers the "which heading is at the top" tracker above, and a
+            short/bare heading (an organizational tag with no body under it — "Case" immediately
+            followed by "Procedurals") lands in that tracker's detection window right alongside
+            the <em>next</em> heading down, so the tracker silently overrides the just-clicked
+            heading with its neighbor a frame later. The pin makes the tracker defer to the click
+            until the scroll settles.
+          </P>
+          <P>
             The outline <strong>auto-shows only on the first document you open each app launch</strong>;
             after that it stays in whatever state you left it. A <strong>layers button</strong> (e.g.
             "2/4") in the header cycles how many heading levels are shown — collapse a long file to just
-            pockets / hats for fast high-level navigation, then expand back. Cards that are unusually{' '}
+            pockets / hats for fast high-level navigation, then expand back. <strong>Per-branch
+            collapse</strong> works independently, Word-Navigation-Pane style — click a branch's own
+            arrow to fold just its taglines/sub-points without touching any sibling branch; the flat
+            heading list is reconstructed into a real parent/child tree by the standard "nearest
+            preceding item with a smaller level is the parent" algorithm. Cards that are unusually{' '}
             <strong>over- or under-highlighted</strong> versus the rest of the doc (computed by comparing
             each card's highlight ratio against the doc's mean ± 1.5σ) get an amber warning badge; click it
             for an explanation and a permanent dismiss (saved per-doc).
