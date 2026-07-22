@@ -1760,18 +1760,19 @@ export default function Documentation() {
           </P>
           <H3>AI call retries</H3>
           <P>
-            Every AI feature retries automatically before giving up: if a model call fails, it's
+            Background AI calls — ones fired off with no retry button of the user's own (card
+            cutting, Auto Flow, Round Analysis, cross-ex questions, Impact Calc, the Outweigh game,
+            scouting, and more) — retry automatically before giving up: if a model call fails, it's
             retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong> if that also
             fails, then <strong>60 seconds</strong> for a last try — 4 attempts total — before the
-            error is finally surfaced. This covers essentially every AI-powered feature in the app
-            (card cutting, Auto Flow, Round Analysis, cross-ex questions, Impact Calc, the Outweigh
-            game, and more). If all four attempts fail, a small toast appears at the bottom of the
-            screen with the error, in addition to whatever that feature already shows inline.
+            error is finally surfaced. If all four attempts fail, a small toast appears at the bottom
+            of the screen with the error, in addition to whatever that feature already shows inline.
           </P>
           <P>
-            The one exception is the <strong>Warroom AI chat/agent panel</strong> — a chat turn can
-            trigger real actions (saving a card, opening a panel), so it isn't blindly retried the
-            same way; you can just resend a message if it fails.
+            This deliberately does <strong>not</strong> apply to the <strong>Warroom AI chat/agent
+            panel</strong> — a chat turn can trigger real actions (saving a card, opening a panel),
+            and the user already has an obvious retry of their own (resend the message), so it isn't
+            blindly retried the same way.
           </P>
         </section>
 
