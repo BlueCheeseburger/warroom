@@ -5,8 +5,13 @@ import { importFlowFromXlsx } from '../utils/flowImport';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
+  createFolder, renameFolder, deleteFolder, pruneAssignments,
   ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
 } from '../utils/caseFolders';
+import {
+  useFlowFolders, itemKeyForFlow,
+  FLOW_ITEM_DRAG_MIME, FLOW_FOLDER_DRAG_MIME,
+} from '../utils/flowFolders';
 import { buildCaseItems, CaseItem, deleteCaseAndBlocks } from '../utils/caseItems';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
@@ -78,6 +83,14 @@ export function IcoFolder() {
   return (
     <Ico size={14}>
       <path d="M2 6.5v9a1 1 0 001 1h14a1 1 0 001-1V8.5a1 1 0 00-1-1H9.5l-2-2H3a1 1 0 00-1 1z"/>
+    </Ico>
+  );
+}
+function IcoNewFolder() {
+  return (
+    <Ico size={14}>
+      <path d="M2 6.5v9a1 1 0 001 1h14a1 1 0 001-1V8.5a1 1 0 00-1-1H9.5l-2-2H3a1 1 0 00-1 1z"/>
+      <path d="M10 9.5v4M8 11.5h4"/>
     </Ico>
   );
 }
@@ -562,32 +575,12 @@ function ExpandedNav({
           </Section>
         )}
 
-        {/* Flow */}
-        <Section
-          title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
-          extraAction={importFlow} extraBusy={importing}
-          extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
-          extraActions={[{ onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs', className: 'ai-glow-ring' }]}
-        >
-          {flowsIndex.length === 0 && <Empty>No flows yet</Empty>}
-          {flowsIndex.map((f: any) => (
-            <NavItem key={f.id}
-              active={view.kind === 'flow' && (view as any).flowId === f.id}
-              onClick={() => setView({ kind: 'flow', flowId: f.id })}
-              itemId={f.id} itemType="flow" itemName={f.name}
-              onDeleteOverride={() => deleteFlow(f.id)}
-              onRenameOverride={(name: string) => renameFlow(f.id, name)}>
-              <span className="truncate flex-1">{f.name}</span>
-              {f.shared && (
-                <span title="Shared" className="shrink-0 ml-1 opacity-60 inline-flex" style={{ color: '#0077ed' }}>
-                  <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M12 10a2 2 0 0 0-1.6.8L5.9 8.4A2 2 0 0 0 6 8a2 2 0 0 0-.1-.4l4.5-2.3A2 2 0 1 0 9.9 3.4L5.4 5.7A2 2 0 1 0 5.4 10.3l4.5 2.3A2 2 0 1 0 12 10z"/>
-                  </svg>
-                </span>
-              )}
-            </NavItem>
-          ))}
-        </Section>
+        {/* Flow — nested folder tree, same system as Cases */}
+        <FlowsSection
+          view={view} setView={setView} flowsIndex={flowsIndex}
+          createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
+          importFlow={importFlow} importing={importing} setAutoFlowOpen={setAutoFlowOpen}
+        />
 
         {/* NSDA Topics — at the bottom of the nav */}
         <Section title="Topics" icon={<IcoTopics />}>
@@ -650,19 +643,20 @@ function NavRowPrimary({ active, onClick, icon, label }: {
  */
 
 const FOLDERS_OPEN_KEY = 'sidebar-cases-folders-open';
+const FLOW_FOLDERS_OPEN_KEY = 'sidebar-flow-folders-open';
 
 /** Which folders are expanded, persisted like the section collapse state above. */
-function useOpenFolders() {
+function useOpenFolders(storageKey: string = FOLDERS_OPEN_KEY) {
   const [open, setOpen] = useState<Set<string>>(() => {
     try {
-      const raw = JSON.parse(localStorage.getItem(FOLDERS_OPEN_KEY) ?? '[]');
+      const raw = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
       return new Set<string>(Array.isArray(raw) ? raw : []);
     } catch { return new Set<string>(); }
   });
   const toggle = (id: string) => setOpen((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
-    try { localStorage.setItem(FOLDERS_OPEN_KEY, JSON.stringify([...next])); } catch {}
+    try { localStorage.setItem(storageKey, JSON.stringify([...next])); } catch {}
     return next;
   });
   return [open, toggle] as const;
@@ -676,19 +670,57 @@ const INDENT_PX = 11;
 type DragPayload = { kind: 'item' | 'folder'; id: string };
 
 function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate,
-  onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }: {
+  onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onRename, onDelete }: {
   folder: CaseFolder; depth: number; open: boolean; active: boolean; dropping: boolean;
   onToggle: () => void; onNavigate: () => void;
   onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void;
+  /**
+   * Rename/delete for trees with no grid page behind them (the Flow tree).
+   * Cases folders leave these unset — their management UI lives in the Cases
+   * grid — and the row renders exactly as before. When set: hover shows a ⋯
+   * menu (also on right-click) with Rename/Delete, and double-click renames
+   * inline, mirroring NavItem's behavior for regular items.
+   */
+  onRename?: (name: string) => void; onDelete?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hasMenu = !!(onRename || onDelete);
   const lit = active || dropping;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+  }, [renaming]);
+
+  function startRename() {
+    if (!onRename) return;
+    setMenuOpen(false); setRenameValue(folder.name); setRenaming(true);
+  }
+  function commitRename() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== folder.name) onRename?.(trimmed);
+    setRenaming(false);
+  }
+
   return (
     <div
-      className="mb-0.5"
+      className="relative mb-0.5"
       style={{ paddingLeft: depth * INDENT_PX }}
-      draggable
+      draggable={!renaming}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
@@ -697,37 +729,85 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <button
-        onClick={onNavigate}
-        className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
-        style={{
-          background: lit ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
-          color: lit ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
-          boxShadow: dropping
-            ? 'inset 0 0 0 1.5px rgb(var(--ink-rgb) / 0.5)'
-            : active ? 'var(--nav-active-shadow)' : 'none',
-        }}
-      >
-        <span
-          role="button" tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(); } }}
-          className="shrink-0 flex items-center justify-center rounded transition"
-          style={{ width: 18, height: 18, margin: '0 -4.5px' }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+      {renaming ? (
+        <input
+          ref={inputRef} value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
+          className="w-full px-2.5 py-1.5 text-xs rounded-lg font-medium outline-none"
+          style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', border: '1px solid var(--border-subtle)' }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <button
+          onClick={onNavigate}
+          onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
+          onContextMenu={(e) => { if (hasMenu) { e.preventDefault(); e.stopPropagation(); setMenuOpen(true); } }}
+          className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
+          style={{
+            background: lit ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
+            color: lit ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+            boxShadow: dropping
+              ? 'inset 0 0 0 1.5px rgb(var(--ink-rgb) / 0.5)'
+              : active ? 'var(--nav-active-shadow)' : 'none',
+          }}
         >
-          <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
-            className="transition-transform duration-150"
-            style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>
-            <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </span>
-        <span className="shrink-0 flex items-center" style={{ opacity: lit ? 0.9 : 0.5 }}>
-          <IcoFolder />
-        </span>
-        <span className="truncate flex-1">{folder.name}</span>
-      </button>
+          <span
+            role="button" tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(); } }}
+            className="shrink-0 flex items-center justify-center rounded transition"
+            style={{ width: 18, height: 18, margin: '0 -4.5px' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+          >
+            <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
+              className="transition-transform duration-150"
+              style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+              <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </span>
+          <span className="shrink-0 flex items-center" style={{ opacity: lit ? 0.9 : 0.5 }}>
+            <IcoFolder />
+          </span>
+          <span className="truncate flex-1">{folder.name}</span>
+          {hasMenu && (hovered || menuOpen) && (
+            <span role="button" tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setMenuOpen((v) => !v); } }}
+              className="ml-1 shrink-0 flex items-center justify-center w-4 h-4 rounded transition"
+              style={{ color: 'var(--nav-inactive-color)', opacity: 0.7 }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <circle cx="2" cy="6" r="1.1"/><circle cx="6" cy="6" r="1.1"/><circle cx="10" cy="6" r="1.1"/>
+              </svg>
+            </span>
+          )}
+        </button>
+      )}
+      {menuOpen && (
+        <div ref={menuRef} className="glass-popover absolute left-2 z-50 rounded-lg py-1 text-xs shadow-xl"
+          style={{ top: '100%', minWidth: '150px', border: '1px solid var(--border-subtle)' }}>
+          {onRename && (
+            <button onClick={(e) => { e.stopPropagation(); startRename(); }}
+              className="w-full text-left px-3 py-1.5 transition"
+              style={{ color: 'var(--nav-active-color)' }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              Rename
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
+              className="w-full text-left px-3 py-1.5 transition"
+              style={{ color: 'var(--danger, #ef4444)' }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              Delete folder
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1004,6 +1084,207 @@ function CasesSection({ view, setView, db }: {
         {topFolders.length === 0 && items.length === 0 && <Empty>No cases yet</Empty>}
         {renderFolders(null, 0)}
         {looseItems.map((i) => renderItem(i, 0))}
+      </div>
+    </Section>
+  );
+}
+
+// ── Flow folder tree ──────────────────────────────────────────────────────────
+
+/**
+ * The Flow section's nested folder tree — the same folder system as Cases
+ * (utils/flowFolders.ts stores the same shape under its own key), so flows can
+ * be grouped by tournament, round, or practice set. A folder is only a label:
+ * filing a flow never touches its stored data, and deleting a folder moves its
+ * contents up a level rather than deleting any flow. Unlike Cases there is no
+ * grid page behind this tree, so folder create/rename/delete live here — the
+ * folder-plus header button creates one, and each folder row has a ⋯ menu.
+ */
+function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renameFlow, importFlow, importing, setAutoFlowOpen }: {
+  view: any; setView: (v: any) => void; flowsIndex: FlowMeta[];
+  createFlow: () => void; deleteFlow: (id: string) => void; renameFlow: (id: string, name: string) => void;
+  importFlow: () => void; importing: boolean; setAutoFlowOpen: (open: boolean) => void;
+}) {
+  const { folders, ready, update } = useFlowFolders();
+  const [openIds, toggleOpen] = useOpenFolders(FLOW_FOLDERS_OPEN_KEY);
+  const [dragging, setDragging] = useState<DragPayload | null>(null);
+  const [dropId, setDropId] = useState<string | null>(null);
+
+  // Full breadcrumb per folder for the flat "Move to" context menu, same as CasesSection.
+  const folderChoices = useMemo(
+    () => flattenFolders(folders).map((f) => ({
+      id: f.id,
+      label: folderTrail(folders, f.id).map((t) => t.name).join(' / '),
+    })),
+    [folders],
+  );
+
+  // Drop assignments for flows that no longer exist. Only once folder state is
+  // actually loaded — pruning against an empty snapshot would wipe everything.
+  useEffect(() => {
+    if (!ready) return;
+    const liveKeys = new Set(flowsIndex.map((f) => itemKeyForFlow(f.id)));
+    const next = pruneAssignments(folders, liveKeys);
+    if (Object.keys(next.assignments).length !== Object.keys(folders.assignments).length) {
+      update(() => next);
+    }
+  }, [ready, flowsIndex, folders, update]);
+
+  function moveOptionsFor(flowId: string) {
+    const key = itemKeyForFlow(flowId);
+    const currentFolderId = resolveItemFolder(folders, key);
+    const opts: { key: string; label: string; onClick: () => void }[] = [];
+    if (currentFolderId !== null) {
+      opts.push({ key: '__top__', label: 'Top level (no folder)', onClick: () => update((d) => moveItem(d, key, null)) });
+    }
+    for (const f of folderChoices) {
+      if (f.id === currentFolderId) continue;
+      opts.push({ key: f.id, label: f.label, onClick: () => update((d) => moveItem(d, key, f.id)) });
+    }
+    return opts;
+  }
+
+  /** A folder can't be filed into itself or its own subtree — that would orphan it. */
+  function canDrop(target: string | null): boolean {
+    if (!dragging) return false;
+    if (dragging.kind === 'item' || target === null) return true;
+    return !isSelfOrDescendant(folders, dragging.id, target);
+  }
+
+  function onDropInto(e: React.DragEvent, target: string | null) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropId(null);
+    const d = dragging;
+    setDragging(null);
+    if (!d || !canDrop(target)) return;
+    if (d.kind === 'item') update((data) => moveItem(data, d.id, target));
+    else update((data) => moveFolder(data, d.id, target));
+  }
+
+  function onDragOverTarget(e: React.DragEvent, target: string | null) {
+    if (dragging) {
+      if (!canDrop(target)) return;
+    } else {
+      // Not our drag — accept only flow-flavored payloads, so a case/doc dragged
+      // from the Cases tree can't be filed into a flow folder.
+      const types = e.dataTransfer.types;
+      if (!types.includes(FLOW_ITEM_DRAG_MIME) && !types.includes(FLOW_FOLDER_DRAG_MIME)) return;
+    }
+    e.preventDefault(); // without this the drop event never fires
+    e.stopPropagation();
+    setDropId(target ?? TOP_LEVEL_DROP);
+  }
+
+  function startDrag(e: React.DragEvent, payload: DragPayload) {
+    e.stopPropagation();
+    setDragging(payload);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(payload.kind === 'item' ? FLOW_ITEM_DRAG_MIME : FLOW_FOLDER_DRAG_MIME, payload.id);
+  }
+
+  function newFolder() {
+    update((d) => createFolder(d, 'New folder', null));
+  }
+  function doDeleteFolder(id: string) {
+    // Contents move up to the parent (see caseFolders.deleteFolder) — no flow is deleted.
+    update((d) => deleteFolder(d, id));
+  }
+
+  function renderFlow(f: FlowMeta, depth: number) {
+    const key = itemKeyForFlow(f.id);
+    return (
+      <div
+        key={f.id}
+        style={{ paddingLeft: depth * INDENT_PX, opacity: dragging?.id === key ? 0.45 : 1 }}
+        draggable
+        onDragStart={(e) => startDrag(e, { kind: 'item', id: key })}
+        onDragEnd={() => { setDragging(null); setDropId(null); }}
+      >
+        <NavItem
+          active={view.kind === 'flow' && (view as any).flowId === f.id}
+          onClick={() => setView({ kind: 'flow', flowId: f.id })}
+          itemId={f.id} itemType="flow" itemName={f.name}
+          onDeleteOverride={() => deleteFlow(f.id)}
+          onRenameOverride={(name: string) => renameFlow(f.id, name)}
+          moveOptions={moveOptionsFor(f.id)}
+        >
+          <span className="truncate flex-1">{f.name}</span>
+          {(f as any).shared && (
+            <span title="Shared" className="shrink-0 ml-1 opacity-60 inline-flex" style={{ color: '#0077ed' }}>
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M12 10a2 2 0 0 0-1.6.8L5.9 8.4A2 2 0 0 0 6 8a2 2 0 0 0-.1-.4l4.5-2.3A2 2 0 1 0 9.9 3.4L5.4 5.7A2 2 0 1 0 5.4 10.3l4.5 2.3A2 2 0 1 0 12 10z"/>
+              </svg>
+            </span>
+          )}
+        </NavItem>
+      </div>
+    );
+  }
+
+  function renderFolders(parentId: string | null, depth: number): React.ReactNode {
+    return childFolders(folders, parentId).map((f) => {
+      const open = openIds.has(f.id);
+      return (
+        <React.Fragment key={f.id}>
+          <FolderRow
+            folder={f}
+            depth={depth}
+            open={open}
+            active={false}
+            dropping={dropId === f.id}
+            onToggle={() => toggleOpen(f.id)}
+            // No grid page behind flow folders — clicking the name just expands it.
+            onNavigate={() => toggleOpen(f.id)}
+            onDragStart={(e) => startDrag(e, { kind: 'folder', id: f.id })}
+            onDragEnd={() => { setDragging(null); setDropId(null); }}
+            onDragOver={(e) => onDragOverTarget(e, f.id)}
+            onDragLeave={() => setDropId((cur) => (cur === f.id ? null : cur))}
+            onDrop={(e) => onDropInto(e, f.id)}
+            onRename={(name) => update((d) => renameFolder(d, f.id, name))}
+            onDelete={() => doDeleteFolder(f.id)}
+          />
+          {open && (
+            <>
+              {renderFolders(f.id, depth + 1)}
+              {flowsIndex
+                .filter((fl) => resolveItemFolder(folders, itemKeyForFlow(fl.id)) === f.id)
+                .map((fl) => renderFlow(fl, depth + 1))}
+            </>
+          )}
+        </React.Fragment>
+      );
+    });
+  }
+
+  const topFolders = childFolders(folders, null);
+  const looseFlows = flowsIndex.filter((f) => resolveItemFolder(folders, itemKeyForFlow(f.id)) === null);
+  const topLit = dropId === TOP_LEVEL_DROP;
+
+  return (
+    <Section
+      title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
+      extraAction={importFlow} extraBusy={importing}
+      extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
+      extraActions={[
+        { onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs', className: 'ai-glow-ring' },
+        { onClick: newFolder, icon: <IcoNewFolder />, title: 'New folder' },
+      ]}
+    >
+      {/* Anything not dropped on a folder row falls through to here = top level. */}
+      <div
+        onDragOver={(e) => onDragOverTarget(e, null)}
+        onDragLeave={() => setDropId((cur) => (cur === TOP_LEVEL_DROP ? null : cur))}
+        onDrop={(e) => onDropInto(e, null)}
+        style={{
+          borderRadius: 8,
+          outline: topLit ? '1.5px dashed rgb(var(--ink-rgb) / 0.4)' : '1.5px dashed transparent',
+          outlineOffset: -1,
+        }}
+      >
+        {topFolders.length === 0 && flowsIndex.length === 0 && <Empty>No flows yet</Empty>}
+        {renderFolders(null, 0)}
+        {looseFlows.map((f) => renderFlow(f, 0))}
       </div>
     </Section>
   );

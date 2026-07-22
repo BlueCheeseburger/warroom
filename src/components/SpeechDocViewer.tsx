@@ -2667,6 +2667,35 @@ export default function SpeechDocViewer() {
     }, 650);
   }, []);
 
+  // Cmd/Ctrl+click on a heading selects the heading plus everything under it,
+  // up to the next heading of the same (or shallower) level — so a whole
+  // pocket/hat/block/tag section can be copied in one gesture.
+  const onDocClick = useCallback((e: React.MouseEvent) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const cont = containerRef.current;
+    if (!cont) return;
+    const headingClasses = headingClassesRef.current;
+    let p = (e.target as HTMLElement).closest('p');
+    if (!p || !cont.contains(p)) return;
+    const level = headingLevelOf(p, headingClasses);
+    if (level <= 0) return;
+    e.preventDefault();
+    // Extend through siblings until a heading at the same or a shallower level.
+    let last: Element = p;
+    for (let sib = p.nextElementSibling; sib; sib = sib.nextElementSibling) {
+      const lvl = headingLevelOf(sib, headingClasses);
+      if (lvl > 0 && lvl <= level) break;
+      last = sib;
+    }
+    const range = document.createRange();
+    range.setStartBefore(p);
+    range.setEndAfter(last);
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }, []);
+
   // Smooth-scroll the document to a heading and flash it briefly.
   const scrollToHeading = useCallback((id: string) => {
     const el = containerRef.current?.querySelector<HTMLElement>(`[data-outline-id="${id}"]`);
@@ -3536,6 +3565,7 @@ export default function SpeechDocViewer() {
           {step === 'loading' && <LoadingPanel message="Loading document…" />}
           <div
             ref={containerRef}
+            onClick={onDocClick}
             style={{ display: step === 'viewing' ? undefined : 'none' }}
           />
         </div>

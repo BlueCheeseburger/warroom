@@ -58,7 +58,8 @@ export const itemKeyForDoc = (path: string) => `doc:${path}`;
 let cache: CaseFoldersData | null = null;
 let inflight: Promise<CaseFoldersData> | null = null;
 
-function normalize(raw: any): CaseFoldersData {
+// Exported for flowFolders.ts, which stores the same shape under its own key.
+export function normalizeFolderData(raw: any): CaseFoldersData {
   const folders = Array.isArray(raw?.folders)
     ? raw.folders.filter((f: any) => f && typeof f.id === 'string' && typeof f.name === 'string')
       .map((f: any) => ({
@@ -78,7 +79,7 @@ export async function loadCaseFolders(): Promise<CaseFoldersData> {
   inflight = (async () => {
     try {
       const raw = await window.warroom?.storage.read(STORAGE_KEY);
-      cache = normalize(raw);
+      cache = normalizeFolderData(raw);
     } catch {
       cache = emptyCaseFolders();
     }

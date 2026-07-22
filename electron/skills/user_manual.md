@@ -200,6 +200,16 @@ Two things work a little differently on the Touch Bar, both just because of what
 - **Open**: drag .xlsx onto app window, or Flows section in sidebar → "+ Open flow"
 - Share via team chat with "Can view" or "Can edit" permissions
 
+### Flow folders
+The sidebar's **Flow** section has the same folder system as Cases — group your flows by tournament, by round, by practice set, whatever fits.
+
+- **Make a folder**: click the **new-folder button** in the Flow section header, then double-click the new folder (or right-click → Rename) to name it
+- **File a flow**: drag it onto a folder — or right-click the flow → **Move to** and pick the folder (works even when the folder is collapsed)
+- **Nest folders**: drag one folder into another; they can go as deep as you like
+- **Rename or delete a folder**: hover it and click the **⋯** menu (or right-click it)
+
+Same rules as Cases folders: a folder is **just a label**. Filing a flow never touches the flow itself, and deleting a folder never deletes a flow — everything inside just moves up a level. Flow folders and Cases folders are separate systems, so a flow can't be dropped into a Cases folder or vice versa.
+
 ### Import a flow from a spreadsheet
 You can bring an existing flow spreadsheet (.xlsx) straight into the app as a new flow sheet.
 
