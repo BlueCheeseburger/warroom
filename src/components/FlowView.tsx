@@ -65,6 +65,10 @@ export interface SheetData {
   // opt-in summary mode). Rendered with the blue→pink AI ring until the user
   // edits the cell, at which point the key is dropped (the content is now theirs).
   aiCells?: string[];
+  // A short AI-generated blurb of what's on this tab — built from Auto Flow's
+  // opt-in per-card AI summaries (never a fresh API call on its own; see
+  // commitWrite in AutoFlow.tsx). Shown in the tab's hover tooltip when present.
+  aiSummary?: string;
 }
 
 // Exported so features that write into a flow from outside the editor (Auto
@@ -206,6 +210,7 @@ export default function FlowView() {
   const [renameValue, setRenameValue] = useState('');
   const [colMenu, setColMenu] = useState<number | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: number } | null>(null);
+  const [hoveredGap, setHoveredGap] = useState<{ ri: number; ci: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
 
@@ -1117,19 +1122,38 @@ export default function FlowView() {
       if (!fe || !te) continue;
       const fr = fe.getBoundingClientRect();
       const tr = te.getBoundingClientRect();
-      // Start at right-center of source, end at left-center of target
-      // (flip to left/right if target is to the left).
-      const targetRight = tr.left + tr.width / 2 < fr.left + fr.width / 2;
-      const x1 = (targetRight ? fr.left : fr.right) - base.left;
-      const y1 = fr.top + fr.height / 2 - base.top;
-      const x2 = (targetRight ? tr.right : tr.left) - base.left;
-      const y2 = tr.top + tr.height / 2 - base.top;
-      const dx = Math.max(30, Math.abs(x2 - x1) * 0.4);
-      const c1x = x1 + (targetRight ? -dx : dx);
-      const c2x = x2 + (targetRight ? dx : -dx);
+
+      // Same column (an answer stacked below/above the card it answers, one row
+      // over because the aligned row was already taken): a left/right-edge curve
+      // doesn't make sense here — source and target share the same x, so treat
+      // it as a vertical bracket instead. Both ends anchor on the SAME edge (the
+      // column's right side) and jog out by a small FIXED distance, independent
+      // of how far apart the rows are — otherwise a large vertical gap stretches
+      // the curve into a huge lopsided hook (this used to anchor the far end on
+      // the opposite edge, which is what caused that).
+      const sameColumn = Math.abs(fr.left - tr.left) < 2;
+      let x1: number, y1: number, x2: number, y2: number, c1x: number, c2x: number, c1y: number, c2y: number;
+      if (sameColumn) {
+        const jog = 20;
+        x1 = fr.right - base.left; y1 = fr.top + fr.height / 2 - base.top;
+        x2 = tr.right - base.left; y2 = tr.top + tr.height / 2 - base.top;
+        c1x = x1 + jog; c1y = y1;
+        c2x = x2 + jog; c2y = y2;
+      } else {
+        // Start at right-center of source, end at left-center of target
+        // (flip to left/right if target is to the left).
+        const targetRight = tr.left + tr.width / 2 < fr.left + fr.width / 2;
+        x1 = (targetRight ? fr.left : fr.right) - base.left;
+        y1 = fr.top + fr.height / 2 - base.top;
+        x2 = (targetRight ? tr.right : tr.left) - base.left;
+        y2 = tr.top + tr.height / 2 - base.top;
+        const dx = Math.max(30, Math.abs(x2 - x1) * 0.4);
+        c1x = x1 + (targetRight ? -dx : dx); c1y = y1;
+        c2x = x2 + (targetRight ? dx : -dx); c2y = y2;
+      }
       geo.push({
         id: a.id,
-        d: `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`,
+        d: `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`,
         mx: (x1 + x2) / 2,
         my: (y1 + y2) / 2,
       });
@@ -1286,11 +1310,15 @@ export default function FlowView() {
     persist({ sheets: next });
   }
 
-  // Short, wide summary of a tab's content for its hover tooltip — the top few
-  // argument tags on it, so you can tell tabs apart without clicking through.
-  // Deliberately NOT AI-generated: it fires on every hover, so it's a cheap
-  // local read of the cells (first line of each = the tag). For the ACTIVE tab
-  // the live edits live in cellsRef, not the (stale-until-save) sheet.cells.
+  // Short, wide summary of a tab's content for its hover tooltip. When Auto
+  // Flow's opt-in AI summary mode built this tab, `sheet.aiSummary` holds a
+  // real Warroom-AI-written blurb (assembled from the per-card AI summaries
+  // already generated at write time — see commitWrite in AutoFlow.tsx — never
+  // a fresh API call just for hovering) and that leads the tooltip, marked so
+  // it reads as AI content. Otherwise this falls back to a cheap local read of
+  // the cells (first line of each = the tag) — fires on every hover, no AI
+  // involved. For the ACTIVE tab the live edits live in cellsRef, not the
+  // (stale-until-save) sheet.cells.
   function sheetSummary(idx: number): string {
     const s = snap.current;
     const sheet = s.sheets[idx];
@@ -1303,7 +1331,8 @@ export default function FlowView() {
       })
       .filter((e) => e.text)
       .sort((a, b) => a.c - b.c || a.r - b.r);
-    if (entries.length === 0) return 'Empty';
+    const aiLine = sheet.aiSummary?.trim() ? `✨ ${sheet.aiSummary.trim()}` : '';
+    if (entries.length === 0) return aiLine || 'Empty';
     const seen = new Set<string>();
     const tags: string[] = [];
     for (const e of entries) {
@@ -1311,10 +1340,11 @@ export default function FlowView() {
       if (seen.has(k)) continue;
       seen.add(k);
       tags.push(e.text.length > 54 ? e.text.slice(0, 53) + '…' : e.text);
-      if (tags.length >= 3) break; // leave room for the tab-name line above
+      if (tags.length >= (aiLine ? 2 : 3)) break; // leave room for the AI line + tab name
     }
     const more = entries.length - tags.length;
-    return tags.join('\n') + (more > 0 ? `\n+${more} more` : '');
+    const rest = tags.join('\n') + (more > 0 ? `\n+${more} more` : '');
+    return aiLine ? `${aiLine}\n${rest}` : rest;
   }
 
   function startRenameSheet(idx: number) { setRenamingSheet(idx); setRenameValue(sheets[idx]?.name ?? ''); }
@@ -2038,24 +2068,34 @@ export default function FlowView() {
                         )}
                       </div>
                     )}
-                    {/* Insert-row "+" — straddles the bottom border, on hover. */}
-                    {isHovered && !drawMode && ri < NUM_ROWS - 1 && (
+                    {/* Insert-row "+" — thin hover strip straddling the bottom border line itself,
+                        independent of the cell's own hover state (which drives the move buttons above). */}
+                    {!drawMode && ri < NUM_ROWS - 1 && (
                       <div
-                        className="absolute left-1/2"
-                        style={{ bottom: -6, transform: 'translateX(-50%)', zIndex: 6, pointerEvents: 'auto' }}
+                        className="absolute left-0 right-0"
+                        style={{ bottom: -6, height: 12, zIndex: 6, pointerEvents: 'auto' }}
+                        onMouseEnter={() => setHoveredGap({ ri, ci })}
+                        onMouseLeave={() => setHoveredGap((g) => (g && g.ri === ri && g.ci === ci ? null : g))}
                       >
-                        <FlowTooltip text="Insert row below">
-                          <button
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => insertRowBetween(ri, ci)}
-                            className="flex items-center justify-center rounded-full transition"
-                            style={{
-                              width: 13, height: 13, fontSize: 11, lineHeight: 1,
-                              background: 'var(--nav-active-bg)', border: '1px solid var(--border-med)',
-                              color: 'var(--nav-active-color)', cursor: 'pointer',
-                            }}
-                          >+</button>
-                        </FlowTooltip>
+                        {hoveredGap?.ri === ri && hoveredGap?.ci === ci && (
+                          <div
+                            className="absolute left-1/2"
+                            style={{ top: '50%', transform: 'translate(-50%, -50%)' }}
+                          >
+                            <FlowTooltip text="Insert row below">
+                              <button
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => insertRowBetween(ri, ci)}
+                                className="flex items-center justify-center rounded-full transition"
+                                style={{
+                                  width: 13, height: 13, fontSize: 11, lineHeight: 1,
+                                  background: 'var(--nav-active-bg)', border: '1px solid var(--border-med)',
+                                  color: 'var(--nav-active-color)', cursor: 'pointer',
+                                }}
+                              >+</button>
+                            </FlowTooltip>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

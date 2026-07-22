@@ -205,7 +205,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/20/26
+          Last updated: 7/21/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -895,6 +895,9 @@ export default function Documentation() {
             <strong>Tab previews:</strong> long tab names truncate with an ellipsis instead of
             overflowing. Hover a tab at the bottom and a tooltip shows its full name plus the top few
             arguments on it, so you can tell your sheets apart at a glance without clicking into each.
+            If Auto Flow's AI card-summary option built that tab, the tooltip leads with a real
+            Warroom-AI-written blurb of the tab (marked with a ✨) — folded from the per-card
+            summaries already generated when the cards were written, not a fresh AI call on hover.
           </P>
           <P>
             <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all tabs in the flow.
@@ -1034,11 +1037,11 @@ export default function Documentation() {
             the uploaded docs' speech-label pockets (<Code>1AC</Code>/<Code>1NC</Code>-style labels vs.
             "Pro Case"/"Con Rebuttal"-style labels; there's no manual event toggle), and for policy
             also guesses Stock Issues vs. Advantage from the aff's structure (named advantages vs.
-            inherency/harms headings), shown with a "guessed" badge and overridable — both falling back
-            to sensible defaults when the docs give no usable signal — or an <strong>existing
-            flow</strong>, in which case Warroom AI is told that flow's actual current column labels and
-            sheet names (which may have been renamed from the defaults) rather than assuming the
-            standard set.
+            inherency/harms headings) — this has no toggle either, it's decided silently and just
+            works — both falling back to sensible defaults when the docs give no usable signal — or
+            an <strong>existing flow</strong>, in which case Warroom AI is told that flow's actual
+            current column labels and sheet names (which may have been renamed from the defaults)
+            rather than assuming the standard set.
           </P>
           <H3>Sorting and review</H3>
           <P>
@@ -1062,7 +1065,7 @@ export default function Documentation() {
           </P>
           <H3>Optional AI card summaries</H3>
           <P>
-            A checkbox on the destination step (<strong>off by default</strong>) swaps each card's
+            A toggle switch on the destination step (<strong>off by default</strong>) swaps each card's
             tagline + cite for a <strong>short AI summary of the card</strong>, written from both its
             tagline and its actual evidence, and forced to be <em>fewer words than the tagline itself</em>
             {' '}— Warroom AI is given the tagline's exact word count as a ceiling, and the result is
