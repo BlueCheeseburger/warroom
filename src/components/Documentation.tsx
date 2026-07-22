@@ -205,7 +205,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/21/26
+          Last updated: 7/22/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -805,6 +805,19 @@ export default function Documentation() {
           <P>
             Each flow has an ID, name, and debate event type. The flows index is persisted separately
             from the main DB in <Code>flows_index.json</Code>.
+          </P>
+          <H3>Flow folders</H3>
+          <P>
+            The sidebar's Flow section carries the <strong>same folder system as Cases</strong>{' '}
+            (<Code>src/utils/flowFolders.ts</Code> stores the same shape as{' '}
+            <Code>caseFolders.ts</Code> under its own <Code>flow_folders</Code> key, reusing all the
+            same pure tree helpers). Folders nest arbitrarily deep, flows are filed by drag-and-drop
+            or via the right-click <strong>Move to</strong> menu (which works even when the target
+            folder is collapsed), and the new-folder button in the section header creates one —
+            rename it by double-clicking or via its <Code>⋯</Code> menu. A folder is only a label:
+            filing never touches <Code>flow_data_&lt;id&gt;</Code>, and deleting a folder moves its
+            contents up a level rather than deleting any flow. Flow folders use distinct drag MIME
+            types from Cases folders, so the two trees can't accept each other's items.
           </P>
           <H3>Importing a flow</H3>
           <P>

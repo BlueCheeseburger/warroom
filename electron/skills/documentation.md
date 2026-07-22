@@ -290,6 +290,10 @@ Flows are `.xlsx` spreadsheets opened in-app using SheetJS. They appear in the s
 
 Each flow has an ID, name, and debate event type. The flows index is persisted separately from the main DB in `flows_index.json`.
 
+### Flow folders
+
+The sidebar's Flow section carries the **same folder system as Cases**: `src/utils/flowFolders.ts` stores the same `{ folders, assignments }` shape as `caseFolders.ts` under its own `flow_folders` storage key, and reuses every pure tree helper (`childFolders`, `folderTrail`, `moveItem`, `deleteFolder`, `pruneAssignments`, …) from `caseFolders.ts` — only the store (key, change event, cache, `useFlowFolders` hook) is separate. `FlowsSection` in `Sidebar.tsx` renders the tree, mirroring `CasesSection`: nested folders, drag-and-drop filing (with distinct MIME types `application/x-warroom-flow-item`/`-flow-folder` so flows and cases can't be cross-filed), a right-click **Move to** menu that works when the target folder is collapsed, and pruning of assignments for deleted flows. Since there is no grid page behind this tree (unlike Cases), folder management lives in the sidebar itself: a new-folder button in the section header creates one, and `FolderRow` gained optional `onRename`/`onDelete` props that add a ⋯ menu + inline double-click rename (cases folders leave these unset — their management stays in the Cases grid). Folders are labels only — filing never touches `flow_data_<id>`, and deleting a folder moves its contents up a level. Expand state persists per-tree under `sidebar-flow-folders-open`.
+
 ### Importing a flow
 
 An **import button** sits next to the `+` in the sidebar's Flow section. Clicking it opens a file picker for an existing flow spreadsheet (`.xlsx`); the app parses it and creates a new flow named after the file. Each **worksheet (tab)** in the workbook becomes its own flow sheet in the app.
