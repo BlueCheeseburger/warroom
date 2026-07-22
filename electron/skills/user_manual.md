@@ -442,6 +442,9 @@ Star icon in the title bar.
 ### AI Prompts
 Every question or task Warroom sends to the AI — card cutting, scouting reports, mission briefs, cross-ex questions, card credibility, impact calc, the Outweigh game, and more — is built from an editable prompt file, not baked into the app. Throughout the Documentation page you'll find "View/edit this prompt" links next to each AI feature; clicking one opens that prompt in a plain text editor. Change the wording and save — your edit is used the very next time that feature runs, with no restart needed. If you want to go back to the original wording, just delete your edited copy.
 
+### If an AI call fails
+Nearly every AI feature in Warroom (card cutting, Auto Flow, Round Analysis, cross-ex, Impact Calc, scouting, and more) automatically retries on failure — after **8 seconds**, then **30 seconds**, then **60 seconds** (4 tries total) — before finally giving up, so a brief outage or a rate limit usually resolves itself without you having to do anything. If it still doesn't come back after all four tries, a small toast appears at the bottom of the screen with the error, on top of whatever that feature already shows. The one place this doesn't apply is the **Warroom AI chat panel** — if a chat message fails, just resend it.
+
 ---
 
 ## Team Chat

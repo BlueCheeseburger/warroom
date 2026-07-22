@@ -1758,6 +1758,21 @@ export default function Documentation() {
             <Code>App.tsx</Code> handles the event: deduplicates, upserts the opponent, creates the
             round, and navigates.
           </P>
+          <H3>AI call retries</H3>
+          <P>
+            Every AI feature retries automatically before giving up: if a model call fails, it's
+            retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong> if that also
+            fails, then <strong>60 seconds</strong> for a last try — 4 attempts total — before the
+            error is finally surfaced. This covers essentially every AI-powered feature in the app
+            (card cutting, Auto Flow, Round Analysis, cross-ex questions, Impact Calc, the Outweigh
+            game, and more). If all four attempts fail, a small toast appears at the bottom of the
+            screen with the error, in addition to whatever that feature already shows inline.
+          </P>
+          <P>
+            The one exception is the <strong>Warroom AI chat/agent panel</strong> — a chat turn can
+            trigger real actions (saving a card, opening a panel), so it isn't blindly retried the
+            same way; you can just resend a message if it fails.
+          </P>
         </section>
 
         <section id="doc-topics">

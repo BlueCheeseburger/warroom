@@ -52,6 +52,7 @@ import ImpactLibrary from './components/ImpactLibrary';
 import SearchPalette from './components/SearchPalette';
 import ShortcutsOverlay from './components/ShortcutsOverlay';
 import AutoFlow from './components/AutoFlow';
+import AiErrorToast from './components/AiErrorToast';
 import { extractKeywords, refreshSpeechDocKeywords, DOC_KEYWORD_CAP, DOC_KEYWORD_VERSION } from './lib/searchIndex';
 import { matchesShortcut } from './lib/shortcutPrefs';
 
@@ -650,6 +651,7 @@ export default function App() {
       {searchOpen && <SearchPalette />}
       {autoFlowOpen && <AutoFlow onClose={() => setAutoFlowOpen(false)} />}
       <ShortcutsOverlay />
+      <AiErrorToast />
       {/* Tabroom monitor toast */}
       {monitorToast && (
         <div

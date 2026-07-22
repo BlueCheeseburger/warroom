@@ -757,6 +757,28 @@ async function fetchWithRetry(url: string, init: RequestInit, opts?: { timeoutMs
   throw lastErr;
 }
 
+// Coarser than fetchWithRetry above (which retries one transient HTTP failure
+// inside a SINGLE provider request): this retries a WHOLE AI call — the
+// prompt, the response parsing, everything — if it still ends up throwing
+// after that. Every ipcMain handler that makes an AI call wraps it with this
+// (see the audit note in CLAUDE.md under "AI call retries"), so a full outage
+// self-heals instead of failing the user's request on the first hiccup: retry
+// once after 8s, once more after 30s if that also fails, and a final time
+// after 60s — 4 attempts total — before finally letting the error through
+// (which the renderer surfaces as a toast; see preload.ts's `ai` wrapper).
+async function withDelayedRetry<T>(fn: () => Promise<T>, delaysMs: number[] = [8_000, 30_000, 60_000]): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < delaysMs.length) await sleep(delaysMs[attempt]);
+    }
+  }
+  throw lastErr;
+}
+
 // ─── OpenAI ───────────────────────────────────────────────────────────────────
 
 function openaiHttpError(status: number, body: string): Error {
@@ -1624,7 +1646,7 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
     QUESTIONS_ASKED: String(clar.length),
   });
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
+  const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }))) || {};
 
   if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
     return { ok: true, question: parsed.question, placements: [] };
@@ -1648,28 +1670,6 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
 
   return { ok: true, placements };
 });
-
-// Coarser than fetchWithRetry above (which retries a single transient HTTP
-// failure inside one provider request): this retries the WHOLE callAI call —
-// prompt, parsing, everything — if it still ends up throwing. Used for Auto
-// Flow's AI card summaries (which double as the AI taglines shown in cells and
-// the tab hover summary folded from them), per the user's explicit ask: retry
-// once after 30s, then once more after 60s, before finally giving up.
-async function callAIWithDelayedRetry(
-  prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number },
-  delaysMs: number[] = [30_000, 60_000],
-): Promise<string> {
-  let lastErr: any;
-  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
-    try {
-      return await callAI(prompt, taskTier, extraConfig);
-    } catch (e) {
-      lastErr = e;
-      if (attempt < delaysMs.length) await new Promise((r) => setTimeout(r, delaysMs[attempt]));
-    }
-  }
-  throw lastErr;
-}
 
 // Opt-in Auto Flow summaries: for each card, an ultra-short AI summary built from
 // the tag AND the card body, capped to strictly fewer words than the tag itself.
@@ -1716,7 +1716,7 @@ ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
     const prompt = await renderPrompt('auto_flow_summarize', {
       CARDS_JSON: JSON.stringify(items).slice(0, 100000),
     });
-    const parsed = parseJsonLoose(await callAIWithDelayedRetry(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
+    const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }))) || {};
     const raw = Array.isArray(parsed.summaries) ? parsed.summaries : [];
     const byTag = new Map<string, string>();
     for (const s of raw) {
@@ -2036,7 +2036,7 @@ ipcMain.handle('ai:extractCards', async (_e, filePath: string) => {
   const text = await extractText(filePath);
   if (!text.trim()) throw new Error('Could not extract text from file');
   const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: text.slice(0, 60000) });
-  const raw = await callAI(prompt, 'balanced');
+  const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
 
@@ -2172,7 +2172,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     IMAGES: imgList,
   });
 
-  const parsed = parseJsonLoose(await callGeminiWithSearch(prompt)) || {};
+  const parsed = parseJsonLoose(await withDelayedRetry(() => callGeminiWithSearch(prompt))) || {};
   const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
     ? parsed.bodyIndices.filter((n: any) => Number.isInteger(n) && n >= 0 && n < rawParagraphs.length)
     : [];
@@ -2215,7 +2215,7 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     QUESTIONS_ASKED: String(clar.length),
   });
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
+  const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'best', { maxOutputTokens: 32768 }))) || {};
 
   // Ambiguity escape hatch, shared with Auto Flow / Round Analysis (AIQuestion in
   // src/types.ts) — the prompt is instructed to return a `question` field instead
@@ -2279,7 +2279,7 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
   // was enough for prose but not for a full round's worth of JSON — a large
   // round would get cut off mid-generation, fail to parse, and land on the
   // generic "did not return an analysis" error below with no clue why.
-  const raw = await callAI(prompt, 'balanced', { maxOutputTokens: 32768 });
+  const raw = await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }));
   const parsed = parseJsonLoose(raw) || {};
 
   if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
@@ -2402,7 +2402,7 @@ ipcMain.handle('ai:teamSummary', async (_e, {
       NEG_SECTION: negSection,
     });
 
-    const raw = await callAI(prompt.slice(0, 120000), 'balanced');
+    const raw = await withDelayedRetry(() => callAI(prompt.slice(0, 120000), 'balanced'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     if (typeof parsed.aff !== 'string' || typeof parsed.neg !== 'string') {
@@ -2515,7 +2515,7 @@ ipcMain.handle('ai:suggestBlocks', async (_e, opponentPositions: string, blockLi
     OPPONENT_POSITIONS: opponentPositions,
     BLOCK_LIST: blockList.map(b => `${b.id}: ${b.title}`).join('\n'),
   });
-  const raw = await callAI(prompt, 'user');
+  const raw = await withDelayedRetry(() => callAI(prompt, 'user'));
   const ids = JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
   if (!Array.isArray(ids)) throw new Error('Unexpected AI response');
   return ids.slice(0, 4) as string[];
@@ -2554,7 +2554,7 @@ ipcMain.handle('ai:missionBrief', async (_e, {
       JUDGE_SECTION: judgeSection,
     });
 
-    const raw = await callAI(prompt, 'user');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'user'));
     return { ok: true, text: raw };
   } catch (e: any) {
     return { ok: false, error: e.message };
@@ -2709,7 +2709,7 @@ ${full}`;
         SIDE_LINE: sideLine,
         SEED: basedOn.slice(0, 500),
       });
-      const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
+      const questions = cxParseQuestions(await withDelayedRetry(() => callAI(prompt, 'balanced'))).slice(0, 3);
       if (questions.length === 0) throw new Error('No questions returned — try again.');
       return { ok: true, questions };
     }
@@ -2723,7 +2723,7 @@ ${full}`;
       CX_SIDE_GUIDANCE: await getCxSideGuidance(),
     });
 
-    const raw = await callAI(prompt, 'balanced');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
     const parsed = parseAIJson(raw);
 
     let groups: { side: string; questions: CxParsedQuestion[] }[] = [];
@@ -2775,7 +2775,7 @@ ipcMain.handle('ai:crossExTraps', async (_e, {
       CX_SHARED_RULES: await getCxSharedRules(),
     });
 
-    const raw = await callAI(prompt, 'balanced');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape');
@@ -2819,7 +2819,7 @@ ipcMain.handle('ai:crossExGradeTrap', async (_e, {
       USER_ANSWER: (userAnswer ?? '').slice(0, 1500),
     });
 
-    const raw = await callAI(prompt, 'lite');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'lite'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     const verdict = ['avoided', 'fell', 'partial'].includes(parsed?.verdict) ? parsed.verdict : 'partial';
@@ -2857,7 +2857,7 @@ ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
       CARD_COUNT: String(list.length),
     });
 
-    const raw = await callAI(prompt, 'balanced');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
     const parsed = parseAIJson(raw);
     if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape.');
 
@@ -2908,7 +2908,7 @@ ipcMain.handle('gemini:compareImpacts', async (
       TEXT_B: textB,
     });
 
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try {
@@ -2942,7 +2942,7 @@ ipcMain.handle('ai:compareImpactsText', async (
       TEXT_B: textB,
     });
 
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try {
@@ -3015,7 +3015,7 @@ ipcMain.handle('ai:outweighScenario', async (_e, params: {
       TIER_LINE: tierLine,
       CUSTOM_BLOCK: customBlock,
     });
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let scenario: any;
     try { scenario = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3046,7 +3046,7 @@ ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
       USER_IMPACT: userImpact,
       USER_CALC: userCalc,
     });
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const speech = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     return { ok: true, speech };
   } catch (e: any) {
@@ -3081,7 +3081,7 @@ ipcMain.handle('ai:outweighJudge', async (_e, params: {
       REBUTTAL: rebuttal,
       USER_FINAL: userFinal || '(the user did not write a final shot)',
     });
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try { result = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3113,7 +3113,7 @@ ipcMain.handle('ai:impactLibraryDraft', async (_e, params: { source: string; eve
       EVENT_LINE: eventLine,
       SOURCE: source || '(no source provided — the user only gave an idea; infer a sensible impact)',
     });
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let draft: any;
     try { draft = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3141,7 +3141,7 @@ ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
       SOURCE_BLOCK: source ? `\nSOURCE MATERIAL:\n---\n${source}\n---\n` : '',
       EXISTING_ENTRIES: existing.length ? existing.map((x) => `- id=${x.id} | ${x.title}: ${x.claim}`).join('\n') : '(the library is empty)',
     });
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let review: any;
     try { review = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3185,7 +3185,7 @@ ipcMain.handle('gemini:importFlow', async (
       SHEET_BLOCKS: sheetBlocks,
     });
 
-    const raw = await callAI(prompt, 'best');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let parsed: any;
     try {
@@ -6054,7 +6054,7 @@ ipcMain.handle('chat:generateGeminiTitle', async (_e, messages: any[]) => {
     const userText  = userMsg  ? textOnly(userMsg)  : '';
     const modelText = modelMsg ? textOnly(modelMsg) : '';
     const prompt = `You are titling a debate-prep chat. Write a noun-phrase title that is EXACTLY 2–4 words describing the topic. Output ONLY the title — no punctuation, no quotes, no explanation.\n\nUser: ${userText}\nAssistant: ${modelText}\n\nTitle:`;
-    const raw = await callAI(prompt, 'lite');
+    const raw = await withDelayedRetry(() => callAI(prompt, 'lite'));
     const title = raw.trim().replace(/^["'`*\s]+|["'`*.,!?\s]+$/g, '').trim().slice(0, 50);
     return sbOk(title || null);
   } catch (e: any) { return sbErr(e.message); }

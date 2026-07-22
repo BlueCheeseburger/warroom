@@ -411,5 +411,46 @@ const api = {
   exportCardsToDocx: (cards: any[]) => ipcRenderer.invoke('export:cardsToDocx', cards),
 };
 
+// Every `ai:*`/`gemini:*` handler in electron/main.ts now retries its own model
+// call (see `withDelayedRetry` there: 8s, then 30s, then 60s — 4 attempts
+// total) before finally giving up, so by the time a call here actually fails,
+// it's a real, retried-out failure worth surfacing. Wrap every method on
+// `api.ai` and `api.gemini` once, centrally, instead of adding error-toast
+// boilerplate to every one of the ~20+ call sites across the renderer: on a
+// thrown error OR a resolved `{ ok: false, error }`, dispatch a plain DOM
+// event most components never see or handle. `AiErrorToast.tsx` (mounted once
+// in App.tsx) listens for it and shows the message in a toast. The original
+// return value / thrown error is passed through unchanged, so existing
+// try/catch and `if (!res.ok)` handling in each component keeps working
+// exactly as before — this is purely additive.
+//
+// Deliberately NOT wrapped: `api.chat` (mixes `geminiAgentTurn` with plain
+// message/DM CRUD that has nothing to do with AI — wrapping the whole
+// namespace would toast on a failed "delete message"). The agent chat turn
+// already has its own error channel (`onGeminiError`) and its tool-call loop
+// can have side effects, so blind retry-and-toast isn't a safe fit there; see
+// CLAUDE.md's "AI call retries" rule for the reasoning.
+for (const ns of [api.ai, api.gemini] as const) {
+  for (const key of Object.keys(ns) as (keyof typeof ns)[]) {
+    const original = (ns as any)[key] as (...args: any[]) => Promise<any>;
+    (ns as any)[key] = async (...args: any[]) => {
+      try {
+        const res = await original(...args);
+        if (res && typeof res === 'object' && (res as any).ok === false) {
+          window.dispatchEvent(new CustomEvent('warroom:ai-error', {
+            detail: { source: String(key), message: (res as any).error || 'Warroom AI ran into a problem.' },
+          }));
+        }
+        return res;
+      } catch (e: any) {
+        window.dispatchEvent(new CustomEvent('warroom:ai-error', {
+          detail: { source: String(key), message: e?.message || 'Warroom AI ran into a problem.' },
+        }));
+        throw e;
+      }
+    };
+  }
+}
+
 contextBridge.exposeInMainWorld('warroom', api);
 export type WarroomApi = typeof api;
