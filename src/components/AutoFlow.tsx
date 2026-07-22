@@ -370,12 +370,31 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // tooltip. Reuses the summaries already generated above; no extra AI call.
       const summariesBySheet = new Map<number, string[]>();
 
+      // Numbered slot names from the default layouts ("Off 2", "Adv 1",
+      // "Contention 2") are placeholders, not topics. When the AI proposes a new
+      // position sheet ("Fism DA", "Warming"), rename the first UNTOUCHED
+      // placeholder to it instead of appending a tab at the end — that's what
+      // names each case/off-case position's tab after the position, and keeps a
+      // fresh Auto Flow from ending up as named tabs stacked after a row of dead
+      // "Off 1…Off 4" defaults. Only a placeholder with zero written cells is
+      // ever taken over, so nothing a user (or an earlier pass) wrote can be
+      // absorbed into a rename.
+      const PLACEHOLDER_RE = /^(off|adv|advantage|contention)\s*\d+$/i;
       const ensureSheet = (name: string): number => {
         const key = name.trim().toLowerCase();
         let idx = sheetIndexByName.get(key);
         if (idx === undefined) {
-          sheets.push({ id: crypto.randomUUID(), name, cells: {} });
-          idx = sheets.length - 1;
+          const slot = sheets.findIndex((s) =>
+            PLACEHOLDER_RE.test(s.name.trim()) &&
+            !Object.values(s.cells).some((v) => String(v ?? '').trim()));
+          if (slot !== -1) {
+            sheetIndexByName.delete(sheets[slot].name.trim().toLowerCase());
+            sheets[slot] = { ...sheets[slot], name };
+            idx = slot;
+          } else {
+            sheets.push({ id: crypto.randomUUID(), name, cells: {} });
+            idx = sheets.length - 1;
+          }
           sheetIndexByName.set(key, idx);
         }
         return idx;

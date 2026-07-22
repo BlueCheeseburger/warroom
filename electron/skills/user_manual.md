@@ -274,7 +274,7 @@ Arrows are saved with the sheet, so they're there when you reopen the flow.
 
 Matches are **highlighted in amber** so you don't have to hunt through a cell to spot them: every hit on the tab you're looking at gets a soft wash, and the one you're currently on is painted solid. The highlighting is only drawn on screen — it never becomes part of your flow.
 
-**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too, which grey out when there's nothing left to undo or redo. Undo covers text edits, column changes, colors, arrows, and inserting rows. It undoes the change and **leaves you on the tab you're on** — changing tabs isn't an edit, so undo never moves you.
+**Undo and redo.** Press **⌘Z** to undo and **⌘⇧Z** to redo — there are toolbar buttons too, which grey out when there's nothing left to undo or redo. Undo covers text edits, column changes, colors, arrows, inserting rows, and **sheet tabs — adding, renaming, and deleting a tab are all undoable**, so accidentally deleting a tab full of arguments is one ⌘Z away from coming back. It undoes the change and **leaves you on the tab you're on** — changing tabs isn't an edit, so undo never moves you.
 
 **Stock Issues vs. Advantage** only shows as a toggle while the flow is **empty**. Switching between them rebuilds the sheets for that layout, so once you've written anything, the toggle disappears — it can't wipe out tabs you've added, renamed, or filled in.
 
@@ -327,7 +327,7 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 4. **Choose where they go:**
    - **Create a new flow** — Auto Flow figures out Policy vs. Public Forum from the docs' speech labels (`1AC`/`2NC` vs. "Pro Case"/"Con Rebuttal"), then for policy silently decides Stock issues vs. Advantage from whether the aff's structured as named advantages or as inherency/harms — there's no toggle for this, Warroom AI just picks it. It's a policy-first flow; a PF flow is created automatically when the docs read as PF.
    - **Add to an existing flow** — pick one of your flows from the list. Auto Flow reads that flow's actual current column and sheet names (even if you've renamed them from the defaults) so cards land correctly.
-5. Click **Sort with Warroom AI →**. It matches each card's speech label to a column and its topic (hat/block) to a sheet, proposing a brand-new tab when nothing existing fits. If it's genuinely stuck — usually because a chunk of cards has no usable speech label — it asks **one quick question** for the whole batch instead of guessing.
+5. Click **Sort with Warroom AI →**. It matches each card's speech label to a column and its topic (hat/block) to a sheet, and **names a tab for every case and off-case position automatically** — the placeholder tabs from the default layout ("Off 1", "Adv 2") aren't treated as destinations; each position gets a tab named after itself ("Fism DA", "Cap K", "Warming"), taking over an unused placeholder slot rather than piling extra tabs on the end. If it's genuinely stuck — usually because a chunk of cards has no usable speech label — it asks **one quick question** for the whole batch instead of guessing.
 6. **Review the placements.** Cards are grouped by destination sheet (new ones marked **NEW**), each showing its tag and "Sheet → Column". Uncheck any you don't want before writing.
 7. Click **Write N cards to the flow**. Each card's tag and a **short cite** (just author and year — "Price '26", not the whole credentials paragraph) land in its column.
 

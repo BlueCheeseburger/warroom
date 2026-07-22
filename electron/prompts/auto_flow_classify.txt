@@ -33,6 +33,16 @@ For EVERY card, decide all of the following:
    fits, propose a NEW sheet name instead of forcing a bad match — set
    "isNewSheet": true. Proposing a new sheet is routine and expected; never ask
    permission for it.
+   PLACEHOLDER TABS ARE NOT MATCHES: numbered slot names like "Off 1"…"Off 4",
+   "Adv 1"…"Adv 3", or "Contention 1"/"Contention 2" are empty placeholders from
+   the default layout, NOT topics — never file a card onto one. Every case and
+   off-case POSITION gets its own properly-named sheet: match the semantic aff
+   tabs when they genuinely fit (Inherency/Harms/Solvency for a stock-issues
+   aff), and otherwise propose a NEW sheet named after the actual position — the
+   advantage's real name for an advantage aff ("Warming", "Econ"), and the
+   position's name for every off-case flow ("Fism DA", "Cap K", "States CP",
+   "T-Subs"). The app slots these new names into the placeholder tabs, so
+   proposing one new sheet per position is exactly what's supposed to happen.
    NAMING a new sheet — prefer the doc's own SHORTHAND over the full name. Debate
    docs frequently abbreviate a position after first using it in full (e.g. a doc
    says "Federalism DA" once, then calls it "Fism DA" in every tag afterward, or

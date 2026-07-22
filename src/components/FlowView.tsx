@@ -1284,13 +1284,21 @@ export default function FlowView() {
     persist({ sheets: saved });
   }
 
+  // Sheet-level ops (add/delete/rename below) go through undo history like any
+  // cell edit — deleting a tab full of arguments used to be unrecoverable.
+  // `snap.current` normally catches up in a post-render effect, so each op
+  // updates it by hand before recordHistory() — otherwise the snapshot taken
+  // here would still hold the PRE-op sheets and undo would appear to do nothing.
+
   function addSheet() {
     rememberScroll();
     const saved = flushAndGetSheets();
     const neo: SheetData = { id: crypto.randomUUID(), name: `Sheet ${saved.length + 1}`, cells: {} };
     const next = [...saved, neo];
     setSheets(next); cellsRef.current = {}; setActiveSheetIdx(next.length - 1);
+    snap.current = { ...snap.current, sheets: next, activeSheetIdx: next.length - 1 };
     persist({ sheets: next });
+    recordHistory();
   }
 
   function deleteSheet(idx: number) {
@@ -1307,7 +1315,9 @@ export default function FlowView() {
     const shifted = idx < activeSheetIdx ? activeSheetIdx - 1 : activeSheetIdx;
     const newIdx = Math.max(0, Math.min(shifted, next.length - 1));
     setSheets(next); cellsRef.current = next[newIdx]?.cells ?? {}; setActiveSheetIdx(newIdx);
+    snap.current = { ...snap.current, sheets: next, activeSheetIdx: newIdx };
     persist({ sheets: next });
+    recordHistory();
   }
 
   // Short, wide summary of a tab's content for its hover tooltip. When Auto
@@ -1352,7 +1362,10 @@ export default function FlowView() {
     if (renamingSheet === null) return;
     const saved = flushAndGetSheets();
     const next = saved.map((s, i) => i === renamingSheet ? { ...s, name: renameValue.trim() || s.name } : s);
-    setSheets(next); setRenamingSheet(null); persist({ sheets: next });
+    setSheets(next); setRenamingSheet(null);
+    snap.current = { ...snap.current, sheets: next };
+    persist({ sheets: next });
+    recordHistory();
   }
 
   // ── Font / zoom ───────────────────────────────────────────────────────────

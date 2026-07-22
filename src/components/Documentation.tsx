@@ -923,7 +923,9 @@ export default function Documentation() {
           <P>
             <strong>Undo / redo:</strong> <Code>⌘Z</Code> undoes and <Code>⌘⇧Z</Code> redoes, also
             available as toolbar buttons — which grey out when there's nothing left to undo or redo.
-            Undo covers text edits, column changes, colors, arrows, inserted rows, and layout switches.
+            Undo covers text edits, column changes, colors, arrows, inserted rows, layout switches,
+            and sheet-tab operations — adding, renaming, and deleting a tab all record history, so a
+            deleted tab (and everything on it) comes back with <Code>⌘Z</Code>.
             It undoes what you <em>changed</em> and leaves you on the tab you're looking at — switching
             tabs isn't an edit, so it's never something undo puts back.
           </P>
@@ -1063,7 +1065,11 @@ export default function Documentation() {
             then block, then pocket topically against the flow's real sheet names — proposing a new
             sheet tab when nothing plausibly fits, and naming that tab with the doc's own shorthand for
             the position when it uses one (a case that says "Federalism DA" once but "Fism DA"
-            afterward gets a "Fism DA" tab). It also shortens each card's cite to how a debater
+            afterward gets a "Fism DA" tab). Numbered placeholder tabs from the default layout ("Off
+            1", "Adv 2", "Contention 1") are never treated as destinations — every case and off-case
+            position gets a tab named after the position itself, and the write step renames an unused
+            placeholder slot to that name rather than stacking new tabs after a row of dead defaults.
+            It also shortens each card's cite to how a debater
             actually writes it — author and year ("Price '26"), not the full credentials paragraph —
             and flags which cards answer which (a perm, a no-link) and which card is the plan text. It
             can pause with a single clarifying question for the whole batch (the same ambiguity escape
