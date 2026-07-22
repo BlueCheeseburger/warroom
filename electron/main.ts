@@ -1649,6 +1649,28 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   return { ok: true, placements };
 });
 
+// Coarser than fetchWithRetry above (which retries a single transient HTTP
+// failure inside one provider request): this retries the WHOLE callAI call —
+// prompt, parsing, everything — if it still ends up throwing. Used for Auto
+// Flow's AI card summaries (which double as the AI taglines shown in cells and
+// the tab hover summary folded from them), per the user's explicit ask: retry
+// once after 30s, then once more after 60s, before finally giving up.
+async function callAIWithDelayedRetry(
+  prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number },
+  delaysMs: number[] = [30_000, 60_000],
+): Promise<string> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return await callAI(prompt, taskTier, extraConfig);
+    } catch (e) {
+      lastErr = e;
+      if (attempt < delaysMs.length) await new Promise((r) => setTimeout(r, delaysMs[attempt]));
+    }
+  }
+  throw lastErr;
+}
+
 // Opt-in Auto Flow summaries: for each card, an ultra-short AI summary built from
 // the tag AND the card body, capped to strictly fewer words than the tag itself.
 // The card bodies are re-extracted here (with includeBody) and NEVER leave the
@@ -1664,7 +1686,7 @@ ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
     if (cards.length === 0) return sbOk({ summaries: [] });
 
     const JSZip = require('jszip');
-    const keyOf = (fileName: string, tag: string) => `${fileName} ${tag.trim().toLowerCase()}`;
+    const keyOf = (fileName: string, tag: string) => `${fileName} ${tag.trim().toLowerCase()}`;
     const bodyByKey = new Map<string, string>();
     for (const f of files) {
       try {
@@ -1694,7 +1716,7 @@ ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
     const prompt = await renderPrompt('auto_flow_summarize', {
       CARDS_JSON: JSON.stringify(items).slice(0, 100000),
     });
-    const parsed = parseJsonLoose(await callAI(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
+    const parsed = parseJsonLoose(await callAIWithDelayedRetry(prompt, 'balanced', { maxOutputTokens: 32768 })) || {};
     const raw = Array.isArray(parsed.summaries) ? parsed.summaries : [];
     const byTag = new Map<string, string>();
     for (const s of raw) {
