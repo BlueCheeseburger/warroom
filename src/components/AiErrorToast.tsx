@@ -7,6 +7,14 @@ import React, { useEffect, useRef, useState } from 'react';
 // thrown outright, so anything landing here is a real, final failure worth a
 // toast, not a mid-flight retry. Mounted once, near the root, in App.tsx —
 // every AI feature gets this for free without adding its own toast wiring.
+//
+// The message shown here is the EXACT error text the provider (Gemini/OpenAI/
+// Anthropic/Grok) returned — see the `*HttpError` functions in main.ts, which
+// build it from that provider's own error JSON (message + status/type/code),
+// never a paraphrase. This is deliberately different from the friendlier,
+// humanized message a feature's own inline error UI might show via
+// `humanizeGeminiError` — that's for "what should I do", this toast is for
+// "what actually happened". See CLAUDE.md's "AI call retries" rule.
 interface AiToast {
   id: number;
   source: string;

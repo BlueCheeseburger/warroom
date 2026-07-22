@@ -1766,7 +1766,10 @@ export default function Documentation() {
             retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong> if that also
             fails, then <strong>60 seconds</strong> for a last try — 4 attempts total — before the
             error is finally surfaced. If all four attempts fail, a small toast appears at the bottom
-            of the screen with the error, in addition to whatever that feature already shows inline.
+            of the screen with the <strong>exact error the AI provider returned</strong> — not a
+            simplified summary — so you can see precisely what happened (a rate limit, a rejected
+            key, an overloaded server, etc.), in addition to whatever that feature already shows
+            inline.
           </P>
           <P>
             This deliberately does <strong>not</strong> apply to the <strong>Warroom AI chat/agent

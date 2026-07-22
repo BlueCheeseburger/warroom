@@ -781,10 +781,19 @@ async function withDelayedRetry<T>(fn: () => Promise<T>, delaysMs: number[] = [8
 
 // ─── OpenAI ───────────────────────────────────────────────────────────────────
 
+// Every provider's error message here is the EXACT text that provider sent
+// back (plus its HTTP status and error type/code, when present) — never
+// paraphrased. `AiErrorToast.tsx` shows this verbatim; the friendlier,
+// paraphrased version each feature may show inline instead comes from
+// `humanizeGeminiError` on the renderer side, entirely separately. See
+// CLAUDE.md's "AI call retries" rule.
 function openaiHttpError(status: number, body: string): Error {
-  let detail = '';
-  try { detail = JSON.parse(body)?.error?.message ?? ''; } catch {}
-  if (detail) return new Error(detail);
+  let parsed: any;
+  try { parsed = JSON.parse(body)?.error; } catch {}
+  if (parsed?.message) {
+    const type = parsed.type || parsed.code;
+    return new Error(`OpenAI [${status}${type ? ' ' + type : ''}]: ${parsed.message}`);
+  }
   if (status === 429) return new Error('OpenAI rate limit reached — wait a moment and try again.');
   if (status === 503) return new Error('OpenAI is busy right now — try again in a moment.');
   if (status === 401 || status === 403) return new Error('OpenAI rejected the API key — check your key in Settings.');
@@ -812,9 +821,11 @@ async function callOpenAI(apiKey: string, prompt: string, modelId: string): Prom
 // ─── Anthropic ────────────────────────────────────────────────────────────────
 
 function anthropicHttpError(status: number, body: string): Error {
-  let detail = '';
-  try { detail = JSON.parse(body)?.error?.message ?? ''; } catch {}
-  if (detail) return new Error(detail);
+  let parsed: any;
+  try { parsed = JSON.parse(body)?.error; } catch {}
+  if (parsed?.message) {
+    return new Error(`Anthropic [${status}${parsed.type ? ' ' + parsed.type : ''}]: ${parsed.message}`);
+  }
   if (status === 429) return new Error('Anthropic rate limit reached — wait a moment and try again.');
   if (status === 529) return new Error('Anthropic is overloaded right now — try again in a moment.');
   if (status === 401) return new Error('Anthropic rejected the API key — check your key in Settings.');
@@ -845,9 +856,12 @@ async function callAnthropic(apiKey: string, prompt: string, modelId: string): P
 // ─── xAI (Grok) ──────────────────────────────────────────────────────────────
 
 function grokHttpError(status: number, body: string): Error {
-  let detail = '';
-  try { detail = JSON.parse(body)?.error?.message ?? ''; } catch {}
-  if (detail) return new Error(detail);
+  let parsed: any;
+  try { parsed = JSON.parse(body)?.error; } catch {}
+  if (parsed?.message) {
+    const type = parsed.type || parsed.code;
+    return new Error(`Grok [${status}${type ? ' ' + type : ''}]: ${parsed.message}`);
+  }
   if (status === 429) return new Error('Grok rate limit reached — wait a moment and try again.');
   if (status === 401 || status === 403) return new Error('xAI rejected the API key — check your Grok key in Settings.');
   return new Error(`Grok request failed (HTTP ${status}) — try again shortly.`);
@@ -1072,9 +1086,11 @@ function geminiHeaders(apiKey: string): Record<string, string> {
 // Gemini returns a JSON error body. Surface its human-readable message instead of
 // dumping the raw "{ error: { code, message, status } }" blob into the UI.
 function geminiHttpError(status: number, body: string): Error {
-  let detail = '';
-  try { detail = JSON.parse(body)?.error?.message ?? ''; } catch { /* not JSON */ }
-  if (detail) return new Error(detail);
+  let parsed: any;
+  try { parsed = JSON.parse(body)?.error; } catch { /* not JSON */ }
+  if (parsed?.message) {
+    return new Error(`Gemini [${status}${parsed.status ? ' ' + parsed.status : ''}]: ${parsed.message}`);
+  }
   if (status === 429) return new Error('Warroom AI rate limit reached — wait a moment and try again.');
   if (status === 503) return new Error('Warroom AI is overloaded right now. Try again in a few seconds.');
   if (status === 403 || status === 400) return new Error(`Warroom AI rejected the request (HTTP ${status}) — check your API key in Settings.`);
