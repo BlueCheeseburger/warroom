@@ -62,13 +62,23 @@ export interface SheetData {
   cells: Record<string, string>;
   arrows?: FlowArrow[];
   // Cell keys ("ri-ci") whose content is an AI-generated summary (Auto Flow's
-  // opt-in summary mode). Rendered with the blue→pink AI ring until the user
-  // edits the cell, at which point the key is dropped (the content is now theirs).
+  // opt-in summary mode). No ring is drawn from this anymore (AI-generated
+  // taglines never get one — see CLAUDE.md), but it's kept so a summarized
+  // cell still knows to drop itself from this set once the user edits it (see
+  // clearAiCell) — the content is theirs from that point on.
   aiCells?: string[];
-  // A short AI-generated blurb of what's on this tab — built from Auto Flow's
-  // opt-in per-card AI summaries (never a fresh API call on its own; see
-  // commitWrite in AutoFlow.tsx). Shown in the tab's hover tooltip when present.
+  // A one-sentence AI summary of the argument as a WHOLE on this tab, shown in
+  // the tab's hover tooltip. Two ways this gets set: (1) folded for free from
+  // Auto Flow's opt-in per-card summaries at write time (no extra API call —
+  // see commitWrite in AutoFlow.tsx), or (2) generated lazily on hover by
+  // ensureSheetSummary() below, the first time a tab with real content is
+  // hovered after `aiSummarySource` goes stale. Either way this is a genuine
+  // Warroom AI call — the tooltip marks it with ✨.
   aiSummary?: string;
+  // Content signature `aiSummary` was generated from (see sheetContentSignature
+  // below) — compared against the sheet's current content to decide whether
+  // the cached summary is still valid or needs regenerating.
+  aiSummarySource?: string;
 }
 
 // Exported so features that write into a flow from outside the editor (Auto
@@ -1320,15 +1330,82 @@ export default function FlowView() {
     recordHistory();
   }
 
-  // Short, wide summary of a tab's content for its hover tooltip. When Auto
-  // Flow's opt-in AI summary mode built this tab, `sheet.aiSummary` holds a
-  // real Warroom-AI-written blurb (assembled from the per-card AI summaries
-  // already generated at write time — see commitWrite in AutoFlow.tsx — never
-  // a fresh API call just for hovering) and that leads the tooltip, marked so
-  // it reads as AI content. Otherwise this falls back to a cheap local read of
-  // the cells (first line of each = the tag) — fires on every hover, no AI
-  // involved. For the ACTIVE tab the live edits live in cellsRef, not the
-  // (stale-until-save) sheet.cells.
+  // Cheap signature of a sheet's content — NOT a real hash, just enough to
+  // detect "the argument text changed since the AI summary was written" so a
+  // cached `aiSummary` can be reused instead of re-generated on every hover.
+  function sheetContentSignature(cells: Record<string, string>): string {
+    const parts = Object.entries(cells)
+      .map(([key, html]) => `${key}:${htmlToText(String(html ?? '')).trim()}`)
+      .filter((s) => !s.endsWith(':'))
+      .sort();
+    let hash = 0;
+    const joined = parts.join('|');
+    for (let i = 0; i < joined.length; i++) hash = (hash * 31 + joined.charCodeAt(i)) | 0;
+    return `${parts.length}:${hash}`;
+  }
+
+  // Sheet ids currently generating a fresh AI tab summary — drives the
+  // "Warroom AI is summarizing…" line in the tooltip below and prevents two
+  // overlapping hovers from firing the same request twice.
+  const [generatingSummary, setGeneratingSummary] = useState<Set<string>>(new Set());
+
+  // Called when a tab is hovered. Genuinely generates the tab's AI summary via
+  // Warroom AI the first time it's hovered after its content has changed —
+  // NOT preloaded, since regenerating on every keystroke across every tab
+  // would be wasteful API spend for a summary most hovers never look at; a
+  // hover is exactly the signal that this summary is about to be read. Once
+  // generated it's cached (`aiSummary` + the content signature it was built
+  // from) and reused on every later hover until the sheet's content actually
+  // changes again. Auto Flow's opt-in per-card summary mode can also populate
+  // `aiSummary` directly at write time (folded from summaries already
+  // generated then, no extra call) — either way this function treats it the
+  // same: fresh if the signature still matches, stale (and worth
+  // regenerating) if not.
+  async function ensureSheetSummary(idx: number) {
+    const cur = snap.current;
+    const sheet = cur.sheets[idx];
+    if (!sheet) return;
+    const cells = idx === cur.activeSheetIdx ? cellsRef.current : sheet.cells;
+    const sig = sheetContentSignature(cells);
+    if (sig.startsWith('0:')) return; // nothing written on this tab yet
+    if (sheet.aiSummary && sheet.aiSummarySource === sig) return; // already fresh
+    if (generatingSummary.has(sheet.id)) return; // already in flight
+
+    setGeneratingSummary((g) => new Set(g).add(sheet.id));
+    try {
+      const entries = Object.entries(cells)
+        .map(([key, html]) => {
+          const [r, c] = key.split('-').map(Number);
+          return { r, c, text: htmlToText(String(html ?? '')).trim() };
+        })
+        .filter((e) => e.text)
+        .sort((a, b) => a.c - b.c || a.r - b.r)
+        .map((e) => e.text);
+      const res = await (window.warroom as any).ai.summarizeFlowSheet({ sheetName: sheet.name, event: flowEvent, entries });
+      if (res?.ok && typeof res.summary === 'string' && res.summary.trim()) {
+        const updated = snap.current.sheets.map((sh) =>
+          sh.id === sheet.id ? { ...sh, aiSummary: res.summary.trim(), aiSummarySource: sig } : sh
+        );
+        setSheets(updated);
+        snap.current = { ...snap.current, sheets: updated };
+        persist(); // no `sheets` override — lets persist flush cellsRef itself, so it can't clobber live typing with this stale-at-request-time snapshot
+      }
+      // A failed response is a no-op here: the global AI-error toast (see
+      // preload.ts's wrapper around window.warroom.ai.*) already surfaces it.
+    } catch { /* best-effort — same as above */ }
+    finally {
+      setGeneratingSummary((g) => { const next = new Set(g); next.delete(sheet.id); return next; });
+    }
+  }
+
+  // Short, wide summary of a tab's content for its hover tooltip. `sheet.aiSummary`
+  // — whether folded from Auto Flow's per-card summaries or generated live by
+  // ensureSheetSummary above — leads the tooltip when present, marked so it
+  // reads as AI content. While a fresh one is being generated, that's shown
+  // instead of stale/no content. Otherwise this falls back to a cheap local
+  // read of the cells (first line of each = the tag) — fires on every hover,
+  // no AI involved. For the ACTIVE tab the live edits live in cellsRef, not
+  // the (stale-until-save) sheet.cells.
   function sheetSummary(idx: number): string {
     const s = snap.current;
     const sheet = s.sheets[idx];
@@ -1341,7 +1418,8 @@ export default function FlowView() {
       })
       .filter((e) => e.text)
       .sort((a, b) => a.c - b.c || a.r - b.r);
-    const aiLine = sheet.aiSummary?.trim() ? `✨ ${sheet.aiSummary.trim()}` : '';
+    const generating = generatingSummary.has(sheet.id);
+    const aiLine = generating ? '✨ Warroom AI is summarizing this tab…' : (sheet.aiSummary?.trim() ? `✨ ${sheet.aiSummary.trim()}` : '');
     if (entries.length === 0) return aiLine || 'Empty';
     const seen = new Set<string>();
     const tags: string[] = [];
@@ -1385,7 +1463,13 @@ export default function FlowView() {
     const cw = containerRef.current.clientWidth;
     const totalLogical = snap.current.columnWidths.reduce((a, b) => a + b, 0);
     if (totalLogical === 0) return;
-    changeZoom(Math.round((cw / totalLogical) * 100));
+    const proposed = Math.round((cw / totalLogical) * 100);
+    // Skip a no-op (or near-no-op) update — the auto-fit ResizeObserver below
+    // calls this on every container resize, and applying a zoom change can
+    // itself toggle a scrollbar and resize the container again. A >=1pt
+    // threshold means that settles instead of jittering indefinitely.
+    if (Math.abs(proposed - snap.current.zoom) < 1) return;
+    changeZoom(proposed);
   }
 
   // Fit columns to the window on open and when the chat panel opens/closes.
@@ -1396,6 +1480,29 @@ export default function FlowView() {
     const t = setTimeout(fitZoom, 60);
     return () => clearTimeout(t);
   }, [chatOpen, loaded, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Columns always fill the available width, keeping their sizes relative to
+  // each other — collapsing the sidebar, resizing the window, or the chat panel
+  // opening/closing all free up (or eat) horizontal space, and this keeps the
+  // sheet stretched to meet the new edge instead of leaving a dead gap (or
+  // overflowing) until the next manual "Fit to window". A ResizeObserver on the
+  // grid container catches every cause at once — no need to separately listen
+  // for sidebar toggles or window resize. Debounced (150ms trailing) so a
+  // dragged window edge or an animated sidebar collapse doesn't fire fitZoom
+  // (which persists — and, when live, broadcasts — a zoom change) once per
+  // frame.
+  useEffect(() => {
+    if (!loaded) return;
+    const el = containerRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(fitZoom, 150);
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Variant / PF order ────────────────────────────────────────────────────
 
@@ -1546,8 +1653,6 @@ export default function FlowView() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const flowHasContent = flowHasAnyContent();
-  // AI-summary cells on the active sheet — get the blue→pink AI ring.
-  const aiCellSet = new Set(activeSheet?.aiCells ?? []);
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
@@ -1995,11 +2100,10 @@ export default function FlowView() {
                 const isHovered = hoveredCell?.ri === ri && hoveredCell?.ci === ci;
                 const isArrowSrc = drawMode && arrowFrom === cellKey;
                 const remoteCur = remoteCursorMap.get(cellKey);
-                const isAiCell = aiCellSet.has(cellKey);
                 return (
                   <div
                     key={ci}
-                    className={`relative${isAiCell ? ' ai-glow-ring' : ''}`}
+                    className="relative"
                     style={{
                       background: colBg(colColor(ci), dark, false),
                       borderRight: ci < columns.length - 1 ? '1px solid var(--border-subtle)' : 'none',
@@ -2140,6 +2244,7 @@ export default function FlowView() {
               onDoubleClick={() => startRenameSheet(idx)}
               onDelete={sheets.length > 1 ? () => deleteSheet(idx) : undefined}
               getSummary={() => sheetSummary(idx)}
+              onEnsureSummary={() => ensureSheetSummary(idx)}
             />
           ))}
         </div>
@@ -2370,17 +2475,27 @@ function DropBtn({ children, onClick, danger }: { children: React.ReactNode; onC
 
 function SheetTab({
   name, active, renaming, renameValue, onRenameChange, onCommitRename, onCancelRename,
-  onClick, onDoubleClick, onDelete, getSummary,
+  onClick, onDoubleClick, onDelete, getSummary, onEnsureSummary,
 }: {
   name: string; active: boolean; renaming: boolean;
   renameValue: string; onRenameChange: (v: string) => void;
   onCommitRename: () => void; onCancelRename: () => void;
   onClick: () => void; onDoubleClick: () => void; onDelete?: () => void;
   getSummary?: () => string;
+  /** Kicks off (or reuses the cache for) this tab's AI summary. Fire-and-forget — the
+   * result lands via `getSummary` once generation resolves and re-renders the parent. */
+  onEnsureSummary?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   // Computed on hover (not every render) since it reads every cell on the tab.
   const [summary, setSummary] = useState<string | null>(null);
+  // Re-reads the summary on every parent re-render while hovered — a fresh
+  // `getSummary` closure comes down on every FlowView render, so this also
+  // catches ensureSheetSummary's async result (and the "summarizing…" state in
+  // between) landing without any extra plumbing.
+  useEffect(() => {
+    if (hovered && getSummary) setSummary(getSummary());
+  }, [hovered, getSummary]);
   return (
     <div
       className="flex items-center shrink-0"
@@ -2390,7 +2505,7 @@ function SheetTab({
         background: active ? 'var(--bg-card)' : 'transparent',
         minWidth: 72, maxWidth: 130,
       }}
-      onMouseEnter={() => { setHovered(true); if (getSummary) setSummary(getSummary()); }}
+      onMouseEnter={() => { setHovered(true); if (getSummary) setSummary(getSummary()); onEnsureSummary?.(); }}
       onMouseLeave={() => setHovered(false)}
     >
       {renaming ? (

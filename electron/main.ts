@@ -1754,6 +1754,33 @@ ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
   } catch (e: any) { return sbErr(e.message); }
 });
 
+// A tab's hover-tooltip summary — one sentence describing the argument as a
+// WHOLE on that sheet ("this is the Fism DA and here's the story"), not a list
+// of what's on it. Generated lazily: FlowView only calls this the first time a
+// tab is hovered after its content has actually changed (it tracks a content
+// signature client-side and skips the call entirely when nothing changed), so
+// it's cheap in practice despite not being preloaded — most hovers hit the
+// cache. Reads only tags/cites already visible in the flow, same boundary as
+// Auto Flow; never reads card bodies.
+ipcMain.handle('ai:summarizeFlowSheet', async (_e, params: {
+  sheetName: string;
+  event: 'policy' | 'pf';
+  entries: string[]; // flattened tag/cite lines, already ordered top-to-bottom
+}) => {
+  try {
+    const entries = (params.entries ?? []).filter((s) => typeof s === 'string' && s.trim());
+    if (entries.length === 0) return sbOk({ summary: '' });
+    const prompt = await renderPrompt('summarize_flow_sheet', {
+      EVENT: params.event === 'pf' ? 'Public Forum' : 'Policy',
+      SHEET_NAME: params.sheetName || 'Untitled sheet',
+      ENTRIES: entries.slice(0, 80).map((s) => `- ${s}`).join('\n'),
+    });
+    const raw = await withDelayedRetry(() => callAI(prompt, 'lite', { maxOutputTokens: 200 }));
+    const summary = raw.trim().replace(/^["']|["']$/g, '');
+    return sbOk({ summary });
+  } catch (e: any) { return sbErr(e.message); }
+});
+
 // Extracts just the "guaranteed searchable" text from a docx: every heading
 // (pocket/hat/block/tag) plus the cite line immediately following each tag
 // (author, quals, date, publication — see DEBATE_DOC_STRUCTURE.md §2). Used so

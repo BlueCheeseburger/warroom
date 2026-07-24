@@ -66,6 +66,10 @@ export default function App() {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
   });
+  const [geminiWidth, setGeminiWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem('warroom-gemini-width') ?? '', 10);
+    return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
+  });
   // Toast notification for monitor events
   const [monitorToast, setMonitorToast] = useState<string | null>(null);
 
@@ -78,6 +82,9 @@ export default function App() {
   const resizing = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
+  const geminiResizing = useRef(false);
+  const geminiStartX = useRef(0);
+  const geminiStartW = useRef(0);
 
   useEffect(() => { init(); }, [init]);
 
@@ -552,6 +559,28 @@ export default function App() {
     e.preventDefault();
   }
 
+  function onGeminiResizeStart(e: React.MouseEvent) {
+    geminiResizing.current = true;
+    geminiStartX.current = e.clientX;
+    geminiStartW.current = geminiWidth;
+    let latestW = geminiWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (!geminiResizing.current) return;
+      const delta = geminiStartX.current - ev.clientX;
+      latestW = Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, geminiStartW.current + delta));
+      setGeminiWidth(latestW);
+    };
+    const onUp = () => {
+      geminiResizing.current = false;
+      localStorage.setItem('warroom-gemini-width', String(latestW));
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  }
+
   if (!ready) {
     return (
       <div className="h-full flex items-center justify-center text-sm select-none text-ink/30">
@@ -619,9 +648,17 @@ export default function App() {
         <main className="flex-1 min-w-0 overflow-y-auto scroll-thin flex flex-col" style={{ background: 'var(--bg-main)' }}>
           <Router />
         </main>
+        {/* Resize handle for the Gemini panel — only in DOM when it's open */}
+        {geminiOpen && (
+          <div
+            className="w-1 shrink-0 cursor-col-resize z-10 hover:opacity-100 transition-opacity"
+            style={{ background: 'var(--border-side)', opacity: 0.4 }}
+            onMouseDown={onGeminiResizeStart}
+          />
+        )}
         {/* Gemini panel */}
         {geminiOpen && (
-          <div style={{ width: chatWidth, minWidth: chatWidth, maxWidth: chatWidth, flexShrink: 0, borderLeft: '1px solid var(--border-side)' }}>
+          <div style={{ width: geminiWidth, minWidth: geminiWidth, maxWidth: geminiWidth, flexShrink: 0 }}>
             <GeminiPanel />
           </div>
         )}

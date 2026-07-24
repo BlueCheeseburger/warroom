@@ -35,12 +35,14 @@ export interface CaseItem {
   ocUrl?: string;
   /** speech-doc only: absolute path on disk */
   path?: string;
+  /** When known: ISO timestamp this item was added to Warroom (import/creation, not last opened). */
+  addedAt?: string;
 }
 
 const SPEECH_RECENTS_KEY = 'warroom-speech-doc-recents';
 const SPEECH_SIDES_KEY = 'warroom-speech-doc-sides';
 
-export interface RecentDoc { path: string; name: string; cardCount?: number }
+export interface RecentDoc { path: string; name: string; cardCount?: number; addedAt?: string }
 
 export function readSpeechDocRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(SPEECH_RECENTS_KEY) ?? '[]'); } catch { return []; }
@@ -100,6 +102,7 @@ export function buildCaseItems(db: DB): CaseItem[] {
       name: stripDocxExt(r.name),
       side: sides[r.path] ?? 'unknown',
       path: r.path,
+      addedAt: r.addedAt,
     });
   }
 

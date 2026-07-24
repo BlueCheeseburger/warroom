@@ -21,7 +21,7 @@ const RECENTS_KEY = 'warroom-speech-doc-recents';
 // keep both in sync with this one definition rather than duplicating the string.
 const DOC_FONT_STACK = "'Calibri', 'Carlito', 'Helvetica Neue', 'Arial', sans-serif";
 
-interface RecentDoc { path: string; name: string; cardCount?: number }
+interface RecentDoc { path: string; name: string; cardCount?: number; addedAt?: string }
 
 function getRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]'); } catch { return []; }
@@ -34,14 +34,37 @@ const RECENTS_MAX = 40;
 function addRecent(path: string, name: string) {
   addRecents([{ path, name }]);
 }
-/** Batch-add docs to recents (newest first), de-duped by path. One write + one event. */
+/**
+ * Add docs to recents that aren't already there (newest-added first, stamped
+ * with `addedAt`). Docs already present are left completely untouched — this
+ * is called on every doc open, not just first import, so re-opening a doc must
+ * never reorder or re-date it (that was the "recents == last opened" bug: the
+ * list order and the folder/grid "date added" order are the same underlying
+ * list, so bumping it on every open silently reshuffled the library on every
+ * click).
+ */
 function addRecents(docs: { path: string; name: string }[]) {
   if (docs.length === 0) return;
-  const incoming = new Set(docs.map(d => d.path));
-  const next = [...docs, ...getRecents().filter(r => !incoming.has(r.path))].slice(0, RECENTS_MAX);
+  const existing = getRecents();
+  const known = new Set(existing.map(r => r.path));
+  const fresh = docs.filter(d => !known.has(d.path));
+  if (fresh.length === 0) return;
+  const addedAt = new Date().toISOString();
+  const next = [...fresh.map(d => ({ ...d, addedAt })), ...existing].slice(0, RECENTS_MAX);
   localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
 }
+// ── Per-doc scroll position ─────────────────────────────────────────────────
+// Reopening a doc drops you back where you left off, instead of at the top.
+const SCROLL_KEY_PREFIX = 'warroom-speech-doc-scroll-';
+function getSavedScroll(key: string): number | null {
+  const v = parseInt(localStorage.getItem(SCROLL_KEY_PREFIX + key) ?? '', 10);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+function saveScroll(key: string, top: number) {
+  try { localStorage.setItem(SCROLL_KEY_PREFIX + key, String(Math.round(top))); } catch { /* ignore */ }
+}
+
 function updateRecentCardCount(path: string, count: number) {
   const next = getRecents().map(r => r.path === path ? { ...r, cardCount: count } : r);
   localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
@@ -1160,7 +1183,10 @@ function buildFindMatches(container: HTMLElement, query: string): Range[] {
     acceptNode(n: Node) {
       const el = (n as Text).parentElement;
       if (!el) return NodeFilter.FILTER_REJECT;
-      if ((el as HTMLElement).dataset?.focusHidden) return NodeFilter.FILTER_REJECT; // skip hidden-by-focus text
+      // Skip focus-mode-hidden text. The hidden marker sits on the span docx-preview
+      // emitted, but the text node's direct parent can be a nested element inside it
+      // (an <em>/<a>/etc.), so climb with closest() instead of checking only parent.
+      if (el.closest('[data-focus-hidden]')) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -2396,6 +2422,11 @@ export default function SpeechDocViewer() {
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapRef = useRef<HTMLDivElement>(null);
+  // Set right before applyRender() is called (loadFile / loadOcCase), to whatever
+  // key that doc is addressed by in scroll storage. A ref, not state — read from
+  // a scroll listener and from inside applyRender's own closure without waiting
+  // on a re-render.
+  const viewingScrollKeyRef = useRef<string | null>(null);
   const wpmRef = useRef(wpm);
   const docWordsRef = useRef(0);
   const autoRafRef = useRef(0);
@@ -2583,6 +2614,23 @@ export default function SpeechDocViewer() {
   // Stop auto-scroll when the viewer unmounts.
   useEffect(() => () => stopAutoRaf(), [stopAutoRaf]);
 
+  // Remember scroll position per doc. Debounced writes on scroll; the matching
+  // restore happens once inside applyRender, after the doc has actually painted.
+  useEffect(() => {
+    const wrap = scrollWrapRef.current;
+    if (!wrap) return;
+    let t = 0;
+    const onScroll = () => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        const key = viewingScrollKeyRef.current;
+        if (key) saveScroll(key, wrap.scrollTop);
+      }, 200);
+    };
+    wrap.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.clearTimeout(t); wrap.removeEventListener('scroll', onScroll); };
+  }, []);
+
   // Track the selected word count while the reading popover is open.
   useEffect(() => {
     if (!readOpen) return;
@@ -2667,34 +2715,201 @@ export default function SpeechDocViewer() {
     }, 650);
   }, []);
 
-  // Cmd/Ctrl+click on a heading selects the heading plus everything under it,
-  // up to the next heading of the same (or shallower) level — so a whole
-  // pocket/hat/block/tag section can be copied in one gesture.
-  const onDocClick = useCallback((e: React.MouseEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    const cont = containerRef.current;
-    if (!cont) return;
+  // ── Section select (Cmd/Ctrl+click headings) ────────────────────────────
+  // Cmd/Ctrl+click on a heading toggles that whole section — the heading plus
+  // everything under it, up to the next heading of the same (or shallower)
+  // level — into a selection. Multiple headings can be Cmd+clicked to build up
+  // a multi-section selection (Chromium's Selection API only supports a single
+  // Range, so the extra sections are tracked here and painted with a CSS class;
+  // a copy-event handler below writes ALL selected sections to the clipboard).
+  const sectionSelRef = useRef<HTMLElement[]>([]);
+
+  const sectionEls = useCallback((heading: HTMLElement): HTMLElement[] => {
     const headingClasses = headingClassesRef.current;
-    let p = (e.target as HTMLElement).closest('p');
-    if (!p || !cont.contains(p)) return;
-    const level = headingLevelOf(p, headingClasses);
-    if (level <= 0) return;
-    e.preventDefault();
-    // Extend through siblings until a heading at the same or a shallower level.
-    let last: Element = p;
-    for (let sib = p.nextElementSibling; sib; sib = sib.nextElementSibling) {
+    const level = headingLevelOf(heading, headingClasses);
+    const els: HTMLElement[] = [heading];
+    for (let sib = heading.nextElementSibling; sib; sib = sib.nextElementSibling) {
       const lvl = headingLevelOf(sib, headingClasses);
       if (lvl > 0 && lvl <= level) break;
-      last = sib;
+      els.push(sib as HTMLElement);
     }
-    const range = document.createRange();
-    range.setStartBefore(p);
-    range.setEndAfter(last);
-    const sel = window.getSelection();
-    if (!sel) return;
-    sel.removeAllRanges();
-    sel.addRange(range);
+    return els;
   }, []);
+
+  const paintSectionSel = useCallback(() => {
+    const cont = containerRef.current;
+    if (!cont) return;
+    cont.querySelectorAll('.wr-section-sel').forEach(el => el.classList.remove('wr-section-sel'));
+    for (const h of sectionSelRef.current) {
+      for (const el of sectionEls(h)) el.classList.add('wr-section-sel');
+    }
+  }, [sectionEls]);
+
+  const clearSectionSel = useCallback(() => {
+    if (!sectionSelRef.current.length) return;
+    sectionSelRef.current = [];
+    paintSectionSel();
+  }, [paintSectionSel]);
+
+  const onDocClick = useCallback((e: React.MouseEvent) => {
+    const cont = containerRef.current;
+    if (!cont) return;
+    if (!(e.metaKey || e.ctrlKey)) { clearSectionSel(); return; }
+    const p = (e.target as HTMLElement).closest('p');
+    if (!p || !cont.contains(p)) return;
+    if (headingLevelOf(p, headingClassesRef.current) <= 0) return;
+    e.preventDefault();
+    const heading = p as HTMLElement;
+    const cur = sectionSelRef.current;
+    sectionSelRef.current = cur.includes(heading)
+      ? cur.filter(h => h !== heading)
+      : [...cur, heading];
+    paintSectionSel();
+    // Keep a native selection over the last-clicked section too: it makes ⌘C
+    // fire a copy event even in contexts that skip it for empty selections, and
+    // doubles as the anchor for the selection word-count bubble.
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      if (sectionSelRef.current.length) {
+        const anchor = sectionSelRef.current[sectionSelRef.current.length - 1];
+        const els = sectionEls(anchor);
+        const range = document.createRange();
+        range.setStartBefore(els[0]);
+        range.setEndAfter(els[els.length - 1]);
+        sel.addRange(range);
+      }
+    }
+  }, [clearSectionSel, paintSectionSel, sectionEls]);
+
+  // Copy interception: while a section selection is active, ⌘C copies every
+  // selected section (in document order), not just the one native Range.
+  useEffect(() => {
+    function onCopy(e: ClipboardEvent) {
+      const heads = sectionSelRef.current;
+      if (!heads.length || !e.clipboardData) return;
+      const ordered = [...heads].sort((a, b) =>
+        a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+      const html: string[] = [];
+      const text: string[] = [];
+      for (const h of ordered) {
+        for (const el of sectionEls(h)) {
+          html.push(el.outerHTML);
+          text.push(el.innerText);
+        }
+      }
+      e.clipboardData.setData('text/html', html.join(''));
+      e.clipboardData.setData('text/plain', text.join('\n'));
+      e.preventDefault();
+    }
+    document.addEventListener('copy', onCopy);
+    return () => document.removeEventListener('copy', onCopy);
+  }, [sectionEls]);
+
+  // Esc clears the section selection.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') clearSectionSel();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [clearSectionSel]);
+
+  // ── Right-click → Copy card ─────────────────────────────────────────────
+  // Right-clicking anywhere inside a card (tag, cite, or body) offers a one-
+  // click "Copy card" that grabs the whole card without needing a selection.
+  const [cardMenu, setCardMenu] = useState<{ x: number; y: number; els: HTMLElement[] } | null>(null);
+
+  const onDocContextMenu = useCallback((e: React.MouseEvent) => {
+    const cont = containerRef.current;
+    if (!cont) return;
+    const p = (e.target as HTMLElement).closest('p');
+    if (!p || !cont.contains(p)) return;
+    const hc = headingClassesRef.current;
+    // The tag is the deepest heading level present in the doc (Verbatim rule).
+    let maxLevel = 0;
+    for (const q of Array.from(cont.querySelectorAll('p'))) {
+      maxLevel = Math.max(maxLevel, headingLevelOf(q, hc));
+    }
+    if (!maxLevel) return;
+    // Walk back from the clicked paragraph to its tag heading. Hitting a
+    // shallower heading first means the click wasn't inside a card.
+    let tag: HTMLElement | null = null;
+    for (let el: Element | null = p; el; el = el.previousElementSibling) {
+      const lvl = headingLevelOf(el, hc);
+      if (lvl === maxLevel) { tag = el as HTMLElement; break; }
+      if (lvl > 0 && el !== p) return;
+    }
+    if (!tag) return;
+    const els: HTMLElement[] = [tag];
+    for (let sib = tag.nextElementSibling; sib; sib = sib.nextElementSibling) {
+      if (headingLevelOf(sib, hc) > 0) break;
+      els.push(sib as HTMLElement);
+    }
+    if (els.length < 2) return; // bare label tag — no cite/body to copy
+    e.preventDefault();
+    setCardMenu({ x: e.clientX, y: e.clientY, els });
+  }, []);
+
+  const copyCardEls = useCallback(async (els: HTMLElement[]) => {
+    const html = els.map(el => el.outerHTML).join('');
+    const text = els.map(el => el.innerText).join('\n');
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      })]);
+    } catch {
+      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    }
+  }, []);
+
+  // Dismiss the card menu on any click, Esc, or scroll.
+  useEffect(() => {
+    if (!cardMenu) return;
+    const close = () => setCardMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('wheel', close, { passive: true });
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('wheel', close);
+    };
+  }, [cardMenu]);
+
+  // ── Selection word-count bubble ─────────────────────────────────────────
+  // While text is selected in the doc, float a small pill near the end of the
+  // selection showing the spoken word count (same rule as the reading timer).
+  const [selBubble, setSelBubble] = useState<{ x: number; y: number; count: number } | null>(null);
+  useEffect(() => {
+    if (step !== 'viewing') { setSelBubble(null); return; }
+    let t = 0;
+    const update = () => {
+      const sel = window.getSelection();
+      const cont = containerRef.current;
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !cont) { setSelBubble(null); return; }
+      const r = sel.getRangeAt(0);
+      if (!cont.contains(r.commonAncestorContainer)) { setSelBubble(null); return; }
+      const count = collectSpoken(r.commonAncestorContainer, { range: r, headingClasses: headingClassesRef.current }).count;
+      if (!count) { setSelBubble(null); return; }
+      const rects = r.getClientRects();
+      const last = rects.length ? rects[rects.length - 1] : r.getBoundingClientRect();
+      setSelBubble({ x: last.right, y: last.bottom, count });
+    };
+    const onChange = () => { window.clearTimeout(t); t = window.setTimeout(update, 180); };
+    // Hide on scroll — the viewport-anchored position goes stale immediately.
+    const onScroll = () => setSelBubble(null);
+    document.addEventListener('selectionchange', onChange);
+    const wrap = scrollWrapRef.current;
+    wrap?.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener('selectionchange', onChange);
+      wrap?.removeEventListener('scroll', onScroll);
+    };
+  }, [step]);
 
   // Smooth-scroll the document to a heading and flash it briefly.
   const scrollToHeading = useCallback((id: string) => {
@@ -2970,6 +3185,13 @@ export default function SpeechDocViewer() {
         const words = collectSpoken(containerRef.current, { headingClasses }).count;
         setDocWords(words);
         docWordsRef.current = words;
+
+        // Restore this doc's last scroll position, now that it's actually painted.
+        const restoreKey = viewingScrollKeyRef.current;
+        if (restoreKey && scrollWrapRef.current) {
+          const saved = getSavedScroll(restoreKey);
+          if (saved) scrollWrapRef.current.scrollTop = saved;
+        }
       } catch (err) {
         console.error('Failed to render speech doc:', err);
         setError('Could not display this document.');
@@ -2995,6 +3217,7 @@ export default function SpeechDocViewer() {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
       resetDocState();
+      viewingScrollKeyRef.current = path;
       applyRender(bytes, result.base64);
 
       // Auto-save to recents so it appears in the sidebar
@@ -3039,6 +3262,7 @@ export default function SpeechDocViewer() {
 
       resetDocState();
       setOcCheckResult(null);
+      viewingScrollKeyRef.current = key;
       applyRender(bytes, base64);
     } catch (e: any) {
       setError(`Failed to open imported case: ${e?.message ?? 'unknown error'}`);
@@ -3146,6 +3370,7 @@ export default function SpeechDocViewer() {
     setFilePath('');
     setFileName('');
     loadedPath.current = '';
+    viewingScrollKeyRef.current = null;
     setOutline([]);
     setActiveHeadingId(null);
     stopAuto();
@@ -3561,13 +3786,43 @@ export default function SpeechDocViewer() {
             onDismiss={dismissWarning}
           />
         )}
-        <div ref={scrollWrapRef} className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0">
+        <div ref={scrollWrapRef} className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0 relative">
           {step === 'loading' && <LoadingPanel message="Loading document…" />}
           <div
             ref={containerRef}
             onClick={onDocClick}
+            onContextMenu={onDocContextMenu}
             style={{ display: step === 'viewing' ? undefined : 'none' }}
           />
+          {cardMenu && (
+            <div
+              className="fixed z-50 rounded-lg shadow-lg py-1 text-[13px]"
+              style={{
+                left: cardMenu.x, top: cardMenu.y,
+                background: 'var(--panel-bg, #1f1f1f)', border: '1px solid var(--panel-border, rgba(255,255,255,0.1))',
+                minWidth: 140,
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 hover:bg-[var(--nav-hover-bg)]"
+                onClick={() => { copyCardEls(cardMenu.els); setCardMenu(null); }}
+              >
+                Copy card
+              </button>
+            </div>
+          )}
+          {selBubble && (
+            <div
+              className="fixed z-40 pointer-events-none px-1.5 py-0.5 rounded text-[11px] font-medium"
+              style={{
+                left: selBubble.x + 6, top: selBubble.y + 6,
+                background: 'rgba(66, 133, 244, 0.92)', color: '#fff',
+              }}
+            >
+              {selBubble.count} word{selBubble.count === 1 ? '' : 's'}
+            </div>
+          )}
         </div>
         {cxOpen && step === 'viewing' && (
           <CrossExPanel

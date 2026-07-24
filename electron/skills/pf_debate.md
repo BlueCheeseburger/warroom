@@ -1,5 +1,7 @@
 # Public Forum (PF) Debate Guide
 
+> **Assume expertise.** The user is an experienced competitive debater and already knows the basics below. Do not explain foundational concepts or define jargon unless the user explicitly asks you to break down a specific part.
+
 ## Overview
 Two-on-two. Pro defends the resolution; Con opposes. Explicitly designed for **lay judges** — community members, parents, educators without debate backgrounds. Arguments must be clear, jargon-free, and persuasive to a general audience. No spreading. No heavy theory. No philosophical Ks. Topics focus on current events: foreign policy, economics, domestic policy, ethics, global affairs. Topics change **monthly** — teams prep both sides each month.
 

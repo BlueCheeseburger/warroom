@@ -39,12 +39,22 @@ export interface CaseFoldersData {
   folders: CaseFolder[];
   /** itemKey -> folderId. An item with no entry sits at the top level. */
   assignments: Record<string, string>;
+  /**
+   * Manual display order, as a flat list of itemKeys. Items sharing a folder
+   * (or both at the top level) are shown in their relative order here; an
+   * item with no entry sorts after every ordered item. Seeded automatically
+   * (newest-added first) the first time a set of items is seen — see
+   * `ensureOrderSeeded` — so "manual order" and "date added" are really the
+   * same list: date-added order until the user drags something, at which
+   * point that item's new position sticks.
+   */
+  order: string[];
 }
 
 const STORAGE_KEY = 'case_folders';
 const CHANGE_EVENT = 'warroom-case-folders-changed';
 
-export const emptyCaseFolders = (): CaseFoldersData => ({ folders: [], assignments: {} });
+export const emptyCaseFolders = (): CaseFoldersData => ({ folders: [], assignments: {}, order: [] });
 
 // ── Item keys ────────────────────────────────────────────────────────────────
 // Cases and speech docs are stored in completely different places, so the grid
@@ -70,7 +80,8 @@ export function normalizeFolderData(raw: any): CaseFoldersData {
       }))
     : [];
   const assignments = raw?.assignments && typeof raw.assignments === 'object' ? { ...raw.assignments } : {};
-  return { folders, assignments };
+  const order = Array.isArray(raw?.order) ? raw.order.filter((k: any) => typeof k === 'string') : [];
+  return { folders, assignments, order };
 }
 
 export async function loadCaseFolders(): Promise<CaseFoldersData> {
@@ -219,7 +230,7 @@ export function deleteFolder(data: CaseFoldersData, id: string): CaseFoldersData
     if (parent) assignments[key] = parent;
     else delete assignments[key]; // back to the top level
   }
-  return { folders, assignments };
+  return { folders, assignments, order: data.order ?? [] };
 }
 
 export function moveFolder(data: CaseFoldersData, id: string, parentId: string | null): CaseFoldersData {
@@ -234,13 +245,55 @@ export function moveItem(data: CaseFoldersData, itemKey: string, folderId: strin
   return { ...data, assignments };
 }
 
-/** Drop assignments whose item no longer exists, so the file doesn't grow forever. */
+/** Drop assignments/order entries whose item no longer exists, so the file doesn't grow forever. */
 export function pruneAssignments(data: CaseFoldersData, liveKeys: Set<string>): CaseFoldersData {
   const assignments: Record<string, string> = {};
   for (const [key, folderId] of Object.entries(data.assignments)) {
     if (liveKeys.has(key)) assignments[key] = folderId;
   }
-  return { ...data, assignments };
+  const order = (data.order ?? []).filter((k) => liveKeys.has(k));
+  return { ...data, assignments, order };
+}
+
+// ── Manual / date-added order ───────────────────────────────────────────────
+// `order` is one flat list shared by every folder — an item's position in it is
+// only meaningful relative to the other items that end up filtered into the
+// same folder view, so one list is enough to give every folder (and the top
+// level) its own stable relative order without per-folder bookkeeping.
+
+/**
+ * Append any item not yet present in `order`, newest `addedAt` first, ahead of
+ * everything already ordered. First run (empty `order`) seeds the whole
+ * library in date-added order in one shot; after that, only genuinely new
+ * items get inserted, so a manual drag never gets silently undone by this.
+ * Returns `data` unchanged (same reference) if nothing was missing, so callers
+ * can skip the write when nothing changed.
+ */
+export function ensureOrderSeeded(data: CaseFoldersData, entries: { key: string; addedAt?: string }[]): CaseFoldersData {
+  const have = new Set(data.order ?? []);
+  const missing = entries.filter((e) => !have.has(e.key));
+  if (missing.length === 0) return data;
+  missing.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''));
+  return { ...data, order: [...missing.map((m) => m.key), ...(data.order ?? [])] };
+}
+
+/** Sort items by their position in `order`; unordered items keep their relative input order, after everything ordered. */
+export function sortByOrder<T extends { key: string }>(data: CaseFoldersData, items: T[]): T[] {
+  const rank = new Map((data.order ?? []).map((k, i) => [k, i]));
+  return items
+    .map((item, i) => ({ item, i, r: rank.has(item.key) ? rank.get(item.key)! : Infinity }))
+    .sort((a, b) => (a.r !== b.r ? a.r - b.r : a.i - b.i))
+    .map((x) => x.item);
+}
+
+/** Move `draggedKey` to sit immediately before/after `targetKey` in the shared order list. */
+export function moveInOrder(data: CaseFoldersData, draggedKey: string, targetKey: string, edge: 'before' | 'after'): CaseFoldersData {
+  if (draggedKey === targetKey) return data;
+  const order = (data.order ?? []).filter((k) => k !== draggedKey);
+  const idx = order.indexOf(targetKey);
+  const insertAt = idx === -1 ? order.length : edge === 'before' ? idx : idx + 1;
+  order.splice(insertAt, 0, draggedKey);
+  return { ...data, order };
 }
 
 // ── React binding ────────────────────────────────────────────────────────────

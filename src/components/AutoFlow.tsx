@@ -742,9 +742,11 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                         <span className={`flex-1 ${p.removed ? 'opacity-40 line-through' : ''}`}>
                           {p.summary ? (
                             <>
-                              {/* AI summary replaces the tag+cite in the cell — show
-                                  it with the AI ring, and the original tag under it. */}
-                              <span className="ai-glow-ring inline-block rounded-sm px-1.5 py-0.5 text-ink/85">{truncate(p.summary, 90)}</span>
+                              {/* AI summary replaces the tag+cite in the cell. No ring
+                                  here — per CLAUDE.md, AI-generated taglines (including
+                                  this opt-in summary standing in for one) never get the
+                                  ring, only the toggle that turns summarization on does. */}
+                              <span className="inline-block rounded-sm px-1.5 py-0.5 text-ink/85">{truncate(p.summary, 90)}</span>
                               <span className="block text-ink/35 mt-1 italic">was: {truncate(p.tag, 70)}</span>
                             </>
                           ) : (

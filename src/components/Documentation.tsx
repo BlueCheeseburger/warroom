@@ -906,11 +906,14 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Tab previews:</strong> long tab names truncate with an ellipsis instead of
-            overflowing. Hover a tab at the bottom and a tooltip shows its full name plus the top few
-            arguments on it, so you can tell your sheets apart at a glance without clicking into each.
-            If Auto Flow's AI card-summary option built that tab, the tooltip leads with a real
-            Warroom-AI-written blurb of the tab (marked with a ✨) — folded from the per-card
-            summaries already generated when the cards were written, not a fresh AI call on hover.
+            overflowing. Hover a tab at the bottom and a tooltip shows its full name plus a summary
+            of the argument as a whole on that sheet — a real Warroom-AI-written sentence (marked
+            with a ✨), not a list of what's on the tab. The first time you hover a tab with content
+            on it, Warroom AI generates that sentence on the spot (you'll briefly see "Warroom AI is
+            summarizing this tab…"); it's then cached and reused on every later hover until you
+            actually change something on that sheet, so most hovers don't cost a call at all. Auto
+            Flow's opt-in AI card-summary option can also seed this for free at write time, folded
+            from the per-card summaries it already generated.
           </P>
           <P>
             <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all tabs in the flow.
@@ -1094,8 +1097,9 @@ export default function Documentation() {
           <P>
             This is the one part of Auto Flow that reads card bodies, and they never leave the main
             process — the evidence is re-read there, summarized, and only the short summaries come back.
-            Summarized cells carry the blue/pink <strong>AI ring</strong> in the flow, which clears as
-            soon as you edit that cell. It costs an extra Warroom AI call, which is why it's opt-in.
+            No <strong>AI ring</strong> on the resulting cells, though — an AI-written summary is
+            standing in for the tagline itself, and taglines never get the ring (see the
+            Architecture section). It costs an extra Warroom AI call, which is why it's opt-in.
           </P>
           <H3>Writing into the flow</H3>
           <P>

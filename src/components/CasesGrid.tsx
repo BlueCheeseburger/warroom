@@ -15,6 +15,9 @@ import {
   moveFolder,
   moveItem,
   pruneAssignments,
+  sortByOrder,
+  ensureOrderSeeded,
+  moveInOrder,
   CaseFolder,
   ITEM_DRAG_MIME as ITEM_MIME,
   FOLDER_DRAG_MIME as FOLDER_MIME,
@@ -102,6 +105,17 @@ export default function CasesGrid() {
     }
   }, [ready, dbReady, items, folders, update]);
 
+  // Display order = date added, until the user drags a tile (then that sticks).
+  // New items get seeded into folders.order in an effect (a write, so it can't
+  // happen during render) rather than during the prune pass above, which only
+  // runs once per mount and would miss items added later in the session.
+  useEffect(() => {
+    if (!ready || !dbReady) return;
+    const seeded = ensureOrderSeeded(folders, items.map((i) => ({ key: i.key, addedAt: i.addedAt })));
+    if (seeded !== folders) update(() => seeded);
+  }, [ready, dbReady, items, folders, update]);
+  const orderedItems = useMemo(() => sortByOrder(folders, items), [folders, items]);
+
   const subfolders = childFolders(folders, currentFolderId);
   const trail = folderTrail(folders, currentFolderId);
 
@@ -109,13 +123,16 @@ export default function CasesGrid() {
   const searching = term.length > 0;
 
   // Search deliberately ignores the current folder: this grid is the place people
-  // come to *find* a doc, and a scoped search would miss everything filed away.
+  // come to *find* a doc, and a scoped search would miss everything filed away —
+  // and unlike folder browsing, search results are sorted by relevance to the
+  // query (alphabetically), not by date added.
   const visibleItems = useMemo(() => {
-    const list = searching
-      ? items.filter((i) => i.name.toLowerCase().includes(term))
-      : items.filter((i) => resolveItemFolder(folders, i.key) === currentFolderId);
-    return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  }, [items, folders, currentFolderId, term, searching]);
+    if (searching) {
+      return [...items.filter((i) => i.name.toLowerCase().includes(term))]
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return orderedItems.filter((i) => resolveItemFolder(folders, i.key) === currentFolderId);
+  }, [items, orderedItems, folders, currentFolderId, term, searching]);
 
   const navigate = useCallback((folderId: string | null) => {
     setView({ kind: 'cases-grid', ...(folderId ? { folderId } : {}) });
@@ -225,6 +242,30 @@ export default function CasesGrid() {
     }
     setDrag(null);
     setDropTarget(null);
+  }
+
+  // ── Drag-to-reorder (tile onto tile) ────────────────────────────────────
+  const [reorderTarget, setReorderTarget] = useState<{ key: string; edge: 'before' | 'after' } | null>(null);
+  function handleReorderOver(e: React.DragEvent, item: CaseItem) {
+    const isItemDrag = drag?.type === 'item' || e.dataTransfer.types.includes(ITEM_MIME);
+    if (!isItemDrag || (drag?.type === 'item' && drag.key === item.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const edge: 'before' | 'after' = (e.clientX - rect.left) < rect.width / 2 ? 'before' : 'after';
+    setDropTarget(null); // this isn't a folder-file drop, so clear any folder highlight
+    setReorderTarget({ key: item.key, edge });
+  }
+  function handleReorderDrop(e: React.DragEvent, item: CaseItem) {
+    const edge = reorderTarget?.key === item.key ? reorderTarget.edge : 'before';
+    setReorderTarget(null);
+    const draggedKey = drag?.type === 'item' ? drag.key : e.dataTransfer.getData(ITEM_MIME);
+    setDrag(null);
+    if (!draggedKey || draggedKey === item.key) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const targetFolder = resolveItemFolder(folders, item.key);
+    update((d) => moveInOrder(moveItem(d, draggedKey, targetFolder), draggedKey, item.key, edge));
   }
 
   const nothingAtAll = items.length === 0;
@@ -378,7 +419,11 @@ export default function CasesGrid() {
                       e.dataTransfer.effectAllowed = 'move';
                       setDrag({ type: 'item', key: item.key });
                     }}
-                    onDragEnd={() => { setDrag(null); setDropTarget(null); }}
+                    onDragEnd={() => { setDrag(null); setDropTarget(null); setReorderTarget(null); }}
+                    onReorderOver={(e) => handleReorderOver(e, item)}
+                    onReorderLeave={() => setReorderTarget((cur) => (cur?.key === item.key ? null : cur))}
+                    onReorderDrop={(e) => handleReorderDrop(e, item)}
+                    reorderEdge={reorderTarget?.key === item.key ? reorderTarget.edge : null}
                     folderChoices={folderChoices}
                     currentFolderId={homeId}
                     onMoveTo={(folderId) => moveItems([item.key], folderId)}
@@ -566,6 +611,7 @@ function TileAction({ label, danger, onClick, children }: {
 
 function ItemTile({
   item, folderName, dimmed, selected, onOpen, onToggleSelect, onDragStart, onDragEnd,
+  onReorderOver, onReorderLeave, onReorderDrop, reorderEdge,
   folderChoices, currentFolderId, onMoveTo, onRename, onDelete,
 }: {
   item: CaseItem;
@@ -577,6 +623,11 @@ function ItemTile({
   onToggleSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  onReorderOver: (e: React.DragEvent) => void;
+  onReorderLeave: () => void;
+  onReorderDrop: (e: React.DragEvent) => void;
+  /** 'before'/'after' when this tile is the current reorder-drop target, else null. */
+  reorderEdge: 'before' | 'after' | null;
   folderChoices: { id: string; label: string }[];
   currentFolderId: string | null;
   onMoveTo: (folderId: string | null) => void;
@@ -650,6 +701,9 @@ function ItemTile({
       onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onDragOver={onReorderOver}
+      onDragLeave={onReorderLeave}
+      onDrop={onReorderDrop}
       onMouseEnter={(e) => {
         setHover(true);
         e.currentTarget.style.borderColor = 'var(--accent)';
@@ -664,7 +718,11 @@ function ItemTile({
       style={{
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-subtle)',
-        boxShadow: selected ? '0 0 0 2px var(--accent)' : 'none',
+        boxShadow: selected
+          ? '0 0 0 2px var(--accent)'
+          : reorderEdge === 'before' ? '-3px 0 0 var(--accent)'
+          : reorderEdge === 'after' ? '3px 0 0 var(--accent)'
+          : 'none',
         opacity: dimmed ? 0.45 : 1,
         cursor: 'pointer',
         ...CARD_BASE,

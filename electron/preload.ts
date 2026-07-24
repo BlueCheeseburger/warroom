@@ -83,6 +83,8 @@ const api = {
       files: { fileName: string; path: string }[];
       cards: { fileName: string; tag: string; maxWords: number }[];
     }) => ipcRenderer.invoke('ai:autoFlowSummarize', params),
+    summarizeFlowSheet: (params: { sheetName: string; event: 'policy' | 'pf'; entries: string[] }) =>
+      ipcRenderer.invoke('ai:summarizeFlowSheet', params),
     readImageAsDataUrl: (filePath: string) => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
     suggestBlocks: (positions: string, blocks: { id: string; title: string }[]) =>
       ipcRenderer.invoke('ai:suggestBlocks', positions, blocks),

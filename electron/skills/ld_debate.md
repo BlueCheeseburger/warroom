@@ -1,5 +1,7 @@
 # Lincoln-Douglas (LD) Debate Guide
 
+> **Assume expertise.** The user is an experienced competitive debater and already knows the basics below. Do not explain foundational concepts or define jargon unless the user explicitly asks you to break down a specific part.
+
 ## Overview
 One-on-one. Aff defends the resolution; Neg opposes. Named for the Lincoln-Douglas 1858 debates. Resolutions focus on **philosophical, ethical, and value-based questions** — not specific government policies. Asks which values or principles should take precedence when they conflict. Topics change **every two months** (NSDA level). Debaters must argue both sides.
 

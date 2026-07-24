@@ -716,6 +716,12 @@ html.dark .docx-viewer-wrap * {
   border-color: rgba(240, 240, 242, 0.7) !important;
 }
 
+/* Cmd/Ctrl+click section selection (SpeechDocViewer) */
+.wr-section-sel {
+  background: rgba(66, 133, 244, 0.16) !important;
+  box-shadow: -3px 0 0 rgba(66, 133, 244, 0.6) !important;
+}
+
 /* Flow cells: highlighted runs keep dark ink so amber stays readable in dark mode. */
 .flow-cell span[style*="background-color"] {
   color: #1a1a1a !important;

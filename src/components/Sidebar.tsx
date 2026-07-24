@@ -6,6 +6,7 @@ import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
   createFolder, renameFolder, deleteFolder, pruneAssignments,
+  sortByOrder, ensureOrderSeeded, moveInOrder,
   ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
 } from '../utils/caseFolders';
 import {
@@ -659,7 +660,36 @@ function useOpenFolders(storageKey: string = FOLDERS_OPEN_KEY) {
     try { localStorage.setItem(storageKey, JSON.stringify([...next])); } catch {}
     return next;
   });
-  return [open, toggle] as const;
+  // Open-only variant (never closes) — safe to call from a delayed timer where
+  // the folder's state may have changed since the timer was armed.
+  const openOnly = (id: string) => setOpen((prev) => {
+    if (prev.has(id)) return prev;
+    const next = new Set(prev);
+    next.add(id);
+    try { localStorage.setItem(storageKey, JSON.stringify([...next])); } catch {}
+    return next;
+  });
+  return [open, toggle, openOnly] as const;
+}
+
+// Auto-expand a collapsed folder after hovering a drag over it for a moment,
+// so items can be dropped into nested folders without a separate expand step.
+const DRAG_EXPAND_DELAY_MS = 600;
+function useDragHoverExpand(openFolder: (id: string) => void) {
+  const ref = useRef<{ id: string; timer: number } | null>(null);
+  const cancel = () => {
+    if (ref.current) { window.clearTimeout(ref.current.timer); ref.current = null; }
+  };
+  const hover = (target: string | null) => {
+    if (ref.current?.id === target) return;
+    cancel();
+    if (!target) return;
+    ref.current = {
+      id: target,
+      timer: window.setTimeout(() => { ref.current = null; openFolder(target); }, DRAG_EXPAND_DELAY_MS),
+    };
+  };
+  return { hover, cancel };
 }
 
 /** Sentinel drop target for "no folder" — distinct from `null` meaning "nothing hovered". */
@@ -816,7 +846,8 @@ function CasesSection({ view, setView, db }: {
   view: any; setView: (v: any) => void; db: any;
 }) {
   const { folders, update } = useCaseFolders();
-  const [openIds, toggleOpen] = useOpenFolders();
+  const [openIds, toggleOpen, openFolderOnly] = useOpenFolders();
+  const dragExpand = useDragHoverExpand(openFolderOnly);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [dropId, setDropId] = useState<string | null>(null);
 
@@ -870,6 +901,40 @@ function CasesSection({ view, setView, db }: {
     [db, docsTick],
   );
 
+  // Display order = date added, until the user drags something (then that
+  // sticks). New items (not yet in folders.order) get seeded in on mount/change
+  // rather than during render — this is a write, so it belongs in an effect.
+  useEffect(() => {
+    const seeded = ensureOrderSeeded(folders, items.map((i) => ({ key: i.key, addedAt: i.addedAt })));
+    if (seeded !== folders) update(() => seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, folders]);
+  const orderedItems = useMemo(() => sortByOrder(folders, items), [folders, items]);
+
+  // ── Drag-to-reorder (item onto item) ────────────────────────────────────
+  const [reorderTarget, setReorderTarget] = useState<{ key: string; edge: 'before' | 'after' } | null>(null);
+  function onItemDragOver(e: React.DragEvent, item: CaseItem) {
+    const isItemDrag = dragging?.kind === 'item' || e.dataTransfer.types.includes(ITEM_DRAG_MIME);
+    if (!isItemDrag || dragging?.id === item.key) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragExpand.cancel();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const edge: 'before' | 'after' = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    setReorderTarget({ key: item.key, edge });
+  }
+  function onItemDrop(e: React.DragEvent, item: CaseItem) {
+    const edge = reorderTarget?.key === item.key ? reorderTarget.edge : 'before';
+    setReorderTarget(null);
+    const draggedKey = dragging?.kind === 'item' ? dragging.id : e.dataTransfer.getData(ITEM_DRAG_MIME);
+    setDragging(null);
+    if (!draggedKey || draggedKey === item.key) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const targetFolder = resolveItemFolder(folders, item.key);
+    update((d) => moveInOrder(moveItem(d, draggedKey, targetFolder), draggedKey, item.key, edge));
+  }
+
   function isItemActive(item: CaseItem): boolean {
     if (item.kind === 'speech-doc') return view.kind === 'speech-doc' && view.docPath === item.path;
     return (view.kind === 'case' && view.caseId === item.id) ||
@@ -887,6 +952,7 @@ function CasesSection({ view, setView, db }: {
     e.preventDefault();
     e.stopPropagation();
     setDropId(null);
+    dragExpand.cancel();
     const d = dragging;
     setDragging(null);
     if (d) {
@@ -921,6 +987,8 @@ function CasesSection({ view, setView, db }: {
     e.preventDefault(); // without this the drop event never fires
     e.stopPropagation();
     setDropId(target ?? TOP_LEVEL_DROP);
+    if (target && !openIds.has(target)) dragExpand.hover(target);
+    else dragExpand.hover(null);
   }
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
@@ -974,6 +1042,7 @@ function CasesSection({ view, setView, db }: {
   function renderItem(item: CaseItem, depth: number) {
     const isDoc = item.kind === 'speech-doc';
     const isSelected = selected.has(item.key);
+    const showTarget = reorderTarget?.key === item.key ? reorderTarget.edge : null;
     return (
       <div
         key={item.key}
@@ -982,10 +1051,15 @@ function CasesSection({ view, setView, db }: {
           opacity: dragging?.id === item.key ? 0.45 : 1,
           background: isSelected ? 'var(--nav-hover-bg)' : undefined,
           borderRadius: 8,
+          borderTop: showTarget === 'before' ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
+          borderBottom: showTarget === 'after' ? '2px solid var(--nav-active-color, #4285F4)' : '2px solid transparent',
         }}
         draggable
         onDragStart={(e) => startDrag(e, { kind: 'item', id: item.key })}
-        onDragEnd={() => { setDragging(null); setDropId(null); }}
+        onDragEnd={() => { setDragging(null); setDropId(null); setReorderTarget(null); }}
+        onDragOver={(e) => onItemDragOver(e, item)}
+        onDragLeave={() => setReorderTarget((cur) => (cur?.key === item.key ? null : cur))}
+        onDrop={(e) => onItemDrop(e, item)}
         // Cmd/Ctrl+click toggles selection instead of navigating. Capture phase so
         // this runs before NavItem's own button onClick and can swallow the event.
         onClickCapture={(e) => {
@@ -1036,13 +1110,13 @@ function CasesSection({ view, setView, db }: {
             onDragStart={(e) => startDrag(e, { kind: 'folder', id: f.id })}
             onDragEnd={() => { setDragging(null); setDropId(null); }}
             onDragOver={(e) => onDragOverTarget(e, f.id)}
-            onDragLeave={() => setDropId((cur) => (cur === f.id ? null : cur))}
+            onDragLeave={() => { setDropId((cur) => (cur === f.id ? null : cur)); dragExpand.cancel(); }}
             onDrop={(e) => onDropInto(e, f.id)}
           />
           {open && (
             <>
               {renderFolders(f.id, depth + 1)}
-              {items.filter((i) => resolveItemFolder(folders, i.key) === f.id)
+              {orderedItems.filter((i) => resolveItemFolder(folders, i.key) === f.id)
                 .map((i) => renderItem(i, depth + 1))}
             </>
           )}
@@ -1052,7 +1126,7 @@ function CasesSection({ view, setView, db }: {
   }
 
   const topFolders = childFolders(folders, null);
-  const looseItems = items.filter((i) => resolveItemFolder(folders, i.key) === null);
+  const looseItems = orderedItems.filter((i) => resolveItemFolder(folders, i.key) === null);
   const topLit = dropId === TOP_LEVEL_DROP;
 
   return (
@@ -1106,7 +1180,8 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
   importFlow: () => void; importing: boolean; setAutoFlowOpen: (open: boolean) => void;
 }) {
   const { folders, ready, update } = useFlowFolders();
-  const [openIds, toggleOpen] = useOpenFolders(FLOW_FOLDERS_OPEN_KEY);
+  const [openIds, toggleOpen, openFolderOnly] = useOpenFolders(FLOW_FOLDERS_OPEN_KEY);
+  const dragExpand = useDragHoverExpand(openFolderOnly);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [dropId, setDropId] = useState<string | null>(null);
 
@@ -1155,6 +1230,7 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
     e.preventDefault();
     e.stopPropagation();
     setDropId(null);
+    dragExpand.cancel();
     const d = dragging;
     setDragging(null);
     if (!d || !canDrop(target)) return;
@@ -1174,6 +1250,8 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
     e.preventDefault(); // without this the drop event never fires
     e.stopPropagation();
     setDropId(target ?? TOP_LEVEL_DROP);
+    if (target && !openIds.has(target)) dragExpand.hover(target);
+    else dragExpand.hover(null);
   }
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
