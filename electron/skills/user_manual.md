@@ -252,6 +252,8 @@ If you have cells you pasted *before* this was fixed, they'll fix themselves the
 
 **Arrows are straight.** An arrow linking an argument to its answer is drawn as a straight line between the two cells. When both cells are in the same column (an answer that couldn't sit on its target's row), the line runs down the outside edge of the column so it never cuts across the arguments in between.
 
+**Your work stays on the tab you put it on.** Warroom tracks the tab you're typing in by its identity, not its position, so switching tabs, dragging tabs into a new order, or a teammate adding or deleting a tab while you're live can't cause what you typed to land on the wrong tab. If you're flowing live with a teammate, their tab changes also no longer slide you onto a different tab mid-round, and your zoom level stays yours (it isn't pushed to or pulled from anyone else).
+
 **Reorder tabs by dragging.** Grab any sheet tab at the bottom and drag it left or right to put your flows in whatever order you want — a blue line shows where it'll land, and it drops there when you let go. This is undoable with ⌘Z, and it's the quick fix if Auto Flow (or you) put a tab in the wrong spot.
 
 **Each sheet remembers its own scroll position.** If you're halfway down the Politics DA and jump to the Case sheet, Case opens where *you* left it — not halfway down. A tab you haven't opened yet starts at the top.

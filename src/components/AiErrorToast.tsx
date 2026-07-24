@@ -48,6 +48,10 @@ export default function AiErrorToast() {
   const [toasts, setToasts] = useState<AiToast[]>([]);
   const [expanded, setExpanded] = useState<number | null>(null);
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  // Mirror of `toasts` so the event handler can check for a duplicate WITHOUT
+  // doing side effects (arming timers) inside a setState updater — React is
+  // free to re-run updaters, and a re-run would leak timers / double-count.
+  const shown = useRef<AiToast[]>([]);
 
   useEffect(() => {
     function onAiError(e: Event) {
@@ -55,24 +59,36 @@ export default function AiErrorToast() {
       const message = detail?.message || 'Warroom AI ran into a problem.';
       const source = detail?.source || 'Warroom AI';
 
-      setToasts((prev) => {
-        // Same error already on screen → bump its counter and restart its timer
-        // rather than stacking another copy. One flaky key or an exhausted quota
-        // hit from several features reads as "x4", not four walls of text.
-        const dup = prev.find((t) => t.message === message);
-        if (dup) {
-          arm(dup.id);
-          return prev.map((t) => (t.id === dup.id ? { ...t, count: t.count + 1 } : t));
-        }
-        const id = nextId++;
-        arm(id);
-        const next = [...prev, { id, source, message, count: 1 }];
-        return next.slice(-MAX_TOASTS); // keep the newest few; older ones drop off
-      });
+      // Same error already on screen → bump its counter and restart its timer
+      // rather than stacking another copy. One flaky key or an exhausted quota
+      // hit from several features reads as "×4", not four walls of text.
+      const dup = shown.current.find((t) => t.message === message);
+      if (dup) {
+        arm(dup.id);
+        setToasts((prev) => prev.map((t) => (t.id === dup.id ? { ...t, count: t.count + 1 } : t)));
+        return;
+      }
+      const id = nextId++;
+      arm(id);
+      setToasts((prev) => [...prev, { id, source, message, count: 1 }].slice(-MAX_TOASTS));
     }
     window.addEventListener('warroom:ai-error', onAiError);
     return () => window.removeEventListener('warroom:ai-error', onAiError);
   }, []);
+
+  useEffect(() => { shown.current = toasts; }, [toasts]);
+
+  // Drop timers for toasts that fell off the end of the MAX_TOASTS window, so a
+  // long burst can't leave orphaned timers running against ids that are gone.
+  useEffect(() => {
+    const live = new Set(toasts.map((t) => t.id));
+    for (const [id, timer] of timers.current) {
+      if (!live.has(id)) { clearTimeout(timer); timers.current.delete(id); }
+    }
+  }, [toasts]);
+
+  // Clear everything on unmount.
+  useEffect(() => () => { for (const t of timers.current.values()) clearTimeout(t); timers.current.clear(); }, []);
 
   function arm(id: number) {
     const existing = timers.current.get(id);

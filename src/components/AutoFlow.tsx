@@ -395,13 +395,34 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       const structuralKeepNames = new Set(
         sheets.filter((s) => !PLACEHOLDER_RE.test(s.name.trim())).map((s) => s.name.trim().toLowerCase())
       );
+      // Role of each proposed sheet name, so a sheet that reaches ensureSheet
+      // without having been slotted by the pre-pass below still lands in the
+      // right FAMILY of placeholder. Without this, an off-case position could
+      // take an empty "Adv 2" slot (first placeholder wins), putting a DA in
+      // among the advantages and breaking the advantages-first ordering.
+      const roleByName = new Map<string, 'advantage' | 'offcase'>();
+      for (const p of accepted) {
+        const k = p.sheetName.trim().toLowerCase();
+        if (p.sheetRole && !roleByName.has(k)) roleByName.set(k, p.sheetRole);
+      }
+      const emptySlot = (s: SheetData) =>
+        !Object.values(s.cells).some((v) => String(v ?? '').trim());
       const ensureSheet = (name: string): number => {
         const key = name.trim().toLowerCase();
         let idx = sheetIndexByName.get(key);
         if (idx === undefined) {
-          const slot = sheets.findIndex((s) =>
-            PLACEHOLDER_RE.test(s.name.trim()) &&
-            !Object.values(s.cells).some((v) => String(v ?? '').trim()));
+          const role = roleByName.get(key);
+          const familyRe = role === 'advantage' ? /^(adv|advantage|contention)\s*\d+$/i
+            : role === 'offcase' ? /^off\s*\d+$/i
+            : null;
+          // Prefer a slot of this position's own family; fall back to any free
+          // placeholder, then to appending a brand-new tab.
+          let slot = familyRe
+            ? sheets.findIndex((s) => familyRe.test(s.name.trim()) && emptySlot(s))
+            : -1;
+          if (slot === -1) {
+            slot = sheets.findIndex((s) => PLACEHOLDER_RE.test(s.name.trim()) && emptySlot(s));
+          }
           if (slot !== -1) {
             sheetIndexByName.delete(sheets[slot].name.trim().toLowerCase());
             sheets[slot] = { ...sheets[slot], name };

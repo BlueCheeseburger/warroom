@@ -322,6 +322,12 @@ export default function FlowView() {
   useEffect(() => {
     if (!flowId) return;
     setLoaded(false);
+    // Kill any debounced save still pending from the flow we're leaving. Its
+    // callback closes over the PREVIOUS flow's sheets, so letting it fire after
+    // the switch pushed the old flow's tabs into this one's view (until the
+    // async read below overwrote them) — one flow's arguments briefly showing
+    // up in another.
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     cellsRef.current = {}; cellsOwnerId.current = null;
     window.warroom?.storage.read(`flow_data_${flowId}`).then((data: StoredFlowData | null) => {
       // If live sync already took over, don't let this (possibly stale) local
@@ -386,6 +392,8 @@ export default function FlowView() {
       history.current = []; histIdx.current = -1;
       requestAnimationFrame(recordHistory);
     });
+    // Also on unmount — a pending save must never outlive the view that armed it.
+    return () => { if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } };
   }, [flowId, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live reload when Warroom AI (or another writer) edits this flow ─────────
@@ -535,7 +543,9 @@ export default function FlowView() {
   function pushLiveCell(key: string, html: string) {
     const handle = syncRef.current;
     if (!liveRef.current || !handle || applyingRemote.current) return;
-    const sheetId = snap.current.sheets[snap.current.activeSheetIdx]?.id;
+    // Owner id, not activeSheetIdx — a stale index here would push the keystroke
+    // into another sheet's cell in the SHARED doc and broadcast it to the team.
+    const sheetId = cellsOwnerId.current;
     if (!sheetId) return;
     const t = cellText(handle.doc, sheetId, key);
     if (t) setYText(t, html, LOCAL_ORIGIN);
@@ -544,9 +554,11 @@ export default function FlowView() {
   // Build the current flow's plain data (for seeding a fresh live doc).
   function currentDataForDoc(): FlowDocData {
     const s = snap.current;
-    const sheets = s.sheets.map((sh, i) => ({
+    // Flush by owner id, not index — see flushInto/flowCellFlush.ts. Getting this
+    // wrong here would seed the SHARED doc with one tab's cells on another tab.
+    const sheets = flushInto(s.sheets).map((sh) => ({
       id: sh.id, name: sh.name,
-      cells: i === s.activeSheetIdx ? { ...cellsRef.current } : { ...sh.cells },
+      cells: { ...sh.cells },
       arrows: [...(sh.arrows ?? [])],
     }));
     return {
@@ -572,8 +584,20 @@ export default function FlowView() {
       setColumnWidths(data.columnWidths?.length === colCount ? data.columnWidths : (data.customColumns ?? cols).map(() => DEFAULT_COL_WIDTH));
       setCustomColumns(data.customColumns);
       setColumnColors(data.columnColors?.length === colCount ? data.columnColors : (data.customColumns ?? cols).map(() => null));
-      setFontSize(data.fontSize); setZoom(data.zoom);
-      const idx = Math.min(snap.current.activeSheetIdx, data.sheets.length - 1);
+      setFontSize(data.fontSize);
+      // Zoom is deliberately NOT adopted from the shared doc. It's a per-viewer
+      // fit to your own window, and the grid auto-fits on every container resize
+      // — so applying a teammate's zoom would start a feedback loop: they fit to
+      // their width and broadcast, you adopt it, your auto-fit corrects it to
+      // your width and broadcasts back, forever. Your zoom stays yours.
+      // Stay on the sheet you're actually looking at, by ID. Clamping the old
+      // index instead meant a teammate adding, deleting, or reordering a tab
+      // silently slid you onto a different one mid-round. Falls back to the
+      // clamped index only if your sheet is genuinely gone (someone deleted it).
+      const priorId = snap.current.sheets[snap.current.activeSheetIdx]?.id;
+      const byId = priorId ? data.sheets.findIndex((sh) => sh.id === priorId) : -1;
+      const idx = byId !== -1 ? byId : Math.min(snap.current.activeSheetIdx, data.sheets.length - 1);
+      if (idx !== snap.current.activeSheetIdx) setActiveSheetIdx(idx);
       cellsRef.current = { ...(data.sheets[idx]?.cells ?? {}) }; cellsOwnerId.current = data.sheets[idx]?.id ?? null;
       if (opts.remountCells) setCellNonce((n) => n + 1);
     } finally {
@@ -695,9 +719,12 @@ export default function FlowView() {
   // ── Undo / redo ──────────────────────────────────────────────────────────
   function takeSnapshot(): FlowSnapshot {
     const s = snap.current;
-    const sheets = s.sheets.map((sh, i) => ({
+    // Flush by owner id, not index (see flushInto) — otherwise a snapshot taken
+    // while the index is stale bakes one tab's cells onto another, and undo
+    // faithfully restores that corruption.
+    const sheets = flushInto(s.sheets).map((sh) => ({
       ...sh,
-      cells: i === s.activeSheetIdx ? { ...cellsRef.current } : { ...sh.cells },
+      cells: { ...sh.cells },
       arrows: [...(sh.arrows ?? [])],
     }));
     return {
@@ -774,10 +801,11 @@ export default function FlowView() {
   // the user edits an AI-written cell, the content is theirs, not the AI's.
   function clearAiCell(key: string) {
     const s = snap.current;
-    const sh = s.sheets[s.activeSheetIdx];
+    const owner = cellsOwnerId.current;
+    const sh = s.sheets.find((x) => x.id === owner);
     if (!sh?.aiCells?.includes(key)) return;
-    const updated = s.sheets.map((x, i) =>
-      i === s.activeSheetIdx ? { ...x, aiCells: (x.aiCells ?? []).filter((k) => k !== key) } : x
+    const updated = s.sheets.map((x) =>
+      x.id === owner ? { ...x, aiCells: (x.aiCells ?? []).filter((k) => k !== key) } : x
     );
     setSheets(updated);
     snap.current = { ...snap.current, sheets: updated };
@@ -1115,8 +1143,9 @@ export default function FlowView() {
   // ── Arrows ────────────────────────────────────────────────────────────────
   function setActiveSheetArrows(updater: (arrows: FlowArrow[]) => FlowArrow[]) {
     const s = snap.current;
-    const updated = s.sheets.map((sh, i) =>
-      i === s.activeSheetIdx ? { ...sh, arrows: updater(sh.arrows ?? []) } : sh
+    const owner = cellsOwnerId.current ?? s.sheets[s.activeSheetIdx]?.id;
+    const updated = s.sheets.map((sh) =>
+      sh.id === owner ? { ...sh, arrows: updater(sh.arrows ?? []) } : sh
     );
     setSheets(updated);
     snap.current = { ...snap.current, sheets: updated };
@@ -1195,7 +1224,7 @@ export default function FlowView() {
     const q = findQuery.toLowerCase();
     const out: { sheetIdx: number; key: string }[] = [];
     snap.current.sheets.forEach((sh, si) => {
-      const cells = si === snap.current.activeSheetIdx ? cellsRef.current : sh.cells;
+      const cells = sh.id === cellsOwnerId.current ? cellsRef.current : sh.cells;
       for (const [key, val] of Object.entries(cells)) {
         if (htmlToText(val).toLowerCase().includes(q)) out.push({ sheetIdx: si, key });
       }
@@ -1413,7 +1442,7 @@ export default function FlowView() {
     const until = summaryCooldown.current.get(sheet.id) ?? 0;
     if (Date.now() < until) return;
 
-    const cells = idx === cur.activeSheetIdx ? cellsRef.current : sheet.cells;
+    const cells = sheet.id === cellsOwnerId.current ? cellsRef.current : sheet.cells;
     const sig = sheetContentSignature(cells);
     if (sig.startsWith('0:')) return; // nothing written on this tab yet
     if (sheet.aiSummary && sheet.aiSummarySource === sig) return; // already fresh
@@ -1479,7 +1508,7 @@ export default function FlowView() {
     const s = snap.current;
     const sheet = s.sheets[idx];
     if (!sheet) return '';
-    const cells = idx === s.activeSheetIdx ? cellsRef.current : sheet.cells;
+    const cells = sheet.id === cellsOwnerId.current ? cellsRef.current : sheet.cells;
     const entries = Object.entries(cells)
       .map(([key, html]) => {
         const [r, c] = key.split('-').map(Number);
@@ -1580,8 +1609,8 @@ export default function FlowView() {
   // there's content, since switching variant rebuilds sheets from defaults.
   function flowHasAnyContent(): boolean {
     const s = snap.current;
-    return s.sheets.some((sh, i) => {
-      const cells = i === s.activeSheetIdx ? cellsRef.current : (sh.cells ?? {});
+    return s.sheets.some((sh) => {
+      const cells = sh.id === cellsOwnerId.current ? cellsRef.current : (sh.cells ?? {});
       return Object.values(cells).some((v) => typeof v === 'string' && v.trim() !== '');
     });
   }
