@@ -883,6 +883,13 @@ export default function Documentation() {
             session.
           </P>
           <P>
+            <strong>Columns fill the window.</strong> Collapsing the sidebar, resizing the app window,
+            or opening/closing the AI chat panel all automatically stretch or shrink your columns to
+            meet the new edge — no dead gap, no manual re-zoom — while keeping every column's size
+            proportional to the others. A <strong>Fit to window</strong> toolbar button forces a
+            re-fit on demand too.
+          </P>
+          <P>
             <strong>Move an argument (<Code>⌘↑</Code> / <Code>⌘↓</Code>):</strong> swaps the cell's
             content with the cell above / below it in the same column and carries the caret along, so
             an argument can be nudged into position without cut-and-paste. It saves and records
