@@ -1080,7 +1080,10 @@ export default function Documentation() {
             position gets a tab named after the position itself, and the write step renames an unused
             placeholder slot to that name rather than stacking new tabs after a row of dead defaults.
             Tabs are also <strong>ordered</strong>: your advantages come first, as the leftmost tabs,
-            in the order they came up in the 1AC, with off-case flows after them.
+            in the order they came up in the 1AC, with off-case flows after them. On a new flow,
+            leftover blank placeholder tabs are <strong>pruned</strong> — a two-advantage doc won't
+            leave a dead "Adv 3", and unused "Off 3"/"Off 4" slots are dropped (RFD/Notes and the
+            stock-issues aff tabs are always kept, blank or not).
             It also shortens each card's cite to how a debater
             actually writes it — author and year ("Price '26"), not the full credentials paragraph —
             and flags which cards answer which (a perm, a no-link) and which card is the plan text. It

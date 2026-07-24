@@ -385,6 +385,16 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // ever taken over, so nothing a user (or an earlier pass) wrote can be
       // absorbed into a rename.
       const PLACEHOLDER_RE = /^(off|adv|advantage|contention)\s*\d+$/i;
+      // The default tabs that are STRUCTURAL, not numbered placeholders — kept even
+      // when they end up blank (RFD/Notes; the stock-issues aff tabs; PF's Turns).
+      // Captured now, from the still-default sheet names, before the pre-pass below
+      // renames any placeholder slots. Everything else that ends up blank on a NEW
+      // flow gets pruned at the end (see the prune pass), so a 2-advantage doc
+      // doesn't leave a dead "Adv 3" tab and a skipped card can't strand a
+      // named-but-empty sheet.
+      const structuralKeepNames = new Set(
+        sheets.filter((s) => !PLACEHOLDER_RE.test(s.name.trim())).map((s) => s.name.trim().toLowerCase())
+      );
       const ensureSheet = (name: string): number => {
         const key = name.trim().toLowerCase();
         let idx = sheetIndexByName.get(key);
@@ -550,7 +560,22 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         sheets[sheetIdx].aiSummary = joined.length > 160 ? joined.slice(0, 159) + '…' : joined;
       }
 
-      const updated: StoredFlowData = { ...data, sheets };
+      // Prune leftover blank tabs — only on a NEW flow (an existing flow's empty
+      // tabs are the user's own, never touched). Drops any sheet that ended up
+      // with no written cell AND isn't a structural keep (RFD/Notes, stock aff
+      // tabs, PF Turns): a 2-advantage doc's unused "Adv 3", the unused "Off 3"/
+      // "Off 4" slots, and any named-but-empty sheet a skipped card left behind.
+      // Guards against ever emptying the flow to zero sheets.
+      let finalSheets = sheets;
+      if (isNewFlow) {
+        const kept = sheets.filter((s) => {
+          const hasContent = Object.values(s.cells).some((v) => String(v ?? '').trim());
+          return hasContent || structuralKeepNames.has(s.name.trim().toLowerCase());
+        });
+        if (kept.length > 0) finalSheets = kept;
+      }
+
+      const updated: StoredFlowData = { ...data, sheets: finalSheets };
       await window.warroom.storage.write(`flow_data_${flowId}`, updated);
 
       if (isNewFlow && targetCtx.kind === 'new') {
