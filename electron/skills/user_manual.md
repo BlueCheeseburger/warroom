@@ -250,6 +250,8 @@ If you have cells you pasted *before* this was fixed, they'll fix themselves the
 - **⌘9** always jumps to the **last** sheet, however many you have.
 - **⌘T** makes a **new sheet** — for when they read an off-case position you didn't predict.
 
+**Reorder tabs by dragging.** Grab any sheet tab at the bottom and drag it left or right to put your flows in whatever order you want — a blue line shows where it'll land, and it drops there when you let go. This is undoable with ⌘Z, and it's the quick fix if Auto Flow (or you) put a tab in the wrong spot.
+
 **Each sheet remembers its own scroll position.** If you're halfway down the Politics DA and jump to the Case sheet, Case opens where *you* left it — not halfway down. A tab you haven't opened yet starts at the top.
 
 **Columns always fill the window.** Collapse the sidebar, resize the app window, or open/close the AI chat panel and your columns automatically stretch or shrink to meet the new edge — they never leave a dead gap on the right, and their sizes stay proportional to each other the whole time (a column you widened stays proportionally wider). There's also a manual **Fit to window** button in the toolbar if you ever want to force a re-fit.

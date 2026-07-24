@@ -890,6 +890,12 @@ export default function Documentation() {
             re-fit on demand too.
           </P>
           <P>
+            <strong>Reorder tabs by dragging:</strong> sheet tabs can be dragged left/right to any
+            order — a blue insertion marker shows the drop position, the active tab follows itself,
+            and the reorder is undoable with <Code>⌘Z</Code> (it's a recorded sheet op like add /
+            delete / rename). Handy for fixing a tab Auto Flow placed out of order.
+          </P>
+          <P>
             <strong>Move an argument (<Code>⌘↑</Code> / <Code>⌘↓</Code>):</strong> swaps the cell's
             content with the cell above / below it in the same column and carries the caret along, so
             an argument can be nudged into position without cut-and-paste. It saves and records
@@ -1083,7 +1089,12 @@ export default function Documentation() {
             in the order they came up in the 1AC, with off-case flows after them. On a new flow,
             leftover blank placeholder tabs are <strong>pruned</strong> — a two-advantage doc won't
             leave a dead "Adv 3", and unused "Off 3"/"Off 4" slots are dropped (RFD/Notes and the
-            stock-issues aff tabs are always kept, blank or not).
+            stock-issues aff tabs are always kept, blank or not). When a doc labels every off-case
+            block with the same generic header ("1NC", "Off", "1NC—OFF") instead of naming the
+            position, it reads the actual tags to tell the positions apart, keeps distinct positions
+            (a CP vs. a DA) on separate tabs instead of merging them, and — when you've pre-named
+            some tabs and left others blank — files each unmatched position into a remaining empty
+            slot rather than forcing it into a named tab it doesn't belong to.
             It also shortens each card's cite to how a debater
             actually writes it — author and year ("Price '26"), not the full credentials paragraph —
             and flags which cards answer which (a perm, a no-link) and which card is the plan text. It

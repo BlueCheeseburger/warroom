@@ -33,6 +33,25 @@ For EVERY card, decide all of the following:
    fits, propose a NEW sheet name instead of forcing a bad match — set
    "isNewSheet": true. Proposing a new sheet is routine and expected; never ask
    permission for it.
+   GENERIC HEADINGS ARE NOT THE POSITION NAME: debate docs very often label every
+   off-case block with the SAME generic section header — "1NC", "Off", "1NC—OFF",
+   "1NC---OFF", "Neg", "2AC", "AT:" — instead of naming the position. When a
+   card's hat/block/pocket is a generic speech/section label like that, do NOT use
+   it as the sheet topic. Infer the SPECIFIC position from the card's own TAG (and
+   the tags of the other cards in the same block), then name the sheet after that
+   real position. Example: four separate "1NC—OFF" blocks whose tags are about
+   (a) "consultation… CP solves case, competes, reinvigorates federalism", (b)
+   "plan expands federal authority… authoritarian takeover", (c) "interagency
+   coop CP… avoids the pharma DA link", and (d) "single-payer destroys biopharma
+   revenue… biotech leadership deters US-China war" are FOUR DISTINCT sheets:
+   "Consult CP", "Federalism DA" (or "Authoritarianism"), "States CP" (or
+   "Interagency CP"), and "Pharma DA" — never one merged "1NC—OFF" sheet.
+   NEVER MERGE DISTINCT POSITIONS: two cards that are genuinely different
+   positions (a CP and a DA, or two different DAs) go on SEPARATE sheets even when
+   they share a generic heading, and even if that means more new sheets. Only put
+   cards on the same sheet when they truly belong to the SAME position/argument.
+   Do not drop or absorb a position just because it's hard to name — give it its
+   own best-guess sheet name rather than folding it into another position's sheet.
    PLACEHOLDER TABS ARE NOT MATCHES: numbered slot names like "Off 1"…"Off 4",
    "Adv 1"…"Adv 3", or "Contention 1"/"Contention 2" are empty placeholders from
    the default layout, NOT topics — never file a card onto one. Every case and
@@ -43,6 +62,14 @@ For EVERY card, decide all of the following:
    position's name for every off-case flow ("Fism DA", "Cap K", "States CP",
    "T-Subs"). The app slots these new names into the placeholder tabs, so
    proposing one new sheet per position is exactly what's supposed to happen.
+   EXISTING FLOW WITH UNNAMED SLOTS: when the sheet list above already has some
+   named tabs AND some numbered placeholders (e.g. the user named "Off 1", "Off
+   2", "Off 4" but left "Off 3"), match each position to the named tab it clearly
+   belongs to, and route every OTHER position to a NEW sheet (isNewSheet true) —
+   the app drops those into the remaining empty placeholder slots. Do NOT cram a
+   position into a named tab it doesn't belong to just to avoid a new sheet; a
+   position with no matching named tab is exactly what the empty placeholder is
+   there to hold.
    NAMING a new sheet — prefer the doc's own SHORTHAND over the full name. Debate
    docs frequently abbreviate a position after first using it in full (e.g. a doc
    says "Federalism DA" once, then calls it "Fism DA" in every tag afterward, or

@@ -206,6 +206,10 @@ export default function FlowView() {
   const [findMatches, setFindMatches] = useState<{ sheetIdx: number; key: string }[]>([]);
   const [findIdx, setFindIdx] = useState(0);
 
+  // Tab drag-to-reorder
+  const [dragTabIdx, setDragTabIdx] = useState<number | null>(null);
+  const [dropTabIdx, setDropTabIdx] = useState<number | null>(null);
+
   // Arrow draw mode
   const [drawMode, setDrawMode] = useState(false);
   const [arrowFrom, setArrowFrom] = useState<string | null>(null);
@@ -1330,6 +1334,28 @@ export default function FlowView() {
     recordHistory();
   }
 
+  // Drag-to-reorder tabs. Flush the live sheet first so no in-progress typing is
+  // lost, move the sheet from `from` to `to`, and keep the view on the SAME sheet
+  // by id (its index shifts when tabs move around it). Undoable like the other
+  // sheet ops — snap.current is updated by hand before recordHistory for the same
+  // reason (the post-render effect hasn't run yet).
+  function reorderSheet(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    const saved = flushAndGetSheets();
+    if (from >= saved.length || to >= saved.length) return;
+    const activeId = saved[activeSheetIdx]?.id;
+    const next = [...saved];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    const newActive = Math.max(0, next.findIndex((s) => s.id === activeId));
+    setSheets(next);
+    cellsRef.current = next[newActive]?.cells ?? {};
+    setActiveSheetIdx(newActive);
+    snap.current = { ...snap.current, sheets: next, activeSheetIdx: newActive };
+    persist({ sheets: next });
+    recordHistory();
+  }
+
   // Cheap signature of a sheet's content — NOT a real hash, just enough to
   // detect "the argument text changed since the AI summary was written" so a
   // cached `aiSummary` can be reused instead of re-generated on every hover.
@@ -2245,6 +2271,15 @@ export default function FlowView() {
               onDelete={sheets.length > 1 ? () => deleteSheet(idx) : undefined}
               getSummary={() => sheetSummary(idx)}
               onEnsureSummary={() => ensureSheetSummary(idx)}
+              dragging={dragTabIdx === idx}
+              dropBefore={dropTabIdx === idx && dragTabIdx !== null && dragTabIdx !== idx}
+              onDragStart={() => setDragTabIdx(idx)}
+              onDragOverTab={() => { if (dragTabIdx !== null && dragTabIdx !== idx) setDropTabIdx(idx); }}
+              onDropTab={() => {
+                if (dragTabIdx !== null && dragTabIdx !== idx) reorderSheet(dragTabIdx, idx);
+                setDragTabIdx(null); setDropTabIdx(null);
+              }}
+              onDragEnd={() => { setDragTabIdx(null); setDropTabIdx(null); }}
             />
           ))}
         </div>
@@ -2476,6 +2511,7 @@ function DropBtn({ children, onClick, danger }: { children: React.ReactNode; onC
 function SheetTab({
   name, active, renaming, renameValue, onRenameChange, onCommitRename, onCancelRename,
   onClick, onDoubleClick, onDelete, getSummary, onEnsureSummary,
+  dragging, dropBefore, onDragStart, onDragOverTab, onDropTab, onDragEnd,
 }: {
   name: string; active: boolean; renaming: boolean;
   renameValue: string; onRenameChange: (v: string) => void;
@@ -2485,6 +2521,11 @@ function SheetTab({
   /** Kicks off (or reuses the cache for) this tab's AI summary. Fire-and-forget — the
    * result lands via `getSummary` once generation resolves and re-renders the parent. */
   onEnsureSummary?: () => void;
+  /** Drag-to-reorder: `dragging` = this tab is the one being dragged (dimmed),
+   * `dropBefore` = a dragged tab is hovering here (show an insertion marker on the
+   * left edge). The parent owns the actual reorder (reorderSheet). */
+  dragging?: boolean; dropBefore?: boolean;
+  onDragStart?: () => void; onDragOverTab?: () => void; onDropTab?: () => void; onDragEnd?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   // Computed on hover (not every render) since it reads every cell on the tab.
@@ -2498,12 +2539,21 @@ function SheetTab({
   }, [hovered, getSummary]);
   return (
     <div
-      className="flex items-center shrink-0"
+      className="flex items-center shrink-0 relative"
+      // Not draggable while inline-renaming, so text selection in the input works.
+      draggable={!renaming}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOverTab?.(); }}
+      onDrop={(e) => { e.preventDefault(); onDropTab?.(); }}
+      onDragEnd={() => onDragEnd?.()}
       style={{
         height: '100%',
         borderRight: '1px solid var(--border-subtle)',
         background: active ? 'var(--bg-card)' : 'transparent',
         minWidth: 72, maxWidth: 130,
+        opacity: dragging ? 0.4 : 1,
+        boxShadow: dropBefore ? 'inset 2px 0 0 0 var(--nav-active-color)' : undefined,
+        cursor: renaming ? undefined : 'grab',
       }}
       onMouseEnter={() => { setHovered(true); if (getSummary) setSummary(getSummary()); onEnsureSummary?.(); }}
       onMouseLeave={() => setHovered(false)}
