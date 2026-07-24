@@ -890,6 +890,12 @@ export default function Documentation() {
             re-fit on demand too.
           </P>
           <P>
+            <strong>Arrows are straight lines:</strong> an arrow linking an argument to its answer is
+            drawn edge-to-edge as a straight line. Same-column arrows (an answer that couldn't share
+            its target's row) run down the outside edge of the column so the line never cuts through
+            the arguments between the two endpoints.
+          </P>
+          <P>
             <strong>Reorder tabs by dragging:</strong> sheet tabs can be dragged left/right to any
             order — a blue insertion marker shows the drop position, the active tab follows itself,
             and the reorder is undoable with <Code>⌘Z</Code> (it's a recorded sheet op like add /

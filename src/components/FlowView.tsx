@@ -11,6 +11,7 @@ import {
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
 } from '../lib/flowDoc';
 import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
+import { flushCellsIntoSheets } from '../lib/flowCellFlush';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
 const FIND_HL = 'flow-find';
@@ -240,6 +241,21 @@ export default function FlowView() {
   // ── Refs ──────────────────────────────────────────────────────────────────
 
   const cellsRef = useRef<Record<string, string>>({});
+  // WHICH sheet `cellsRef.current` actually belongs to. `cellsRef` is the live,
+  // unsaved buffer for the sheet being edited, and it used to be flushed back by
+  // INDEX (`sheets[activeSheetIdx]`). That silently corrupted data: React state
+  // (`activeSheetIdx`) and `snap.current` only resync in a post-render effect, so
+  // any flush landing in that gap — an async AI-summary write, a debounced save,
+  // anything after a tab switch or a drag-reorder that shifted indices — wrote
+  // the CURRENT tab's cells into a DIFFERENT tab's slot. That's the "content
+  // teleported between tabs" bug. Flushing by sheet id instead makes a mismatch
+  // impossible to write: if the id isn't found, the buffer is simply not flushed.
+  const cellsOwnerId = useRef<string | null>(null);
+  // Tab-summary backoff — see noteSummaryFailure. `summaryDisabled` kills the
+  // feature for the session on a quota/auth failure; `summaryCooldown` backs off
+  // one sheet at a time for anything else.
+  const summaryDisabled = useRef(false);
+  const summaryCooldown = useRef<Map<string, number>>(new Map());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cellEls = useRef<Record<string, HTMLDivElement | null>>({});
   const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
@@ -306,7 +322,7 @@ export default function FlowView() {
   useEffect(() => {
     if (!flowId) return;
     setLoaded(false);
-    cellsRef.current = {};
+    cellsRef.current = {}; cellsOwnerId.current = null;
     window.warroom?.storage.read(`flow_data_${flowId}`).then((data: StoredFlowData | null) => {
       // If live sync already took over, don't let this (possibly stale) local
       // mirror clobber the merged doc state.
@@ -333,7 +349,7 @@ export default function FlowView() {
         );
         setFontSize(data.fontSize ?? DEFAULT_FONT_SIZE);
         setZoom(data.zoom ?? 100);
-        cellsRef.current = data.sheets[0]?.cells ?? {};
+        cellsRef.current = data.sheets[0]?.cells ?? {}; cellsOwnerId.current = data.sheets[0]?.id ?? null;
       } else {
         const rawEv = flowMeta?.event ?? event;
         const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
@@ -346,7 +362,7 @@ export default function FlowView() {
         setColumnColors(def.columnWidths.map(() => null));
         setFontSize(DEFAULT_FONT_SIZE);
         setZoom(100);
-        cellsRef.current = {};
+        cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       }
       setActiveSheetIdx(0);
       setLoaded(true);
@@ -364,7 +380,7 @@ export default function FlowView() {
       setColumnColors(def.columnWidths.map(() => null));
       setFontSize(DEFAULT_FONT_SIZE);
       setZoom(100);
-      cellsRef.current = {};
+      cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       setActiveSheetIdx(0);
       setLoaded(true);
       history.current = []; histIdx.current = -1;
@@ -436,12 +452,19 @@ export default function FlowView() {
 
   // ── Persist ───────────────────────────────────────────────────────────────
 
+  /**
+   * Merge the live cell buffer (`cellsRef`) back into a sheets array, matched by
+   * the OWNER SHEET ID rather than by `activeSheetIdx` — the guard against
+   * cross-tab content corruption. See src/lib/flowCellFlush.ts for why.
+   */
+  function flushInto(sheetList: SheetData[]): SheetData[] {
+    return flushCellsIntoSheets(sheetList, cellsOwnerId.current, cellsRef.current);
+  }
+
   function persist(overrides: Partial<StoredFlowData> = {}) {
     if (!flowId) return;
     const s = snap.current;
-    const flushedSheets = s.sheets.map((sh, i) =>
-      i === s.activeSheetIdx ? { ...sh, cells: { ...cellsRef.current } } : sh
-    );
+    const flushedSheets = flushInto(s.sheets);
     const payload = {
       event: flowMeta?.event ?? event,
       variant: s.variant,
@@ -551,7 +574,7 @@ export default function FlowView() {
       setColumnColors(data.columnColors?.length === colCount ? data.columnColors : (data.customColumns ?? cols).map(() => null));
       setFontSize(data.fontSize); setZoom(data.zoom);
       const idx = Math.min(snap.current.activeSheetIdx, data.sheets.length - 1);
-      cellsRef.current = { ...(data.sheets[idx]?.cells ?? {}) };
+      cellsRef.current = { ...(data.sheets[idx]?.cells ?? {}) }; cellsOwnerId.current = data.sheets[idx]?.id ?? null;
       if (opts.remountCells) setCellNonce((n) => n + 1);
     } finally {
       // release on the next tick so setState-driven persists don't echo back
@@ -718,7 +741,7 @@ export default function FlowView() {
       setEvent(s.event);
       updateFlowMeta({ event: s.event });
     }
-    cellsRef.current = { ...(s.sheets[idx]?.cells ?? {}) };
+    cellsRef.current = { ...(s.sheets[idx]?.cells ?? {}) }; cellsOwnerId.current = s.sheets[idx]?.id ?? null;
     snap.current = { ...snap.current, sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, activeSheetIdx: idx, variant: s.variant, pfOrder: s.pfOrder };
     persist({ sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, variant: s.variant, pfOrder: s.pfOrder, event: s.event });
     setCellNonce((n) => n + 1);
@@ -737,9 +760,7 @@ export default function FlowView() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const s = snap.current;
-      const updated = s.sheets.map((sh, i) =>
-        i === s.activeSheetIdx ? { ...sh, cells: { ...cellsRef.current } } : sh
-      );
+      const updated = flushInto(s.sheets);
       setSheets(updated);
       snap.current = { ...snap.current, sheets: updated };
       persist({ sheets: updated });
@@ -1137,37 +1158,30 @@ export default function FlowView() {
       const fr = fe.getBoundingClientRect();
       const tr = te.getBoundingClientRect();
 
-      // Same column (an answer stacked below/above the card it answers, one row
-      // over because the aligned row was already taken): a left/right-edge curve
-      // doesn't make sense here — source and target share the same x, so treat
-      // it as a vertical bracket instead. Both ends anchor on the SAME edge (the
-      // column's right side) and jog out by a small FIXED distance, independent
-      // of how far apart the rows are — otherwise a large vertical gap stretches
-      // the curve into a huge lopsided hook (this used to anchor the far end on
-      // the opposite edge, which is what caused that).
+      // Arrows are STRAIGHT lines, edge to edge. A curve reads as decoration on
+      // a paper-style flow and, over a long vertical gap, sweeps across the
+      // cells in between and obscures them — a debater just needs to see that
+      // A points at B.
+      let x1: number, y1: number, x2: number, y2: number;
       const sameColumn = Math.abs(fr.left - tr.left) < 2;
-      let x1: number, y1: number, x2: number, y2: number, c1x: number, c2x: number, c1y: number, c2y: number;
       if (sameColumn) {
-        const jog = 20;
-        x1 = fr.right - base.left; y1 = fr.top + fr.height / 2 - base.top;
-        x2 = tr.right - base.left; y2 = tr.top + tr.height / 2 - base.top;
-        c1x = x1 + jog; c1y = y1;
-        c2x = x2 + jog; c2y = y2;
+        // Stacked in one column (an answer that couldn't share its target's
+        // row): run the line down the column's right edge so it doesn't cut
+        // through the text of the cells between them.
+        const edge = Math.max(fr.right, tr.right) - base.left - 6;
+        x1 = edge; y1 = fr.top + fr.height / 2 - base.top;
+        x2 = edge; y2 = tr.top + tr.height / 2 - base.top;
       } else {
-        // Start at right-center of source, end at left-center of target
-        // (flip to left/right if target is to the left).
-        const targetRight = tr.left + tr.width / 2 < fr.left + fr.width / 2;
-        x1 = (targetRight ? fr.left : fr.right) - base.left;
+        // Start at the source's facing edge, end at the target's facing edge.
+        const targetLeft = tr.left + tr.width / 2 < fr.left + fr.width / 2;
+        x1 = (targetLeft ? fr.left : fr.right) - base.left;
         y1 = fr.top + fr.height / 2 - base.top;
-        x2 = (targetRight ? tr.right : tr.left) - base.left;
+        x2 = (targetLeft ? tr.right : tr.left) - base.left;
         y2 = tr.top + tr.height / 2 - base.top;
-        const dx = Math.max(30, Math.abs(x2 - x1) * 0.4);
-        c1x = x1 + (targetRight ? -dx : dx); c1y = y1;
-        c2x = x2 + (targetRight ? dx : -dx); c2y = y2;
       }
       geo.push({
         id: a.id,
-        d: `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`,
+        d: `M ${x1} ${y1} L ${x2} ${y2}`,
         mx: (x1 + x2) / 2,
         my: (y1 + y2) / 2,
       });
@@ -1246,9 +1260,7 @@ export default function FlowView() {
   // ── Sheet ops ─────────────────────────────────────────────────────────────
 
   function flushAndGetSheets(): SheetData[] {
-    return snap.current.sheets.map((sh, i) =>
-      i === snap.current.activeSheetIdx ? { ...sh, cells: { ...cellsRef.current } } : sh
-    );
+    return flushInto(snap.current.sheets);
   }
 
   // Snapshot the flow once, when the Analyze Round panel opens — not on every
@@ -1293,6 +1305,7 @@ export default function FlowView() {
     } else {
       cellsRef.current = saved[idx]?.cells ?? {};
     }
+    cellsOwnerId.current = targetId ?? null;
     setActiveSheetIdx(idx);
     setCellNonce((n) => n + 1);
     persist({ sheets: saved });
@@ -1309,7 +1322,7 @@ export default function FlowView() {
     const saved = flushAndGetSheets();
     const neo: SheetData = { id: crypto.randomUUID(), name: `Sheet ${saved.length + 1}`, cells: {} };
     const next = [...saved, neo];
-    setSheets(next); cellsRef.current = {}; setActiveSheetIdx(next.length - 1);
+    setSheets(next); cellsRef.current = {}; cellsOwnerId.current = neo.id; setActiveSheetIdx(next.length - 1);
     snap.current = { ...snap.current, sheets: next, activeSheetIdx: next.length - 1 };
     persist({ sheets: next });
     recordHistory();
@@ -1328,7 +1341,7 @@ export default function FlowView() {
     // the view forward to a different sheet.)
     const shifted = idx < activeSheetIdx ? activeSheetIdx - 1 : activeSheetIdx;
     const newIdx = Math.max(0, Math.min(shifted, next.length - 1));
-    setSheets(next); cellsRef.current = next[newIdx]?.cells ?? {}; setActiveSheetIdx(newIdx);
+    setSheets(next); cellsRef.current = next[newIdx]?.cells ?? {}; cellsOwnerId.current = next[newIdx]?.id ?? null; setActiveSheetIdx(newIdx);
     snap.current = { ...snap.current, sheets: next, activeSheetIdx: newIdx };
     persist({ sheets: next });
     recordHistory();
@@ -1349,7 +1362,7 @@ export default function FlowView() {
     next.splice(to, 0, moved);
     const newActive = Math.max(0, next.findIndex((s) => s.id === activeId));
     setSheets(next);
-    cellsRef.current = next[newActive]?.cells ?? {};
+    cellsRef.current = next[newActive]?.cells ?? {}; cellsOwnerId.current = next[newActive]?.id ?? null;
     setActiveSheetIdx(newActive);
     snap.current = { ...snap.current, sheets: next, activeSheetIdx: newActive };
     persist({ sheets: next });
@@ -1391,6 +1404,15 @@ export default function FlowView() {
     const cur = snap.current;
     const sheet = cur.sheets[idx];
     if (!sheet) return;
+    // Give up for the rest of the session once the quota/API is clearly unhappy,
+    // and back off per-sheet after a failure. Without this, a FAILED summary
+    // never caches a signature, so every single hover started a brand-new
+    // 4-attempt retry ladder — which is what turned one dead API key or an
+    // exhausted quota into an endless stream of toasts while flowing.
+    if (summaryDisabled.current) return;
+    const until = summaryCooldown.current.get(sheet.id) ?? 0;
+    if (Date.now() < until) return;
+
     const cells = idx === cur.activeSheetIdx ? cellsRef.current : sheet.cells;
     const sig = sheetContentSignature(cells);
     if (sig.startsWith('0:')) return; // nothing written on this tab yet
@@ -1414,14 +1436,35 @@ export default function FlowView() {
         );
         setSheets(updated);
         snap.current = { ...snap.current, sheets: updated };
-        persist(); // no `sheets` override — lets persist flush cellsRef itself, so it can't clobber live typing with this stale-at-request-time snapshot
+        persist(); // no `sheets` override — flushInto() matches by owner id, so this can't clobber live typing
+      } else {
+        noteSummaryFailure(sheet.id, res?.error);
       }
-      // A failed response is a no-op here: the global AI-error toast (see
-      // preload.ts's wrapper around window.warroom.ai.*) already surfaces it.
-    } catch { /* best-effort — same as above */ }
+      // The error text itself is surfaced by the global AI-error toast (see
+      // preload.ts's wrapper around window.warroom.ai.*) — here we only record
+      // that it failed so we stop asking.
+    } catch (e: any) { noteSummaryFailure(sheet.id, e?.message); }
     finally {
       setGeneratingSummary((g) => { const next = new Set(g); next.delete(sheet.id); return next; });
     }
+  }
+
+  /**
+   * Record a failed tab-summary attempt so hovering doesn't keep re-firing it.
+   * A quota/rate-limit/auth failure won't fix itself by being asked again mid-
+   * round, so those switch the whole feature off for the session (the tooltip
+   * silently falls back to its local, non-AI tag preview — nothing breaks).
+   * Anything else just backs that one sheet off for 10 minutes.
+   */
+  function noteSummaryFailure(sheetId: string, message?: string) {
+    const m = String(message ?? '').toLowerCase();
+    if (m.includes('429') || m.includes('resource_exhausted') || m.includes('quota')
+      || m.includes('rate limit') || m.includes('api key') || m.includes('permission')
+      || m.includes('401') || m.includes('403') || m.includes('no_key')) {
+      summaryDisabled.current = true;
+      return;
+    }
+    summaryCooldown.current.set(sheetId, Date.now() + 10 * 60_000);
   }
 
   // Short, wide summary of a tab's content for its hover tooltip. `sheet.aiSummary`
@@ -1559,7 +1602,7 @@ export default function FlowView() {
     setVariant(v);
     setSheets(newSheets);
     // Keep the same active position; update cellsRef to that sheet's content
-    cellsRef.current = newSheets[snap.current.activeSheetIdx]?.cells ?? {};
+    cellsRef.current = newSheets[snap.current.activeSheetIdx]?.cells ?? {}; cellsOwnerId.current = newSheets[snap.current.activeSheetIdx]?.id ?? null;
     snap.current = { ...snap.current, sheets: newSheets, variant: v };
     persist({ variant: v, sheets: newSheets });
     recordHistory();
@@ -1600,7 +1643,7 @@ export default function FlowView() {
     const newSheets = makeSheets(e, defV);
     setVariant(defV); setPfOrder(defO);
     setCustomColumns(null); setColumnWidths(defW); setColumnColors(defC);
-    setSheets(newSheets); cellsRef.current = {}; setActiveSheetIdx(0);
+    setSheets(newSheets); cellsRef.current = {}; cellsOwnerId.current = newSheets[0]?.id ?? null; setActiveSheetIdx(0);
     snap.current = { ...snap.current, event: e, variant: defV, pfOrder: defO, customColumns: null, columnWidths: defW, columnColors: defC, sheets: newSheets, activeSheetIdx: 0 };
     persist({ event: e, variant: defV, pfOrder: defO, customColumns: null, columnWidths: defW, columnColors: defC, sheets: newSheets });
     recordHistory();
@@ -2530,6 +2573,8 @@ function SheetTab({
   const [hovered, setHovered] = useState(false);
   // Computed on hover (not every render) since it reads every cell on the tab.
   const [summary, setSummary] = useState<string | null>(null);
+  const summaryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (summaryTimer.current) clearTimeout(summaryTimer.current); }, []);
   // Re-reads the summary on every parent re-render while hovered — a fresh
   // `getSummary` closure comes down on every FlowView render, so this also
   // catches ensureSheetSummary's async result (and the "summarizing…" state in
@@ -2555,8 +2600,19 @@ function SheetTab({
         boxShadow: dropBefore ? 'inset 2px 0 0 0 var(--nav-active-color)' : undefined,
         cursor: renaming ? undefined : 'grab',
       }}
-      onMouseEnter={() => { setHovered(true); if (getSummary) setSummary(getSummary()); onEnsureSummary?.(); }}
-      onMouseLeave={() => setHovered(false)}
+      // The AI summary only fires after a deliberate dwell (matching the
+      // tooltip's own show-delay) — sweeping the cursor across a row of tabs to
+      // get somewhere shouldn't spend an API call on every tab it crosses.
+      onMouseEnter={() => {
+        setHovered(true);
+        if (getSummary) setSummary(getSummary());
+        if (summaryTimer.current) clearTimeout(summaryTimer.current);
+        summaryTimer.current = setTimeout(() => onEnsureSummary?.(), 400);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (summaryTimer.current) { clearTimeout(summaryTimer.current); summaryTimer.current = null; }
+      }}
     >
       {renaming ? (
         <input

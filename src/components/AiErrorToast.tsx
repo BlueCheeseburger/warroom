@@ -8,10 +8,17 @@ import React, { useEffect, useRef, useState } from 'react';
 // toast, not a mid-flight retry. Mounted once, near the root, in App.tsx —
 // every AI feature gets this for free without adding its own toast wiring.
 //
-// The message shown here is the EXACT error text the provider (Gemini/OpenAI/
-// Anthropic/Grok) returned — see the `*HttpError` functions in main.ts, which
-// build it from that provider's own error JSON (message + status/type/code),
-// never a paraphrase. This is deliberately different from the friendlier,
+// Design constraint: this can fire while the user is mid-round flowing, so it
+// must never become a wall of text over the flow. It stays ONE small line by
+// default (the provider's message is one click away), collapses repeats of the
+// same error into a xN counter instead of stacking, and shows at most two at
+// once. The full provider text is preserved verbatim — see below.
+//
+// The message is the EXACT error text the provider (Gemini/OpenAI/Anthropic/
+// Grok) returned — see the `*HttpError` functions in main.ts, which build it
+// from that provider's own error JSON (message + status/type/code), never a
+// paraphrase. Expanding the toast shows it in full; the collapsed line shows
+// its first sentence. This is deliberately different from the friendlier,
 // humanized message a feature's own inline error UI might show via
 // `humanizeGeminiError` — that's for "what should I do", this toast is for
 // "what actually happened". See CLAUDE.md's "AI call retries" rule.
@@ -19,31 +26,65 @@ interface AiToast {
   id: number;
   source: string;
   message: string;
+  count: number;
 }
+
+const MAX_TOASTS = 2;
+const DISMISS_MS = 7000;
 
 let nextId = 1;
 
+// First sentence / clause of a provider error, for the collapsed one-line view.
+// Gemini's quota errors run several hundred characters with URLs and metric
+// names; the useful part is almost always up front.
+function shortMessage(msg: string): string {
+  const firstLine = msg.split('\n')[0].trim();
+  const m = firstLine.match(/^(.{0,110}?[.!?])(\s|$)/);
+  const short = (m ? m[1] : firstLine).trim();
+  return short.length > 120 ? short.slice(0, 119) + '…' : short;
+}
+
 export default function AiErrorToast() {
   const [toasts, setToasts] = useState<AiToast[]>([]);
+  const [expanded, setExpanded] = useState<number | null>(null);
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     function onAiError(e: Event) {
       const detail = (e as CustomEvent).detail as { source?: string; message?: string } | undefined;
-      const id = nextId++;
-      const toast: AiToast = { id, source: detail?.source || 'Warroom AI', message: detail?.message || 'Warroom AI ran into a problem.' };
-      setToasts((prev) => [...prev, toast]);
-      const timer = setTimeout(() => dismiss(id), 8000);
-      timers.current.set(id, timer);
+      const message = detail?.message || 'Warroom AI ran into a problem.';
+      const source = detail?.source || 'Warroom AI';
+
+      setToasts((prev) => {
+        // Same error already on screen → bump its counter and restart its timer
+        // rather than stacking another copy. One flaky key or an exhausted quota
+        // hit from several features reads as "x4", not four walls of text.
+        const dup = prev.find((t) => t.message === message);
+        if (dup) {
+          arm(dup.id);
+          return prev.map((t) => (t.id === dup.id ? { ...t, count: t.count + 1 } : t));
+        }
+        const id = nextId++;
+        arm(id);
+        const next = [...prev, { id, source, message, count: 1 }];
+        return next.slice(-MAX_TOASTS); // keep the newest few; older ones drop off
+      });
     }
     window.addEventListener('warroom:ai-error', onAiError);
     return () => window.removeEventListener('warroom:ai-error', onAiError);
   }, []);
 
+  function arm(id: number) {
+    const existing = timers.current.get(id);
+    if (existing) clearTimeout(existing);
+    timers.current.set(id, setTimeout(() => dismiss(id), DISMISS_MS));
+  }
+
   function dismiss(id: number) {
     const timer = timers.current.get(id);
     if (timer) { clearTimeout(timer); timers.current.delete(id); }
     setToasts((prev) => prev.filter((t) => t.id !== id));
+    setExpanded((cur) => (cur === id ? null : cur));
   }
 
   if (toasts.length === 0) return null;
@@ -51,32 +92,63 @@ export default function AiErrorToast() {
   return (
     <div
       style={{
-        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8,
-        alignItems: 'center', pointerEvents: 'none',
+        position: 'fixed', bottom: 16, right: 16,
+        zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 6,
+        alignItems: 'flex-end', pointerEvents: 'none',
       }}
     >
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          style={{
-            background: 'var(--bg-elevated)', border: '1px solid var(--danger, #e5484d)',
-            borderRadius: 10, padding: '10px 14px', maxWidth: 420,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            fontSize: 13, color: 'rgb(var(--ink-rgb))', pointerEvents: 'auto',
-          }}
-        >
-          <span style={{ fontSize: 15, lineHeight: 1.4 }}>⚠️</span>
-          <span style={{ flex: 1, lineHeight: 1.4 }}>{t.message}</span>
-          <button
-            onClick={() => dismiss(t.id)}
-            className="text-ink/40 hover:text-ink text-sm leading-none"
-            style={{ marginLeft: 4 }}
-            aria-label="Dismiss"
-          >✕</button>
-        </div>
-      ))}
+      {toasts.map((t) => {
+        const isOpen = expanded === t.id;
+        return (
+          <div
+            key={t.id}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-med)',
+              borderLeft: '2px solid var(--danger, #e5484d)',
+              borderRadius: 8,
+              padding: '6px 8px 6px 10px',
+              maxWidth: isOpen ? 420 : 340,
+              boxShadow: '0 2px 12px rgba(0,0,0,0.28)',
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              fontSize: 12, lineHeight: 1.4,
+              color: 'rgb(var(--ink-rgb))',
+              pointerEvents: 'auto',
+              opacity: 0.97,
+            }}
+          >
+            <span
+              onClick={() => setExpanded(isOpen ? null : t.id)}
+              title={isOpen ? 'Show less' : 'Show the full error'}
+              style={{
+                flex: 1, cursor: 'pointer',
+                ...(isOpen
+                  ? { maxHeight: 180, overflowY: 'auto', wordBreak: 'break-word' as const }
+                  : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
+              }}
+            >
+              {isOpen ? t.message : shortMessage(t.message)}
+            </span>
+            {t.count > 1 && (
+              <span
+                title={`${t.count} times`}
+                style={{
+                  flexShrink: 0, fontSize: 10, fontWeight: 600,
+                  padding: '1px 5px', borderRadius: 999,
+                  background: 'var(--bg-main)', color: 'var(--ink-muted, rgb(var(--ink-rgb)))',
+                  opacity: 0.75,
+                }}
+              >×{t.count}</span>
+            )}
+            <button
+              onClick={() => dismiss(t.id)}
+              className="text-ink/40 hover:text-ink"
+              style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 12, lineHeight: 1 }}
+              aria-label="Dismiss"
+            >✕</button>
+          </div>
+        );
+      })}
     </div>
   );
 }
