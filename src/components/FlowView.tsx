@@ -167,7 +167,7 @@ function colBg(color: string, isDark: boolean, isHeader: boolean): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FlowView() {
-  const { view, event, setEvent, flowsIndex, setFlowsIndex, chatOpen, currentUser, currentTeam } = useApp();
+  const { view, event, setEvent, flowsIndex, setFlowsIndex, chatOpen, currentUser, currentTeam, pushUndoToast } = useApp();
   const flowId = view.kind === 'flow' ? (view as any).flowId : undefined;
   const flowMeta: FlowMeta | undefined = flowsIndex.find((f) => f.id === flowId);
   const dark = useDarkMode();
@@ -1361,6 +1361,7 @@ export default function FlowView() {
     if (sheets.length <= 1) return;
     rememberScroll();
     const saved = flushAndGetSheets();
+    const goneName = saved[idx]?.name;
     const gone = saved[idx]?.id;
     if (gone) delete sheetScroll.current[gone];
     const next = saved.filter((_, i) => i !== idx);
@@ -1374,6 +1375,9 @@ export default function FlowView() {
     snap.current = { ...snap.current, sheets: next, activeSheetIdx: newIdx };
     persist({ sheets: next });
     recordHistory();
+    // Reuses the sheet op's own undo-history entry (see the comment above this
+    // function) rather than a separate snapshot — deleteSheet already records one.
+    if (goneName) pushUndoToast(`Deleted "${goneName}"`, () => undo());
   }
 
   // Drag-to-reorder tabs. Flush the live sheet first so no in-progress typing is

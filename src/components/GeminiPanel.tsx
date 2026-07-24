@@ -994,7 +994,7 @@ export function saveGeminiConversationsMeta(convs: Conversation[]) {
 }
 
 export default function GeminiPanel() {
-  const { geminiOpen, setGeminiOpen, geminiActiveId, setGeminiActiveId } = useApp();
+  const { geminiOpen, setGeminiOpen, geminiActiveId, setGeminiActiveId, pushUndoToast } = useApp();
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string>(() => loadConversations()[0]?.id ?? '');
   const [showList, setShowList] = useState(false);
@@ -1042,6 +1042,9 @@ export default function GeminiPanel() {
   }
 
   function deleteChat(id: string) {
+    const removed = conversations.find((c) => c.id === id);
+    let historyJson: string | null = null;
+    try { historyJson = localStorage.getItem(convHistoryKey(id)); } catch {}
     try { localStorage.removeItem(convHistoryKey(id)); } catch {}
     const next = conversations.filter((c) => c.id !== id);
     if (next.length === 0) {
@@ -1052,6 +1055,12 @@ export default function GeminiPanel() {
       setConversations(next);
       if (id === activeId) setActiveId(next[0].id);
     }
+    if (!removed) return;
+    pushUndoToast(`Deleted "${removed.title || 'chat'}"`, () => {
+      try { if (historyJson !== null) localStorage.setItem(convHistoryKey(id), historyJson); } catch {}
+      setConversations((prev) => [removed, ...prev]);
+      setActiveId(removed.id);
+    });
   }
 
   function onHistoryChange(id: string, history: GeminiMsg[], firstMsg?: string) {

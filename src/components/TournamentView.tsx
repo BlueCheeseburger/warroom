@@ -118,7 +118,7 @@ function researchOpponentInto(id: string, name: string, event: DebateEvent, upda
 }
 
 export default function TournamentView() {
-  const { db, update, setView, view } = useApp();
+  const { db, update, setView, view, pushUndoToast } = useApp();
   const dangerCls = useDangerBtnClass();
   if (view.kind !== 'tournament') return null;
   const t = db.tournaments[view.tournamentId];
@@ -146,16 +146,20 @@ export default function TournamentView() {
 
   async function deleteRound(roundId: string) {
     if (!confirm('Delete this round?')) return;
+    const snapshot = structuredClone(db);
+    const round = db.rounds[roundId];
     await update((db) => {
       const next = { ...db };
       delete next.rounds[roundId];
       next.tournaments[t.id] = { ...t, rounds: t.rounds.filter((id) => id !== roundId) };
       return next;
     });
+    pushUndoToast(`Deleted round ${round?.number ?? ''}`.trim(), () => update(() => snapshot));
   }
 
   async function deleteTournament() {
     if (!confirm(`Delete "${t.name}" and all its rounds?`)) return;
+    const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
       t.rounds.forEach((id) => delete next.rounds[id]);
@@ -163,6 +167,7 @@ export default function TournamentView() {
       return next;
     });
     setView({ kind: 'tournaments' });
+    pushUndoToast(`Deleted "${t.name}"`, () => update(() => snapshot));
   }
 
   return (

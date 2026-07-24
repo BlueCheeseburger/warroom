@@ -94,6 +94,7 @@ const TOC_SECTIONS = [
   { id: 'stack',       label: 'Tech stack' },
   { id: 'data-model',  label: 'Data model' },
   { id: 'navigation',  label: 'Navigation' },
+  { id: 'undo-toasts', label: 'Undo toasts' },
   { id: 'global-search', label: 'Global search (⌘K)' },
   { id: 'shortcuts',   label: 'Keyboard shortcuts (⌘/)' },
   { id: 'cases',       label: 'Cases & blocks' },
@@ -336,6 +337,31 @@ export default function Documentation() {
             <LI><Code>gdrive</Code> — Google Drive file browser</LI>
             <LI><Code>docs</Code> — This documentation page</LI>
           </UL>
+        </section>
+
+        {/* ── Undo toasts ───────────────────────────────────────────── */}
+        <section id="doc-undo-toasts">
+          <H2>Undo toasts</H2>
+          <P>
+            A shared <Code>pushUndoToast(message, onUndo)</Code> action on the Zustand store
+            (<Code>appStore.ts</Code>) drives a bottom-left toast (<Code>UndoToast.tsx</Code>,
+            mounted once in <Code>App.tsx</Code>): "Deleted 'X'" plus an Undo button, auto-dismissing
+            after 3.5 seconds. Wired up on the major destructive deletes — cases, blocks, cards,
+            tournaments, rounds, opponents, flows, flow sheets, saved AI chats, saved impact calc
+            entries, impact library entries, and folders. Deliberately not wired up on chat/DM
+            message deletion (syncs live to other users) or flow column/arrow deletes
+            (too fine-grained during active flowing).
+          </P>
+          <P>
+            Each delete site snapshots the relevant state right before mutating it, then passes a
+            closure that restores that snapshot as <Code>onUndo</Code>. For anything backed by the
+            main <Code>db</Code> object, the snapshot must be <Code>structuredClone(db)</Code>, not
+            a bare reference — the app's delete-reducer convention (<Code>{'{ ...db }'}</Code> then
+            deleting a key off a nested dict) only shallow-copies the top-level object, so a bare
+            snapshot would get silently corrupted by the very delete it's meant to undo. The Impact
+            Library (Supabase-backed) has no restore-by-id API, so its undo re-submits the same
+            content as a new row instead — best effort, not a true restore.
+          </P>
         </section>
 
         {/* ── Global search ──────────────────────────────────────────── */}

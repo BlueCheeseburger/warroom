@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks } from '../utils/caseItems';
+import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks, readSpeechDocRecents, writeSpeechDocRecents } from '../utils/caseItems';
 import {
   useCaseFolders,
   childFolders,
@@ -76,6 +76,7 @@ export default function CasesGrid() {
   // without opening it, driving the same bulk move/delete bar pattern.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const updateDb = useApp((s) => s.update);
+  const pushUndoToast = useApp((s) => s.pushUndoToast);
   function toggleSelect(key: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -160,10 +161,12 @@ export default function CasesGrid() {
   }
 
   function doDelete(folder: CaseFolder) {
+    const snapshot = folders;
     update((d) => deleteFolder(d, folder.id));
     setConfirmDelete(null);
     // The open folder just stopped existing — follow its documents up to the parent.
     if (currentFolderId === folder.id) navigate(folder.parentId);
+    pushUndoToast(`Deleted folder "${folder.name}"`, () => update(() => snapshot));
   }
 
   /** True if the currently-open view is showing one of the given item ids/paths. */
@@ -177,6 +180,9 @@ export default function CasesGrid() {
   function deleteItems(keys: string[]) {
     const keySet = new Set(keys);
     const targets = items.filter((i) => keySet.has(i.key));
+    if (targets.length === 0) return;
+    const dbSnapshot = db;
+    const recentsSnapshot = readSpeechDocRecents();
     for (const t of targets) {
       if (t.kind === 'speech-doc') removeFromRecents(t.path!);
     }
@@ -186,6 +192,12 @@ export default function CasesGrid() {
     // Follow the user away from whatever tile they were looking at if it just disappeared.
     if (viewPointsAt(targets)) navigate(currentFolderId);
     setSelected((prev) => { const next = new Set(prev); for (const k of keys) next.delete(k); return next; });
+    const label = targets.length === 1 ? `Deleted "${targets[0].name}"` : `Deleted ${targets.length} items`;
+    pushUndoToast(label, () => {
+      writeSpeechDocRecents(recentsSnapshot);
+      updateDb(() => dbSnapshot);
+      setTick((t) => t + 1);
+    });
   }
 
   /** Shared by the bulk-move bar and the per-tile context menu's "Move to" rows. */

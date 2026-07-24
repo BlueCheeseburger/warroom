@@ -90,7 +90,7 @@ async function extractDoc(value: string, db: DB): Promise<string> {
 type Screen = 'browse' | 'contribute';
 
 export default function ImpactLibrary() {
-  const { setView, setChatOpen, db } = useApp();
+  const { setView, setChatOpen, db, pushUndoToast } = useApp();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [entries, setEntries] = useState<ImpactLibraryEntry[]>([]);
@@ -159,9 +159,31 @@ export default function ImpactLibrary() {
   }
 
   async function handleDelete(entry: ImpactLibraryEntry) {
-    if (!confirm('Delete your library entry? This can\'t be undone.')) return;
+    if (!confirm('Delete your library entry?')) return;
     const res = await impactlib.delete(entry.id);
-    if (res?.ok) setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+    if (!res?.ok) return;
+    setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+    // No restore-by-id API on the server, so undo re-submits the same content as a
+    // fresh entry (new id, votes reset) — best effort, but the content isn't lost.
+    pushUndoToast(`Deleted "${entry.title}"`, async () => {
+      const res2 = await impactlib.submit({
+        anonymous: entry.anonymous,
+        event: entry.event,
+        title: entry.title,
+        claim: entry.claim,
+        magnitude: entry.magnitude,
+        magnitude_note: entry.magnitude_note,
+        probability: entry.probability,
+        probability_note: entry.probability_note,
+        timeframe: entry.timeframe,
+        timeframe_note: entry.timeframe_note,
+        reversibility: entry.reversibility,
+        reversibility_note: entry.reversibility_note,
+        answers: entry.answers,
+        tags: entry.tags,
+      });
+      if (res2?.ok) load();
+    });
   }
 
   return (

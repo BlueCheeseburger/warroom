@@ -445,7 +445,7 @@ function getSpeechDocs(): RecentDoc[] {
 }
 
 function CasesPanel() {
-  const { db, update, setView } = useApp();
+  const { db, update, setView, pushUndoToast } = useApp();
   const cases = Object.values(db.cases);
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
   const [name, setName] = useState('');
@@ -506,10 +506,13 @@ function CasesPanel() {
   }
 
   async function deleteCase(id: string) {
+    const snapshot = db;
+    const name = db.cases[id]?.name ?? 'case';
     await update((db) => {
       const { [id]: _, ...rest } = db.cases;
       return { ...db, cases: rest };
     });
+    pushUndoToast(`Deleted "${name}"`, () => update(() => snapshot));
   }
 
   return (
@@ -840,7 +843,7 @@ function persistConvs(next: GeminiConvMeta[]) {
 }
 
 function GeminiHomeCard() {
-  const { setGeminiOpen, setGeminiActiveId } = useApp();
+  const { setGeminiOpen, setGeminiActiveId, pushUndoToast } = useApp();
   const [convs, setConvs] = useState<GeminiConvMeta[]>([]);
 
   useEffect(() => {
@@ -871,10 +874,22 @@ function GeminiHomeCard() {
   }
 
   function deleteConv(id: string) {
+    const removed = convs.find((c) => c.id === id);
+    let history: string | null = null;
+    try { history = localStorage.getItem(convHistoryKey(id)); } catch {}
     const next = convs.filter((c) => c.id !== id);
     setConvs(next);
     persistConvs(next);
     try { localStorage.removeItem(convHistoryKey(id)); } catch {}
+    if (!removed) return;
+    pushUndoToast(`Deleted "${removed.title || 'conversation'}"`, () => {
+      setConvs((prev) => {
+        const restored = [removed, ...prev];
+        persistConvs(restored);
+        return restored;
+      });
+      try { if (history !== null) localStorage.setItem(convHistoryKey(id), history); } catch {}
+    });
   }
 
   return (
@@ -1169,7 +1184,7 @@ export function ImpactCalcCard() {
 // ─── Opponents panel ──────────────────────────────────────────────────────────
 
 function OpponentsPanel() {
-  const { db, update, setView } = useApp();
+  const { db, update, setView, pushUndoToast } = useApp();
   const opponents = Object.values(db.opponents).slice(0, 5);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -1185,10 +1200,13 @@ function OpponentsPanel() {
   }
 
   async function deleteOpponent(id: string) {
+    const snapshot = db;
+    const name = db.opponents[id]?.teamName ?? 'opponent';
     await update((db) => {
       const { [id]: _, ...rest } = db.opponents;
       return { ...db, opponents: rest };
     });
+    pushUndoToast(`Deleted "${name}"`, () => update(() => snapshot));
   }
 
   return (

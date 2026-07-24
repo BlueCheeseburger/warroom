@@ -4,7 +4,7 @@ import gdriveLogo from '../assets/gdrive-logo.png';
 import { importFlowFromXlsx } from '../utils/flowImport';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
-  isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder,
+  isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder, findFolder,
   createFolder, renameFolder, deleteFolder, pruneAssignments,
   sortByOrder, ensureOrderSeeded, moveInOrder,
   ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
@@ -236,7 +236,7 @@ export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [driveConfigured, setDriveConfigured] = useState(false);
   const [importing, setImporting] = useState(false);
-  const { db, view, setView, event, flowsIndex, setFlowsIndex } = useApp();
+  const { db, view, setView, event, flowsIndex, setFlowsIndex, pushUndoToast } = useApp();
   const tournaments = Object.values(db.tournaments);
   const opponents = Object.values(db.opponents);
   const judges = Object.values(db.judges ?? {});
@@ -285,11 +285,20 @@ export default function Sidebar() {
   }
 
   async function deleteFlow(id: string) {
+    const removed = flowsIndex.find((f) => f.id === id);
+    const dataSnapshot = await window.warroom?.storage.read(`flow_data_${id}`);
+    const indexSnapshot = flowsIndex;
     const newIndex = flowsIndex.filter((f) => f.id !== id);
     setFlowsIndex(newIndex);
     await window.warroom?.storage.write('flows_index', newIndex);
     window.warroom?.storage.write(`flow_data_${id}`, null as any);
     if (view.kind === 'flow' && (view as any).flowId === id) setView({ kind: 'home' });
+    if (!removed) return;
+    pushUndoToast(`Deleted "${removed.name}"`, async () => {
+      await window.warroom?.storage.write(`flow_data_${id}`, dataSnapshot as any);
+      setFlowsIndex(indexSnapshot);
+      await window.warroom?.storage.write('flows_index', indexSnapshot);
+    });
   }
 
   async function renameFlow(id: string, name: string) {
@@ -1180,6 +1189,7 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
   importFlow: () => void; importing: boolean; setAutoFlowOpen: (open: boolean) => void;
 }) {
   const { folders, ready, update } = useFlowFolders();
+  const pushUndoToast = useApp((s) => s.pushUndoToast);
   const [openIds, toggleOpen, openFolderOnly] = useOpenFolders(FLOW_FOLDERS_OPEN_KEY);
   const dragExpand = useDragHoverExpand(openFolderOnly);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
@@ -1266,7 +1276,10 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
   }
   function doDeleteFolder(id: string) {
     // Contents move up to the parent (see caseFolders.deleteFolder) — no flow is deleted.
+    const folder = findFolder(folders, id);
+    const snapshot = folders;
     update((d) => deleteFolder(d, id));
+    if (folder) pushUndoToast(`Deleted folder "${folder.name}"`, () => update(() => snapshot));
   }
 
   function renderFlow(f: FlowMeta, depth: number) {

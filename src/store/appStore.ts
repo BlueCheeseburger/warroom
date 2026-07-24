@@ -57,6 +57,13 @@ export type View =
 
 export type AgentSearchFn = (query: string) => Promise<string>;
 
+/** A single "X deleted" bottom-left toast with a timed Undo button. */
+export interface UndoToast {
+  id: string;
+  message: string;
+  onUndo: () => void | Promise<void>;
+}
+
 interface AppState {
   db: DB;
   view: View;
@@ -133,6 +140,10 @@ interface AppState {
   // Term to auto-scroll + highlight a matching disclosure on an opponent profile
   pendingDisclosureQuery: string;
   setPendingDisclosureQuery: (q: string) => void;
+  // Undo toasts — bottom-left "X deleted" + Undo, shown after a destructive action.
+  undoToasts: UndoToast[];
+  pushUndoToast: (message: string, onUndo: () => void | Promise<void>) => void;
+  dismissUndoToast: (id: string) => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -262,6 +273,11 @@ export const useApp = create<AppState>((set, get) => ({
     localStorage.setItem('warroom-share-permission', p);
     set({ defaultSharePermission: p });
   },
+  undoToasts: [],
+  pushUndoToast: (message, onUndo) => set((s) => ({
+    undoToasts: [...s.undoToasts, { id: crypto.randomUUID(), message, onUndo }].slice(-3),
+  })),
+  dismissUndoToast: (id) => set((s) => ({ undoToasts: s.undoToasts.filter((t) => t.id !== id) })),
 }));
 
 /**

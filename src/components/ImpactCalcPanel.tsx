@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import { loadImpactCalcSaves, deleteImpactCalcSave, type SavedImpactCalc } from './ImpactCalcView';
+import { loadImpactCalcSaves, deleteImpactCalcSave, restoreImpactCalcSave, type SavedImpactCalc } from './ImpactCalcView';
 
 interface SpeechDocRecent { path: string; name: string; }
 
@@ -83,7 +83,7 @@ function winnerDot(verdict: 'A' | 'B' | 'even') {
 }
 
 export default function ImpactCalcPanel() {
-  const { db, flowsIndex, setView } = useApp();
+  const { db, flowsIndex, setView, pushUndoToast } = useApp();
   const [valueA, setValueA] = useState('');
   const [valueB, setValueB] = useState('');
   const [loading, setLoading] = useState(false);
@@ -99,8 +99,14 @@ export default function ImpactCalcPanel() {
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation();
+    const removed = saves.find((s) => s.id === id);
     await deleteImpactCalcSave(id);
     setSaves((prev) => prev.filter((s) => s.id !== id));
+    if (!removed) return;
+    pushUndoToast(`Deleted "${removed.labelA} vs ${removed.labelB}"`, async () => {
+      await restoreImpactCalcSave(removed);
+      await reloadSaves();
+    });
   }
 
   function reset() { setValueA(''); setValueB(''); setError(null); }

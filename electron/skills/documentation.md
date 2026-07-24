@@ -77,6 +77,32 @@ Navigation is view-stack-free: one active `View` at a time, stored in Zustand. T
 
 ---
 
+## Undo Toasts
+
+A shared `pushUndoToast(message, onUndo)` action on the Zustand store (`appStore.ts`) drives a
+bottom-left toast (`UndoToast.tsx`, mounted once in `App.tsx`, mirrors `AiErrorToast.tsx`'s
+pattern but bottom-left instead of bottom-right): "Deleted 'X'" plus an Undo button, auto-dismissing
+after 3.5s. Wired up on the major destructive deletes: cases, blocks, cards, tournaments, rounds,
+opponents, flows, flow sheets (reuses the flow editor's own undo-history stack via `undo()` rather
+than a separate snapshot), saved AI chats, saved impact calc entries, impact library entries, and
+folders. Deliberately NOT wired up on chat/DM message deletion (syncs live to other users — a
+delayed-looking soft-delete would read as inconsistent) or flow column/arrow deletes (too
+fine-grained during active flowing).
+
+Each delete site snapshots the relevant state right before mutating it, then passes a closure that
+restores that snapshot as the `onUndo` callback. For anything backed by the main `db` object,
+**the snapshot must be `structuredClone(db)`, not a bare reference** — the existing delete-reducer
+convention across the app (`const next = { ...db }; delete next.cards[id];`) only shallow-copies
+the top-level `db` object, so `next.cards`/`next.blocks`/etc. are the SAME nested object as
+`db.cards`/`db.blocks`; mutating them in place would silently corrupt a bare `db` reference held
+for undo. Non-db state (flows_index + `flow_data_${id}` in `window.warroom.storage`, the Gemini
+conversation list + per-conversation history in localStorage, impact calc saves) is snapshotted the
+same way at its own storage layer. The Impact Library (Supabase-backed) has no restore-by-id API,
+so its undo re-submits the same content as a new row (new id, votes reset) — best effort, not a
+true restore.
+
+---
+
 ## Global Search (⌘K)
 A command-palette search (`SearchPalette.tsx`) opens on **⌘K / Ctrl K** or via the Search bar below Home in the expanded sidebar. State lives in `useApp` (`searchOpen`, plus handoff fields `pendingSearchQuery`, `pendingFindQuery`, `pendingDisclosureQuery`). The index and search live in `src/lib/searchIndex.ts` using Fuse.js (title weight 0.7, haystack 0.3, threshold 0.38).
 

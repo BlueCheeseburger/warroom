@@ -32,6 +32,14 @@ export async function deleteImpactCalcSave(id: string): Promise<void> {
   await (window.warroom as any).storage.write(SAVES_KEY, saves.filter((s) => s.id !== id));
 }
 
+/** Undo for deleteImpactCalcSave — re-inserts the exact entry (same id/savedAt) if it isn't already back. */
+export async function restoreImpactCalcSave(entry: SavedImpactCalc): Promise<void> {
+  const saves = await loadImpactCalcSaves();
+  if (saves.some((s) => s.id === entry.id)) return;
+  const updated = [entry, ...saves].slice(0, MAX_SAVES);
+  await (window.warroom as any).storage.write(SAVES_KEY, updated);
+}
+
 interface ImpactItem {
   claim: string;
   magnitude: 'extinction' | 'existential' | 'major' | 'moderate' | 'minor';

@@ -8,6 +8,14 @@ Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments,
 
 ---
 
+## Undo
+Deleting a case, block, card, tournament, round, opponent, flow, flow sheet, saved AI chat,
+saved impact calc, impact library entry, or folder shows a small toast in the bottom-left
+corner: "Deleted 'X'" with an **Undo** button, active for 3.5 seconds. Click Undo to restore it
+exactly as it was. If you don't click it, the toast disappears and the delete stands — no
+action needed either way. Chat/DM messages and flow column/arrow edits don't get this toast
+(they're either synced live or too fine-grained to interrupt).
+
 ## Global Search
 Press **⌘K** (Ctrl K on Windows), or click the **Search** bar below Home in the sidebar, to open a command-palette search across your whole app.
 

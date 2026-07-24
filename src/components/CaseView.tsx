@@ -52,7 +52,7 @@ export default function CaseView() {
 // ─── Block-based case header ──────────────────────────────────────────────────
 
 function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; cardCount: number }) {
-  const { update, setView, db } = useApp();
+  const { update, setView, db, pushUndoToast } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
@@ -66,6 +66,7 @@ function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; 
 
   async function deleteCase() {
     if (!confirm(`Delete "${c.name}"? This removes all its blocks and cards.`)) return;
+    const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
       const blocksToRemove = c.blocks;
@@ -78,6 +79,7 @@ function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; 
       return next;
     });
     setView({ kind: 'home' });
+    pushUndoToast(`Deleted "${c.name}"`, () => update(() => snapshot));
   }
 
   return (
@@ -152,7 +154,7 @@ function BlockGroup({ label, blocks, type, caseId }: { label: string; blocks: Bl
 }
 
 function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
-  const { db, update, setView } = useApp();
+  const { db, update, setView, pushUndoToast } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
@@ -171,6 +173,7 @@ function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
 
   async function deleteBlock() {
     if (!confirm(`Delete "${block.title}"?`)) return;
+    const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
       block.cards.forEach((id) => { delete next.cards[id]; });
@@ -178,6 +181,7 @@ function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
       next.cases[caseId] = { ...next.cases[caseId], blocks: next.cases[caseId].blocks.filter((id) => id !== block.id) };
       return next;
     });
+    pushUndoToast(`Deleted "${block.title}"`, () => update(() => snapshot));
   }
 
   return (

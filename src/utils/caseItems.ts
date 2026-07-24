@@ -48,7 +48,7 @@ export function readSpeechDocRecents(): RecentDoc[] {
   try { return JSON.parse(localStorage.getItem(SPEECH_RECENTS_KEY) ?? '[]'); } catch { return []; }
 }
 
-function writeSpeechDocRecents(next: RecentDoc[]) {
+export function writeSpeechDocRecents(next: RecentDoc[]) {
   localStorage.setItem(SPEECH_RECENTS_KEY, JSON.stringify(next));
   // Sidebar.tsx and SpeechDocViewer.tsx both listen for this to re-read recents —
   // a same-tab localStorage write doesn't fire a native 'storage' event, so it has

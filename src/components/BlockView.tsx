@@ -41,7 +41,7 @@ export default function BlockView() {
 }
 
 function BlockHeader({ block, parentCase, cardCount }: any) {
-  const { update, setView } = useApp();
+  const { db, update, setView, pushUndoToast } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
@@ -57,6 +57,7 @@ function BlockHeader({ block, parentCase, cardCount }: any) {
 
   async function deleteBlock() {
     if (!confirm(`Delete "${block.title}" and all its cards?`)) return;
+    const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
       block.cards.forEach((id: string) => { delete next.cards[id]; });
@@ -70,6 +71,7 @@ function BlockHeader({ block, parentCase, cardCount }: any) {
       return next;
     });
     setView({ kind: 'case', caseId: block.caseId });
+    pushUndoToast(`Deleted "${block.title}"`, () => update(() => snapshot));
   }
 
   return (
@@ -126,7 +128,7 @@ function PrepCardList({ block, cards }: { block: any; cards: Card[] }) {
 }
 
 function CardRow({ card, blockId }: { card: Card; blockId: string }) {
-  const { update } = useApp();
+  const { db, update, pushUndoToast } = useApp();
   const dangerCls = useDangerBtnClass();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -141,6 +143,10 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
   }
 
   async function deleteCard() {
+    // structuredClone — the delete below mutates db.cards/db.blocks IN PLACE (only the
+    // top-level db object is copied), so a plain `db` reference would get corrupted
+    // by the very update() call it's meant to undo.
+    const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
       delete next.cards[card.id];
@@ -151,6 +157,7 @@ function CardRow({ card, blockId }: { card: Card; blockId: string }) {
       };
       return next;
     });
+    pushUndoToast(`Deleted "${card.tag}"`, () => update(() => snapshot));
   }
 
   if (editing) {
