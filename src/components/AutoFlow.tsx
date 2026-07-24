@@ -83,6 +83,10 @@ interface Placement {
   respondsTo: string | null;
   // The plan text (policy) — forced to the first cell of the first sheet.
   isPlan: boolean;
+  // Which family the card's sheet belongs to (from the classify step), driving
+  // tab ORDER in the write step: 'advantage' = aff case position (advantages
+  // first, in 1AC order), 'offcase' = neg off-case, null = existing/structural.
+  sheetRole: 'advantage' | 'offcase' | null;
   // AI-generated short summary (only when summary mode is on). When present the
   // write step writes THIS instead of tag+cite, and marks the cell as an AI cell.
   summary?: string;
@@ -251,6 +255,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         isNewSheet: !!p.isNewSheet,
         respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
         isPlan: !!p.isPlan,
+        sheetRole: p.sheetRole === 'advantage' || p.sheetRole === 'offcase' ? p.sheetRole : null,
         removed: false,
       }));
       // Opt-in summary pass: replace each card's tag+cite with a short AI summary
@@ -418,6 +423,49 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         arrows.push({ id: crypto.randomUUID(), from, to });
         sheets[sheetIdx].arrows = arrows;
       };
+
+      // Tab-ORDER pre-pass — advantages first, in 1AC order, then off-case.
+      // The AI returns placements in document (1AC) order and tags each with a
+      // sheetRole, so the distinct new 'advantage' sheets in first-appearance
+      // order ARE the aff's advantages 1..N: they claim the leftmost aff
+      // placeholder slots ("Adv N" for policy, "Contention N" for PF), and the
+      // distinct new 'offcase' sheets claim the "Off N" slots after them. Since
+      // those aff slots come before the off slots in every default layout, this
+      // is what makes advantage tabs sit first, in the order they came up in the
+      // 1AC. Runs BEFORE any card is placed, so it only ever renames still-empty
+      // placeholder slots; once a name is slotted here, ensureSheet finds it as
+      // an existing sheet and won't re-slot it. Names that don't cleanly fit a
+      // role (or spill past the available slots) fall through to ensureSheet's
+      // own placeholder-or-append logic during Pass 1.
+      const AFF_SLOT_RE = /^(adv|advantage|contention)\s*\d+$/i;
+      const OFF_SLOT_RE = /^off\s*\d+$/i;
+      const distinctNewByRole = (role: 'advantage' | 'offcase'): string[] => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const p of accepted) {
+          if (!p.isNewSheet || p.sheetRole !== role) continue;
+          const key = p.sheetName.trim().toLowerCase();
+          if (!key || seen.has(key) || sheetIndexByName.has(key)) continue;
+          seen.add(key);
+          out.push(p.sheetName.trim());
+        }
+        return out;
+      };
+      const slotInto = (names: string[], slotRe: RegExp) => {
+        for (const name of names) {
+          const key = name.toLowerCase();
+          if (sheetIndexByName.has(key)) continue; // already slotted
+          const slot = sheets.findIndex((s) =>
+            slotRe.test(s.name.trim()) &&
+            !Object.values(s.cells).some((v) => String(v ?? '').trim()));
+          if (slot === -1) continue; // no empty slot of this family left — ensureSheet appends it later
+          sheetIndexByName.delete(sheets[slot].name.trim().toLowerCase());
+          sheets[slot] = { ...sheets[slot], name };
+          sheetIndexByName.set(key, slot);
+        }
+      };
+      slotInto(distinctNewByRole('advantage'), AFF_SLOT_RE);
+      slotInto(distinctNewByRole('offcase'), OFF_SLOT_RE);
 
       // Pass 0 — the plan text (policy) always goes to the very first cell of the
       // very first sheet, regardless of what column/sheet the AI proposed for it.

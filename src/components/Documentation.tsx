@@ -205,7 +205,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/22/26
+          Last updated: 7/24/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1079,6 +1079,8 @@ export default function Documentation() {
             1", "Adv 2", "Contention 1") are never treated as destinations — every case and off-case
             position gets a tab named after the position itself, and the write step renames an unused
             placeholder slot to that name rather than stacking new tabs after a row of dead defaults.
+            Tabs are also <strong>ordered</strong>: your advantages come first, as the leftmost tabs,
+            in the order they came up in the 1AC, with off-case flows after them.
             It also shortens each card's cite to how a debater
             actually writes it — author and year ("Price '26"), not the full credentials paragraph —
             and flags which cards answer which (a perm, a no-link) and which card is the plan text. It

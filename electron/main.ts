@@ -1682,6 +1682,11 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
       // "place normally" if the model left them out or they don't resolve.
       respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
       isPlan: !!p.isPlan,
+      // Which family of sheet this card's position belongs to, so the write step
+      // can order tabs — aff advantages first (in 1AC order), then off-case.
+      // 'advantage' = a 1AC aff case position (advantage/contention), 'offcase' =
+      // a neg off-case position (DA/CP/K/T…), null = an existing/structural match.
+      sheetRole: p.sheetRole === 'advantage' || p.sheetRole === 'offcase' ? p.sheetRole : null,
     }));
 
   return { ok: true, placements };
