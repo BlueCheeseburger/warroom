@@ -462,7 +462,7 @@ function ExpandedNav({
   return (
     <div className="flex flex-col h-full">
       {/* Top bar: app wordmark + collapse button */}
-      <div className="flex items-center justify-between px-3 py-2.5" style={{ borderBottom: '1px solid var(--border-subtle)', minHeight: 44 }}>
+      <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: '1px solid var(--border-subtle)', minHeight: 36 }}>
         <button
           onClick={() => setView({ kind: 'home' })}
           className="flex items-center gap-1.5 rounded-lg transition"
@@ -496,10 +496,10 @@ function ExpandedNav({
       </div>
 
       {/* Global search — opens the command palette */}
-      <div className="px-2 pt-2">
+      <div className="px-2 pt-1.5">
         <button
           onClick={() => setSearchOpen(true)}
-          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition"
+          className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg transition"
           style={{
             background: 'var(--nav-hover-bg)',
             border: '1px solid var(--border-subtle)',
@@ -518,7 +518,7 @@ function ExpandedNav({
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto sidebar-scroll py-2 px-2">
+      <nav className="flex-1 overflow-y-auto sidebar-scroll py-1.5 px-2">
 
         {/* Cases — nested folder tree; the section title opens the full grid */}
         <CasesSection view={view} setView={setView} db={db} />
@@ -626,7 +626,7 @@ function NavRowPrimary({ active, onClick, icon, label }: {
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="w-full text-left px-2.5 py-2 text-xs flex items-center gap-2.5 transition rounded-lg font-semibold"
+      className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-2.5 transition rounded-lg font-semibold"
       style={{
         background: active ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
         color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
@@ -757,7 +757,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
 
   return (
     <div
-      className="relative mb-0.5"
+      className="relative mb-px"
       style={{ paddingLeft: depth * INDENT_PX }}
       draggable={!renaming}
       onDragStart={onDragStart}
@@ -774,7 +774,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
           onChange={(e) => setRenameValue(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
-          className="w-full px-2.5 py-1.5 text-xs rounded-lg font-medium outline-none"
+          className="w-full px-2.5 py-1 text-xs rounded-lg font-medium outline-none"
           style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', border: '1px solid var(--border-subtle)' }}
           onClick={(e) => e.stopPropagation()}
         />
@@ -783,7 +783,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
           onClick={onNavigate}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
           onContextMenu={(e) => { if (hasMenu) { e.preventDefault(); e.stopPropagation(); setMenuOpen(true); } }}
-          className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
+          className="w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
           style={{
             background: lit ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
             color: lit ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
@@ -1475,9 +1475,9 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
   }
 
   return (
-    <div className="mb-3">
+    <div className="mb-1.5">
       <div
-        className="w-full px-2 mb-1 flex items-center justify-between group"
+        className="w-full px-2 mb-0.5 flex items-center justify-between group"
         style={{ cursor: 'pointer' }}
       >
         <button
@@ -1680,14 +1680,14 @@ function NavItem({
   const hasMenu = !!itemId && !!itemType;
 
   return (
-    <div className="relative mb-0.5" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <div className="relative mb-px" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       {renaming ? (
         <input
           ref={inputRef} value={renameValue}
           onChange={(e) => setRenameValue(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
-          className="w-full px-2.5 py-1.5 text-xs rounded-lg font-medium outline-none"
+          className="w-full px-2.5 py-1 text-xs rounded-lg font-medium outline-none"
           style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', border: '1px solid var(--border-subtle)' }}
           onClick={(e) => e.stopPropagation()}
         />
@@ -1696,7 +1696,7 @@ function NavItem({
           onClick={onClick}
           onDoubleClick={(e) => { e.stopPropagation(); startRenameInline(); }}
           onContextMenu={handleContextMenu}
-          className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-2 transition rounded-lg font-medium"
+          className="w-full text-left px-2.5 py-1 text-xs flex items-center gap-2 transition rounded-lg font-medium"
           style={{
             background: active ? 'var(--nav-active-bg)' : (hovered ? 'var(--nav-hover-bg)' : 'transparent'),
             color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
