@@ -457,6 +457,42 @@ Built-in browser panels for evidence databases.
 
 ---
 
+## LM Studio (run the AI on your own computer)
+Instead of a cloud API, Warroom can talk to **LM Studio** — a free app that runs AI models locally on your machine. No API key, no per-message cost, and it works with no internet.
+
+**Setup**
+1. Install LM Studio from lmstudio.ai and download a model in it (Gemma 4 12B is the default Warroom expects).
+2. In LM Studio, load the model, then open the **Developer** tab and click **Start Server**. It listens on `http://localhost:1234` by default.
+3. In Warroom: **Settings → AI API key → LM Studio**.
+4. Click **Loaded models** — Warroom asks your server what it has and lists it. Click the one you want.
+5. Click **Test connection**. You should see the model reply "ready" with how long it took.
+
+**Model options**
+Three presets are offered: **Gemma 4 12B QAT** (near-12B quality, much smaller memory footprint), **Gemma 4 12B** (the default — strongest, needs the most RAM/VRAM), and **Gemma 4 E4B** (fastest and lightest, use this if the 12B models are slow or run out of memory).
+
+These are just shortcuts. The exact model id depends on how you downloaded it, so you can type **any** model id, or pick from **Loaded models** — that list comes from your own server, so it's always right.
+
+**Model options box (optional)**
+JSON that gets merged into every request, overriding Warroom's defaults — `temperature`, `max_tokens`, `top_p`, `top_k`, `repeat_penalty`, `seed`, and `ttl` (seconds before LM Studio unloads the model to free memory). For example:
+
+```json
+{ "temperature": 0.1, "max_tokens": 8192, "ttl": 3600 }
+```
+
+Context length and GPU offload aren't in here — those are set inside LM Studio when you load the model, because its API doesn't accept them.
+
+**Things to expect**
+- **It's slower than the cloud.** A 12B model on a laptop can take a while on long jobs like Auto Flow or Round Analysis. Warroom waits up to 10 minutes before giving up. If you're hitting that, switch to Gemma 4 E4B.
+- **Tools may not work.** Features where the AI acts on your app (editing a flow, saving a tournament, searching your cards) need "tool calling", which many local models — Gemma included — don't support. If yours doesn't, Warroom notices and just answers normally instead of failing. There's a checkbox to skip trying at all.
+- **Quality is lower than a frontier cloud model.** For cutting cards or scouting, a hosted model will usually do better. Local shines for privacy, cost, and working offline.
+
+**If it doesn't connect**
+- "Can't reach LM Studio" → the server isn't running. LM Studio → Developer → Start Server. Check the port matches Settings.
+- "No model matching that name is loaded" → load it in LM Studio, or use **Loaded models** to pick the exact id.
+- "Timed out" → the model is too big for your machine; try a smaller one.
+
+---
+
 ## Warroom AI
 Star icon in the title bar.
 
@@ -519,8 +555,10 @@ Gear icon at bottom of sidebar.
 | Setting | Description |
 |---------|-------------|
 | Debate event | HS Policy, HS LD, HS PF, College Policy (NDT/CEDA), College LD (NFA-LD) |
+| AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
 | Gemini API key | From aistudio.google.com. Required for all AI features. |
 | Gemini model | Flash Lite / Flash (default) / 3.5 Flash |
+| LM Studio | Server URL, model, and options — no API key needed. See "LM Studio" below. |
 | Token saving default | Auto-strips body text from speech doc attachments |
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |
 | Google Drive | OAuth Client ID + Client Secret |

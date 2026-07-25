@@ -123,6 +123,14 @@ const api = {
     impactLibraryReview: (params: { entry: any; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
       ipcRenderer.invoke('ai:impactLibraryReview', params),
   },
+  // Local LM Studio server probes, used by the Settings screen. Deliberately its
+  // own namespace and NOT part of `api.ai` — the loop at the bottom of this file
+  // turns every `api.ai` method into a retry-and-toast call, which is wrong for a
+  // button the user just clicked and is waiting on.
+  lmstudio: {
+    listModels: (baseUrl?: string) => ipcRenderer.invoke('lmstudio:listModels', baseUrl),
+    test: () => ipcRenderer.invoke('lmstudio:test'),
+  },
   impactlib: {
     list: () => ipcRenderer.invoke('impactlib:list'),
     submit: (entry: any) => ipcRenderer.invoke('impactlib:submit', entry),

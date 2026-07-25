@@ -675,6 +675,54 @@ Similar to FindCards — a persistent webview pointing at Open Evidence (openev.
 
 ---
 
+## LM Studio (local provider)
+
+A fifth AI provider alongside Gemini/OpenAI/Anthropic/Grok, selectable in Settings → AI API key → **LM Studio**. LM Studio (lmstudio.ai) runs models on the user's own machine and serves an OpenAI-compatible REST API on localhost with **no authentication**, which makes it structurally different from every hosted provider:
+
+- **No API key.** Nothing in `secure_*.json`; `getProviderForTask` returns the sentinel string `'local'` as `apiKey` purely so the existing `if (!apiKey) throw 'NO_KEY'` guard stays meaningful for hosted providers without every call site special-casing local mode. On the renderer side `providerIsConfigured()` (`GeminiPanel.tsx`) returns `true` unconditionally for `lmstudio`, so the "No API key set" banner never fires.
+- **No cost tiers.** `getProviderForTask` returns early for `lmstudio` and ignores `taskTier` entirely — the one loaded model serves lite/balanced/best alike, so `MODEL_TIER_IDS` has no `lmstudio` entry.
+- **The model id is user-owned free text.** It depends on how the user downloaded the model, so Settings offers presets (Gemma 4 12B QAT / **Gemma 4 12B**, the default / Gemma 4 E4B) as *shortcuts only*, plus a free-text field and a "Loaded models" button that lists what the running server actually reports.
+- **Local failure modes.** Never quota or auth — instead "server isn't running", "model isn't loaded", "too slow for this machine".
+
+### Code layout
+
+Pure logic lives in `electron/lmstudio.ts` (not inline in `main.ts`) so it's testable without Electron — same split as `docxFlowCards.ts`. Exercised by `scripts/test-lmstudio.ts` (`npm run test:lmstudio`), which covers URL normalisation, config resolution, body building, error mapping, and response parsing, then runs the real request bodies against a mock OpenAI-compatible server on a throwaway port.
+
+| Export | Purpose |
+|---|---|
+| `normalizeLmStudioUrl` | Accepts a URL with or without `/v1` and normalises to the `/v1` root, so `http://localhost:1234` and `http://localhost:1234/v1/` both work. |
+| `resolveLmStudioConfig(settings)` | Pure resolution from an `app_settings` object → `{ baseUrl, model, options, sendTools }`. |
+| `buildLmStudioChatBody(cfg, args)` | Chat-completions body. User `options` are spread **last** so they override Warroom's defaults — that's the point of the options box. `stream: false` is pinned. |
+| `lmstudioHttpError` | Provider's exact text (per the "AI call retries" rule), falling back to Warroom copy only when the body isn't parseable. |
+| `lmstudioConnError` | Distinguishes unreachable (→ "open the Developer tab and click Start Server") from `AbortError` (→ timed out, try a smaller model). |
+| `looksLikeToolUnsupported` | Narrow test for "this model can't do tool calling" — see below. |
+| `parseLmStudioModels` / `readLmStudioText` / `readLmStudioToolCalls` | Response parsing. |
+
+`app_settings` keys: `lmstudioBaseUrl` (default `http://localhost:1234/v1`), `lmstudioModel` (default `google/gemma-4-12b`), `lmstudioOptions` (JSON **string**, as typed), `lmstudioTools` (bool, default `true`).
+
+A malformed `lmstudioOptions` blob is **ignored, not fatal** — the user types into that box freely and a half-finished `{"temp` must never be why an AI call fails. Settings shows the JSON error inline instead.
+
+### Tool-calling fallback
+
+Plenty of local models — Gemma among them — don't implement OpenAI-style function calling and reject the `tools` field outright. Rather than fail the whole chat, the `lmstudio` branch of `chat:geminiAgentTurn` retries once **without** tools when a 400/500 body matches `looksLikeToolUnsupported`; the user still gets a normal conversation, just without Warroom tool access. The match is deliberately narrow so a genuine 400 about something else surfaces as itself instead of being retried into a confusing second error. Users can also skip the attempt entirely with the `lmstudioTools` toggle.
+
+### Timeout
+
+`LMSTUDIO_TIMEOUT_MS = 600_000` (10 min) rather than the hosted providers' 45s: local inference is far slower, and a 12B model on consumer hardware can genuinely spend minutes on a long completion. A hosted call hanging that long means something is broken; a local one is just working.
+
+### IPC
+
+| Channel | Purpose |
+|---|---|
+| `lmstudio:listModels(baseUrl?)` | `GET {baseUrl}/models` → id list. `baseUrl` lets Settings probe a URL the user typed but hasn't saved. |
+| `lmstudio:test` | Saves, then round-trips a one-token prompt through the configured model, returning the model id the server actually served, its reply, and elapsed ms. |
+
+Both are exposed as `window.warroom.lmstudio.*` in their own preload namespace — deliberately **not** under `api.ai`, whose wrapper loop turns every method into a retry-and-toast call. That's wrong for a button the user just clicked and is watching: a failure should come straight back, not stall for 8/30/60s.
+
+### Renderer error copy
+
+`humanizeGeminiError` (`src/utils/geminiError.ts`) branches early for `lmstudio` — the hosted advice about quotas, API keys, and internet connectivity is all wrong for a local server, so it maps to local guidance instead (start the server / load the model / try a smaller model / raise the context length).
+
 ## Warroom Agent (AI)
 
 Warroom AI is an agentic AI assistant that lives in a resizable right-side panel (`GeminiPanel`). It supports multi-turn conversation and tool calls. Its system prompt is built in `chat:geminiAgentTurn` from `renderPrompt('agent_system', {})` plus (on the first turn of a session) `renderPrompt('agent_title_suffix', {})` appended, plus a topic-context prefix and a custom-skills suffix. Prompt templates: `electron/prompts/agent_system.txt`, `electron/prompts/agent_title_suffix.txt`.
@@ -774,8 +822,10 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 | Setting | Description |
 |---------|-------------|
 | Debate event | HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD) |
+| AI provider | Gemini (default) · OpenAI · Anthropic · Grok · **LM Studio** (local). Persisted as `apiProvider` in `app_settings`. |
 | Gemini API key | Stored encrypted. Powers card extraction, block suggestions, and Warroom AI. |
 | Gemini model | Flash Lite / Flash (default) / 3.5 Flash |
+| LM Studio | Server URL, model id, request options (JSON), and a tool-calling toggle. No API key — see "LM Studio" below. |
 | Token saving default | Auto-strips small body text from speech doc attachments to the Agent. |
 | OpenCaselist login | Same as Tabroom.com credentials. Required for opponent scouting and Open Ev. |
 | Google Drive | OAuth Client ID + Secret. Requires Desktop app type in Google Cloud. |

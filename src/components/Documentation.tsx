@@ -111,6 +111,7 @@ const TOC_SECTIONS = [
   { id: 'impact-calc', label: 'Impact Calc' },
   { id: 'find-cards',  label: 'FindCards (Logos)' },
   { id: 'open-ev',     label: 'Open Evidence' },
+  { id: 'lmstudio',    label: 'LM Studio (local)' },
   { id: 'agent',       label: 'Warroom Agent (AI)' },
   { id: 'chat',        label: 'Team chat' },
   { id: 'gdrive',      label: 'Google Drive' },
@@ -1583,6 +1584,104 @@ export default function Documentation() {
         </section>
 
         {/* ── Warroom Agent ──────────────────────────────────────────── */}
+        {/* ── LM Studio ──────────────────────────────────────────────── */}
+        <section id="doc-lmstudio">
+          <H2>LM Studio <Badge color="blue">local</Badge></H2>
+          <P>
+            A fifth AI provider alongside Gemini/OpenAI/Anthropic/Grok, selected in
+            Settings → AI API key → <strong>LM Studio</strong>. LM Studio runs models on the
+            user's own machine and serves an OpenAI-compatible REST API on localhost with
+            <strong> no authentication</strong>, which makes it structurally different from every
+            hosted provider:
+          </P>
+          <UL>
+            <LI>
+              <strong>No API key.</strong> Nothing in <Code>secure_*.json</Code>.{' '}
+              <Code>getProviderForTask</Code> returns the sentinel <Code>'local'</Code> as{' '}
+              <Code>apiKey</Code> purely so the existing <Code>if (!apiKey) throw 'NO_KEY'</Code>{' '}
+              guard stays meaningful for hosted providers without every call site special-casing
+              local mode. In the renderer, <Code>providerIsConfigured()</Code> returns true
+              unconditionally for <Code>lmstudio</Code>, so the "No API key set" banner never fires.
+            </LI>
+            <LI>
+              <strong>No cost tiers.</strong> <Code>getProviderForTask</Code> returns early and
+              ignores <Code>taskTier</Code> — one loaded model serves lite/balanced/best alike, so{' '}
+              <Code>MODEL_TIER_IDS</Code> has no <Code>lmstudio</Code> entry.
+            </LI>
+            <LI>
+              <strong>The model id is user-owned free text.</strong> It depends on how the user
+              downloaded the model, so Settings offers presets (Gemma 4 12B QAT / Gemma 4 12B, the
+              default / Gemma 4 E4B) as <em>shortcuts only</em>, plus a free-text field and a
+              "Loaded models" button that lists what the running server actually reports.
+            </LI>
+            <LI>
+              <strong>Local failure modes.</strong> Never quota or auth — instead "server isn't
+              running", "model isn't loaded", "too slow for this machine".
+            </LI>
+          </UL>
+
+          <H3>Code layout</H3>
+          <P>
+            Pure logic lives in <Code>electron/lmstudio.ts</Code> rather than inline in{' '}
+            <Code>main.ts</Code> so it's testable without Electron — the same split as{' '}
+            <Code>docxFlowCards.ts</Code>. Exercised by <Code>scripts/test-lmstudio.ts</Code>{' '}
+            (<Code>npm run test:lmstudio</Code>), which covers URL normalisation, config resolution,
+            body building, error mapping, and response parsing, then runs the real request bodies
+            against a mock OpenAI-compatible server on a throwaway port.
+          </P>
+          <P>
+            <Code>app_settings</Code> keys: <Code>lmstudioBaseUrl</Code> (default{' '}
+            <Code>http://localhost:1234/v1</Code>), <Code>lmstudioModel</Code> (default{' '}
+            <Code>google/gemma-4-12b</Code>), <Code>lmstudioOptions</Code> (a JSON string, stored as
+            typed), and <Code>lmstudioTools</Code> (bool, default true). A malformed options blob is{' '}
+            <strong>ignored, not fatal</strong> — the user types into that box freely, and a
+            half-finished <Code>{'{"temp'}</Code> must never be why an AI call fails. Settings shows
+            the JSON error inline instead. User options are spread <em>last</em> into the request
+            body so they override Warroom's defaults, which is the whole point of the box.
+          </P>
+
+          <H3>Tool-calling fallback</H3>
+          <P>
+            Plenty of local models — Gemma among them — don't implement OpenAI-style function
+            calling and reject the <Code>tools</Code> field outright. Rather than fail the whole
+            chat, the <Code>lmstudio</Code> branch of <Code>chat:geminiAgentTurn</Code> retries once{' '}
+            <strong>without</strong> tools when a 400/500 body matches{' '}
+            <Code>looksLikeToolUnsupported</Code>; the user still gets a normal conversation, just
+            without Warroom tool access. The match is deliberately narrow so a genuine 400 about
+            something else surfaces as itself rather than being retried into a confusing second
+            error. The <Code>lmstudioTools</Code> toggle skips the attempt entirely.
+          </P>
+
+          <H3>Timeout</H3>
+          <P>
+            <Code>LMSTUDIO_TIMEOUT_MS = 600_000</Code> (10 minutes) rather than the hosted
+            providers' 45s: local inference is far slower, and a 12B model on consumer hardware can
+            genuinely spend minutes on a long completion. A hosted call hanging that long means
+            something is broken; a local one is just working.
+          </P>
+
+          <H3>IPC</H3>
+          <UL>
+            <LI><Code>lmstudio:listModels(baseUrl?)</Code> — <Code>GET {'{baseUrl}'}/models</Code> → id list. The argument lets Settings probe a URL the user typed but hasn't saved.</LI>
+            <LI><Code>lmstudio:test</Code> — saves, then round-trips a one-token prompt through the configured model, returning the id the server actually served, its reply, and elapsed ms.</LI>
+          </UL>
+          <P>
+            Both are exposed as <Code>window.warroom.lmstudio.*</Code> in their own preload
+            namespace — deliberately <strong>not</strong> under <Code>api.ai</Code>, whose wrapper
+            loop turns every method into a retry-and-toast call. That's wrong for a button the user
+            just clicked and is watching: a failure should come straight back, not stall for
+            8/30/60s.
+          </P>
+
+          <H3>Renderer error copy</H3>
+          <P>
+            <Code>humanizeGeminiError</Code> (<Code>src/utils/geminiError.ts</Code>) branches early
+            for <Code>lmstudio</Code> — the hosted advice about quotas, API keys, and internet
+            connectivity is all wrong for a local server, so it maps to local guidance instead
+            (start the server / load the model / try a smaller model / raise the context length).
+          </P>
+        </section>
+
         <section id="doc-agent">
           <H2>Warroom Agent (AI)</H2>
           <P>
@@ -1726,8 +1825,16 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD)</span>
               </div>
               <div>
+                <span className="font-semibold text-ink">AI provider</span>
+                <span className="ml-2 text-ink/60">Gemini (default) · OpenAI · Anthropic · Grok · LM Studio (local). Persisted as <Code>apiProvider</Code>.</span>
+              </div>
+              <div>
                 <span className="font-semibold text-ink">Gemini API key</span>
                 <span className="ml-2 text-ink/60">Stored encrypted. Powers card extraction, block suggestions, and Warroom AI.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">LM Studio</span>
+                <span className="ml-2 text-ink/60">Server URL, model id, request options (JSON), and a tool-calling toggle. No API key — see the LM Studio section.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Gemini model</span>

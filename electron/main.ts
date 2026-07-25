@@ -23,6 +23,11 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
 import { extractFlowCardsFromXml, ExtractedFlowCard } from './docxFlowCards';
+import {
+  LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
+  buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
+  looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText, readLmStudioToolCalls,
+} from './lmstudio';
 
 const isDev = !app.isPackaged;
 
@@ -644,8 +649,12 @@ const MODEL_TIER_IDS = {
   grok:      { lite: 'grok-3-mini',           balanced: 'grok-3-fast',       best: 'grok-3' },
 } as const;
 
-type Provider = 'gemini' | 'openai' | 'anthropic' | 'grok';
+type Provider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
 type ModelTier = 'lite' | 'balanced' | 'best';
+
+// ─── LM Studio (local, OpenAI-compatible) ─────────────────────────────────────
+// Pure logic (config resolution, error mapping, body building) lives in
+// ./lmstudio.ts so it can be tested without Electron — see scripts/test-lmstudio.ts.
 
 function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   if (provider === 'gemini') {
@@ -669,6 +678,38 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   return 'balanced';
 }
 
+/** Reads app_settings and resolves the LM Studio config. */
+async function lmstudioConfig(): Promise<LmStudioConfig> {
+  const s = await readJson('app_settings').catch(() => null) as any;
+  return resolveLmStudioConfig(s);
+}
+
+/** POST to LM Studio's OpenAI-compatible chat endpoint, mapping both failure kinds. */
+async function lmstudioPost(baseUrl: string, body: string): Promise<Response> {
+  try {
+    return await fetchWithRetry(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: lmstudioHeaders(),
+      body,
+    }, { timeoutMs: LMSTUDIO_TIMEOUT_MS });
+  } catch (e) {
+    throw lmstudioConnError(e, baseUrl);
+  }
+}
+
+async function callLMStudio(prompt: string, extraConfig?: { maxOutputTokens?: number }): Promise<string> {
+  const cfg = await lmstudioConfig();
+  const res = await lmstudioPost(cfg.baseUrl, buildLmStudioChatBody(cfg, {
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.1,
+    maxTokens: extraConfig?.maxOutputTokens ?? 8192,
+  }));
+  if (!res.ok) throw lmstudioHttpError(res.status, await res.text().catch(() => ''), cfg.baseUrl);
+  const text = readLmStudioText(await res.json());
+  if (text === null) throw new Error('Unexpected LM Studio response shape (no message content)');
+  return text;
+}
+
 /**
  * Read provider + model settings, then resolve the model ID for a given task tier.
  * Pass 'user' to use exactly the user's selected tier.
@@ -680,6 +721,16 @@ async function getProviderForTask(
 ): Promise<{ provider: Provider; modelId: string; apiKey: string }> {
   const s = await readJson('app_settings').catch(() => null) as any;
   const provider: Provider = s?.apiProvider ?? 'gemini';
+
+  if (provider === 'lmstudio') {
+    // No tiers: one locally-loaded model serves every task, so `taskTier` is
+    // deliberately ignored here. The `apiKey` is a placeholder, not a credential
+    // — LM Studio needs none — and returning a non-empty string keeps the
+    // `if (!apiKey) throw 'NO_KEY'` guard in callAI and the agent turn meaningful
+    // for the hosted providers without every call site special-casing local mode.
+    const { model } = await lmstudioConfig();
+    return { provider, modelId: model, apiKey: 'local' };
+  }
 
   const userModelKey: string =
     provider === 'gemini'    ? (s?.geminiModel    ?? 'flash')
@@ -890,6 +941,7 @@ async function callGrok(apiKey: string, prompt: string, modelId: string): Promis
 async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask(taskTier);
   if (!apiKey) throw new Error('NO_KEY');
+  if (provider === 'lmstudio')  return callLMStudio(prompt, extraConfig);
   if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId);
   if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId);
   if (provider === 'grok')      return callGrok(apiKey, prompt, modelId);
@@ -6023,6 +6075,42 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
       return sbOk({ type: 'text', text: raw, modelContent });
     }
 
+    // ── LM Studio path (local, OpenAI-compatible) ────────────────────────────
+    if (provider === 'lmstudio') {
+      const cfg = await lmstudioConfig();
+      const { msgs: lmMessages } = geminiMsgsToOpenAI(messages);
+      const lmTools = geminiToolsToOpenAI(AGENT_TOOLS);
+      const buildBody = (withTools: boolean) => buildLmStudioChatBody(cfg, {
+        messages: [{ role: 'system', content: systemText }, ...lmMessages],
+        tools: withTools ? lmTools : null,
+        temperature: 0.4,
+        maxTokens: 8192,
+      });
+
+      let res = await lmstudioPost(cfg.baseUrl, buildBody(cfg.sendTools));
+      // Plenty of local models — Gemma among them — don't implement OpenAI-style
+      // function calling and reject the `tools` field outright. Rather than fail
+      // the whole chat, retry once without tools: the user still gets a normal
+      // conversation, just without Warroom tool access. Only retried when the
+      // error actually mentions tools, so real errors still surface as themselves.
+      if (!res.ok && cfg.sendTools && (res.status === 400 || res.status === 500)) {
+        const errBody = await res.text().catch(() => '');
+        if (looksLikeToolUnsupported(errBody)) {
+          res = await lmstudioPost(cfg.baseUrl, buildBody(false));
+        } else {
+          throw lmstudioHttpError(res.status, errBody, cfg.baseUrl);
+        }
+      }
+      if (!res.ok) throw lmstudioHttpError(res.status, await res.text().catch(() => ''), cfg.baseUrl);
+
+      const data = await res.json() as any;
+      const msg = data?.choices?.[0]?.message;
+      const modelContent = openAIMsgToGeminiContent(msg);
+      const toolCalls = readLmStudioToolCalls(data);
+      if (toolCalls.length > 0) return sbOk({ type: 'tool_calls', calls: toolCalls, modelContent });
+      return sbOk({ type: 'text', text: msg?.content ?? '', modelContent });
+    }
+
     // ── Grok path (OpenAI-compatible) ────────────────────────────────────────
     if (provider === 'grok') {
       const { msgs: grokMessages } = geminiMsgsToOpenAI(messages);
@@ -6201,6 +6289,63 @@ ipcMain.handle('chat:unsubscribeDM', async () => {
 // RLS (see supabase/schema.sql) enforces "insert/edit/delete only your own" and
 // "one vote per user"; these handlers just marshal the calls. Vote/save state for
 // the *current* user is fetched separately (their own rows only) and merged in.
+
+// ─── LM Studio helpers for Settings ───────────────────────────────────────────
+// Deliberately NOT wrapped in withDelayedRetry: these back a button the user
+// just clicked and is watching, so a failure should come straight back as an
+// error they can act on rather than silently stalling for 8/30/60s. (See
+// CLAUDE.md's "AI call retries" rule — that applies to background AI calls.)
+
+/**
+ * List the models LM Studio currently has available. `baseUrlOverride` lets the
+ * Settings screen probe a URL the user has typed but not yet saved.
+ */
+ipcMain.handle('lmstudio:listModels', async (_e, baseUrlOverride?: string) => {
+  const baseUrl = String(baseUrlOverride ?? '').trim()
+    ? normalizeLmStudioUrl(String(baseUrlOverride))
+    : (await lmstudioConfig()).baseUrl;
+  try {
+    const res = await fetchWithRetry(`${baseUrl}/models`, {
+      method: 'GET',
+      headers: lmstudioHeaders(false),
+    }, { timeoutMs: 10_000 });
+    if (!res.ok) return sbErr(lmstudioHttpError(res.status, await res.text().catch(() => ''), baseUrl));
+    return sbOk({ baseUrl, models: parseLmStudioModels(await res.json()) });
+  } catch (e) {
+    return sbErr(lmstudioConnError(e, baseUrl));
+  }
+});
+
+/**
+ * End-to-end check: send the configured model a one-token prompt and report what
+ * came back. Catches the failures /models can't — model not actually loaded,
+ * a bad options blob, an unreachable model name — without burning a real request.
+ */
+ipcMain.handle('lmstudio:test', async () => {
+  const cfg = await lmstudioConfig();
+  const started = Date.now();
+  try {
+    const res = await lmstudioPost(cfg.baseUrl, buildLmStudioChatBody(cfg, {
+      messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+      temperature: 0,
+      maxTokens: 16,
+    }));
+    if (!res.ok) return sbErr(lmstudioHttpError(res.status, await res.text().catch(() => ''), cfg.baseUrl));
+    const data = await res.json() as any;
+    const reply = readLmStudioText(data);
+    if (reply === null) return sbErr(new Error('LM Studio replied in an unexpected shape (no message content).'));
+    return sbOk({
+      baseUrl: cfg.baseUrl,
+      // Echo back the id LM Studio actually served, which can differ from what was
+      // requested (it resolves partial names) — useful when debugging a wrong model.
+      model: String(data?.model ?? cfg.model),
+      reply: reply.trim().slice(0, 120),
+      ms: Date.now() - started,
+    });
+  } catch (e) {
+    return sbErr(e);
+  }
+});
 
 ipcMain.handle('impactlib:list', async () => {
   if (!sb) return sbErr('Supabase not configured');

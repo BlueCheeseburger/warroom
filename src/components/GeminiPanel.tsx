@@ -40,12 +40,31 @@ const GROK_MODEL_OPTIONS = [
   { value: 'grok-3',      label: 'Grok 3' },
   { value: 'grok-3-fast', label: 'Grok 3 fast' },
 ];
-type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok';
+type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
 function modelOptionsFor(provider: AIProvider) {
   if (provider === 'openai')    return OPENAI_MODEL_OPTIONS;
   if (provider === 'anthropic') return ANTHROPIC_MODEL_OPTIONS;
   if (provider === 'grok')      return GROK_MODEL_OPTIONS;
+  // LM Studio's model is a free-text id pointing at whatever the user loaded
+  // locally, so there's no fixed tier list to switch between here — the model
+  // picker lives in Settings instead.
+  if (provider === 'lmstudio')  return [];
   return GEMINI_MODEL_OPTIONS;
+}
+
+/**
+ * LM Studio is a LOCAL server with no API key, so the "add a key in Settings"
+ * gating that every hosted provider needs must not fire for it — otherwise the
+ * chat refuses to run even though it's perfectly configured.
+ */
+async function providerIsConfigured(provider: AIProvider): Promise<boolean> {
+  if (provider === 'lmstudio') return true;
+  const secureKey = provider === 'openai' ? 'openai_key'
+    : provider === 'anthropic' ? 'anthropic_key'
+    : provider === 'grok' ? 'grok_key'
+    : 'gemini';
+  const key = await window.warroom?.secure.get(secureKey).catch(() => null);
+  return !!(key && (key as string).trim());
 }
 
 // ─── App navigation map (for the navigate_app agent tool) ─────────────────────
@@ -150,6 +169,22 @@ export function GrokIcon({ size = 13, color }: { size?: number; color?: string }
   );
 }
 
+export function LmStudioIcon({ size = 13, color }: { size?: number; color?: string }) {
+  // Not the LM Studio brand mark — a neutral "runs on this machine" glyph (a
+  // desktop/monitor outline), which is the meaningful distinction for the user
+  // and avoids shipping someone else's logo.
+  const c = color ?? 'currentColor';
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke={c}
+      strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+      shapeRendering="geometricPrecision" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2.25" y="3.5" width="15.5" height="10.5" rx="1.6" />
+      <path d="M7 17h6" />
+      <path d="M10 14v3" />
+    </svg>
+  );
+}
+
 // ─── Dynamic AI provider icon ─────────────────────────────────────────────────
 
 export function AIProviderIcon({ provider, size = 13, color }: {
@@ -165,6 +200,9 @@ export function AIProviderIcon({ provider, size = 13, color }: {
   }
   if (provider === 'grok') {
     return <span style={{ color: color ?? 'currentColor', display: 'inline-flex', alignItems: 'center' }}><GrokIcon size={size} color={color} /></span>;
+  }
+  if (provider === 'lmstudio') {
+    return <span style={{ color: color ?? 'currentColor', display: 'inline-flex', alignItems: 'center' }}><LmStudioIcon size={size} color={color} /></span>;
   }
   return <GeminiIcon size={size} color={color} />;
 }
@@ -1351,6 +1389,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
   const [grokModel, setGrokModel] = useState('grok-3-mini');
+  /** LM Studio's model is a free-text local id, shown read-only here — it's set in Settings. */
+  const [lmModel, setLmModel] = useState('');
   const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
   const [hasApiKey, setHasApiKey] = useState(true);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -1379,12 +1419,11 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       if (s?.openaiModel) setOpenaiModel(s.openaiModel);
       if (s?.anthropicModel) setAnthropicModel(s.anthropicModel);
       if (s?.grokModel) setGrokModel(s.grokModel);
+      if (s?.lmstudioModel) setLmModel(s.lmstudioModel);
       const provider: AIProvider = s?.apiProvider ?? 'gemini';
       setApiProvider(provider);
-      // Check if API key is set for current provider
-      const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
-      const key = await window.warroom?.secure.get(secureKey).catch(() => null);
-      setHasApiKey(!!(key && (key as string).trim()));
+      // Check the current provider is usable (LM Studio needs no key — see helper)
+      setHasApiKey(await providerIsConfigured(provider));
     }
     loadSettings();
 
@@ -1395,20 +1434,17 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       if (detail?.openaiModel !== undefined) setOpenaiModel(detail.openaiModel);
       if (detail?.anthropicModel !== undefined) setAnthropicModel(detail.anthropicModel);
       if (detail?.grokModel !== undefined) setGrokModel(detail.grokModel);
+      if (detail?.lmstudioModel !== undefined) setLmModel(detail.lmstudioModel);
       if (detail?.apiProvider !== undefined) {
         const newProvider: AIProvider = detail.apiProvider;
         setApiProvider(newProvider);
-        const secureKey = newProvider === 'openai' ? 'openai_key' : newProvider === 'anthropic' ? 'anthropic_key' : newProvider === 'grok' ? 'grok_key' : 'gemini';
-        const key = await window.warroom?.secure.get(secureKey).catch(() => null);
-        setHasApiKey(!!(key && (key as string).trim()));
+        setHasApiKey(await providerIsConfigured(newProvider));
       }
       // If an API key was saved, re-check hasApiKey
       if (detail?.apiKeySaved) {
         const s = await window.warroom?.storage.read('app_settings').catch(() => null) as any;
         const provider: AIProvider = s?.apiProvider ?? 'gemini';
-        const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
-        const key = await window.warroom?.secure.get(secureKey).catch(() => null);
-        setHasApiKey(!!(key && (key as string).trim()));
+        setHasApiKey(await providerIsConfigured(provider));
       }
     }
     window.addEventListener('warroom-settings-change', onSettingsChange as EventListener);
@@ -1450,7 +1486,11 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
     }
   }
 
-  const activeModel = apiProvider === 'gemini' ? geminiModel : apiProvider === 'openai' ? openaiModel : apiProvider === 'grok' ? grokModel : anthropicModel;
+  const activeModel = apiProvider === 'gemini' ? geminiModel
+    : apiProvider === 'openai' ? openaiModel
+    : apiProvider === 'grok' ? grokModel
+    : apiProvider === 'lmstudio' ? (lmModel || 'local model')
+    : anthropicModel;
   const modelOpts = modelOptionsFor(apiProvider);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -3188,6 +3228,19 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 className="absolute bottom-full left-0 mb-1 rounded-md shadow-lg z-50 py-1"
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', minWidth: 130 }}
               >
+                {/* LM Studio has no fixed tier list — its model is whatever the
+                    user loaded locally, so point at Settings instead of listing. */}
+                {modelOpts.length === 0 && (
+                  <button
+                    onClick={() => { setShowModelPicker(false); setView({ kind: 'settings', scrollTo: 'ai' }); }}
+                    className="w-full text-left px-3 py-1.5 text-xs whitespace-nowrap transition"
+                    style={{ background: 'transparent', color: 'var(--nav-inactive-color)' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    Change model in Settings →
+                  </button>
+                )}
                 {modelOpts.map((o) => (
                   <button
                     key={o.value}

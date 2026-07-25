@@ -377,6 +377,14 @@ declare global {
         impactLibraryReview: (params: { entry: ImpactLibraryDraft; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
           Promise<{ ok: true; review: ImpactLibraryReview } | { ok: false; error: string }>;
       };
+      lmstudio: {
+        /** Models LM Studio currently has available. `baseUrl` probes an unsaved URL. */
+        listModels: (baseUrl?: string) =>
+          Promise<{ ok: true; data: { baseUrl: string; models: string[] } } | { ok: false; error: string }>;
+        /** Round-trips a tiny prompt through the configured model to prove it actually answers. */
+        test: () =>
+          Promise<{ ok: true; data: { baseUrl: string; model: string; reply: string; ms: number } } | { ok: false; error: string }>;
+      };
       impactlib: {
         list: () => Promise<{ ok: true; data: { entries: ImpactLibraryEntry[]; uid: string } } | { ok: false; error: string }>;
         submit: (entry: Partial<ImpactLibraryEntry>) => Promise<{ ok: true; data: ImpactLibraryEntry } | { ok: false; error: string }>;

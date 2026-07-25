@@ -647,7 +647,7 @@ export default function TitleBar() {
   const canGoForward = navHistoryIndex < navHistory.length - 1;
   const isMac = window.warroom?.platform === 'darwin';
   const isWin = window.warroom?.platform === 'win32';
-  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'grok'>('gemini');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio'>('gemini');
 
   useEffect(() => {
     window.warroom?.storage.read('app_settings').then((s: any) => {

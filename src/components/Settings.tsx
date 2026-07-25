@@ -99,7 +99,7 @@ const ANTHROPIC_MODEL_OPTIONS = [
 // shown in the model picker so users understand what actually happens when they pick
 // Lite or Balanced.
 
-type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok';
+type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
 type ModelTier = 'lite' | 'balanced' | 'best';
 
 const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
@@ -107,7 +107,46 @@ const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: st
   openai:    { lite: 'GPT-4.1 nano',          balanced: 'GPT-4.1 mini',          best: 'GPT-4.1' },
   anthropic: { lite: 'Claude Haiku 3.5',      balanced: 'Claude Sonnet 3.5',     best: 'Claude Sonnet 4.6' },
   grok:      { lite: 'Grok 3 mini',           balanced: 'Grok 3 fast',           best: 'Grok 3' },
+  // Local models have no cost tiers — the one loaded model runs every task.
+  lmstudio:  { lite: 'your local model',      balanced: 'your local model',      best: 'your local model' },
 };
+
+// ─── LM Studio ────────────────────────────────────────────────────────────────
+// Runs entirely on the user's machine via LM Studio's OpenAI-compatible local
+// server — no API key, no per-token cost, works offline.
+
+const LMSTUDIO_DEFAULT_BASE_URL = 'http://localhost:1234/v1';
+const LMSTUDIO_DEFAULT_MODEL = 'google/gemma-4-12b';
+
+/**
+ * Preset model ids. These are convenience shortcuts, NOT a whitelist — the id
+ * LM Studio expects depends on how the user downloaded the model, so the free-text
+ * field and the "Loaded models" list below it are the authoritative way to pick
+ * one. Anything typed or fetched works just as well as a preset.
+ */
+const LMSTUDIO_MODEL_OPTIONS = [
+  {
+    value: 'google/gemma-4-12b-qat',
+    label: 'Gemma 4 12B QAT',
+    tooltip: 'Gemma 4 12B optimised with Quantization-Aware Training — near-12B quality at a much smaller memory footprint. Best pick if 12B is tight on your machine.',
+    default: false,
+  },
+  {
+    value: LMSTUDIO_DEFAULT_MODEL,
+    label: 'Gemma 4 12B',
+    tooltip: 'Gemma 4 12B unified reasoning model. The default — strongest of the three, but needs the most RAM/VRAM.',
+    default: true,
+  },
+  {
+    value: 'google/gemma-4-e4b',
+    label: 'Gemma 4 E4B',
+    tooltip: 'Gemma 4 effective-4B version. Fastest and lightest — use this if the 12B models are slow or run out of memory.',
+    default: false,
+  },
+] as const;
+
+/** Starting point for the options blob, shown as the placeholder in Settings. */
+const LMSTUDIO_OPTIONS_EXAMPLE = '{\n  "temperature": 0.1,\n  "max_tokens": 8192,\n  "top_p": 0.95,\n  "ttl": 3600\n}';
 
 function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
   if (provider === 'gemini') {
@@ -266,11 +305,34 @@ export default function Settings() {
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, []);
-  const [apiProvider, setApiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'grok'>('gemini');
+  const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
   const [apiKeySaved, setApiKeySaved] = useState(false);
   // saved values per provider — used to show Edit vs Save and to restore when switching tabs
   const [savedKeys, setSavedKeys] = useState<Record<string, string>>({ gemini: '', openai: '', anthropic: '', grok: '' });
+  // ── LM Studio (local server — no API key) ──────────────────────────────────
+  const [lmBaseUrl, setLmBaseUrl] = useState(LMSTUDIO_DEFAULT_BASE_URL);
+  const [lmModel, setLmModel] = useState(LMSTUDIO_DEFAULT_MODEL);
+  const [lmOptions, setLmOptions] = useState('');
+  const [lmTools, setLmTools] = useState(true);
+  const [lmSaved, setLmSaved] = useState(false);
+  /** Model ids fetched from the running server — null until the user asks for them. */
+  const [lmFound, setLmFound] = useState<string[] | null>(null);
+  const [lmBusy, setLmBusy] = useState<null | 'list' | 'test'>(null);
+  const [lmMsg, setLmMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  /** Invalid JSON in the options box is surfaced inline; main.ts also ignores it rather than failing a call. */
+  const lmOptionsError = (() => {
+    const raw = lmOptions.trim();
+    if (!raw) return null;
+    try {
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return 'Must be a JSON object, e.g. { "temperature": 0.1 }';
+      return null;
+    } catch (e: any) {
+      return `Not valid JSON — ${e?.message ?? 'check the syntax'}`;
+    }
+  })();
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
@@ -415,11 +477,16 @@ export default function Settings() {
       } else {
         setTokenSavingDefault((s as any)?.geminiModel === 'flash-lite');
       }
-      const keys = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
+      if ((s as any)?.lmstudioBaseUrl) setLmBaseUrl((s as any).lmstudioBaseUrl);
+      if ((s as any)?.lmstudioModel) setLmModel((s as any).lmstudioModel);
+      if (typeof (s as any)?.lmstudioOptions === 'string') setLmOptions((s as any).lmstudioOptions);
+      if ((s as any)?.lmstudioTools !== undefined) setLmTools((s as any).lmstudioTools !== false);
+      // No 'lmstudio' entry — it's a local server with no key to store.
+      const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
-      const provider: 'gemini' | 'openai' | 'anthropic' | 'grok' = (s as any)?.apiProvider ?? 'gemini';
+      const provider: AIProvider = (s as any)?.apiProvider ?? 'gemini';
       setApiProvider(provider);
-      setApiKey(keys[provider]);
+      setApiKey(keys[provider] ?? '');
       setLoaded(true);
     });
   }, []);
@@ -436,7 +503,7 @@ export default function Settings() {
     setTimeout(() => setEventSaved(false), 2000);
   }
 
-  function detectProvider(val: string): 'gemini' | 'openai' | 'anthropic' | 'grok' | null {
+  function detectProvider(val: string): AIProvider | null {
     if (val.startsWith('AIza')) return 'gemini';
     if (val.startsWith('sk-ant-')) return 'anthropic';
     if (val.startsWith('sk-')) return 'openai';
@@ -453,17 +520,77 @@ export default function Settings() {
     }
   }
 
-  async function switchProvider(p: 'gemini' | 'openai' | 'anthropic' | 'grok') {
+  async function switchProvider(p: AIProvider) {
     setApiProvider(p);
     setApiKey(savedKeys[p] ?? '');
+    setLmMsg(null);
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, apiProvider: p });
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiProvider: p } }));
   }
 
+  // ── LM Studio actions ──────────────────────────────────────────────────────
+
+  /** Persist the whole LM Studio block at once — URL, model, options, tool toggle. */
+  async function saveLmStudio(patch?: Partial<{ lmstudioModel: string }>) {
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    const next = {
+      ...s,
+      apiProvider: 'lmstudio',
+      lmstudioBaseUrl: lmBaseUrl.trim() || LMSTUDIO_DEFAULT_BASE_URL,
+      lmstudioModel: (patch?.lmstudioModel ?? lmModel).trim() || LMSTUDIO_DEFAULT_MODEL,
+      lmstudioOptions: lmOptions,
+      lmstudioTools: lmTools,
+    };
+    await window.warroom?.storage.write('app_settings', next);
+    setLmSaved(true);
+    setTimeout(() => setLmSaved(false), 2000);
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', {
+      detail: { apiKeySaved: true, lmstudioModel: next.lmstudioModel },
+    }));
+  }
+
+  /** Pick a model from the fetched list (or a preset) — selects and saves in one go. */
+  async function pickLmModel(id: string) {
+    setLmModel(id);
+    setLmMsg(null);
+    await saveLmStudio({ lmstudioModel: id });
+  }
+
+  async function fetchLmModels() {
+    setLmBusy('list');
+    setLmMsg(null);
+    try {
+      const res = await window.warroom?.lmstudio.listModels(lmBaseUrl.trim());
+      if (!res?.ok) { setLmFound(null); setLmMsg({ kind: 'err', text: res?.error ?? 'Could not reach LM Studio.' }); return; }
+      setLmFound(res.data.models);
+      setLmMsg(res.data.models.length
+        ? { kind: 'ok', text: `Found ${res.data.models.length} model${res.data.models.length === 1 ? '' : 's'} at ${res.data.baseUrl}.` }
+        : { kind: 'err', text: `Connected to ${res.data.baseUrl}, but no models are loaded — load one in LM Studio first.` });
+    } finally {
+      setLmBusy(null);
+    }
+  }
+
+  /** Saves first, so the round-trip tests exactly what the app will actually use. */
+  async function testLmStudio() {
+    setLmBusy('test');
+    setLmMsg(null);
+    try {
+      await saveLmStudio();
+      const res = await window.warroom?.lmstudio.test();
+      if (!res?.ok) { setLmMsg({ kind: 'err', text: res?.error ?? 'Test failed.' }); return; }
+      const { model, reply, ms } = res.data;
+      setLmMsg({ kind: 'ok', text: `Working — ${model} replied "${reply}" in ${(ms / 1000).toFixed(1)}s.` });
+    } finally {
+      setLmBusy(null);
+    }
+  }
+
   async function saveApiKey() {
     const val = apiKey.trim();
     if (!val) return;
+    if (apiProvider === 'lmstudio') return; // local server — no key to store
     const secureKey = apiProvider === 'gemini' ? 'gemini' : apiProvider === 'openai' ? 'openai_key' : apiProvider === 'grok' ? 'grok_key' : 'anthropic_key';
     await window.warroom.secure.set(secureKey, val);
     setSavedKeys((prev) => ({ ...prev, [apiProvider]: val }));
@@ -765,6 +892,7 @@ export default function Settings() {
             { value: 'openai',    label: 'OpenAI' },
             { value: 'anthropic', label: 'Anthropic' },
             { value: 'grok',      label: 'Grok' },
+            { value: 'lmstudio',  label: 'LM Studio' },
           ] as const).map((p) => (
             <button
               key={p.value}
@@ -779,8 +907,8 @@ export default function Settings() {
           ))}
         </div>
 
-        {/* Single unified input */}
-        {loaded && (
+        {/* Single unified input — hidden for LM Studio, which is a local server with no key */}
+        {loaded && apiProvider !== 'lmstudio' && (
           <div>
             <p className="text-xs mb-2 text-ink/50">
               {apiProvider === 'gemini' && 'Powers card extraction and block suggestions. Stored encrypted on device.'}
@@ -805,6 +933,175 @@ export default function Settings() {
                 {apiKeySaved ? 'Saved ✓' : apiKey === savedKeys[apiProvider] && savedKeys[apiProvider] ? 'Edit' : 'Save'}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* LM Studio — local server: base URL, model, load/inference options */}
+        {apiProvider === 'lmstudio' && loaded && (
+          <div className="space-y-4">
+            <p className="text-xs text-ink/50 leading-relaxed">
+              Runs models on <strong style={{ color: 'var(--ink)' }}>your own machine</strong> through
+              LM Studio's local server — no API key, no per-token cost, works offline. In LM Studio:
+              load a model, then open the <strong style={{ color: 'var(--ink)' }}>Developer</strong> tab
+              and click <strong style={{ color: 'var(--ink)' }}>Start Server</strong>.
+            </p>
+
+            {/* Base URL */}
+            <div>
+              <div className="label mb-1">Server URL</div>
+              <p className="text-xs mb-2 text-ink/50">
+                LM Studio's default is <code>http://localhost:1234</code>. Works with or without the
+                trailing <code>/v1</code>.
+              </p>
+              <input
+                className="input w-full font-mono text-xs"
+                placeholder={LMSTUDIO_DEFAULT_BASE_URL}
+                value={lmBaseUrl}
+                onChange={(e) => setLmBaseUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveLmStudio()}
+              />
+            </div>
+
+            {/* Model presets */}
+            <div>
+              <div className="label mb-1">Model</div>
+              <p className="text-xs mb-2 text-ink/50">
+                Gemma 4 12B is the default. Presets are shortcuts — the exact id depends on how you
+                downloaded the model, so use <strong style={{ color: 'var(--ink)' }}>Loaded models</strong> below
+                if a preset doesn't match.
+              </p>
+              <div className="space-y-1.5">
+                {LMSTUDIO_MODEL_OPTIONS.map((o) => (
+                  <div key={o.value} className="relative group">
+                    <button
+                      className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition border"
+                      style={{
+                        background: lmModel === o.value ? 'var(--item-selected-bg)' : 'var(--bg-input)',
+                        color: lmModel === o.value ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
+                        borderColor: lmModel === o.value ? 'transparent' : 'var(--border-med)',
+                      }}
+                      onClick={() => pickLmModel(o.value)}
+                    >
+                      <span>{o.label}</span>
+                      {o.default && <span className="text-[10px] ml-2 opacity-60">default</span>}
+                      <span className="block text-[11px] font-mono opacity-50 mt-0.5">{o.value}</span>
+                    </button>
+                    <div
+                      className="absolute left-0 right-0 top-full mt-1 z-20 px-3 py-2 rounded-lg text-[11px] leading-relaxed opacity-0 group-hover:opacity-100 pointer-events-none transition"
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-med)', color: 'var(--nav-inactive-color)' }}
+                    >
+                      {o.tooltip}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom model id */}
+            <div>
+              <div className="label mb-1">Or enter any model id</div>
+              <p className="text-xs mb-2 text-ink/50">
+                Anything LM Studio has loaded — not limited to the presets above.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1 font-mono text-xs"
+                  placeholder={LMSTUDIO_DEFAULT_MODEL}
+                  value={lmModel}
+                  onChange={(e) => setLmModel(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveLmStudio()}
+                />
+                <button className="btn text-xs" onClick={fetchLmModels} disabled={lmBusy !== null}>
+                  {lmBusy === 'list' ? 'Checking…' : 'Loaded models'}
+                </button>
+              </div>
+            </div>
+
+            {/* Models actually available on the running server */}
+            {lmFound && lmFound.length > 0 && (
+              <div>
+                <div className="label mb-1">Loaded models</div>
+                <p className="text-xs mb-2 text-ink/50">Reported by your server — click one to use it.</p>
+                <div className="space-y-1">
+                  {lmFound.map((id) => (
+                    <button
+                      key={id}
+                      className="w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition border"
+                      style={{
+                        background: lmModel === id ? 'var(--item-selected-bg)' : 'var(--bg-input)',
+                        color: lmModel === id ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
+                        borderColor: lmModel === id ? 'transparent' : 'var(--border-med)',
+                      }}
+                      onClick={() => pickLmModel(id)}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Request options */}
+            <div>
+              <div className="label mb-1">Model options <span className="opacity-50 font-normal">(optional)</span></div>
+              <p className="text-xs mb-2 text-ink/50 leading-relaxed">
+                JSON merged into every request, overriding Warroom's defaults — <code>temperature</code>,{' '}
+                <code>max_tokens</code>, <code>top_p</code>, <code>top_k</code>,{' '}
+                <code>repeat_penalty</code>, <code>seed</code>, and <code>ttl</code> (seconds before
+                LM Studio auto-unloads the model). Context length and GPU offload are set in LM Studio
+                itself when you load the model — they aren't settable over its API.
+              </p>
+              <textarea
+                className="input w-full font-mono text-xs"
+                rows={5}
+                spellCheck={false}
+                placeholder={LMSTUDIO_OPTIONS_EXAMPLE}
+                value={lmOptions}
+                onChange={(e) => setLmOptions(e.target.value)}
+              />
+              {lmOptionsError && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmOptionsError}</p>
+              )}
+            </div>
+
+            {/* Tool-calling toggle */}
+            <div>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={lmTools}
+                  onChange={(e) => setLmTools(e.target.checked)}
+                />
+                <span className="text-xs text-ink/70 leading-relaxed">
+                  Let the model call Warroom's tools (search cards, read flows, save tournaments…).
+                  Many local models — Gemma included — don't support tool calling; if yours doesn't,
+                  Warroom drops the tools automatically and the chat still answers normally. Turn this
+                  off to skip that entirely.
+                </span>
+              </label>
+            </div>
+
+            {/* Save + end-to-end test */}
+            <div className="flex items-center gap-2">
+              <button className="btn-primary" onClick={() => saveLmStudio()}>
+                {lmSaved ? 'Saved ✓' : 'Save'}
+              </button>
+              <button className="btn text-xs" onClick={testLmStudio} disabled={lmBusy !== null}>
+                {lmBusy === 'test' ? 'Testing…' : 'Test connection'}
+              </button>
+            </div>
+
+            {lmMsg && (
+              <p className="text-[11px] px-3 py-2 rounded-lg leading-relaxed"
+                style={{
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-side)',
+                  color: lmMsg.kind === 'ok' ? 'var(--ink)' : 'var(--danger, #e5484d)',
+                }}>
+                {lmMsg.text}
+              </p>
+            )}
           </div>
         )}
 
