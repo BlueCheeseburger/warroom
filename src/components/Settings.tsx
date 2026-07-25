@@ -284,6 +284,46 @@ export default function Settings() {
     setDocLightInDarkState(val);
     window.dispatchEvent(new CustomEvent('warroom-doc-light-changed', { detail: { docLightInDark: val } }));
   }
+  // How much of the doc's real Word page margins to keep, as a percentage —
+  // 0 = edge-to-edge text, 100 = the full margin the doc was authored with.
+  // Same renderer-only pattern as docLightInDark just above.
+  const [docMarginPct, setDocMarginPctState] = useState(() => {
+    const v = parseInt(localStorage.getItem('warroom-doc-margin-pct') ?? '50', 10);
+    return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 25;
+  });
+  function setDocMarginPct(val: number) {
+    localStorage.setItem('warroom-doc-margin-pct', String(val));
+    setDocMarginPctState(val);
+    window.dispatchEvent(new CustomEvent('warroom-doc-margin-changed', { detail: { pct: val } }));
+  }
+  // Reading-scale for the whole doc page (text, cards, everything) — a plain
+  // CSS zoom on the render container, same renderer-only pattern as above.
+  const [docZoomPct, setDocZoomPctState] = useState(() => {
+    const v = parseInt(localStorage.getItem('warroom-doc-zoom-pct') ?? '100', 10);
+    return Number.isFinite(v) ? Math.min(150, Math.max(80, v)) : 100;
+  });
+  function setDocZoomPct(val: number) {
+    localStorage.setItem('warroom-doc-zoom-pct', String(val));
+    setDocZoomPctState(val);
+    window.dispatchEvent(new CustomEvent('warroom-doc-zoom-changed', { detail: { pct: val } }));
+  }
+  // Show the outline every time a doc opens, instead of just the first one
+  // per session (the built-in default — see outlineAutoShownThisSession).
+  const [docAutoOutline, setDocAutoOutlineState] = useState(
+    () => localStorage.getItem('warroom-doc-auto-outline') === 'true'
+  );
+  function setDocAutoOutline(val: boolean) {
+    localStorage.setItem('warroom-doc-auto-outline', String(val));
+    setDocAutoOutlineState(val);
+  }
+  // Start every doc already in Focus mode (hide body text, show card structure).
+  const [docStartFocus, setDocStartFocusState] = useState(
+    () => localStorage.getItem('warroom-doc-start-focus') === 'true'
+  );
+  function setDocStartFocus(val: boolean) {
+    localStorage.setItem('warroom-doc-start-focus', String(val));
+    setDocStartFocusState(val);
+  }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
@@ -558,8 +598,19 @@ export default function Settings() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Speech docs & cases */}
+      <div className="glass-card rounded-sm p-4 space-y-4 mb-4">
+        <div>
+          <div className="label mb-1">Speech docs & cases</div>
+          <p className="text-xs mb-1 text-ink/50">
+            How the speech doc viewer reads and behaves when you open a case.
+          </p>
+        </div>
+
         {isDark && (
-          <div className="flex items-center justify-between pt-3 mt-1" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Keep speech docs light</div>
               <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
@@ -578,6 +629,82 @@ export default function Settings() {
             </button>
           </div>
         )}
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Speech doc margins</div>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+                How much of the doc's original left/right page margins to keep. Lower gives the text more width.
+              </p>
+            </div>
+            <span className="ml-4 shrink-0 text-xs tabular-nums font-medium" style={{ color: 'var(--nav-inactive-color)' }}>
+              {docMarginPct}%
+            </span>
+          </div>
+          <input
+            type="range" min={0} max={100} step={5} value={docMarginPct}
+            onChange={(e) => setDocMarginPct(parseInt(e.target.value, 10))}
+            className="w-full" style={{ accentColor: '#4285F4' }}
+          />
+        </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Speech doc text size</div>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+                Scales the whole doc page — text, cards, everything — for easier reading.
+              </p>
+            </div>
+            <span className="ml-4 shrink-0 text-xs tabular-nums font-medium" style={{ color: 'var(--nav-inactive-color)' }}>
+              {docZoomPct}%
+            </span>
+          </div>
+          <input
+            type="range" min={80} max={150} step={10} value={docZoomPct}
+            onChange={(e) => setDocZoomPct(parseInt(e.target.value, 10))}
+            className="w-full" style={{ accentColor: '#4285F4' }}
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Always open the outline</div>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              Show the outline drawer every time you open a doc, not just the first one each session.
+            </p>
+          </div>
+          <button
+            onClick={() => setDocAutoOutline(!docAutoOutline)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: docAutoOutline ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: docAutoOutline ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Start docs in Focus mode</div>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              Hide body text and show only card structure as soon as a doc opens.
+            </p>
+          </div>
+          <button
+            onClick={() => setDocStartFocus(!docStartFocus)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: docStartFocus ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: docStartFocus ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Event */}

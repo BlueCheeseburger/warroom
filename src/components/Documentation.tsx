@@ -206,7 +206,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/24/26
+          Last updated: 7/25/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1224,23 +1224,32 @@ export default function Documentation() {
             AI-tool pills.
           </P>
           <P>
-            <strong>Side-by-side compare (up to 3 panes).</strong> A slim <strong>+</strong> strip
-            on the right edge of the viewer opens a second and third doc pane alongside the main
-            one, each independently scrollable, searchable, and drag/drop or browse-loadable —
-            useful for reading a case against a block, or comparing two teams' 1ACs. The main pane
-            (pane 0) always tracks whatever the rest of the app opened (sidebar, Home, Cases grid);
-            the two extra panes are opened and closed from inside the viewer itself, via the{' '}
-            <Code>extraDocPanes</Code> array in <Code>appStore</Code>. Clicking into a pane focuses
-            it — keyboard shortcuts like <Code>⌘F</Code> apply only to the focused pane so three
-            open panes don't all react to the same keypress. Each extra pane has its own close (×)
-            button next to its filename.
+            <strong>Side-by-side compare (up to 3 panes).</strong> A <strong>compare-doc</strong>{' '}
+            button in the tool cluster (and on the idle drop-zone) opens a second and third doc
+            pane alongside the main one, each independently scrollable, searchable, and drag/drop
+            or browse-loadable — useful for reading a case against a block, or comparing two teams'
+            1ACs. The main pane (pane 0) always tracks whatever the rest of the app opened (sidebar,
+            Home, Cases grid); the two extra panes are opened and closed from inside the viewer
+            itself, via the <Code>extraDocPanes</Code> array in <Code>appStore</Code>. Clicking into
+            a pane focuses it — keyboard shortcuts like <Code>⌘F</Code> apply only to the focused
+            pane so three open panes don't all react to the same keypress. Each extra pane has its
+            own close (×) button next to its filename. Opening a second or third pane
+            auto-collapses the left sidebar (no room for it); it re-expands once you're back down
+            to one pane.
           </P>
           <P>
-            <strong>Outline.</strong> Heading navigation (pockets, hats, blocks, card tags) now
-            lives behind a slim pull-tab on the left edge of each pane instead of a permanent
-            sidebar-style panel — click the tab (or its chevron) to slide the outline out as an
-            overlay, click again to tuck it away. This keeps full pane width available for reading
-            when 2-3 docs are open side by side. It starts closed each time a doc loads.
+            <strong>Rename a doc.</strong> Double-click the doc's name in the toolbar to rename it
+            in place — for an OpenCaseList-imported case this renames the case; for a plain file it
+            renames the recents/sidebar entry. The file on disk is never touched.
+          </P>
+          <P>
+            <strong>Outline.</strong> Heading navigation (pockets, hats, blocks, card tags) lives
+            behind a slim pull-tab on the left edge of each pane instead of a permanent
+            sidebar-style panel — click the tab (or its chevron) to slide the outline open, which
+            pushes the doc over rather than covering it; click again (or the panel's own × ) to
+            tuck it away. It starts closed each time a doc loads unless{' '}
+            <strong>Always open the outline</strong> is on in Settings (see below), and otherwise
+            auto-opens once for the first doc opened per app session.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
@@ -1749,12 +1758,41 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
               </div>
               <div>
-                <span className="font-semibold text-ink">Keep speech docs light</span>
-                <span className="ml-2 text-ink/60">Dark mode only. On by default — the doc page itself stays light like paper while the rest of the app stays dark.</span>
+                <span className="font-semibold text-ink">Speech docs & cases</span>
+                <span className="ml-2 text-ink/60">Dedicated settings block for the doc viewer — see below.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Setup wizard</span>
                 <span className="ml-2 text-ink/60">Re-runs the onboarding flow.</span>
+              </div>
+            </div>
+          </Card>
+          <H3>Speech docs & cases</H3>
+          <P>
+            A dedicated settings block for the speech doc viewer, all renderer-only (
+            <Code>localStorage</Code>, no IPC) and applied live where possible:
+          </P>
+          <Card>
+            <div className="space-y-2.5 text-sm">
+              <div>
+                <span className="font-semibold text-ink">Keep speech docs light</span>
+                <span className="ml-2 text-ink/60">Dark mode only. On by default — the doc page itself stays light like paper while the rest of the app stays dark.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Speech doc margins</span>
+                <span className="ml-2 text-ink/60">0–100% (default 50%) of the doc's real Word page margins to keep. Lower gives the text more width. Rescales an already-open doc live.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Speech doc text size</span>
+                <span className="ml-2 text-ink/60">80–150% (default 100%) zoom on the whole rendered page — text, cards, everything. Applies live.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Always open the outline</span>
+                <span className="ml-2 text-ink/60">Off by default (outline auto-opens only for the first doc each session). On shows it for every doc opened.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Start docs in Focus mode</span>
+                <span className="ml-2 text-ink/60">Off by default. On hides body text and shows only card structure as soon as any doc opens.</span>
               </div>
             </div>
           </Card>

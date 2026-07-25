@@ -374,9 +374,9 @@ Opens .docx files in-app.
 - **Import a whole folder**: click "or import a whole folder of speech docs" under the drop zone and pick a folder from Finder — every .docx inside it (subfolders included) gets imported at once, filed into a new Cases folder named after the one you picked.
 - Recent docs listed in Speech Doc section
 - Attach to AI conversations or team chat messages
-- **Document title**: the name of the open case/speech doc is always shown in the toolbar (between the tool cluster and the Credibility button), so you can tell at a glance which doc you're in.
-- **Compare docs side by side**: a thin **+** strip at the right edge of the viewer opens a second and third doc pane next to your main one — drop or browse a file into it just like the main pane. Each pane scrolls, searches, and outlines independently; click into a pane to focus it before using ⌘F or the other pane-specific tools, so you're not searching all three at once. Each extra pane has its own **×** to close it.
-- **Outline**: a slim pull-tab on the left edge of each pane — click it (or its arrow) to slide out a panel listing every heading in the doc — pockets, hats, blocks, and card tags — indented by level, with the same expand/collapse arrows as Word's own outline view. It starts tucked away each time you open a doc; click the tab again to close it. See the "Outline" bullet below for navigation details (jump-to-entry, layers, warnings) — they all still apply, just reached via the pull-tab instead of a toolbar button or permanent side panel.
+- **Document title**: the name of the open case/speech doc is always shown in the toolbar (between the tool cluster and the Credibility button), so you can tell at a glance which doc you're in. Double-click it to rename it in place — for an OpenCaseList case this renames the case, for a plain file it renames its sidebar entry. The file on disk is never touched.
+- **Compare docs side by side**: a **compare-doc** button in the tool cluster (also shown on the empty drop-zone) opens a second and third doc pane next to your main one — drop or browse a file into it just like the main pane. Each pane scrolls, searches, and outlines independently; click into a pane to focus it before using ⌘F or the other pane-specific tools, so you're not searching all three at once. Each extra pane has its own **×** to close it. Opening a second or third pane automatically collapses the left sidebar to make room; it comes back once you're down to one pane again.
+- **Outline**: a slim pull-tab on the left edge of each pane — click it (or its arrow) to open a panel listing every heading in the doc — pockets, hats, blocks, and card tags — indented by level, with the same expand/collapse arrows as Word's own outline view. Opening it pushes your doc over rather than covering it; click the tab (or the panel's own × ) to tuck it away. It starts closed each time you open a doc, unless you've turned on **Always open the outline** in Settings — see the "Outline" bullet below for navigation details (jump-to-entry, layers, warnings), they all still apply, just reached via the pull-tab instead of a toolbar button or permanent side panel.
 - **Fonts**: docs written in Calibri (the debate default) render in Calibri — or a clean sans-serif stand-in on machines without it — instead of falling back to a serif font. This holds for the whole document: if a doc used to show sans-serif headings but serif body text, it now renders consistently throughout. Docs that genuinely use Times New Roman still render in Times New Roman.
 
 ### Cases imported from OpenCaseList
@@ -526,8 +526,18 @@ Gear icon at bottom of sidebar.
 | Google Drive | OAuth Client ID + Client Secret |
 | Sharing default | "Can edit" or "Can view" for shared attachments |
 | Flow colors | Default Aff/Pro and Neg/Con column colors for all flows |
-| Keep speech docs light | Dark mode only, on by default. The doc page itself stays light like paper while the rest of the app stays dark. |
 | Setup wizard | Re-run onboarding |
+
+### Speech docs & cases
+Its own settings block, right below Appearance:
+
+| Setting | Description |
+|---------|-------------|
+| Keep speech docs light | Dark mode only, on by default. The doc page itself stays light like paper while the rest of the app stays dark. |
+| Speech doc margins | 0–100% (default 50%) of the doc's real page margins to keep, left/right only. Lower gives the text more width. Rescales an already-open doc live as you drag. |
+| Speech doc text size | 80–150% (default 100%) zoom on the whole doc page — text, cards, everything together. Applies live. |
+| Always open the outline | Off by default (outline only auto-opens for the first doc each session). On shows it for every doc you open. |
+| Start docs in Focus mode | Off by default. On hides body text and shows only card structure as soon as any doc opens. |
 
 ---
 

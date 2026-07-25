@@ -717,7 +717,7 @@ html.dark .badge-neg {
 .docx-viewer-wrap {
   min-height: 100%;
   background: #e8e8ea;
-  padding: 24px 32px;
+  padding: 8px 6px;
 }
 html.dark .docx-viewer-wrap:not(.docx-force-light) {
   background: #2a2a2c;

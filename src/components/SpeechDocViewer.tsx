@@ -2479,6 +2479,53 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
     window.addEventListener('warroom-doc-light-changed', onChange);
     return () => window.removeEventListener('warroom-doc-light-changed', onChange);
   }, []);
+  // Settings → "Speech doc margins": how much of the doc's real Word page
+  // margins to keep (0 = edge-to-edge, 100 = full original margin). Default
+  // 50 — cut noticeably, but not stripped bare, out of the box.
+  const [docMarginPct, setDocMarginPct] = useState(() => {
+    const v = parseInt(localStorage.getItem('warroom-doc-margin-pct') ?? '50', 10);
+    return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 50;
+  });
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail?.pct;
+      if (typeof v === 'number') setDocMarginPct(v);
+    };
+    window.addEventListener('warroom-doc-margin-changed', onChange);
+    return () => window.removeEventListener('warroom-doc-margin-changed', onChange);
+  }, []);
+  // Re-scale an already-open doc's margins live when the setting changes,
+  // without needing to reopen it. Reads from the data-orig-p{l,r} attributes
+  // stamped at render time (see applyRender) so repeated changes always scale
+  // from the doc's true authored margin, never from an already-shrunk value.
+  useEffect(() => {
+    const cont = containerRef.current;
+    if (!cont) return;
+    for (const page of Array.from(cont.children) as HTMLElement[]) {
+      const pl = parseFloat(page.dataset.origPl ?? '');
+      const pr = parseFloat(page.dataset.origPr ?? '');
+      if (Number.isFinite(pl)) page.style.paddingLeft = `${pl * (docMarginPct / 100)}px`;
+      if (Number.isFinite(pr)) page.style.paddingRight = `${pr * (docMarginPct / 100)}px`;
+    }
+  }, [docMarginPct]);
+  // Settings → "Speech doc text size": a plain CSS zoom on the render
+  // container, so it scales text, cards and everything else together —
+  // safe to reapply any time since it isn't destructive like margin padding.
+  const [docZoomPct, setDocZoomPct] = useState(() => {
+    const v = parseInt(localStorage.getItem('warroom-doc-zoom-pct') ?? '100', 10);
+    return Number.isFinite(v) ? Math.min(150, Math.max(80, v)) : 100;
+  });
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail?.pct;
+      if (typeof v === 'number') setDocZoomPct(v);
+    };
+    window.addEventListener('warroom-doc-zoom-changed', onChange);
+    return () => window.removeEventListener('warroom-doc-zoom-changed', onChange);
+  }, []);
+  useEffect(() => {
+    if (containerRef.current) (containerRef.current.style as any).zoom = docZoomPct / 100;
+  }, [docZoomPct]);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   // Find bar
   const [findOpen, setFindOpen] = useState(false);
@@ -3152,6 +3199,9 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
   // Reset per-document transient state (find / auto-scroll / credibility).
   function resetDocState() {
     stopAuto();
+    // Settings → "Start docs in Focus mode" — read live so a mid-session
+    // change takes effect on the next doc opened, not just after a reload.
+    if (localStorage.getItem('warroom-doc-start-focus') === 'true') setFocusActive(true);
     setFindOpen(false);
     setFindQuery('');
     findRangesRef.current = [];
@@ -3212,6 +3262,21 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
         // colours were computed once at render and would have stranded an open doc
         // in the old theme. Page geometry is docx-preview's, from the real Word
         // page margins. A centred page-card look would be a deliberate CSS change.
+
+        // Debate docs are read on screen, not printed — the real Word page's
+        // left/right margins (often a full inch) just waste width, especially
+        // with 2-3 panes open side by side. Stamp the true authored margin
+        // onto each page (data-orig-p{l,r}) before scaling it down per the
+        // Settings → "Speech doc margins" percentage, so later changes to
+        // that setting (see the docMarginPct effect above) can always scale
+        // from the real value instead of an already-shrunk one. Top/bottom
+        // untouched.
+        for (const page of Array.from(containerRef.current.children) as HTMLElement[]) {
+          const pl = parseFloat(page.style.paddingLeft);
+          const pr = parseFloat(page.style.paddingRight);
+          if (Number.isFinite(pl)) { page.dataset.origPl = String(pl); page.style.paddingLeft = `${pl * (docMarginPct / 100)}px`; }
+          if (Number.isFinite(pr)) { page.dataset.origPr = String(pr); page.style.paddingRight = `${pr * (docMarginPct / 100)}px`; }
+        }
         const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
 
@@ -3264,9 +3329,11 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
         setCredCards(builtCards);
         if (filePath) updateRecentCardCount(filePath, builtCards.length);
 
-        // Auto-show the outline only on the FIRST document opened per app session.
-        // After that, leave it in whatever state the user last set.
-        if (!outlineAutoShownThisSession) {
+        // Auto-show the outline only on the FIRST document opened per app session
+        // — unless Settings → "Always open the outline" is on, in which case
+        // every doc gets it. Read live (not cached) so a mid-session Settings
+        // change takes effect on the very next doc opened.
+        if (localStorage.getItem('warroom-doc-auto-outline') === 'true' || !outlineAutoShownThisSession) {
           setOutlineOpen(built.length > 0);
           outlineAutoShownThisSession = true;
         }
@@ -3937,21 +4004,19 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
           from visually spilling into a neighboring pane when this pane is
           narrower than the panel's preferred width. */}
       <div className="flex-1 flex min-h-0 relative overflow-hidden">
-        {step === 'viewing' && (
+        {step === 'viewing' && !outlineOpen && (
           <OutlinePullTab active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
         )}
         {outlineOpen && step === 'viewing' && (
-          <div className="absolute z-20 top-0 bottom-0 left-0" style={{ boxShadow: 'var(--shadow-elevated)' }}>
-            <OutlinePanel
-              items={outline}
-              activeId={activeHeadingId}
-              onPick={scrollToHeading}
-              onClose={() => setOutlineOpen(false)}
-              onStep={goToHeading}
-              dismissed={dismissedWarnings}
-              onDismiss={dismissWarning}
-            />
-          </div>
+          <OutlinePanel
+            items={outline}
+            activeId={activeHeadingId}
+            onPick={scrollToHeading}
+            onClose={() => setOutlineOpen(false)}
+            onStep={goToHeading}
+            dismissed={dismissedWarnings}
+            onDismiss={dismissWarning}
+          />
         )}
         <div
           ref={scrollWrapRef}
