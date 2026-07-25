@@ -1247,9 +1247,9 @@ export default function Documentation() {
             behind a slim pull-tab on the left edge of each pane instead of a permanent
             sidebar-style panel — click the tab (or its chevron) to slide the outline open, which
             pushes the doc over rather than covering it; click again (or the panel's own × ) to
-            tuck it away. It starts closed each time a doc loads unless{' '}
-            <strong>Always open the outline</strong> is on in Settings (see below), and otherwise
-            auto-opens once for the first doc opened per app session.
+            tuck it away. It starts closed every time a doc loads unless{' '}
+            <strong>Always open the outline</strong> is on in Settings (see below), in which case
+            it opens for every doc.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
@@ -1788,7 +1788,7 @@ export default function Documentation() {
               </div>
               <div>
                 <span className="font-semibold text-ink">Always open the outline</span>
-                <span className="ml-2 text-ink/60">Off by default (outline auto-opens only for the first doc each session). On shows it for every doc opened.</span>
+                <span className="ml-2 text-ink/60">Off by default (never auto-opens). On shows it for every doc opened.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Start docs in Focus mode</span>

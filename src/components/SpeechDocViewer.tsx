@@ -11,10 +11,6 @@ import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
-// Reset to false on every app launch — outline auto-shows only on the first
-// document opened per session, then stays in whatever state the user leaves it.
-let outlineAutoShownThisSession = false;
-
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 
 // Shared with the injected #wr-docx-fonts CSS block AND forceHeadingFont below —
@@ -3329,14 +3325,10 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
         setCredCards(builtCards);
         if (filePath) updateRecentCardCount(filePath, builtCards.length);
 
-        // Auto-show the outline only on the FIRST document opened per app session
-        // — unless Settings → "Always open the outline" is on, in which case
-        // every doc gets it. Read live (not cached) so a mid-session Settings
-        // change takes effect on the very next doc opened.
-        if (localStorage.getItem('warroom-doc-auto-outline') === 'true' || !outlineAutoShownThisSession) {
-          setOutlineOpen(built.length > 0);
-          outlineAutoShownThisSession = true;
-        }
+        // Settings → "Always open the outline": on shows it for every doc
+        // opened, off leaves it closed every time. Read live (not cached) so
+        // a mid-session Settings change takes effect on the next doc opened.
+        setOutlineOpen(localStorage.getItem('warroom-doc-auto-outline') === 'true' && built.length > 0);
 
         // Reading-time word count for the freshly loaded doc — only words that
         // are actually read aloud (headings, tags, highlighted/underlined text,

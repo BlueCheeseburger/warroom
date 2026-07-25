@@ -307,8 +307,8 @@ export default function Settings() {
     setDocZoomPctState(val);
     window.dispatchEvent(new CustomEvent('warroom-doc-zoom-changed', { detail: { pct: val } }));
   }
-  // Show the outline every time a doc opens, instead of just the first one
-  // per session (the built-in default — see outlineAutoShownThisSession).
+  // On: every doc opens with the outline drawer showing. Off: it never
+  // auto-opens (the user can still open it manually via the pull-tab).
   const [docAutoOutline, setDocAutoOutlineState] = useState(
     () => localStorage.getItem('warroom-doc-auto-outline') === 'true'
   );
@@ -672,7 +672,7 @@ export default function Settings() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Always open the outline</div>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-              Show the outline drawer every time you open a doc, not just the first one each session.
+              On shows the outline drawer every time you open a doc. Off, it never opens on its own.
             </p>
           </div>
           <button

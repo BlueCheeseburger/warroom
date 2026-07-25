@@ -536,7 +536,7 @@ Its own settings block, right below Appearance:
 | Keep speech docs light | Dark mode only, on by default. The doc page itself stays light like paper while the rest of the app stays dark. |
 | Speech doc margins | 0–100% (default 50%) of the doc's real page margins to keep, left/right only. Lower gives the text more width. Rescales an already-open doc live as you drag. |
 | Speech doc text size | 80–150% (default 100%) zoom on the whole doc page — text, cards, everything together. Applies live. |
-| Always open the outline | Off by default (outline only auto-opens for the first doc each session). On shows it for every doc you open. |
+| Always open the outline | Off by default (never auto-opens). On shows it for every doc you open. |
 | Start docs in Focus mode | Off by default. On hides body text and shows only card structure as soon as any doc opens. |
 
 ---
