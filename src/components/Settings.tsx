@@ -442,6 +442,13 @@ export default function Settings() {
     setFlowPrefsState({ ...FLOW_PREFS_DEFAULTS });
     writeFlowPrefs({ ...FLOW_PREFS_DEFAULTS });
   };
+  // One button at the bottom of the unified Flow card resets both halves —
+  // colors and prefs are still two separate stores under the hood (see the
+  // comment on the card itself), but the user just sees "Flow settings".
+  const resetAllFlowSettings = () => {
+    resetFlowColors();
+    resetFlowPrefs();
+  };
 
   // Auto Flow tag style (display pref — plain localStorage, read live by AutoFlow's write step)
   const [autoFlowStyle, setAutoFlowStyleState] = useState<AutoFlowTagStyle>(() => readAutoFlowTagStyle());
@@ -1427,15 +1434,26 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Flow colors */}
-      <div id="settings-flow-colors" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      {/* Flow — one unified card: colors, new-flow defaults, and live editor
+          behavior. Was two separate cards (Flow colors / Flow); merged since
+          they're all "how flows work by default" to the user, even though the
+          two halves persist to different storage (colors: two standalone
+          localStorage keys read directly by FlowView for backward compat;
+          everything else: one FlowPrefs blob via lib/flowPrefs.ts). */}
+      <div id="settings-flow" className="glass-card rounded-sm p-4 space-y-4 mb-4">
         <div>
-          <div className="label mb-1">Flow colors</div>
+          <div className="label mb-1">Flow</div>
           <p className="text-xs mb-3 text-ink/50">
-            Default column colors for new and existing flow sheets. Aff/Pro columns use the first
-            color; Neg/Con columns use the second.
+            Defaults for a brand-new flow, and live behavior in the flow editor. None of this
+            touches a flow you've already opened — those keep whatever they were last saved at.
           </p>
-          <div className="space-y-2">
+
+          {/* ── Colors ── */}
+          <div id="settings-flow-colors" className="text-xs text-ink/70 font-medium mb-1.5">Column colors</div>
+          <p className="text-[11px] text-ink/40 mb-2">
+            Aff/Pro columns use the first color; Neg/Con columns use the second.
+          </p>
+          <div className="space-y-2 mb-4">
             <div className="flex items-center gap-2">
               <span
                 className="shrink-0 w-4 h-4 rounded"
@@ -1463,107 +1481,156 @@ export default function Settings() {
               />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={resetFlowColors}
-            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-1"
-          >
-            Reset to defaults
-          </button>
-        </div>
-      </div>
 
-      {/* Flow */}
-      <div id="settings-flow" className="glass-card rounded-sm p-4 space-y-4 mb-4">
-        <div>
-          <div className="label mb-1">Flow</div>
-          <p className="text-xs mb-3 text-ink/50">
-            Defaults for a brand-new flow, and live behavior in the flow editor. None of this
-            touches a flow you've already opened — those keep whatever they were last saved at.
-          </p>
+          {/* ── New-flow defaults ── */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)' }} className="pt-4 mb-4">
+            <div className="text-xs text-ink/70 font-medium mb-1.5">New-flow defaults</div>
 
-          <div className="space-y-1.5 mb-4">
-            <div className="text-xs text-ink/70 font-medium">Default layout for a new policy flow</div>
-            <p className="text-[11px] text-ink/40">
-              Only affects the plain <strong>+</strong> new-flow button. Auto Flow always guesses its
-              own layout from the doc, per flow.
-            </p>
-            <div className="flex gap-2 mt-1.5">
-              <button
-                type="button"
-                title="Default to Stock issues"
-                className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'stock-issues' ? 'btn-primary' : ''}`}
-                onClick={() => setFlowPref('defaultVariant', 'stock-issues')}
-              >
-                Stock issues
-              </button>
-              <button
-                type="button"
-                title="Default to Advantage"
-                className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'advantage' ? 'btn-primary' : ''}`}
-                onClick={() => setFlowPref('defaultVariant', 'advantage')}
-              >
-                Advantage
-              </button>
+            <div className="space-y-1.5 mb-4">
+              <div className="text-xs text-ink/70">Default layout for a new policy flow</div>
+              <p className="text-[11px] text-ink/40">
+                Only affects the plain <strong>+</strong> new-flow button. Auto Flow always guesses its
+                own layout from the doc, per flow.
+              </p>
+              <div className="flex gap-2 mt-1.5">
+                <button
+                  type="button"
+                  title="Default to Stock issues"
+                  className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'stock-issues' ? 'btn-primary' : ''}`}
+                  onClick={() => setFlowPref('defaultVariant', 'stock-issues')}
+                >
+                  Stock issues
+                </button>
+                <button
+                  type="button"
+                  title="Default to Advantage"
+                  className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'advantage' ? 'btn-primary' : ''}`}
+                  onClick={() => setFlowPref('defaultVariant', 'advantage')}
+                >
+                  Advantage
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mb-4">
+              <div className="text-xs text-ink/70">Default speech order for a new PF flow</div>
+              <p className="text-[11px] text-ink/40">
+                Same scope as above — the plain <strong>+</strong> button only.
+              </p>
+              <div className="flex gap-2 mt-1.5">
+                <button
+                  type="button"
+                  title="Default to Pro first"
+                  className={`btn text-xs flex-1 ${flowPrefs.defaultPfOrder === 'pro-first' ? 'btn-primary' : ''}`}
+                  onClick={() => setFlowPref('defaultPfOrder', 'pro-first')}
+                >
+                  Pro first
+                </button>
+                <button
+                  type="button"
+                  title="Default to Con first"
+                  className={`btn text-xs flex-1 ${flowPrefs.defaultPfOrder === 'con-first' ? 'btn-primary' : ''}`}
+                  onClick={() => setFlowPref('defaultPfOrder', 'con-first')}
+                >
+                  Con first
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mb-4">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-ink/70">Default zoom</div>
+                <span className="text-xs text-ink/50 tabular-nums">{flowPrefs.defaultZoom}%</span>
+              </div>
+              <input
+                type="range"
+                min={50}
+                max={150}
+                step={5}
+                value={flowPrefs.defaultZoom}
+                onChange={(e) => setFlowPref('defaultZoom', Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-ink/70">Default text size</div>
+                <span className="text-xs text-ink/50 tabular-nums">{flowPrefs.defaultFontSize}px</span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={20}
+                step={1}
+                value={flowPrefs.defaultFontSize}
+                onChange={(e) => setFlowPref('defaultFontSize', Number(e.target.value))}
+                className="w-full"
+              />
             </div>
           </div>
 
-          <div className="space-y-1.5 mb-4">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-ink/70 font-medium">Default zoom for a new flow</div>
-              <span className="text-xs text-ink/50 tabular-nums">{flowPrefs.defaultZoom}%</span>
-            </div>
-            <input
-              type="range"
-              min={50}
-              max={150}
-              step={5}
-              value={flowPrefs.defaultZoom}
-              onChange={(e) => setFlowPref('defaultZoom', Number(e.target.value))}
-              className="w-full"
-            />
+          {/* ── Editor behavior ── */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)' }} className="pt-4">
+            <div className="text-xs text-ink/70 font-medium mb-2">Editor behavior</div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer mb-3">
+              <input
+                type="checkbox"
+                checked={flowPrefs.autoFitColumns}
+                onChange={(e) => setFlowPref('autoFitColumns', e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <div className="text-xs font-medium text-ink/80">Auto-fit columns to window</div>
+                <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
+                  Columns continuously stretch or shrink to fill the window — collapsing the sidebar,
+                  resizing, or opening the AI chat panel all re-fit automatically. Turn this off if you'd
+                  rather set zoom yourself and have it stay put.
+                </div>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2.5 cursor-pointer mb-3">
+              <input
+                type="checkbox"
+                checked={flowPrefs.confirmSheetDelete}
+                onChange={(e) => setFlowPref('confirmSheetDelete', e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <div className="text-xs font-medium text-ink/80">Confirm before deleting a sheet</div>
+                <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
+                  Off by default since deleting a sheet is already undoable (⌘Z). Turn this on for a
+                  belt-and-suspenders "are you sure?" before a tab (and everything on it) goes away.
+                </div>
+              </span>
+            </label>
+
+            <label className="ai-glow-ring flex items-start gap-2.5 rounded-sm border border-line p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={flowPrefs.aiTabSummaries}
+                onChange={(e) => setFlowPref('aiTabSummaries', e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <div className="text-xs font-medium text-ink/80">AI tab summaries on hover</div>
+                <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
+                  Hovering a flow tab asks Warroom AI for a one-sentence summary of the argument on that
+                  sheet, the first time you hover it after its content changes — then it's cached, so it
+                  doesn't cost another call until something on that sheet actually changes. Off means tabs
+                  only ever show the free local tag preview; Warroom AI is never called from a hover.
+                </div>
+              </span>
+            </label>
           </div>
-
-          <label className="flex items-start gap-2.5 cursor-pointer mb-3">
-            <input
-              type="checkbox"
-              checked={flowPrefs.autoFitColumns}
-              onChange={(e) => setFlowPref('autoFitColumns', e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              <div className="text-xs font-medium text-ink/80">Auto-fit columns to window</div>
-              <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
-                Columns continuously stretch or shrink to fill the window — collapsing the sidebar,
-                resizing, or opening the AI chat panel all re-fit automatically. Turn this off if you'd
-                rather set zoom yourself and have it stay put.
-              </div>
-            </span>
-          </label>
-
-          <label className="ai-glow-ring flex items-start gap-2.5 rounded-sm border border-line p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={flowPrefs.aiTabSummaries}
-              onChange={(e) => setFlowPref('aiTabSummaries', e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              <div className="text-xs font-medium text-ink/80">AI tab summaries on hover</div>
-              <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
-                Hovering a flow tab asks Warroom AI for a one-sentence summary of the argument on that
-                sheet, the first time you hover it after its content changes — then it's cached, so it
-                doesn't cost another call until something on that sheet actually changes. Off means tabs
-                only ever show the free local tag preview; Warroom AI is never called from a hover.
-              </div>
-            </span>
-          </label>
 
           <button
             type="button"
-            title="Reset flow defaults"
-            onClick={resetFlowPrefs}
-            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
+            title="Reset all Flow settings"
+            onClick={resetAllFlowSettings}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-3"
           >
             Reset to defaults
           </button>

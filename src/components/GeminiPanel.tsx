@@ -2496,7 +2496,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 // Same default-variant preference FlowView itself uses for a
                 // never-opened flow (Settings → Flow) — so the agent's fallback
                 // layout matches whatever a human opening it would have seen.
-                data = makeDefaultData(ev, readFlowPrefs().defaultVariant, 'pro-first');
+                const flowPrefs = readFlowPrefs();
+                data = makeDefaultData(ev, flowPrefs.defaultVariant, flowPrefs.defaultPfOrder);
               }
               const cols = flowColumns(data);
 

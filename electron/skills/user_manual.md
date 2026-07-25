@@ -302,7 +302,7 @@ Matches are **highlighted in amber** so you don't have to hunt through a cell to
 
 **Recolor a column.** Click the **▾** menu on any column header (it's always visible) and pick a color from the palette to recolor that column. Choose **Reset to default** to restore the side's standard color.
 
-**Set default flow colors.** To change the colors used for new flows, go to **Settings → Flow colors** and set the default Aff/Pro and Neg/Con column colors. These apply to all your flows.
+**Set default flow colors.** To change the colors used for new flows, go to **Settings → Flow** and set the default Aff/Pro and Neg/Con column colors under Column colors. These apply to all your flows.
 
 **Flow together in realtime (live collaboration).** You and a teammate can type into the *same* flow at the same time and watch each other's edits appear letter-by-letter — perfect for splitting a round (one person flows aff, the other neg) or for a coach watching live.
 
@@ -331,7 +331,7 @@ Warroom AI comes back with an actual result screen, not a paragraph to read thro
 - **Live Clashes** — each contested argument as a card, both sides' positions shown side-by-side with a winner badge, just like an Impact Calc clash card.
 - **For Your Next Speech** — a short numbered list of concrete things to say, referencing your actual arguments, not generic advice.
 
-The banner and clash cards use your real Aff/Neg (or Pro/Con) column colors — the same ones set in **Settings → Flow colors** — so it looks like it belongs to your flow, not a generic report.
+The banner and clash cards use your real Aff/Neg (or Pro/Con) column colors — the same ones set in **Settings → Flow** (Column colors) — so it looks like it belongs to your flow, not a generic report.
 
 If something essential is unclear — most often, which side you're on — Warroom AI asks **one quick question** with a few suggested answers (plus a free-text "Other") before finishing the analysis, instead of guessing.
 
@@ -563,19 +563,37 @@ Gear icon at bottom of sidebar.
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |
 | Google Drive | OAuth Client ID + Client Secret |
 | Sharing default | "Can edit" or "Can view" for shared attachments |
-| Flow colors | Default Aff/Pro and Neg/Con column colors for all flows |
-| Flow | Defaults for a brand-new flow, plus two live editor behaviors — see below |
+| Flow | Column colors, new-flow defaults, and live editor behavior — one block, see below |
 | Setup wizard | Re-run onboarding |
 
 ### Flow
-Its own settings block, right below Flow colors. None of it touches a flow you've already opened — those keep whatever they were last saved at.
+One settings block covering everything about how flows work by default. None of it touches a flow you've already opened — those keep whatever they were last saved at.
+
+**Column colors**
 
 | Setting | Description |
 |---------|-------------|
-| Default layout for a new policy flow | Stock issues or Advantage. Only affects the plain **+** new-flow button — Auto Flow always guesses its own layout from the doc. |
-| Default zoom for a new flow | 50–150% (default 100%), the zoom a brand-new flow opens at. |
+| Aff/Pro | Default color for Aff (policy) / Pro (PF) columns on all flows |
+| Neg/Con | Default color for Neg (policy) / Con (PF) columns on all flows |
+
+**New-flow defaults** (only affect the plain **+** new-flow button — Auto Flow always guesses its own layout, order, etc. from the doc)
+
+| Setting | Description |
+|---------|-------------|
+| Default layout for a new policy flow | Stock issues or Advantage |
+| Default speech order for a new PF flow | Pro first or Con first |
+| Default zoom | 50–150% (default 100%), the zoom a brand-new flow opens at |
+| Default text size | 10–20px (default 13px), the cell text size a brand-new flow opens at |
+
+**Editor behavior**
+
+| Setting | Description |
+|---------|-------------|
 | Auto-fit columns to window | On by default. Columns continuously stretch/shrink to fill the window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off if you'd rather set zoom yourself and have it stay put. |
+| Confirm before deleting a sheet | Off by default, since deleting a sheet is already undoable (⌘Z) with its own "Deleted 'X'" undo toast. Turn it on for a belt-and-suspenders confirmation before a tab (and everything on it) goes away. |
 | AI tab summaries on hover | On by default. Hovering a tab asks Warroom AI for a one-sentence summary of the argument on that sheet — cached after the first time, so it doesn't cost another call until the sheet's content changes. Turn it off and tabs only ever show the free local tag preview; Warroom AI is never called from a hover. |
+
+One **Reset to defaults** at the bottom resets all of it — colors included.
 
 ### Speech docs & cases
 Its own settings block, right below Appearance:

@@ -996,7 +996,7 @@ export default function Documentation() {
             <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}
             menu with a color palette to recolor that column; "Reset to default" restores the side
             color. The default Aff/Pro and Neg/Con column colors can be set for all flows in{' '}
-            <strong>Settings → Flow colors</strong>.
+            <strong>Settings → Flow</strong> (Column colors).
           </P>
           <H3>Live collaboration (realtime co-flowing)</H3>
           <P>
@@ -1073,7 +1073,7 @@ export default function Documentation() {
             sides' positions side-by-side and a winner badge, exactly like Impact Calc's clash cards;
             and a numbered <strong>For Your Next Speech</strong> list gives concrete, flow-specific
             next steps. The banner and clash cards use your <em>actual</em> Aff/Neg (or Pro/Con) column
-            colors from <strong>Settings → Flow colors</strong>, so the analysis matches what you
+            colors from <strong>Settings → Flow</strong> (Column colors), so the analysis matches what you
             already see on your flow. Every piece of AI-written text still supports{' '}
             <strong>bold</strong>/<em>italic</em>/<u>underline</u> emphasis.
           </P>
@@ -1870,12 +1870,8 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">Can edit (default) or Can view — applied when sharing via chat.</span>
               </div>
               <div>
-                <span className="font-semibold text-ink">Flow colors</span>
-                <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
-              </div>
-              <div>
                 <span className="font-semibold text-ink">Flow</span>
-                <span className="ml-2 text-ink/60">Defaults for a brand-new flow, plus live editor behavior — see below.</span>
+                <span className="ml-2 text-ink/60">Column colors, new-flow defaults, and live editor behavior — one card, see below.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Speech docs & cases</span>
@@ -1889,25 +1885,57 @@ export default function Documentation() {
           </Card>
           <H3>Flow</H3>
           <P>
-            Defaults for a brand-new flow, plus two live editor behaviors. None of this touches a
-            flow you've already opened — those keep whatever they were last saved at.
+            One card covering everything about how flows work by default — column colors, defaults
+            for a brand-new flow, and live editor behavior. None of this touches a flow you've
+            already opened — those keep whatever they were last saved at. A single{' '}
+            <strong>Reset to defaults</strong> at the bottom resets all of it, colors included.
+          </P>
+          <Card>
+            <div className="space-y-2.5 text-sm">
+              <div>
+                <span className="font-semibold text-ink">Column colors</span>
+                <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
+              </div>
+            </div>
+          </Card>
+          <P>
+            <strong>New-flow defaults</strong> — only affect the plain <Code>+</Code> new-flow
+            button. Auto Flow always guesses its own layout, speech order, etc. from the doc, per
+            flow.
           </P>
           <Card>
             <div className="space-y-2.5 text-sm">
               <div>
                 <span className="font-semibold text-ink">Default layout for a new policy flow</span>
-                <span className="ml-2 text-ink/60">Stock issues or Advantage — only for the plain <Code>+</Code> new-flow
-                  button. Auto Flow always guesses its own layout from the doc, per flow.</span>
+                <span className="ml-2 text-ink/60">Stock issues or Advantage.</span>
               </div>
               <div>
-                <span className="font-semibold text-ink">Default zoom for a new flow</span>
+                <span className="font-semibold text-ink">Default speech order for a new PF flow</span>
+                <span className="ml-2 text-ink/60">Pro first or Con first.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Default zoom</span>
                 <span className="ml-2 text-ink/60">50–150%, the zoom a brand-new flow opens at.</span>
               </div>
+              <div>
+                <span className="font-semibold text-ink">Default text size</span>
+                <span className="ml-2 text-ink/60">10–20px, the cell text size a brand-new flow opens at.</span>
+              </div>
+            </div>
+          </Card>
+          <P><strong>Editor behavior</strong> — live, applies to any open flow.</P>
+          <Card>
+            <div className="space-y-2.5 text-sm">
               <div>
                 <span className="font-semibold text-ink">Auto-fit columns to window</span>
                 <span className="ml-2 text-ink/60">On by default — columns continuously stretch/shrink to fill the
                   window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off to set zoom
                   yourself and have it stay put.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Confirm before deleting a sheet</span>
+                <span className="ml-2 text-ink/60">Off by default — sheet deletion is already undoable (⌘Z) with its
+                  own undo toast. Turn it on for a confirmation prompt before a tab goes away.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">AI tab summaries on hover</span>

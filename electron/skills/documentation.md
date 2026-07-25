@@ -435,7 +435,7 @@ Hits are painted with the **CSS Custom Highlight API** (`CSS.highlights` + `High
 
 A `FlowSnapshot` holds document state only — **it deliberately carries no active-sheet index**, and `restoreSnapshot` keeps whatever tab the user is currently on (clamped, since undoing an "add sheet" can remove the tab they're standing on). Switching tabs records no snapshot, because navigation isn't an edit; when the index *was* stored and restored, an older snapshot still carried whatever tab happened to be open when it was taken, so undoing an edit made on tab 2 threw the user back to tab 1.
 
-**Column colors:** each column header has an always-visible `▾` menu with a color palette to recolor that column; "Reset to default" restores the side color. The default Aff/Pro and Neg/Con column colors can be set for all flows in **Settings → Flow colors**.
+**Column colors:** each column header has an always-visible `▾` menu with a color palette to recolor that column; "Reset to default" restores the side color. The default Aff/Pro and Neg/Con column colors can be set for all flows in **Settings → Flow** (Column colors).
 
 ### Live collaboration (realtime co-flowing)
 
@@ -833,22 +833,29 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 | Google Drive | OAuth Client ID + Secret. Requires Desktop app type in Google Cloud. |
 | Chat | Shows current user; sign-out button. |
 | Sharing default | Can edit (default) or Can view — applied when sharing via chat. |
-| Flow colors | Default Aff/Pro and Neg/Con column colors applied to all flows. |
-| Flow | Defaults for a brand-new flow, plus live editor behavior — see below. |
+| Flow | Column colors, new-flow defaults, and live editor behavior — one card, see below. |
 | Setup wizard | Re-runs the onboarding flow. |
 
 ### Flow
 
-`src/lib/flowPrefs.ts` — same pattern as `autoFlowTagStyle.ts`: plain `localStorage` (key `warroom-flow-prefs`), a `warroom-flow-prefs-changed` `CustomEvent` on write, read live by consumers rather than passed down as props. `FlowPrefs`:
+One card (`Settings.tsx`, `id="settings-flow"`) covering everything flow-related — colors, new-flow defaults, and live editor behavior. It used to be two separate cards ("Flow colors" and "Flow"); merged since both read as "how flows work by default" to the user, even though they persist to two different stores under the hood:
+
+- **Column colors** — unchanged: two standalone `localStorage` keys (`warroom-flow-aff-color`/`warroom-flow-neg-color`), a `warroom-flow-colors-changed` `CustomEvent`, read directly by `FlowView.tsx`. Kept as its own storage rather than folded into `FlowPrefs` below, since `AnalyzeRound`/`ImpactCalcView` also read these two keys directly by name and there was no reason to touch a working, narrowly-scoped contract just to consolidate storage.
+- **Everything else** — `src/lib/flowPrefs.ts`, same pattern as `autoFlowTagStyle.ts`: one `FlowPrefs` object in `localStorage` (key `warroom-flow-prefs`), a `warroom-flow-prefs-changed` `CustomEvent` on write, read live by consumers rather than passed down as props.
+
+`FlowPrefs`:
 
 | Field | Default | Read by |
 |---|---|---|
 | `defaultVariant` (`'stock-issues' \| 'advantage'`) | `'stock-issues'` | The two lazy-create branches in `FlowView.tsx`'s load effect (a POLICY flow with no `flow_data_<id>` yet — i.e. made with the plain **+** button, never opened before) and `GeminiPanel.tsx`'s `edit_flow_cell` tool's own fallback layout for a never-opened flow. Auto Flow ignores this entirely — it infers its own layout per doc via `inferVariantFromHats`. |
-| `defaultZoom` (50–150) | `100` | Same two `FlowView.tsx` branches — the zoom a brand-new flow opens at, before "fit to window" or a manual zoom ever runs. An existing flow always keeps its own saved `zoom`; this never touches one retroactively. |
+| `defaultPfOrder` (`'pro-first' \| 'con-first'`) | `'pro-first'` | Same two `FlowView.tsx` branches and the same `GeminiPanel.tsx` fallback, for a brand-new PF flow. Same **+**-button-only scope as `defaultVariant` — Auto Flow infers its own speech order per doc. |
+| `defaultZoom` (50–150) | `100` | Same branches — the zoom a brand-new flow opens at, before "fit to window" or a manual zoom ever runs. An existing flow always keeps its own saved `zoom`; this never touches one retroactively. |
+| `defaultFontSize` (10–20) | `13` | Same branches — the cell text size (px) a brand-new flow opens at. Same never-retroactive rule as zoom. |
 | `autoFitColumns` | `true` | The container `ResizeObserver` effect added for continuous auto-fit — checks `readFlowPrefs().autoFitColumns` fresh on every resize event (not cached at mount), so toggling it in Settings takes effect on the very next resize of any already-open flow, not just flows opened after the change. Off = zoom only changes via the toolbar +/−/Fit-to-window controls. |
 | `aiTabSummaries` | `true` | The top of `ensureSheetSummary` — off means it returns immediately, so hovering a tab **never** calls `ai:summarizeFlowSheet`, full stop. A summary generated before the toggle was flipped off stays cached and still displays (showing it costs nothing); this only blocks generating a *new* one. |
+| `confirmSheetDelete` | `false` | The top of `deleteSheet` — on shows a native `confirm()` before deleting a sheet. Off by default since deletion is already undoable (⌘Z, plus the existing "Deleted 'X'" undo toast); this is for anyone who'd rather have the guard up front instead of relying on remembering to undo. |
 
-The card in `Settings.tsx` (`id="settings-flow"`) mirrors Flow colors/Auto Flow tag style's structure: local `flowPrefs` state seeded from `readFlowPrefs()`, a `setFlowPref(key, value)` helper that updates state and calls `writeFlowPrefs`, and a "Reset to defaults" button. The AI tab summaries checkbox carries `.ai-glow-ring` — it's the toggle that enables an AI call, same rule as Auto Flow's own AI-summary toggle.
+`Settings.tsx`: local `flowPrefs` state seeded from `readFlowPrefs()`, a `setFlowPref(key, value)` helper that updates state and calls `writeFlowPrefs`, and one `resetAllFlowSettings` at the bottom of the card that calls both `resetFlowColors` and `resetFlowPrefs` — one button, two stores underneath. The AI tab summaries checkbox carries `.ai-glow-ring` — it's the toggle that enables an AI call, same rule as Auto Flow's own AI-summary toggle.
 
 ### Speech docs & cases
 

@@ -364,14 +364,14 @@ export default function FlowView() {
         // own saved variant/zoom, this branch only runs when there's no saved
         // data at all yet.
         const prefs = readFlowPrefs();
-        const def = makeDefaultData(ev, prefs.defaultVariant, 'pro-first');
+        const def = makeDefaultData(ev, prefs.defaultVariant, prefs.defaultPfOrder);
         setVariant(prefs.defaultVariant);
-        setPfOrder('pro-first');
+        setPfOrder(prefs.defaultPfOrder);
         setSheets(def.sheets);
         setColumnWidths(def.columnWidths);
         setCustomColumns(null);
         setColumnColors(def.columnWidths.map(() => null));
-        setFontSize(DEFAULT_FONT_SIZE);
+        setFontSize(prefs.defaultFontSize);
         setZoom(prefs.defaultZoom);
         cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       }
@@ -383,14 +383,14 @@ export default function FlowView() {
       const rawEv = flowMeta?.event ?? event;
       const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
       const prefs = readFlowPrefs();
-      const def = makeDefaultData(ev, prefs.defaultVariant, 'pro-first');
+      const def = makeDefaultData(ev, prefs.defaultVariant, prefs.defaultPfOrder);
       setVariant(prefs.defaultVariant);
-      setPfOrder('pro-first');
+      setPfOrder(prefs.defaultPfOrder);
       setSheets(def.sheets);
       setColumnWidths(def.columnWidths);
       setCustomColumns(null);
       setColumnColors(def.columnWidths.map(() => null));
-      setFontSize(DEFAULT_FONT_SIZE);
+      setFontSize(prefs.defaultFontSize);
       setZoom(prefs.defaultZoom);
       cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       setActiveSheetIdx(0);
@@ -1365,6 +1365,14 @@ export default function FlowView() {
 
   function deleteSheet(idx: number) {
     if (sheets.length <= 1) return;
+    // Settings → Flow → "Confirm before deleting a sheet". Off by default since
+    // deletion is already undoable (⌘Z) and the toast above gives a second
+    // chance — this is only for anyone who'd rather not rely on remembering to
+    // undo mid-round.
+    if (readFlowPrefs().confirmSheetDelete) {
+      const name = sheets[idx]?.name ?? 'this sheet';
+      if (!window.confirm(`Delete "${name}"? You can undo with ⌘Z right after.`)) return;
+    }
     rememberScroll();
     const saved = flushAndGetSheets();
     const goneName = saved[idx]?.name;
