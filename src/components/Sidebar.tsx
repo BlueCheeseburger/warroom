@@ -241,20 +241,28 @@ export function IcoTopics() {
     </Ico>
   );
 }
-/** Settings: three horizontal tracks with offset slider handles */
+/**
+ * Settings: two slider tracks with filled handles.
+ *
+ * Replaces a three-track version that was both busy at 20px and blurry. Design
+ * notes, since they're what make it read cleanly at this size:
+ *  - TWO tracks, not three — at 20px the third crowded the icon into stripes and
+ *    left no vertical breathing room around the handles.
+ *  - Tracks sit at INTEGER y with a 2px stroke, so each fills exactly two whole
+ *    pixel rows (see the icon-rendering notes in documentation.md).
+ *  - Handles are FILLED, not outlined. A 2px-wide outlined ring at r=2.5 is
+ *    mostly hole at this size and reads as a smudge; a solid disc gives the icon
+ *    a clear focal weight and, being a fill, has no stroke-alignment problem.
+ *  - Handles sit at opposite ends (left track right-of-centre, right track
+ *    left-of-centre) so the icon reads as "adjustable", not as a static list.
+ */
 export function IcoSettings() {
   return (
     <Ico>
-      {/* Tracks use a 2px stroke on INTEGER y so each fills exactly two whole
-          pixel rows. At the icon set's default 1.5px they spanned 5.25–6.75 —
-          two half-lit rows — which is what read as blur. The knobs below are
-          circles, which antialias either way and look correct doing so. */}
-      <line x1="3" y1="6"  x2="17" y2="6"  strokeWidth="2"/>
-      <line x1="3" y1="10" x2="17" y2="10" strokeWidth="2"/>
-      <line x1="3" y1="14" x2="17" y2="14" strokeWidth="2"/>
-      <circle cx="7"  cy="6"  r="2"/>
-      <circle cx="13" cy="10" r="2"/>
-      <circle cx="8"  cy="14" r="2"/>
+      <line x1="3" y1="7"  x2="17" y2="7"  strokeWidth="2"/>
+      <line x1="3" y1="13" x2="17" y2="13" strokeWidth="2"/>
+      <circle cx="12.5" cy="7"  r="2.75" fill="currentColor" stroke="none"/>
+      <circle cx="7.5"  cy="13" r="2.75" fill="currentColor" stroke="none"/>
     </Ico>
   );
 }

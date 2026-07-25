@@ -2389,25 +2389,25 @@ function ShareIcon() {
 
 function IcoUndo() {
   return (
-    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 7H12.5a4 4 0 0 1 0 8H6" />
-      <path d="M7 4L4 7l3 3" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 4.5H8.5a3 3 0 0 1 0 6H4" />
+      <path d="M4.5 2.5L2.5 4.5l2 2" />
     </svg>
   );
 }
 function IcoRedo() {
   return (
-    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13 7H7.5a4 4 0 0 0 0 8H14" />
-      <path d="M13 4l3 3-3 3" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 4.5H5.5a3 3 0 0 0 0 6H10" />
+      <path d="M9.5 2.5l2 2-2 2" />
     </svg>
   );
 }
 function IcoFind() {
   return (
-    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="9" r="5.5" />
-      <path d="M13.5 13.5L17 17" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="6" r="4" />
+      <path d="M9 9L12 12" />
     </svg>
   );
 }
@@ -2424,26 +2424,26 @@ function IcoArrow() {
 
 function IcoFit() {
   return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 4H4v3M16 7V4h-3M13 16h3v-3M4 13v3h3" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 2.5H2.5v2M11.5 4.5v-2h-2M9.5 11.5h2v-2M2.5 9.5v2h2" />
     </svg>
   );
 }
 function IcoResetCols() {
   return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="14" height="12" rx="1.5" />
-      <path d="M8 4v12M12 4v12" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="2.5" width="11" height="9" rx="1" />
+      <path d="M5.5 2.5v9M8.5 2.5v9" />
     </svg>
   );
 }
 // A magnifying glass over a small spark — reads as "AI-inspect the round".
 function IcoAnalyze() {
   return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8.5" cy="8.5" r="5.5" />
-      <path d="M12.7 12.7L17 17" />
-      <path d="M8.5 6v5M6 8.5h5" strokeWidth="1.2" />
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6.5" cy="6.5" r="4" />
+      <path d="M9.5 9.5L12.5 12.5" />
+      <path d="M6.5 4.5v4M4.5 6.5h4" />
     </svg>
   );
 }

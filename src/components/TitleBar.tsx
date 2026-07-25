@@ -402,8 +402,10 @@ function SpeechTimer() {
       >
         {running ? (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-            <rect x="1"  y="1" width="2.8" height="8" rx="0.8" />
-            <rect x="6.2" y="1" width="2.8" height="8" rx="0.8" />
+            {/* Whole-pixel widths/positions — a 2.8-wide bar starting at x=1
+                ends at 3.8 and renders one soft edge; 3-wide from x=1 does not. */}
+            <rect x="1" y="1" width="3" height="8" rx="0.8" />
+            <rect x="6" y="1" width="3" height="8" rx="0.8" />
           </svg>
         ) : (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
@@ -580,7 +582,7 @@ const THEME_LABELS: Record<Theme, string> = {
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'light') {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <circle cx="12" cy="12" r="4" />
         <line x1="12" y1="2"  x2="12" y2="5"  />
         <line x1="12" y1="19" x2="12" y2="22" />

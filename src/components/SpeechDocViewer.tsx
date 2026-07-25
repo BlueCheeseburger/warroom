@@ -71,6 +71,15 @@ function updateRecentCardCount(path: string, count: number) {
   window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
 }
 
+// Renaming only ever changes the display name in Warroom's own records (the
+// recents/sidebar entry), never the file on disk — that's a filesystem
+// operation the user didn't ask for and shouldn't happen silently.
+function renameRecent(path: string, name: string) {
+  const next = getRecents().map(r => r.path === path ? { ...r, name } : r);
+  localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+  window.dispatchEvent(new StorageEvent('storage', { key: RECENTS_KEY, newValue: JSON.stringify(next) }));
+}
+
 // ── OpenCaseList-imported case docx cache ──────────────────────────────────
 // Imported cases store their docx bytes (base64) in localStorage keyed by URL so
 // reopening the case renders instantly without re-downloading from OpenCaseList.
@@ -101,7 +110,7 @@ function IconBtn({ icon, label, onClick, danger, tooltipAlign = 'center' }: {
     <div className="relative" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
       <button
         onClick={onClick}
-        className="flex items-center justify-center w-9 h-9 rounded-lg transition"
+        className="flex items-center justify-center w-7 h-7 rounded-lg transition"
         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: danger ? 'rgb(var(--danger-rgb))' : 'var(--nav-inactive-color)' }}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -166,6 +175,18 @@ function IcoOutline({ active }: { active?: boolean }) {
       <path d="M6.5 9H16"/>
       <circle cx="3" cy="14" r="1" fill="currentColor" stroke="none" opacity={active ? 1 : 0.85}/>
       <path d="M6.5 14H13"/>
+    </svg>
+  );
+}
+
+// Add a compare pane: two side-by-side panes with a plus badge.
+function IcoAddPane() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="3" width="15" height="12" rx="1.6"/>
+      <path d="M9 3v12"/>
+      <circle cx="13.5" cy="13.5" r="4" fill="var(--bg-elevated, #1c1c1e)" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M13.5 11.7v3.6M11.7 13.5h3.6" strokeWidth="1.3"/>
     </svg>
   );
 }
@@ -631,7 +652,7 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
   return (
     <div
       className="shrink-0 flex flex-col h-full"
-      style={{ width: 248, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
+      style={{ width: 'min(248px, 85vw)', maxWidth: '100%', borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}
     >
       <div className="flex items-center gap-1 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoOutline active /></span>
@@ -733,7 +754,7 @@ function ToolbarToggle({ active, label, icon, onClick }: {
     <div className="relative" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
       <button
         onClick={onClick}
-        className="flex items-center justify-center w-9 h-9 rounded-lg transition"
+        className="flex items-center justify-center w-7 h-7 rounded-lg transition"
         style={{
           background: active ? 'var(--nav-active-bg)' : 'transparent',
           boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
@@ -808,7 +829,7 @@ function ToolbarPill({ active, label, icon, onClick, title }: {
     <button
       onClick={onClick}
       title={title ?? label}
-      className="ai-glow-ring flex items-center gap-1.5 h-8 px-3 rounded-lg transition text-[12px] font-medium shrink-0"
+      className="ai-glow-ring flex items-center gap-1.5 h-7 px-2.5 rounded-lg transition text-[12px] font-medium shrink-0"
       style={{
         background: active ? 'var(--nav-active-bg)' : 'transparent',
         boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
@@ -892,7 +913,7 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
         <button
           ref={toggleRef}
           onClick={onToggle}
-          style={{ ...btnBase, width: '34px', height: '34px', color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)', background: active ? 'var(--nav-active-bg)' : 'transparent', boxShadow: active ? 'var(--nav-active-shadow)' : 'none' }}
+          style={{ ...btnBase, width: '28px', height: '28px', color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)', background: active ? 'var(--nav-active-bg)' : 'transparent', boxShadow: active ? 'var(--nav-active-shadow)' : 'none' }}
           onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'var(--nav-hover-bg)'; }}
           onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
         >
@@ -919,7 +940,7 @@ function FocusBtn({ active, type, onToggle, onTypeChange }: {
       <button
         ref={chevronRef}
         onClick={openDropdown}
-        style={{ ...btnBase, width: '16px', height: '34px', color: 'var(--nav-inactive-color)' }}
+        style={{ ...btnBase, width: '14px', height: '28px', color: 'var(--nav-inactive-color)' }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
       >
@@ -1602,7 +1623,7 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
     : null;
 
   return (
-    <div className="shrink-0 flex flex-col h-full" style={{ width: 300, borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
+    <div className="shrink-0 flex flex-col h-full" style={{ width: 'min(300px, 85%)', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
       <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoShield active /></span>
         <div className="flex flex-col min-w-0 flex-1">
@@ -2037,7 +2058,7 @@ function CrossExPanel({ event, onClose, docKey, onScrollToCite }: {
   return (
     <div
       className="flex flex-col h-full shrink-0"
-      style={{ width: '360px', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-main)' }}
+      style={{ width: 'min(360px, 85%)', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-main)' }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3.5 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
@@ -2360,9 +2381,11 @@ export interface DocPaneProps {
   focused?: boolean;
   onFocusPane?: () => void;
   onCloseExtraPane?: () => void;
+  onAddPane?: () => void;
+  canAddPane?: boolean;
 }
 
-function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane }: DocPaneProps) {
+function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane }: DocPaneProps) {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
   // Folder-of-docx import files every doc it finds into a new Warroom folder
   // named after the OS folder it came from — aliased to avoid colliding with
@@ -2385,6 +2408,12 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
   const ocPreview = paneIndex === 0 && view.kind === 'speech-doc' ? (view as any).ocPreview as
     { url: string; teamName: string; label: string; side: string } | undefined : undefined;
   const [ocPreviewSaved, setOcPreviewSaved] = React.useState(false);
+  // Double-click the doc title to rename it — updates the case name (OC cases)
+  // or the recents entry's display name (plain files). Never touches the file
+  // on disk; that's a filesystem operation the user didn't ask for.
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const ocBytesRef = useRef<string>(''); // base64 of the loaded OC docx, for export/share
   const [ocChecking, setOcChecking] = useState(false);
   const [ocCheckResult, setOcCheckResult] = useState<'changed' | 'up-to-date' | null>(null);
@@ -2398,6 +2427,26 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
   // (which load from a temp file) qualify; saved OC cases use a synthetic `oc:`
   // key with no local file, so they can't be revealed.
   const revealPath = !isOc && filePath && !filePath.startsWith('oc:') ? filePath : '';
+
+  function startRenameTitle() {
+    if (!fileName) return;
+    setTitleDraft(fileName.replace(/\.docx$/i, ''));
+    setTitleEditing(true);
+    window.setTimeout(() => { titleInputRef.current?.focus(); titleInputRef.current?.select(); }, 0);
+  }
+  function commitRenameTitle() {
+    setTitleEditing(false);
+    const val = titleDraft.trim();
+    if (!val) return;
+    if (isOc && ocCase) {
+      update((db) => ({ ...db, cases: { ...db.cases, [ocCase.id]: { ...db.cases[ocCase.id], name: val } } }));
+      setFileName(val);
+    } else if (filePath) {
+      const withExt = /\.docx$/i.test(fileName) ? `${val.replace(/\.docx$/i, '')}.docx` : val;
+      renameRecent(filePath, withExt);
+      setFileName(withExt);
+    }
+  }
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const [shareOpen, setShareOpen] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
@@ -3432,7 +3481,19 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
 
   if (step === 'idle') {
     return (
-      <div className="flex flex-col h-full p-8 gap-6 relative" onMouseDownCapture={onFocusPane}>
+      <div className="flex flex-col h-full p-3 gap-4 relative" onMouseDownCapture={onFocusPane}>
+        {canAddPane && onAddPane && (
+          <button
+            className="absolute top-2 right-9 flex items-center justify-center w-6 h-6 rounded-md transition z-10"
+            style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            title="Compare with another document"
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            onClick={onAddPane}
+          >
+            <IcoAddPane />
+          </button>
+        )}
         {paneIndex !== 0 && onCloseExtraPane && (
           <button
             className="absolute top-2 right-2 flex items-center justify-center w-6 h-6 rounded-md transition z-10"
@@ -3446,7 +3507,7 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
           </button>
         )}
         <div
-          className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
+          className="flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
           onClick={pickFile}
           onDrop={async (e) => {
             e.preventDefault();
@@ -3513,7 +3574,7 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
       onMouseDownCapture={onFocusPane}
     >
       {/* Toolbar */}
-      <div className="border-b border-line px-3 py-1.5 flex items-center gap-2 shrink-0">
+      <div className="border-b border-line px-2 py-0.5 flex items-center gap-1.5 shrink-0 overflow-hidden">
         {/* Document tools — grouped into a segmented cluster so the compact icon
             buttons read as one intentional control, not stray unlabeled buttons. */}
         <div
@@ -3548,31 +3609,59 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
             icon={<IcoSendFlow active={flowSendOpen} />}
             onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
           />
+          {canAddPane && onAddPane && (
+            <>
+              <div style={{ width: 1, height: 18, background: 'var(--border-subtle)', margin: '0 2px' }} />
+              <ToolbarToggle
+                active={false}
+                label="Compare with another document"
+                icon={<IcoAddPane />}
+                onClick={onAddPane}
+              />
+            </>
+          )}
         </div>
 
         {/* Document title (+ import provenance) — sits between the tool cluster
             and the AI tools so the open case / speech doc is always identified. */}
         <div className="group flex-1 flex items-center gap-2 min-w-0 px-2.5 overflow-visible">
-          <span
-            className="text-[13px] font-semibold shrink whitespace-nowrap relative z-10"
-            style={{
-              color: 'rgb(var(--ink-rgb))',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '100%',
-              transition: 'max-width 0.15s ease, overflow 0s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.overflow = 'visible';
-              (e.currentTarget as HTMLElement).style.maxWidth = 'none';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.overflow = 'hidden';
-              (e.currentTarget as HTMLElement).style.maxWidth = '100%';
-            }}
-          >
-            {fileName.replace(/\.docx$/i, '')}
-          </span>
+          {titleEditing ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              onBlur={commitRenameTitle}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); commitRenameTitle(); }
+                else if (e.key === 'Escape') { e.preventDefault(); setTitleEditing(false); }
+              }}
+              className="text-[13px] font-semibold min-w-0 outline-none rounded px-1 -mx-1"
+              style={{ color: 'rgb(var(--ink-rgb))', background: 'var(--bg-input)', border: '1px solid var(--accent, #4285F4)', width: 200 }}
+            />
+          ) : (
+            <span
+              className="text-[13px] font-semibold shrink whitespace-nowrap relative z-10 cursor-text"
+              title="Double-click to rename"
+              onDoubleClick={startRenameTitle}
+              style={{
+                color: 'rgb(var(--ink-rgb))',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%',
+                transition: 'max-width 0.15s ease, overflow 0s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.overflow = 'visible';
+                (e.currentTarget as HTMLElement).style.maxWidth = 'none';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.overflow = 'hidden';
+                (e.currentTarget as HTMLElement).style.maxWidth = '100%';
+              }}
+            >
+              {fileName.replace(/\.docx$/i, '')}
+            </span>
+          )}
           {paneIndex !== 0 && onCloseExtraPane && (
             <button
               className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition"
@@ -3843,8 +3932,11 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
         </div>
       )}
 
-      {/* Outline pull-tab + document + cross-ex side panel */}
-      <div className="flex-1 flex min-h-0 relative">
+      {/* Outline pull-tab + document + cross-ex side panel. overflow-hidden keeps
+          the fixed-ish-width side panels (outline overlay, cross-ex, credibility)
+          from visually spilling into a neighboring pane when this pane is
+          narrower than the panel's preferred width. */}
+      <div className="flex-1 flex min-h-0 relative overflow-hidden">
         {step === 'viewing' && (
           <OutlinePullTab active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
         )}
@@ -3933,37 +4025,8 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
 // Lets up to three speech docs sit side by side for comparison. Pane 0 is the
 // "main" doc, driven by the app's global view (unchanged behavior — every
 // existing open-doc call site in the app targets pane 0). Panes 1 and 2 are
-// opened from a slim "add pane" strip at the right edge and load whatever
+// opened from a "compare doc" button in any pane's toolbar and load whatever
 // file the user drops/browses into them, independent of the main doc.
-function AddPaneStrip({ onClick }: { onClick: () => void }) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      title="Compare with another document"
-      className="shrink-0 flex flex-col items-center justify-center gap-1.5 h-full transition"
-      style={{
-        width: hover ? 34 : 14,
-        background: hover ? 'var(--bg-elevated)' : 'transparent',
-        border: 'none', borderLeftWidth: 1, borderLeftStyle: 'solid', borderLeftColor: 'var(--border-subtle)',
-        cursor: 'pointer', color: 'var(--nav-inactive-color)',
-      }}
-    >
-      <span style={{ fontSize: 14, lineHeight: 1, opacity: hover ? 1 : 0.6 }}>+</span>
-      {hover && (
-        <span
-          className="text-[10.5px] font-medium whitespace-nowrap"
-          style={{ writingMode: 'vertical-rl', color: 'var(--nav-inactive-color)' }}
-        >
-          Compare doc
-        </span>
-      )}
-    </button>
-  );
-}
-
 export default function SpeechDocViewer() {
   const extraDocPanes = useApp((s) => s.extraDocPanes);
   const setExtraDocPane = useApp((s) => s.setExtraDocPane);
@@ -3971,11 +4034,35 @@ export default function SpeechDocViewer() {
   const setFocusedPane = useApp((s) => s.setFocusedPane);
 
   const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length;
+  const canAddPane = openExtraCount < 2;
+  const addPane = () => {
+    const slot: 0 | 1 = extraDocPanes[0] === undefined ? 0 : 1;
+    setExtraDocPane(slot, '');
+    setFocusedPane((slot + 1) as 1 | 2);
+  };
+
+  // Force-collapse the sidebar while 2-3 panes are open (no room for it), and
+  // force it back open once we're down to a single pane — only on the
+  // transition edge, so a manual re-expand mid-compare isn't fought every render.
+  const wasMultiRef = useRef(false);
+  useEffect(() => {
+    const isMulti = openExtraCount > 0;
+    if (isMulti !== wasMultiRef.current) {
+      window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: isMulti } }));
+      wasMultiRef.current = isMulti;
+    }
+  }, [openExtraCount]);
 
   return (
     <div className="flex h-full min-h-0 w-full">
       <div className="flex-1 min-w-0 h-full">
-        <DocPaneViewer paneIndex={0} focused={focusedPane === 0} onFocusPane={() => setFocusedPane(0)} />
+        <DocPaneViewer
+          paneIndex={0}
+          focused={focusedPane === 0}
+          onFocusPane={() => setFocusedPane(0)}
+          onAddPane={addPane}
+          canAddPane={canAddPane}
+        />
       </div>
       {extraDocPanes.map((docPath, i) => docPath === undefined ? null : (
         <div key={i} className="flex-1 min-w-0 h-full">
@@ -3988,18 +4075,11 @@ export default function SpeechDocViewer() {
               setExtraDocPane(i as 0 | 1, undefined);
               if (focusedPane === i + 1) setFocusedPane(0);
             }}
+            onAddPane={addPane}
+            canAddPane={canAddPane}
           />
         </div>
       ))}
-      {openExtraCount < 2 && (
-        <AddPaneStrip
-          onClick={() => {
-            const slot: 0 | 1 = extraDocPanes[0] === undefined ? 0 : 1;
-            setExtraDocPane(slot, '');
-            setFocusedPane((slot + 1) as 1 | 2);
-          }}
-        />
-      )}
     </div>
   );
 }
