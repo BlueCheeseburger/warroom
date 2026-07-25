@@ -206,7 +206,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/25/26
+          Last updated: 7/26/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1758,12 +1758,45 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
               </div>
               <div>
+                <span className="font-semibold text-ink">Flow</span>
+                <span className="ml-2 text-ink/60">Defaults for a brand-new flow, plus live editor behavior — see below.</span>
+              </div>
+              <div>
                 <span className="font-semibold text-ink">Speech docs & cases</span>
                 <span className="ml-2 text-ink/60">Dedicated settings block for the doc viewer — see below.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Setup wizard</span>
                 <span className="ml-2 text-ink/60">Re-runs the onboarding flow.</span>
+              </div>
+            </div>
+          </Card>
+          <H3>Flow</H3>
+          <P>
+            Defaults for a brand-new flow, plus two live editor behaviors. None of this touches a
+            flow you've already opened — those keep whatever they were last saved at.
+          </P>
+          <Card>
+            <div className="space-y-2.5 text-sm">
+              <div>
+                <span className="font-semibold text-ink">Default layout for a new policy flow</span>
+                <span className="ml-2 text-ink/60">Stock issues or Advantage — only for the plain <Code>+</Code> new-flow
+                  button. Auto Flow always guesses its own layout from the doc, per flow.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Default zoom for a new flow</span>
+                <span className="ml-2 text-ink/60">50–150%, the zoom a brand-new flow opens at.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Auto-fit columns to window</span>
+                <span className="ml-2 text-ink/60">On by default — columns continuously stretch/shrink to fill the
+                  window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off to set zoom
+                  yourself and have it stay put.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">AI tab summaries on hover</span>
+                <span className="ml-2 text-ink/60">On by default. Turn it off and hovering a tab never calls Warroom
+                  AI — tabs only ever show the free local tag preview.</span>
               </div>
             </div>
           </Card>

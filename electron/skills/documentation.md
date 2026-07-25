@@ -782,7 +782,21 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 | Chat | Shows current user; sign-out button. |
 | Sharing default | Can edit (default) or Can view — applied when sharing via chat. |
 | Flow colors | Default Aff/Pro and Neg/Con column colors applied to all flows. |
+| Flow | Defaults for a brand-new flow, plus live editor behavior — see below. |
 | Setup wizard | Re-runs the onboarding flow. |
+
+### Flow
+
+`src/lib/flowPrefs.ts` — same pattern as `autoFlowTagStyle.ts`: plain `localStorage` (key `warroom-flow-prefs`), a `warroom-flow-prefs-changed` `CustomEvent` on write, read live by consumers rather than passed down as props. `FlowPrefs`:
+
+| Field | Default | Read by |
+|---|---|---|
+| `defaultVariant` (`'stock-issues' \| 'advantage'`) | `'stock-issues'` | The two lazy-create branches in `FlowView.tsx`'s load effect (a POLICY flow with no `flow_data_<id>` yet — i.e. made with the plain **+** button, never opened before) and `GeminiPanel.tsx`'s `edit_flow_cell` tool's own fallback layout for a never-opened flow. Auto Flow ignores this entirely — it infers its own layout per doc via `inferVariantFromHats`. |
+| `defaultZoom` (50–150) | `100` | Same two `FlowView.tsx` branches — the zoom a brand-new flow opens at, before "fit to window" or a manual zoom ever runs. An existing flow always keeps its own saved `zoom`; this never touches one retroactively. |
+| `autoFitColumns` | `true` | The container `ResizeObserver` effect added for continuous auto-fit — checks `readFlowPrefs().autoFitColumns` fresh on every resize event (not cached at mount), so toggling it in Settings takes effect on the very next resize of any already-open flow, not just flows opened after the change. Off = zoom only changes via the toolbar +/−/Fit-to-window controls. |
+| `aiTabSummaries` | `true` | The top of `ensureSheetSummary` — off means it returns immediately, so hovering a tab **never** calls `ai:summarizeFlowSheet`, full stop. A summary generated before the toggle was flipped off stays cached and still displays (showing it costs nothing); this only blocks generating a *new* one. |
+
+The card in `Settings.tsx` (`id="settings-flow"`) mirrors Flow colors/Auto Flow tag style's structure: local `flowPrefs` state seeded from `readFlowPrefs()`, a `setFlowPref(key, value)` helper that updates state and calls `writeFlowPrefs`, and a "Reset to defaults" button. The AI tab summaries checkbox carries `.ai-glow-ring` — it's the toggle that enables an AI call, same rule as Auto Flow's own AI-summary toggle.
 
 ### Speech docs & cases
 

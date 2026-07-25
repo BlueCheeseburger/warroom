@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
+import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
 
 type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
@@ -365,6 +366,19 @@ export default function Settings() {
     setFlowAffColor('#2563eb');
     setFlowNegColor('#16a34a');
     window.dispatchEvent(new CustomEvent('warroom-flow-colors-changed'));
+  };
+
+  // Flow editor preferences (display/behavior prefs — plain localStorage, read
+  // live by FlowView/GeminiPanel; see lib/flowPrefs.ts)
+  const [flowPrefs, setFlowPrefsState] = useState<FlowPrefs>(() => readFlowPrefs());
+  const setFlowPref = <K extends keyof FlowPrefs>(key: K, value: FlowPrefs[K]) => {
+    const next = { ...flowPrefs, [key]: value };
+    setFlowPrefsState(next);
+    writeFlowPrefs(next);
+  };
+  const resetFlowPrefs = () => {
+    setFlowPrefsState({ ...FLOW_PREFS_DEFAULTS });
+    writeFlowPrefs({ ...FLOW_PREFS_DEFAULTS });
   };
 
   // Auto Flow tag style (display pref — plain localStorage, read live by AutoFlow's write step)
@@ -1109,6 +1123,103 @@ export default function Settings() {
             type="button"
             onClick={resetFlowColors}
             className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2 mt-1"
+          >
+            Reset to defaults
+          </button>
+        </div>
+      </div>
+
+      {/* Flow */}
+      <div id="settings-flow" className="glass-card rounded-sm p-4 space-y-4 mb-4">
+        <div>
+          <div className="label mb-1">Flow</div>
+          <p className="text-xs mb-3 text-ink/50">
+            Defaults for a brand-new flow, and live behavior in the flow editor. None of this
+            touches a flow you've already opened — those keep whatever they were last saved at.
+          </p>
+
+          <div className="space-y-1.5 mb-4">
+            <div className="text-xs text-ink/70 font-medium">Default layout for a new policy flow</div>
+            <p className="text-[11px] text-ink/40">
+              Only affects the plain <strong>+</strong> new-flow button. Auto Flow always guesses its
+              own layout from the doc, per flow.
+            </p>
+            <div className="flex gap-2 mt-1.5">
+              <button
+                type="button"
+                title="Default to Stock issues"
+                className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'stock-issues' ? 'btn-primary' : ''}`}
+                onClick={() => setFlowPref('defaultVariant', 'stock-issues')}
+              >
+                Stock issues
+              </button>
+              <button
+                type="button"
+                title="Default to Advantage"
+                className={`btn text-xs flex-1 ${flowPrefs.defaultVariant === 'advantage' ? 'btn-primary' : ''}`}
+                onClick={() => setFlowPref('defaultVariant', 'advantage')}
+              >
+                Advantage
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-ink/70 font-medium">Default zoom for a new flow</div>
+              <span className="text-xs text-ink/50 tabular-nums">{flowPrefs.defaultZoom}%</span>
+            </div>
+            <input
+              type="range"
+              min={50}
+              max={150}
+              step={5}
+              value={flowPrefs.defaultZoom}
+              onChange={(e) => setFlowPref('defaultZoom', Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          <label className="flex items-start gap-2.5 cursor-pointer mb-3">
+            <input
+              type="checkbox"
+              checked={flowPrefs.autoFitColumns}
+              onChange={(e) => setFlowPref('autoFitColumns', e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <div className="text-xs font-medium text-ink/80">Auto-fit columns to window</div>
+              <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
+                Columns continuously stretch or shrink to fill the window — collapsing the sidebar,
+                resizing, or opening the AI chat panel all re-fit automatically. Turn this off if you'd
+                rather set zoom yourself and have it stay put.
+              </div>
+            </span>
+          </label>
+
+          <label className="ai-glow-ring flex items-start gap-2.5 rounded-sm border border-line p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={flowPrefs.aiTabSummaries}
+              onChange={(e) => setFlowPref('aiTabSummaries', e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <div className="text-xs font-medium text-ink/80">AI tab summaries on hover</div>
+              <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
+                Hovering a flow tab asks Warroom AI for a one-sentence summary of the argument on that
+                sheet, the first time you hover it after its content changes — then it's cached, so it
+                doesn't cost another call until something on that sheet actually changes. Off means tabs
+                only ever show the free local tag preview; Warroom AI is never called from a hover.
+              </div>
+            </span>
+          </label>
+
+          <button
+            type="button"
+            title="Reset flow defaults"
+            onClick={resetFlowPrefs}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
           >
             Reset to defaults
           </button>

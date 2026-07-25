@@ -12,6 +12,7 @@ import {
 } from '../lib/flowDoc';
 import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
 import { flushCellsIntoSheets } from '../lib/flowCellFlush';
+import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
 const FIND_HL = 'flow-find';
@@ -359,15 +360,19 @@ export default function FlowView() {
       } else {
         const rawEv = flowMeta?.event ?? event;
         const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
-        const def = makeDefaultData(ev, 'stock-issues', 'pro-first');
-        setVariant('stock-issues');
+        // Only a brand-new flow reads these — an existing flow always keeps its
+        // own saved variant/zoom, this branch only runs when there's no saved
+        // data at all yet.
+        const prefs = readFlowPrefs();
+        const def = makeDefaultData(ev, prefs.defaultVariant, 'pro-first');
+        setVariant(prefs.defaultVariant);
         setPfOrder('pro-first');
         setSheets(def.sheets);
         setColumnWidths(def.columnWidths);
         setCustomColumns(null);
         setColumnColors(def.columnWidths.map(() => null));
         setFontSize(DEFAULT_FONT_SIZE);
-        setZoom(100);
+        setZoom(prefs.defaultZoom);
         cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       }
       setActiveSheetIdx(0);
@@ -377,15 +382,16 @@ export default function FlowView() {
     }).catch(() => {
       const rawEv = flowMeta?.event ?? event;
       const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
-      const def = makeDefaultData(ev, 'stock-issues', 'pro-first');
-      setVariant('stock-issues');
+      const prefs = readFlowPrefs();
+      const def = makeDefaultData(ev, prefs.defaultVariant, 'pro-first');
+      setVariant(prefs.defaultVariant);
       setPfOrder('pro-first');
       setSheets(def.sheets);
       setColumnWidths(def.columnWidths);
       setCustomColumns(null);
       setColumnColors(def.columnWidths.map(() => null));
       setFontSize(DEFAULT_FONT_SIZE);
-      setZoom(100);
+      setZoom(prefs.defaultZoom);
       cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
       setActiveSheetIdx(0);
       setLoaded(true);
@@ -1434,6 +1440,12 @@ export default function FlowView() {
   // same: fresh if the signature still matches, stale (and worth
   // regenerating) if not.
   async function ensureSheetSummary(idx: number) {
+    // Settings → Flow → "AI tab summaries on hover". Off = never call Warroom AI
+    // from a hover, full stop — the tooltip just falls back to its free local
+    // tag preview (see sheetSummary below). A previously-cached aiSummary from
+    // before the toggle was flipped off still displays; this only stops NEW
+    // generation, since showing a summary that already exists costs nothing.
+    if (!readFlowPrefs().aiTabSummaries) return;
     const cur = snap.current;
     const sheet = cur.sheets[idx];
     if (!sheet) return;
@@ -1599,6 +1611,10 @@ export default function FlowView() {
     if (!el) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
+      // Read live, not once at mount — Settings → Flow's "Auto-fit columns"
+      // toggle should take effect on the very next resize, not just for flows
+      // opened after the change.
+      if (!readFlowPrefs().autoFitColumns) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(fitZoom, 150);
     });

@@ -526,7 +526,18 @@ Gear icon at bottom of sidebar.
 | Google Drive | OAuth Client ID + Client Secret |
 | Sharing default | "Can edit" or "Can view" for shared attachments |
 | Flow colors | Default Aff/Pro and Neg/Con column colors for all flows |
+| Flow | Defaults for a brand-new flow, plus two live editor behaviors — see below |
 | Setup wizard | Re-run onboarding |
+
+### Flow
+Its own settings block, right below Flow colors. None of it touches a flow you've already opened — those keep whatever they were last saved at.
+
+| Setting | Description |
+|---------|-------------|
+| Default layout for a new policy flow | Stock issues or Advantage. Only affects the plain **+** new-flow button — Auto Flow always guesses its own layout from the doc. |
+| Default zoom for a new flow | 50–150% (default 100%), the zoom a brand-new flow opens at. |
+| Auto-fit columns to window | On by default. Columns continuously stretch/shrink to fill the window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off if you'd rather set zoom yourself and have it stay put. |
+| AI tab summaries on hover | On by default. Hovering a tab asks Warroom AI for a one-sentence summary of the argument on that sheet — cached after the first time, so it doesn't cost another call until the sheet's content changes. Turn it off and tabs only ever show the free local tag preview; Warroom AI is never called from a hover. |
 
 ### Speech docs & cases
 Its own settings block, right below Appearance:

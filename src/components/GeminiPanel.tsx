@@ -4,6 +4,7 @@ import MentionPicker from './MentionPicker';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { linkifyText } from '../lib/linkify';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS, makeDefaultData } from './FlowView';
+import { readFlowPrefs } from '../lib/flowPrefs';
 import type { View } from '../store/appStore';
 
 // Flow cells are stored as HTML (rich text). Strip tags for AI-readable plain text.
@@ -2452,7 +2453,10 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               let data: any = await window.warroom.storage.read(`flow_data_${meta.id}`);
               if (!data?.sheets?.length) {
                 const ev: 'policy' | 'pf' = meta.event === 'pf' ? 'pf' : 'policy';
-                data = makeDefaultData(ev, 'stock-issues', 'pro-first');
+                // Same default-variant preference FlowView itself uses for a
+                // never-opened flow (Settings → Flow) — so the agent's fallback
+                // layout matches whatever a human opening it would have seen.
+                data = makeDefaultData(ev, readFlowPrefs().defaultVariant, 'pro-first');
               }
               const cols = flowColumns(data);
 
