@@ -485,6 +485,18 @@ body {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
+/* ── Icon sizing helpers ──────────────────────────────────────────────────── */
+/* Size icons by setting the SVG's own width/height, NEVER with a fractional
+   `transform: scale()`. Chromium rasterizes a transformed element at its layout
+   size and then scales that bitmap, so `scale(0.72)` on a 20px icon produced a
+   blurry 14.4px bitmap instead of a crisp 14px vector render — that was the main
+   reason the sidebar's section icons looked fuzzy.
+   `stroke-width` is bumped to compensate for the smaller render so the stroke
+   still lands at ~1.5 CSS px and matches full-size icons (same reasoning as the
+   size-compensated strokeWidth in Sidebar.tsx's `Ico`). */
+.sb-ico-14 > svg { width: 14px;  height: 14px; stroke-width: 2.15; }
+.sb-ico-16 > svg { width: 16px;  height: 16px; stroke-width: 1.9; }
+
 /* Marks a button as triggering an AI/API call — a thin blue→pink gradient ring
    drawn as a masked ::before "donut" behind the element, so it never disturbs
    the button's own background/border/content (many of these buttons already

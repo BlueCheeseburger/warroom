@@ -45,6 +45,19 @@ function useCollapsed(): [boolean, () => void] {
     try { localStorage.setItem('warroom-sb-collapsed', String(next)); } catch {}
     return next;
   });
+  // The speech doc viewer force-collapses the sidebar while 2-3 doc panes are
+  // open side by side (there's no room for it), and force-expands it again
+  // once back to a single pane — see the dispatch in SpeechDocViewer.tsx.
+  useEffect(() => {
+    function onForce(e: Event) {
+      const collapsed = (e as CustomEvent).detail?.collapsed;
+      if (typeof collapsed !== 'boolean') return;
+      setC(collapsed);
+      try { localStorage.setItem('warroom-sb-collapsed', String(collapsed)); } catch {}
+    }
+    window.addEventListener('warroom-force-sidebar-collapse', onForce);
+    return () => window.removeEventListener('warroom-force-sidebar-collapse', onForce);
+  }, []);
   return [c, toggle];
 }
 
@@ -52,9 +65,15 @@ function useCollapsed(): [boolean, () => void] {
 // All: 16×16 viewBox · stroke only · 1.5 weight · round caps + joins
 
 function Ico({ children, size = 20 }: { children: React.ReactNode; size?: number }) {
+  // Stroke width is expressed in user units but compensated for `size`, so the
+  // RENDERED stroke is always ~1.5 CSS px no matter what size the icon is drawn
+  // at. Without this, a 20-unit viewBox drawn at 14px rendered its 1.6 stroke at
+  // 1.12px — thin and washed out next to its 20px siblings, which is a big part
+  // of why the icon set read as "blurry" rather than merely small.
+  const strokeWidth = (1.5 * 20) / size;
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" fill="none"
-      stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+      stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
       shapeRendering="geometricPrecision"
       style={{ flexShrink: 0, display: 'block' }}>
       {children}
@@ -114,17 +133,23 @@ export function IcoImport() {
   );
 }
 export function IcoAutoFlow() {
-  // A flow sheet (columns + header row) with a sparkle — "Warroom AI fills this
-  // in for you". Replaces an earlier wand whose diamond head turned to mush at
-  // 20px; a grid reads instantly as "a flow", and the sparkle carries the AI
-  // meaning without competing with it for pixels.
+  // A flow sheet (header row + column divider) with a sparkle — "Warroom AI fills
+  // this in for you". A grid reads instantly as "a flow", and the sparkle carries
+  // the AI meaning without competing with it for pixels.
+  //
+  // Geometry is deliberately balanced so the combined ink (sheet + sparkle) is
+  // centered on the 20×20 box: sheet spans x 2→13, sparkle x 12.8→18, so the ink
+  // runs 2→18 (center 10); vertically 2.7→17.2 (center ~10). This icon sits
+  // inside the `ai-glow-ring` donut, where even a half-unit offset reads as
+  // visibly crooked — the previous version's ink was centered at (10.6, 9.2),
+  // which is exactly why it looked shoved up and to the right inside the ring.
   return (
     <Ico>
-      <rect x="2.5" y="5.5" width="11.5" height="10.5" rx="1.4" />
-      <path d="M2.5 9h11.5" />
-      <path d="M8.25 9v7" />
-      {/* sparkle, top-right */}
-      <path d="M15.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L12.9 5.3l2.05-.85z"
+      <rect x="2" y="6.4" width="11" height="10.8" rx="1.4" />
+      <path d="M2 9.7h11" />
+      <path d="M7.5 9.7v7.5" />
+      {/* sparkle, top-right — 4-point star centered at (15.4, 5.3) */}
+      <path d="M15.4 2.7l.78 1.82 1.82.78-1.82.78-.78 1.82-.78-1.82-1.82-.78 1.82-.78z"
         fill="currentColor" stroke="none" />
     </Ico>
   );
@@ -1491,7 +1516,7 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
         >
           {icon && (
-            <span style={{ color: 'var(--nav-section-color)', display: 'flex', transform: 'scale(0.72)', transformOrigin: 'center' }}>
+            <span className="sb-ico-14" style={{ color: 'var(--nav-section-color)', display: 'flex' }}>
               {icon}
             </span>
           )}
@@ -1520,7 +1545,10 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
             </span>
           )}
         </button>
-        <div className="flex items-center" style={{ gap: 2 }}>
+        {/* gap 5, not 2 — `ai-glow-ring` draws its donut at inset -2px, i.e. 2px
+            OUTSIDE the button box, so a 2px gap let the ring butt right up
+            against the neighbouring icon and read as misaligned. */}
+        <div className="flex items-center" style={{ gap: 5 }}>
           {extraAction && (
             <button
               onClick={extraAction}
@@ -1536,10 +1564,10 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
             >
               {extraBusy ? (
-                <svg className="animate-spin" width="11" height="11" viewBox="0 0 10 10" fill="none">
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 10 10" fill="none">
                   <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 20" strokeLinecap="round" opacity="0.7" />
                 </svg>
-              ) : extraIcon}
+              ) : <span className="sb-ico-16" style={{ display: 'flex' }}>{extraIcon}</span>}
             </button>
           )}
           {extraActions?.map((a, i) => (
@@ -1558,10 +1586,10 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)'}
             >
               {a.busy ? (
-                <svg className="animate-spin" width="11" height="11" viewBox="0 0 10 10" fill="none">
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 10 10" fill="none">
                   <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 20" strokeLinecap="round" opacity="0.7" />
                 </svg>
-              ) : a.icon}
+              ) : <span className="sb-ico-16" style={{ display: 'flex' }}>{a.icon}</span>}
             </button>
           ))}
           {action && (

@@ -305,7 +305,9 @@ function SpeechTimer() {
           onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
         >
           {slot.label}
-          <svg width="7" height="7" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+          {/* viewBox matches the rendered box 1:1 (was an 8×6 viewBox squeezed
+              into a 7×7 square, which letterboxed to 7×5.25 and rendered soft). */}
+          <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="1 1 4 5 7 1" />
           </svg>
         </button>
@@ -419,7 +421,9 @@ function SpeechTimer() {
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {/* 12px render for a 12-unit viewBox — 1 unit = 1px, so the 1.6 stroke
+            isn't scaled to a fractional width (was 11px for a 12 viewBox). */}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10.5 2.5A5 5 0 1 0 11 6" />
           <polyline points="10.5 1 10.5 4 7.5 4" />
         </svg>
