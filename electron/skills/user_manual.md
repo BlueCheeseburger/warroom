@@ -483,7 +483,7 @@ Context length and GPU offload aren't in here — those are set inside LM Studio
 
 **Things to expect**
 - **It's slower than the cloud.** A 12B model on a laptop can take a while on long jobs like Auto Flow or Round Analysis. Warroom waits up to 10 minutes before giving up. If you're hitting that, switch to Gemma 4 E4B.
-- **Tools may not work.** Features where the AI acts on your app (editing a flow, saving a tournament, searching your cards) need "tool calling", which many local models — Gemma included — don't support. If yours doesn't, Warroom notices and just answers normally instead of failing. There's a checkbox to skip trying at all.
+- **Tools work.** Features where the AI acts on your app (editing a flow, saving a tournament, searching your cards) need "tool calling". Gemma 4 supports this natively, and for models that don't, LM Studio falls back to a prompt-based format instead of failing — so leave the tool checkbox on. Smaller models are less reliable at *choosing* the right tool, though, so expect the occasional miss.
 - **Quality is lower than a frontier cloud model.** For cutting cards or scouting, a hosted model will usually do better. Local shines for privacy, cost, and working offline.
 
 **If it doesn't connect**

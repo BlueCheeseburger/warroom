@@ -531,6 +531,19 @@ export default function Settings() {
 
   // ── LM Studio actions ──────────────────────────────────────────────────────
 
+  /**
+   * The `window.warroom.lmstudio` bridge is installed by the preload script, which
+   * Electron only loads at window creation — so an app instance started before this
+   * provider existed has no bridge, and calling through it throws. Checked up front
+   * so the user gets "restart Warroom" instead of a button that appears to do nothing.
+   */
+  function lmBridge() {
+    const bridge = (window.warroom as any)?.lmstudio;
+    if (!bridge?.test || !bridge?.listModels) return null;
+    return bridge as NonNullable<typeof window.warroom>['lmstudio'];
+  }
+  const LM_NO_BRIDGE = 'Warroom needs a restart to load the LM Studio connection (it is set up when the app starts). Quit and reopen Warroom, then try again.';
+
   /** Persist the whole LM Studio block at once — URL, model, options, tool toggle. */
   async function saveLmStudio(patch?: Partial<{ lmstudioModel: string }>) {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
@@ -554,19 +567,30 @@ export default function Settings() {
   async function pickLmModel(id: string) {
     setLmModel(id);
     setLmMsg(null);
-    await saveLmStudio({ lmstudioModel: id });
+    try {
+      await saveLmStudio({ lmstudioModel: id });
+    } catch (e: any) {
+      setLmMsg({ kind: 'err', text: `Couldn't save: ${e?.message ?? String(e)}` });
+    }
   }
 
   async function fetchLmModels() {
+    const bridge = lmBridge();
+    if (!bridge) { setLmMsg({ kind: 'err', text: LM_NO_BRIDGE }); return; }
     setLmBusy('list');
     setLmMsg(null);
     try {
-      const res = await window.warroom?.lmstudio.listModels(lmBaseUrl.trim());
+      const res = await bridge.listModels(lmBaseUrl.trim());
       if (!res?.ok) { setLmFound(null); setLmMsg({ kind: 'err', text: res?.error ?? 'Could not reach LM Studio.' }); return; }
       setLmFound(res.data.models);
       setLmMsg(res.data.models.length
         ? { kind: 'ok', text: `Found ${res.data.models.length} model${res.data.models.length === 1 ? '' : 's'} at ${res.data.baseUrl}.` }
         : { kind: 'err', text: `Connected to ${res.data.baseUrl}, but no models are loaded — load one in LM Studio first.` });
+    } catch (e: any) {
+      // Never fail silently: an unexpected throw here used to leave the button
+      // looking like it did nothing at all.
+      setLmFound(null);
+      setLmMsg({ kind: 'err', text: e?.message ?? String(e) });
     } finally {
       setLmBusy(null);
     }
@@ -574,14 +598,18 @@ export default function Settings() {
 
   /** Saves first, so the round-trip tests exactly what the app will actually use. */
   async function testLmStudio() {
+    const bridge = lmBridge();
+    if (!bridge) { setLmMsg({ kind: 'err', text: LM_NO_BRIDGE }); return; }
     setLmBusy('test');
     setLmMsg(null);
     try {
       await saveLmStudio();
-      const res = await window.warroom?.lmstudio.test();
+      const res = await bridge.test();
       if (!res?.ok) { setLmMsg({ kind: 'err', text: res?.error ?? 'Test failed.' }); return; }
       const { model, reply, ms } = res.data;
       setLmMsg({ kind: 'ok', text: `Working — ${model} replied "${reply}" in ${(ms / 1000).toFixed(1)}s.` });
+    } catch (e: any) {
+      setLmMsg({ kind: 'err', text: e?.message ?? String(e) });
     } finally {
       setLmBusy(null);
     }
@@ -601,12 +629,18 @@ export default function Settings() {
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiKeySaved: true } }));
   }
 
+  // Both of these MERGE into existing app_settings rather than replacing it. They
+  // used to write a fresh `{ event, geminiModel, tokenSavingDefault }` object, which
+  // silently wiped every other key in the file — apiProvider, the per-provider model
+  // choices, and the whole LM Studio block — so toggling token saving reset the user
+  // back to Gemini and threw away their local-model config.
   async function saveGeminiModel(model: string) {
     setGeminiModel(model);
     // Auto-enable token saving for flash-lite; when switching to other models, preserve current setting
     const newTokenSaving = model === 'flash-lite' ? true : tokenSavingDefault;
     setTokenSavingDefault(newTokenSaving);
-    await window.warroom?.storage.write('app_settings', { event: settingsEvent, geminiModel: model, tokenSavingDefault: newTokenSaving });
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, geminiModel: model, tokenSavingDefault: newTokenSaving });
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { tokenSavingDefault: newTokenSaving, geminiModel: model } }));
     setGeminiModelSaved(true);
     setTimeout(() => setGeminiModelSaved(false), 2000);
@@ -614,7 +648,8 @@ export default function Settings() {
 
   async function saveTokenSavingDefault(val: boolean) {
     setTokenSavingDefault(val);
-    await window.warroom?.storage.write('app_settings', { event: settingsEvent, geminiModel, tokenSavingDefault: val });
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, tokenSavingDefault: val });
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { tokenSavingDefault: val } }));
   }
 
@@ -1075,9 +1110,9 @@ export default function Settings() {
                 />
                 <span className="text-xs text-ink/70 leading-relaxed">
                   Let the model call Warroom's tools (search cards, read flows, save tournaments…).
-                  Many local models — Gemma included — don't support tool calling; if yours doesn't,
-                  Warroom drops the tools automatically and the chat still answers normally. Turn this
-                  off to skip that entirely.
+                  Gemma 4 supports this natively, and for models that don't, LM Studio falls back to
+                  a prompt-based format rather than failing — so leave this on unless a model is
+                  clearly struggling with it.
                 </span>
               </label>
             </div>
@@ -1293,28 +1328,40 @@ export default function Settings() {
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
               <ModelExceptionNote provider="gemini" tier={getModelTier('gemini', geminiModel)} />
-              <div className="flex items-center justify-between pt-2 mt-1" style={{ borderTop: '1px solid var(--border-side)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-                    When attaching a speech doc to Warroom Agent, only send underlined text, cites, and headings — not small body text. Auto-enabled for Flash Lite.
-                  </p>
-                </div>
-                <button
-                  onClick={() => saveTokenSavingDefault(!tokenSavingDefault)}
-                  className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
-                  style={{ background: tokenSavingDefault ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
-                >
-                  <span
-                    className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
-                    style={{ transform: tokenSavingDefault ? 'translateX(18px)' : 'translateX(2px)' }}
-                  />
-                </button>
-              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Token saving — provider-independent, so it lives outside every provider
+          block. It's about what Warroom SENDS (speech-doc body text), not about
+          which model receives it, and it was previously nested inside the Gemini
+          block where nobody on another provider could reach it. */}
+      {loaded && (
+        <div className="glass-card rounded-sm p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>
+              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                When attaching a speech doc to Warroom AI, send only underlined text, cites, and
+                headings — not small body text. Applies to every provider.
+                {apiProvider === 'gemini' && ' Auto-enabled for Flash Lite.'}
+                {apiProvider === 'lmstudio' && ' Worth leaving on for local models, which are slower and usually have a smaller context window.'}
+              </p>
+            </div>
+            <button
+              onClick={() => saveTokenSavingDefault(!tokenSavingDefault)}
+              className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+              style={{ background: tokenSavingDefault ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+            >
+              <span
+                className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                style={{ transform: tokenSavingDefault ? 'translateX(18px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* OpenCaselist */}
       <div className="glass-card rounded-sm p-4 space-y-3 mb-4">

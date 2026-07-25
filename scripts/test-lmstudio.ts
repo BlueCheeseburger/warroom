@@ -328,6 +328,30 @@ check('headers can omit Content-Type for GET', !('Content-Type' in lmstudioHeade
     }
   }
 
+  // 8. Regression: the Settings buttons must never fail silently.
+  //    The original bug was `window.warroom?.lmstudio.test()` — the `?.` guards
+  //    `window.warroom` but NOT `.lmstudio`, so on an app instance whose preload
+  //    predates this provider the call threw a TypeError that a bare try/finally
+  //    swallowed, leaving the button looking completely dead.
+  console.log('\nbridge-missing guard (Settings regression)');
+  {
+    const withBridge: any = { lmstudio: { test: () => {}, listModels: () => {} } };
+    const noNamespace: any = {};
+    const partial: any = { lmstudio: { listModels: () => {} } }; // test() missing
+    const lmBridge = (w: any) => {
+      const b = w?.lmstudio;
+      return (b?.test && b?.listModels) ? b : null;
+    };
+    check('bridge present → usable', lmBridge(withBridge) !== null);
+    check('namespace missing → null, not a throw', lmBridge(noNamespace) === null);
+    check('undefined window → null, not a throw', lmBridge(undefined) === null);
+    check('partial bridge → null (would have thrown on .test())', lmBridge(partial) === null);
+    // Prove the OLD pattern is what threw, so this test documents the actual defect.
+    let threw = false;
+    try { (noNamespace?.lmstudio as any).test(); } catch { threw = true; }
+    check('old `w?.lmstudio.test()` pattern does throw (the bug)', threw);
+  }
+
   console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 })();

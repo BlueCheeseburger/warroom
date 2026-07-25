@@ -704,7 +704,9 @@ A malformed `lmstudioOptions` blob is **ignored, not fatal** — the user types 
 
 ### Tool-calling fallback
 
-Plenty of local models — Gemma among them — don't implement OpenAI-style function calling and reject the `tools` field outright. Rather than fail the whole chat, the `lmstudio` branch of `chat:geminiAgentTurn` retries once **without** tools when a 400/500 body matches `looksLikeToolUnsupported`; the user still gets a normal conversation, just without Warroom tool access. The match is deliberately narrow so a genuine 400 about something else surfaces as itself instead of being retried into a confusing second error. Users can also skip the attempt entirely with the `lmstudioTools` toggle.
+**Tool calling normally just works.** Gemma 4 has native structured tool-use support, and — importantly — for models *without* a tool-capable chat template LM Studio does **not** error: it substitutes its own system prompt and a standardised tool-call format, converting `tool`-role messages to `user` role for templates that lack the role ([LM Studio docs](https://lmstudio.ai/docs/developer/openai-compat/tools)). So the `tools` field is safe to send to any loaded model.
+
+The `lmstudio` branch of `chat:geminiAgentTurn` still keeps a defensive fallback: on a 400/500 whose body matches `looksLikeToolUnsupported`, it retries once **without** tools so the chat degrades to a plain conversation instead of failing outright. Given LM Studio's own fallback this should rarely fire — it exists for third-party OpenAI-compatible servers pointed at the same setting, and for LM Studio versions/models that reject the field. The match is deliberately narrow so a genuine 400 about something else surfaces as itself rather than being retried into a confusing second error. The `lmstudioTools` toggle skips sending tools at all.
 
 ### Timeout
 

@@ -1640,16 +1640,25 @@ export default function Documentation() {
             body so they override Warroom's defaults, which is the whole point of the box.
           </P>
 
-          <H3>Tool-calling fallback</H3>
+          <H3>Tool calling</H3>
           <P>
-            Plenty of local models — Gemma among them — don't implement OpenAI-style function
-            calling and reject the <Code>tools</Code> field outright. Rather than fail the whole
-            chat, the <Code>lmstudio</Code> branch of <Code>chat:geminiAgentTurn</Code> retries once{' '}
-            <strong>without</strong> tools when a 400/500 body matches{' '}
-            <Code>looksLikeToolUnsupported</Code>; the user still gets a normal conversation, just
-            without Warroom tool access. The match is deliberately narrow so a genuine 400 about
-            something else surfaces as itself rather than being retried into a confusing second
-            error. The <Code>lmstudioTools</Code> toggle skips the attempt entirely.
+            <strong>Tool calling normally just works.</strong> Gemma 4 has native structured
+            tool-use support, and — importantly — for models <em>without</em> a tool-capable chat
+            template LM Studio does <strong>not</strong> error: it substitutes its own system prompt
+            and a standardised tool-call format, converting <Code>tool</Code>-role messages to{' '}
+            <Code>user</Code> role for templates that lack the role. So the <Code>tools</Code> field
+            is safe to send to any loaded model.
+          </P>
+          <P>
+            The <Code>lmstudio</Code> branch of <Code>chat:geminiAgentTurn</Code> still keeps a
+            defensive fallback: on a 400/500 whose body matches{' '}
+            <Code>looksLikeToolUnsupported</Code>, it retries once <strong>without</strong> tools so
+            the chat degrades to a plain conversation instead of failing outright. Given LM Studio's
+            own fallback this should rarely fire — it exists for third-party OpenAI-compatible
+            servers pointed at the same setting, and for versions/models that reject the field. The
+            match is deliberately narrow so a genuine 400 about something else surfaces as itself
+            rather than being retried into a confusing second error. The <Code>lmstudioTools</Code>{' '}
+            toggle skips sending tools at all.
           </P>
 
           <H3>Timeout</H3>
