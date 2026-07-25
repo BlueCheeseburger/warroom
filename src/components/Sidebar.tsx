@@ -244,26 +244,29 @@ export function IcoTopics() {
 /**
  * Settings: two slider tracks with filled handles.
  *
- * Replaces a three-track version that was both busy at 20px and blurry. Design
- * notes, since they're what make it read cleanly at this size:
- *  - TWO tracks, not three — at 20px the third crowded the icon into stripes and
- *    left no vertical breathing room around the handles.
- *  - Tracks sit at INTEGER y with a 2px stroke, so each fills exactly two whole
- *    pixel rows (see the icon-rendering notes in documentation.md).
- *  - Handles are FILLED, not outlined. A 2px-wide outlined ring at r=2.5 is
- *    mostly hole at this size and reads as a smudge; a solid disc gives the icon
- *    a clear focal weight and, being a fill, has no stroke-alignment problem.
- *  - Handles sit at opposite ends (left track right-of-centre, right track
- *    left-of-centre) so the icon reads as "adjustable", not as a static list.
+ * Sized so it stays pixel-crisp at BOTH places it's used — 16px in the expanded
+ * sidebar row and 20px in the collapsed rail. The trick is that the track
+ * centres sit at y=5 and y=15, which are whole pixels at every scale we render
+ * (×1.0 → 5/15, ×0.8 → 4/12), and `strokeWidth` is derived as `2 / scale` so the
+ * RENDERED track is always exactly 2px. A 2px stroke centred on a whole pixel
+ * fills two whole rows — no antialiasing at 1x or 2x.
+ *
+ * Handles are FILLED, not outlined: at this size an outlined ring is mostly hole
+ * and reads as a smudge, while a solid disc gives the icon a focal point and,
+ * being a fill, has no stroke-alignment problem. They sit at opposite ends so
+ * the icon reads as "adjustable" rather than as a stack of lines.
  */
-export function IcoSettings() {
+export function IcoSettings({ size = 20 }: { size?: number }) {
+  const scale = size / 20;
   return (
-    <Ico>
-      <line x1="3" y1="7"  x2="17" y2="7"  strokeWidth="2"/>
-      <line x1="3" y1="13" x2="17" y2="13" strokeWidth="2"/>
-      <circle cx="12.5" cy="7"  r="2.75" fill="currentColor" stroke="none"/>
-      <circle cx="7.5"  cy="13" r="2.75" fill="currentColor" stroke="none"/>
-    </Ico>
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none"
+      stroke="currentColor" strokeLinecap="round" shapeRendering="geometricPrecision"
+      style={{ flexShrink: 0, display: 'block' }}>
+      <line x1="3" y1="5"  x2="17" y2="5"  strokeWidth={2 / scale} />
+      <line x1="3" y1="15" x2="17" y2="15" strokeWidth={2 / scale} />
+      <circle cx="12.5" cy="5"  r="2.75" fill="currentColor" stroke="none" />
+      <circle cx="7.5"  cy="15" r="2.75" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
 
@@ -669,7 +672,7 @@ function ExpandedNav({
         <NavRowPrimary
           active={view.kind === 'settings'}
           onClick={() => setView({ kind: 'settings' })}
-          icon={<IcoSettings />}
+          icon={<IcoSettings size={16} />}
           label="Settings"
         />
       </div>
@@ -688,7 +691,7 @@ function NavRowPrimary({ active, onClick, icon, label }: {
       title={label}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-2.5 transition rounded-lg font-semibold"
+      className="w-full text-left px-2.5 py-1 text-xs flex items-center gap-2 transition rounded-lg font-medium"
       style={{
         background: active ? 'var(--nav-active-bg)' : hovered ? 'var(--nav-hover-bg)' : 'transparent',
         color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
@@ -697,7 +700,7 @@ function NavRowPrimary({ active, onClick, icon, label }: {
         cursor: 'pointer',
       }}
     >
-      <span style={{ display: 'flex', flexShrink: 0, opacity: active ? 1 : 0.7 }}>
+      <span style={{ display: 'flex', flexShrink: 0, opacity: active ? 0.9 : 0.55 }}>
         {icon}
       </span>
       <span>{label}</span>
