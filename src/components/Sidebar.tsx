@@ -81,6 +81,33 @@ function Ico({ children, size = 20 }: { children: React.ReactNode; size?: number
   );
 }
 
+/**
+ * Pixel-grid icon — a 16-unit viewBox rendered at exactly 16 CSS px, so ONE USER
+ * UNIT IS ONE PIXEL. The regular `Ico` above draws on a 20-unit viewBox, and the
+ * sidebar's header action buttons render it at 16px (`.sb-ico-16`): 1 unit then
+ * lands on 0.8px, so every axis-aligned stroke straddles two pixel columns and
+ * gets anti-aliased into a soft grey smear. That is what made this toolbar look
+ * blurry — not the artwork.
+ *
+ * On this grid, an axis-aligned line at a `.5` coordinate with a 1px stroke fills
+ * exactly one pixel column, edge to edge, with no anti-aliasing at all. Use it
+ * for small, boxy icons (grids, sheets, arrows) that live in the 16px header row.
+ *
+ * `strokeWidth` is set via inline STYLE, not the attribute, because
+ * `.sb-ico-16 > svg` sets `stroke-width` in CSS and a CSS rule beats a
+ * presentation attribute — the inline style is what actually wins.
+ */
+function IcoPx({ children }: { children: React.ReactNode }) {
+  return (
+    <svg width={16} height={16} viewBox="0 0 16 16" fill="none"
+      stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"
+      shapeRendering="geometricPrecision"
+      style={{ flexShrink: 0, display: 'block', strokeWidth: 1 }}>
+      {children}
+    </svg>
+  );
+}
+
 // All icons below use a 20×20 viewBox with 1.6px stroke.
 
 export function IcoHome() {
@@ -124,34 +151,31 @@ export function IcoSearch() {
   );
 }
 export function IcoImport() {
+  // Pixel-grid (see IcoPx): the tray line sits at y=13.5 and the shaft at x=8,
+  // so both render as single crisp pixel runs at 16px.
   return (
-    <Ico>
-      <path d="M10 3v9"/>
-      <path d="M6.5 8.5L10 12l3.5-3.5"/>
-      <path d="M4 16h12"/>
-    </Ico>
+    <IcoPx>
+      <path d="M8.5 2.5v7.5"/>
+      <path d="M5.5 7.5L8.5 10.5l3-3"/>
+      <path d="M2.5 13.5h12"/>
+    </IcoPx>
   );
 }
 export function IcoAutoFlow() {
-  // A flow sheet (header row + column divider) with a sparkle — "Warroom AI fills
-  // this in for you". A grid reads instantly as "a flow", and the sparkle carries
-  // the AI meaning without competing with it for pixels.
-  //
-  // Geometry is deliberately balanced so the combined ink (sheet + sparkle) is
-  // centered on the 20×20 box: sheet spans x 2→13, sparkle x 12.8→18, so the ink
-  // runs 2→18 (center 10); vertically 2.7→17.2 (center ~10). This icon sits
-  // inside the `ai-glow-ring` donut, where even a half-unit offset reads as
-  // visibly crooked — the previous version's ink was centered at (10.6, 9.2),
-  // which is exactly why it looked shoved up and to the right inside the ring.
+  // A flow sheet (header row + column divider) with a sparkle — "Warroom AI
+  // fills this in for you". Drawn on the pixel grid (see IcoPx): every edge of
+  // the sheet and both inner rules sit on `.5` coordinates, so at 16px they are
+  // exact one-pixel lines rather than the 0.8px-per-unit smear the 20-unit
+  // viewBox produced here. The sparkle is a filled path, so it needs no
+  // alignment and stays smooth.
   return (
-    <Ico>
-      <rect x="2" y="6.4" width="11" height="10.8" rx="1.4" />
-      <path d="M2 9.7h11" />
-      <path d="M7.5 9.7v7.5" />
-      {/* sparkle, top-right — 4-point star centered at (15.4, 5.3) */}
-      <path d="M15.4 2.7l.78 1.82 1.82.78-1.82.78-.78 1.82-.78-1.82-1.82-.78 1.82-.78z"
+    <IcoPx>
+      <rect x="1.5" y="4.5" width="9" height="10" rx="1" />
+      <path d="M1.5 7.5h9" />
+      <path d="M6.5 7.5v7" />
+      <path d="M12.6 1.7l.72 1.73 1.73.72-1.73.72-.72 1.73-.72-1.73L10.15 4.15l1.73-.72z"
         fill="currentColor" stroke="none" />
-    </Ico>
+    </IcoPx>
   );
 }
 export function IcoOpponents() {

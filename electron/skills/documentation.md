@@ -316,6 +316,18 @@ Flows are `.xlsx` spreadsheets opened in-app using SheetJS. They appear in the s
 
 Each flow has an ID, name, and debate event type. The flows index is persisted separately from the main DB in `flows_index.json`.
 
+### Sidebar icon rendering (why icons looked blurry)
+
+Two separate causes, both fixed:
+
+1. **CSS `transform: scale()` on an icon.** Chromium rasterizes a transformed element at its layout size and scales the resulting bitmap, so `scale(0.72)` on a 20px icon produced a blurry 14.4px bitmap instead of a crisp vector render. Section icons now size the SVG directly (`.sb-ico-14` / `.sb-ico-16` set `width`/`height` on the child `svg`), with `stroke-width` bumped to compensate so the rendered stroke still lands near 1.5 CSS px.
+
+2. **Fractional units-per-pixel.** The main `Ico` primitive draws on a 20-unit viewBox, and the sidebar's header action buttons render it at 16px — 1 unit = 0.8 px, so every axis-aligned edge falls mid-pixel and antialiases into a grey smear. That is what made the Flow toolbar read as blurry; the artwork was fine.
+
+`IcoPx` (`Sidebar.tsx`) is the fix for case 2: a **16-unit viewBox rendered at exactly 16 CSS px**, so one user unit is one pixel. Axis-aligned strokes are placed on `.5` coordinates with a 1px stroke, which fills exactly one pixel column edge-to-edge with no antialiasing — and stays exact at 2x (1.5 → device px 3.0, a 2-device-px stroke spanning 3.0–4.0... i.e. still integral). `IcoImport` and `IcoAutoFlow` are drawn on this grid. Note `strokeWidth` must be set via inline **style**, not the presentation attribute, because `.sb-ico-16 > svg` sets `stroke-width` in CSS and a CSS rule beats a presentation attribute.
+
+Use `IcoPx` for small boxy icons (grids, sheets, arrows) that live in the 16px header row; the 20-unit `Ico` is still right for icons rendered at their natural 20px, and for organic shapes (circles, diagonals) that antialias regardless.
+
 ### Flow folders and the Flows grid
 
 Clicking **Flow** in the sidebar opens `FlowsGrid` (view `{ kind: 'flows-grid', folderId? }`, routed in `App.tsx`) — the flow library as a grid of folders + flow tiles, mirroring the Cases grid. Folder management lives there, not in the sidebar header: the standalone new-folder button was removed from the Flow section, matching how Cases works.
