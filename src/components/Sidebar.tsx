@@ -138,7 +138,7 @@ export function IcoLibrary() {
     <Ico>
       <rect x="3.5" y="5" width="11" height="12" rx="1"/>
       <path d="M7 3h8.5a1 1 0 011 1v11"/>
-      <path d="M7 9h5M7 12h4"/>
+      <path d="M7 9h5M7 12h4" strokeWidth="2"/>
     </Ico>
   );
 }
@@ -199,7 +199,7 @@ export function IcoTournament() {
       <path d="M6.5 5.5H3.5V7C3.5 8.66 4.84 10 6.5 10"/>
       <path d="M13.5 5.5H16.5V7C16.5 8.66 15.16 10 13.5 10"/>
       <path d="M10 13.5V16"/>
-      <path d="M7 16h6"/>
+      <path d="M7 16h6" strokeWidth="2"/>
     </Ico>
   );
 }
@@ -218,7 +218,7 @@ export function IcoSpeechDoc() {
     <Ico>
       <path d="M11.5 2.5H5a1 1 0 00-1 1v13a1 1 0 001 1h10a1 1 0 001-1V7.5L11.5 2.5Z"/>
       <path d="M11.5 2.5V7.5H16.5"/>
-      <path d="M7 11h6M7 13.5h4.5"/>
+      <path d="M7 11h6M7 14h4.5" strokeWidth="2"/>
     </Ico>
   );
 }
@@ -237,7 +237,7 @@ export function IcoTopics() {
     <Ico>
       <circle cx="10" cy="10" r="7.5"/>
       <path d="M10 6.5v7M7 9l3-3 3 3"/>
-      <path d="M7 14h6"/>
+      <path d="M7 14h6" strokeWidth="2"/>
     </Ico>
   );
 }
@@ -245,9 +245,13 @@ export function IcoTopics() {
 export function IcoSettings() {
   return (
     <Ico>
-      <line x1="3" y1="6"  x2="17" y2="6"/>
-      <line x1="3" y1="10" x2="17" y2="10"/>
-      <line x1="3" y1="14" x2="17" y2="14"/>
+      {/* Tracks use a 2px stroke on INTEGER y so each fills exactly two whole
+          pixel rows. At the icon set's default 1.5px they spanned 5.25–6.75 —
+          two half-lit rows — which is what read as blur. The knobs below are
+          circles, which antialias either way and look correct doing so. */}
+      <line x1="3" y1="6"  x2="17" y2="6"  strokeWidth="2"/>
+      <line x1="3" y1="10" x2="17" y2="10" strokeWidth="2"/>
+      <line x1="3" y1="14" x2="17" y2="14" strokeWidth="2"/>
       <circle cx="7"  cy="6"  r="2"/>
       <circle cx="13" cy="10" r="2"/>
       <circle cx="8"  cy="14" r="2"/>
