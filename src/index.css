@@ -707,14 +707,19 @@ html.dark .badge-neg {
   background: #e8e8ea;
   padding: 24px 32px;
 }
-html.dark .docx-viewer-wrap {
+html.dark .docx-viewer-wrap:not(.docx-force-light) {
   background: #2a2a2c;
 }
 
-html.dark .docx-viewer-wrap * {
+html.dark .docx-viewer-wrap:not(.docx-force-light) * {
   color: #e8e8ea !important;
   border-color: rgba(240, 240, 242, 0.7) !important;
 }
+
+/* Settings → "Keep speech docs light": .docx-force-light (applied by
+   SpeechDocViewer when the app is dark and the setting is on) opts a wrap
+   out of both dark rules above, so it falls back to the base light
+   .docx-viewer-wrap rule — the doc page stays light even in a dark app. */
 
 /* Cmd/Ctrl+click section selection (SpeechDocViewer) */
 .wr-section-sel {

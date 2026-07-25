@@ -589,7 +589,7 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
               onClick={(e) => { e.stopPropagation(); toggleCollapsed(it.id); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); toggleCollapsed(it.id); } }}
               className="shrink-0 flex items-center justify-center rounded transition"
-              style={{ width: 18, height: 18, marginLeft: 8 + rankDepth * 13 - 4 }}
+              style={{ width: 16, height: 16, marginLeft: 8 + rankDepth * 11 - 4 }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               title={isCollapsed ? 'Expand' : 'Collapse'}
@@ -601,12 +601,12 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
               </svg>
             </span>
           ) : (
-            <span className="shrink-0" style={{ width: 18, marginLeft: 8 + rankDepth * 13 - 4 }} />
+            <span className="shrink-0" style={{ width: 16, marginLeft: 8 + rankDepth * 11 - 4 }} />
           )}
           <button
             ref={active ? activeRef : undefined}
             onClick={() => onPick(it.id)}
-            className="flex-1 text-left text-[12px] leading-snug py-1.5 truncate min-w-0"
+            className="flex-1 text-left text-[12px] leading-snug py-0.5 truncate min-w-0"
             style={{
               paddingLeft: 4,
               color: active ? 'rgb(var(--ink-rgb))' : (topLevel ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)'),
@@ -674,44 +674,50 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
         <IconBtn icon={<IcoClose />} label="Close outline" onClick={onClose} tooltipAlign="right" />
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll-thin py-1.5 px-1.5">
+      <div className="flex-1 overflow-y-auto scroll-thin py-1 px-1.5">
         {items.length === 0 ? (
           <div className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
             No headings found in this document. Outline navigation works with docs that use Word/Verbatim heading styles (pockets, hats, blocks, tags).
           </div>
         ) : (
-          tree.map((root, i) => renderNode(root, 0, i > 0 ? 6 : 0))
+          tree.map((root, i) => renderNode(root, 0, i > 0 ? 3 : 0))
         )}
       </div>
     </div>
   );
 }
 
-// Toolbar toggle for the outline panel — styled hover tooltip + active state.
-function OutlineToggleBtn({ active, count, onClick }: {
+// Slim pull-tab fixed to the left edge of a doc pane — replaces the old
+// permanent sidebar-style outline button. Click (or drag right) to slide the
+// outline out as an overlay; it tucks back away rather than occupying a
+// permanent column, since panes are already tight on width when 2-3 are open.
+function OutlinePullTab({ active, count, onClick }: {
   active: boolean; count: number; onClick: () => void;
 }) {
   const [tip, setTip] = useState(false);
   return (
-    <div className="relative" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
-      <button
-        onClick={onClick}
-        className="flex items-center justify-center w-9 h-9 rounded-lg transition"
-        style={{
-          background: active ? 'var(--nav-active-bg)' : 'transparent',
-          boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
-          border: 'none', cursor: 'pointer',
-          color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
-        }}
-        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      >
-        <IcoOutline active={active} />
-      </button>
-      {tip && (
-        <div className="absolute top-full mt-1.5 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
-          style={{ left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
-          {active ? 'Hide outline' : count > 0 ? `Outline · ${count} headings` : 'Outline'}
+    <div
+      className="absolute z-30 flex items-center justify-center transition"
+      style={{
+        left: active ? 248 : 0, top: '50%', transform: 'translateY(-50%)',
+        width: 14, height: 56, borderRadius: '0 8px 8px 0',
+        background: active ? 'var(--nav-active-bg)' : 'var(--bg-elevated)',
+        border: '1px solid var(--border-subtle)', borderLeft: 'none',
+        boxShadow: 'var(--shadow-elevated)', cursor: 'pointer',
+      }}
+      onClick={onClick}
+      onMouseEnter={() => setTip(true)}
+      onMouseLeave={() => setTip(false)}
+      title={active ? 'Hide outline' : count > 0 ? `Outline · ${count} headings` : 'Outline'}
+    >
+      <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
+        style={{ transform: active ? 'rotate(180deg)' : 'none', color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)' }}>
+        <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      {tip && !active && (
+        <div className="absolute px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
+          style={{ left: 18, top: '50%', transform: 'translateY(-50%)', background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
+          {count > 0 ? `Outline · ${count} headings` : 'Outline'}
         </div>
       )}
     </div>
@@ -2342,7 +2348,21 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function SpeechDocViewer() {
+// A pane renders one open document. Pane 0 is the "main" pane and stays
+// wired to the global `view` (so every existing open-doc call site in the
+// app — sidebar, Home, CasesGrid, etc. — keeps working unchanged and keeps
+// OC live-case support). Panes 1 and 2 are extra compare panes opened from
+// inside the viewer itself; they render a plain local file with the same
+// toolbar/outline/find/focus features but no OC-case wiring.
+export interface DocPaneProps {
+  paneIndex?: 0 | 1 | 2;
+  paneDocPath?: string;
+  focused?: boolean;
+  onFocusPane?: () => void;
+  onCloseExtraPane?: () => void;
+}
+
+function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane }: DocPaneProps) {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
   // Folder-of-docx import files every doc it finds into a new Warroom folder
   // named after the OS folder it came from — aliased to avoid colliding with
@@ -2352,8 +2372,9 @@ export default function SpeechDocViewer() {
   const setPendingFindQuery = useApp((s) => s.setPendingFindQuery);
   // OpenCaseList-imported case (carries a docx via ocSource). Derived from the
   // current view + db so this single always-mounted viewer can render both
-  // normal speech docs and imported cases without a second instance.
-  const ocCase = view.kind === 'case' && db.cases[(view as any).caseId]?.ocSource
+  // normal speech docs and imported cases without a second instance. Only
+  // pane 0 tracks the global view — extra compare panes are plain files.
+  const ocCase = paneIndex === 0 && view.kind === 'case' && db.cases[(view as any).caseId]?.ocSource
     ? db.cases[(view as any).caseId]
     : null;
   const ocCaseId = ocCase?.id;
@@ -2361,7 +2382,7 @@ export default function SpeechDocViewer() {
   const isOc = !!ocCase;
   // When opening a disclosed OC file directly (before saving), the view carries
   // an ocPreview object so we can show a "Save to Cases" action inline.
-  const ocPreview = view.kind === 'speech-doc' ? (view as any).ocPreview as
+  const ocPreview = paneIndex === 0 && view.kind === 'speech-doc' ? (view as any).ocPreview as
     { url: string; teamName: string; label: string; side: string } | undefined : undefined;
   const [ocPreviewSaved, setOcPreviewSaved] = React.useState(false);
   const ocBytesRef = useRef<string>(''); // base64 of the loaded OC docx, for export/share
@@ -2395,7 +2416,20 @@ export default function SpeechDocViewer() {
   const headingClassesRef = useRef<HeadingClasses | undefined>(undefined);
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
-  const [outlineOpen, setOutlineOpen] = useState(true);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // Settings → "Keep speech docs light": in dark mode, render the doc page
+  // itself as light "paper" while the rest of the app stays dark. Default on.
+  const [docLightInDark, setDocLightInDark] = useState(
+    () => localStorage.getItem('warroom-doc-light-in-dark') !== 'false'
+  );
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail?.docLightInDark;
+      if (typeof v === 'boolean') setDocLightInDark(v);
+    };
+    window.addEventListener('warroom-doc-light-changed', onChange);
+    return () => window.removeEventListener('warroom-doc-light-changed', onChange);
+  }, []);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   // Find bar
   const [findOpen, setFindOpen] = useState(false);
@@ -2656,9 +2690,11 @@ export default function SpeechDocViewer() {
     saveWpm(clamped);
   }, []);
 
-  // Cmd/Ctrl+F opens the find bar; Esc closes it.
+  // Cmd/Ctrl+F opens the find bar; Esc closes it. Only the focused pane
+  // responds — with 2-3 panes mounted at once, only one should react per keypress.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (!focused) return;
       if (step === 'viewing' && matchesShortcut(e, 'find-page')) {
         e.preventDefault();
         setFindOpen(true);
@@ -2669,7 +2705,7 @@ export default function SpeechDocViewer() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [step, findOpen]);
+  }, [step, findOpen, focused]);
 
   // ── Credibility ─────────────────────────────────────────────────────────
   // When the panel opens, load any cached scores for the current cards.
@@ -3012,20 +3048,25 @@ export default function SpeechDocViewer() {
     }
   }, []);
 
-  // Re-apply / remove dark-mode fixes whenever the theme class on <html> changes
+  // Re-apply / remove dark-mode fixes whenever the theme class on <html>
+  // changes, OR the "keep speech docs light" setting is toggled — a doc kept
+  // light in a dark app never gets the dimmed-highlight / lightened-border
+  // treatment, same as if the whole app were in light mode.
   useEffect(() => {
-    const observer = new MutationObserver(() => {
+    const sync = () => {
       if (!containerRef.current) return;
-      const isDark = document.documentElement.classList.contains('dark');
+      const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
       if (isDark) {
         applyDarkModeViewerFixes(containerRef.current);
       } else {
         removeDarkModeViewerFixes(containerRef.current);
       }
-    });
+    };
+    sync();
+    const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
-  }, []);
+  }, [docLightInDark]);
 
   // Keep refs in sync (so the async loadFile closure always reads fresh values)
   useEffect(() => { focusActiveRef.current = focusActive; }, [focusActive]);
@@ -3039,20 +3080,22 @@ export default function SpeechDocViewer() {
   }, [focusActive, focusType]);
 
   // Auto-load: a docPath (clicking a recent), an OC-imported case (carries a
-  // docx via ocSource), or nothing (show the drop zone).
-  const docPath = (view as any).docPath as string | undefined;
+  // docx via ocSource), or nothing (show the drop zone). Pane 0 reads from the
+  // global view; extra compare panes (1/2) read from their own prop instead.
+  const docPath = paneIndex === 0 ? ((view as any).docPath as string | undefined) : paneDocPath;
   const loadedPath = useRef('');
   useEffect(() => {
     if (ocCase) {
       loadOcCase(ocCase);
     } else if (docPath && docPath !== loadedPath.current) {
       loadFile(docPath);
-    } else if (view.kind === 'speech-doc' && !docPath) {
-      // No specific file requested (e.g. clicked the Cases + button) — always show the drop zone.
+    } else if (!docPath && (paneIndex !== 0 || view.kind === 'speech-doc')) {
+      // No specific file requested (e.g. clicked the Cases + button, or an
+      // extra pane was just cleared) — always show the drop zone.
       reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.kind, docPath, ocCaseId, ocUrl]);
+  }, [view.kind, docPath, ocCaseId, ocUrl, paneIndex]);
 
   // Reset the preview-save confirmation when the viewed file changes.
   React.useEffect(() => { setOcPreviewSaved(false); }, [docPath, ocCaseId]);
@@ -3120,7 +3163,7 @@ export default function SpeechDocViewer() {
         // colours were computed once at render and would have stranded an open doc
         // in the old theme. Page geometry is docx-preview's, from the real Word
         // page margins. A centred page-card look would be a deliberate CSS change.
-        const isDark = document.documentElement.classList.contains('dark');
+        const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
 
         // Resolve which paragraph styles are headings from styles.xml (handles
@@ -3389,7 +3432,19 @@ export default function SpeechDocViewer() {
 
   if (step === 'idle') {
     return (
-      <div className="flex flex-col h-full p-8 gap-6">
+      <div className="flex flex-col h-full p-8 gap-6 relative" onMouseDownCapture={onFocusPane}>
+        {paneIndex !== 0 && onCloseExtraPane && (
+          <button
+            className="absolute top-2 right-2 flex items-center justify-center w-6 h-6 rounded-md transition z-10"
+            style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            title="Close this pane"
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            onClick={onCloseExtraPane}
+          >
+            <IcoClose />
+          </button>
+        )}
         <div
           className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
           onClick={pickFile}
@@ -3452,7 +3507,11 @@ export default function SpeechDocViewer() {
   // ── Viewing ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div
+      className="flex flex-col h-full relative"
+      style={paneIndex !== 0 ? { borderLeft: '1px solid var(--border-subtle)' } : undefined}
+      onMouseDownCapture={onFocusPane}
+    >
       {/* Toolbar */}
       <div className="border-b border-line px-3 py-1.5 flex items-center gap-2 shrink-0">
         {/* Document tools — grouped into a segmented cluster so the compact icon
@@ -3468,7 +3527,6 @@ export default function SpeechDocViewer() {
             onTypeChange={t => { setFocusType(t); setFocusActive(true); }}
           />
           <div style={{ width: 1, height: 18, background: 'var(--border-subtle)', margin: '0 2px' }} />
-          <OutlineToggleBtn active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
           <ToolbarToggle
             active={findOpen}
             label="Find in document (⌘F)"
@@ -3515,6 +3573,18 @@ export default function SpeechDocViewer() {
           >
             {fileName.replace(/\.docx$/i, '')}
           </span>
+          {paneIndex !== 0 && onCloseExtraPane && (
+            <button
+              className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition"
+              style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              title="Close this pane"
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              onClick={onCloseExtraPane}
+            >
+              <IcoClose />
+            </button>
+          )}
           {revealPath && (
             <button
               className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover:opacity-100 transition"
@@ -3773,20 +3843,28 @@ export default function SpeechDocViewer() {
         </div>
       )}
 
-      {/* Outline + document + cross-ex side panel */}
-      <div className="flex-1 flex min-h-0">
-        {outlineOpen && step === 'viewing' && (
-          <OutlinePanel
-            items={outline}
-            activeId={activeHeadingId}
-            onPick={scrollToHeading}
-            onClose={() => setOutlineOpen(false)}
-            onStep={goToHeading}
-            dismissed={dismissedWarnings}
-            onDismiss={dismissWarning}
-          />
+      {/* Outline pull-tab + document + cross-ex side panel */}
+      <div className="flex-1 flex min-h-0 relative">
+        {step === 'viewing' && (
+          <OutlinePullTab active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
         )}
-        <div ref={scrollWrapRef} className="flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0 relative">
+        {outlineOpen && step === 'viewing' && (
+          <div className="absolute z-20 top-0 bottom-0 left-0" style={{ boxShadow: 'var(--shadow-elevated)' }}>
+            <OutlinePanel
+              items={outline}
+              activeId={activeHeadingId}
+              onPick={scrollToHeading}
+              onClose={() => setOutlineOpen(false)}
+              onStep={goToHeading}
+              dismissed={dismissedWarnings}
+              onDismiss={dismissWarning}
+            />
+          </div>
+        )}
+        <div
+          ref={scrollWrapRef}
+          className={`flex-1 overflow-y-auto scroll-thin docx-viewer-wrap min-w-0 relative${docLightInDark ? ' docx-force-light' : ''}`}
+        >
           {step === 'loading' && <LoadingPanel message="Loading document…" />}
           <div
             ref={containerRef}
@@ -3847,6 +3925,81 @@ export default function SpeechDocViewer() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Multi-pane wrapper ──────────────────────────────────────────────────────
+// Lets up to three speech docs sit side by side for comparison. Pane 0 is the
+// "main" doc, driven by the app's global view (unchanged behavior — every
+// existing open-doc call site in the app targets pane 0). Panes 1 and 2 are
+// opened from a slim "add pane" strip at the right edge and load whatever
+// file the user drops/browses into them, independent of the main doc.
+function AddPaneStrip({ onClick }: { onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Compare with another document"
+      className="shrink-0 flex flex-col items-center justify-center gap-1.5 h-full transition"
+      style={{
+        width: hover ? 34 : 14,
+        background: hover ? 'var(--bg-elevated)' : 'transparent',
+        border: 'none', borderLeftWidth: 1, borderLeftStyle: 'solid', borderLeftColor: 'var(--border-subtle)',
+        cursor: 'pointer', color: 'var(--nav-inactive-color)',
+      }}
+    >
+      <span style={{ fontSize: 14, lineHeight: 1, opacity: hover ? 1 : 0.6 }}>+</span>
+      {hover && (
+        <span
+          className="text-[10.5px] font-medium whitespace-nowrap"
+          style={{ writingMode: 'vertical-rl', color: 'var(--nav-inactive-color)' }}
+        >
+          Compare doc
+        </span>
+      )}
+    </button>
+  );
+}
+
+export default function SpeechDocViewer() {
+  const extraDocPanes = useApp((s) => s.extraDocPanes);
+  const setExtraDocPane = useApp((s) => s.setExtraDocPane);
+  const focusedPane = useApp((s) => s.focusedPane);
+  const setFocusedPane = useApp((s) => s.setFocusedPane);
+
+  const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length;
+
+  return (
+    <div className="flex h-full min-h-0 w-full">
+      <div className="flex-1 min-w-0 h-full">
+        <DocPaneViewer paneIndex={0} focused={focusedPane === 0} onFocusPane={() => setFocusedPane(0)} />
+      </div>
+      {extraDocPanes.map((docPath, i) => docPath === undefined ? null : (
+        <div key={i} className="flex-1 min-w-0 h-full">
+          <DocPaneViewer
+            paneIndex={(i + 1) as 1 | 2}
+            paneDocPath={docPath || undefined}
+            focused={focusedPane === i + 1}
+            onFocusPane={() => setFocusedPane((i + 1) as 1 | 2)}
+            onCloseExtraPane={() => {
+              setExtraDocPane(i as 0 | 1, undefined);
+              if (focusedPane === i + 1) setFocusedPane(0);
+            }}
+          />
+        </div>
+      ))}
+      {openExtraCount < 2 && (
+        <AddPaneStrip
+          onClick={() => {
+            const slot: 0 | 1 = extraDocPanes[0] === undefined ? 0 : 1;
+            setExtraDocPane(slot, '');
+            setFocusedPane((slot + 1) as 1 | 2);
+          }}
+        />
+      )}
     </div>
   );
 }

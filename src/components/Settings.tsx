@@ -273,6 +273,17 @@ export default function Settings() {
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
+  // Speech doc reading pref (renderer-only display setting, like flow colors —
+  // no main-process/IPC need). Default ON: dark-mode users still read the
+  // actual doc page as light "paper" while the rest of the app stays dark.
+  const [docLightInDark, setDocLightInDarkState] = useState(
+    () => localStorage.getItem('warroom-doc-light-in-dark') !== 'false'
+  );
+  function setDocLightInDark(val: boolean) {
+    localStorage.setItem('warroom-doc-light-in-dark', String(val));
+    setDocLightInDarkState(val);
+    window.dispatchEvent(new CustomEvent('warroom-doc-light-changed', { detail: { docLightInDark: val } }));
+  }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
@@ -547,6 +558,26 @@ export default function Settings() {
             ))}
           </div>
         </div>
+        {isDark && (
+          <div className="flex items-center justify-between pt-3 mt-1" style={{ borderTop: '1px solid var(--border-side)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Keep speech docs light</div>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+                Reads the doc itself on a light page, like paper, while the rest of Warroom stays in dark mode.
+              </p>
+            </div>
+            <button
+              onClick={() => setDocLightInDark(!docLightInDark)}
+              className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+              style={{ background: docLightInDark ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+            >
+              <span
+                className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                style={{ transform: docLightInDark ? 'translateX(18px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Event */}

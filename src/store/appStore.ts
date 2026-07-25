@@ -72,6 +72,14 @@ interface AppState {
   direction: Direction;
   dangerHighlight: DangerHighlight;
   setDangerHighlight: (d: DangerHighlight) => void;
+  // Speech doc viewer side-by-side compare panes. Pane 0 is always the main
+  // doc tracked by `view` (kind:'speech-doc'); these are the two *extra*
+  // panes a user can open alongside it for side-by-side reading. Transient
+  // (not persisted) — cleared on app restart like any other open-doc state.
+  extraDocPanes: [string | undefined, string | undefined];
+  setExtraDocPane: (slot: 0 | 1, docPath: string | undefined) => void;
+  focusedPane: 0 | 1 | 2;
+  setFocusedPane: (pane: 0 | 1 | 2) => void;
   event: DebateEvent;
   flowsIndex: FlowMeta[];
   ready: boolean;
@@ -156,6 +164,14 @@ export const useApp = create<AppState>((set, get) => ({
   direction: (localStorage.getItem('warroom-direction') as Direction | null) ?? 'calm',
   dangerHighlight: (localStorage.getItem('warroom-danger-highlight') as DangerHighlight | null) ?? 'always',
   setDangerHighlight: (d) => { localStorage.setItem('warroom-danger-highlight', d); set({ dangerHighlight: d }); },
+  extraDocPanes: [undefined, undefined],
+  setExtraDocPane: (slot, docPath) => set((s) => {
+    const next: [string | undefined, string | undefined] = [...s.extraDocPanes];
+    next[slot] = docPath;
+    return { extraDocPanes: next };
+  }),
+  focusedPane: 0,
+  setFocusedPane: (pane) => set({ focusedPane: pane }),
   event: (localStorage.getItem('warroom-event') as DebateEvent | null) ?? 'policy',
   flowsIndex: [],
   ready: false,

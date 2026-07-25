@@ -206,7 +206,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/25/26
+          Last updated: 7/24/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1217,11 +1217,30 @@ export default function Documentation() {
           </P>
           <P>
             The toolbar includes <strong>Focus mode</strong> (hides body text, leaving only card
-            structure and highlighted / underlined runs), <strong>Outline</strong> (heading
-            navigation), <strong>Find</strong> (in-doc search), <strong>Reading time</strong> /
-            auto-scroll, <strong>Send to Flow</strong>, <strong>Cross-Ex Practice</strong>, and{' '}
-            <strong>Card Credibility</strong>. The open document's name is always shown in the
-            toolbar between the tool cluster and the AI-tool pills.
+            structure and highlighted / underlined runs), <strong>Find</strong> (in-doc search),{' '}
+            <strong>Reading time</strong> / auto-scroll, <strong>Send to Flow</strong>,{' '}
+            <strong>Cross-Ex Practice</strong>, and <strong>Card Credibility</strong>. The open
+            document's name is always shown in the toolbar between the tool cluster and the
+            AI-tool pills.
+          </P>
+          <P>
+            <strong>Side-by-side compare (up to 3 panes).</strong> A slim <strong>+</strong> strip
+            on the right edge of the viewer opens a second and third doc pane alongside the main
+            one, each independently scrollable, searchable, and drag/drop or browse-loadable —
+            useful for reading a case against a block, or comparing two teams' 1ACs. The main pane
+            (pane 0) always tracks whatever the rest of the app opened (sidebar, Home, Cases grid);
+            the two extra panes are opened and closed from inside the viewer itself, via the{' '}
+            <Code>extraDocPanes</Code> array in <Code>appStore</Code>. Clicking into a pane focuses
+            it — keyboard shortcuts like <Code>⌘F</Code> apply only to the focused pane so three
+            open panes don't all react to the same keypress. Each extra pane has its own close (×)
+            button next to its filename.
+          </P>
+          <P>
+            <strong>Outline.</strong> Heading navigation (pockets, hats, blocks, card tags) now
+            lives behind a slim pull-tab on the left edge of each pane instead of a permanent
+            sidebar-style panel — click the tab (or its chevron) to slide the outline out as an
+            overlay, click again to tuck it away. This keeps full pane width available for reading
+            when 2-3 docs are open side by side. It starts closed each time a doc loads.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
@@ -1728,6 +1747,10 @@ export default function Documentation() {
               <div>
                 <span className="font-semibold text-ink">Flow colors</span>
                 <span className="ml-2 text-ink/60">Default Aff/Pro and Neg/Con column colors applied to all flows.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Keep speech docs light</span>
+                <span className="ml-2 text-ink/60">Dark mode only. On by default — the doc page itself stays light like paper while the rest of the app stays dark.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Setup wizard</span>
