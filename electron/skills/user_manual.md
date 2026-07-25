@@ -208,15 +208,21 @@ Two things work a little differently on the Touch Bar, both just because of what
 - **Open**: drag .xlsx onto app window, or Flows section in sidebar → "+ Open flow"
 - Share via team chat with "Can view" or "Can edit" permissions
 
-### Flow folders
-The sidebar's **Flow** section has the same folder system as Cases — group your flows by tournament, by round, by practice set, whatever fits.
+### The Flows grid
+Click the word **Flow** in the sidebar and you get your whole flow library at once — every flow and folder in a grid, exactly like the Cases grid. This is where folders are managed; there's no folder button cluttering the sidebar.
 
-- **Make a folder**: click the **new-folder button** in the Flow section header, then double-click the new folder (or right-click → Rename) to name it
-- **File a flow**: drag it onto a folder — or right-click the flow → **Move to** and pick the folder (works even when the folder is collapsed)
-- **Nest folders**: drag one folder into another; they can go as deep as you like
-- **Rename or delete a folder**: hover it and click the **⋯** menu (or right-click it)
+- **New flow / New folder**: buttons in the grid header. A flow made while you're inside a folder lands in that folder.
+- **Auto Flow**: also in the grid header, for building a flow from speech docs.
+- **File a flow**: drag its tile onto a folder — or drag it onto a folder in the sidebar tree
+- **Reorder**: drag a flow tile onto another to place it before/after
+- **Rename**: double-click a tile, or right-click → Rename
+- **Right-click a tile** for **Move to** (any folder, even a collapsed one), **Rename**, and **Delete**
+- **Open a folder**: click it; breadcrumbs at the top take you back up
+- **Search** looks across **every folder at once**, so you never need to remember where you filed a flow
 
-Same rules as Cases folders: a folder is **just a label**. Filing a flow never touches the flow itself, and deleting a folder never deletes a flow — everything inside just moves up a level. Flow folders and Cases folders are separate systems, so a flow can't be dropped into a Cases folder or vice versa.
+Folders still show in the sidebar under Flow as an expandable tree, and whatever you file in one place shows up in the other immediately — same folders, two views.
+
+Same rules as Cases folders: a folder is **just a label**. Filing a flow never touches the flow itself, and deleting a folder never deletes a flow — everything inside moves up a level. Flow folders and Cases folders are separate systems, so a flow can't be dropped into a Cases folder or vice versa.
 
 ### Import a flow from a spreadsheet
 You can bring an existing flow spreadsheet (.xlsx) straight into the app as a new flow sheet.

@@ -206,7 +206,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/24/26
+          Last updated: 7/25/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -832,18 +832,26 @@ export default function Documentation() {
             Each flow has an ID, name, and debate event type. The flows index is persisted separately
             from the main DB in <Code>flows_index.json</Code>.
           </P>
-          <H3>Flow folders</H3>
+          <H3>Flow folders and the Flows grid</H3>
           <P>
-            The sidebar's Flow section carries the <strong>same folder system as Cases</strong>{' '}
-            (<Code>src/utils/flowFolders.ts</Code> stores the same shape as{' '}
-            <Code>caseFolders.ts</Code> under its own <Code>flow_folders</Code> key, reusing all the
-            same pure tree helpers). Folders nest arbitrarily deep, flows are filed by drag-and-drop
-            or via the right-click <strong>Move to</strong> menu (which works even when the target
-            folder is collapsed), and the new-folder button in the section header creates one —
-            rename it by double-clicking or via its <Code>⋯</Code> menu. A folder is only a label:
-            filing never touches <Code>flow_data_&lt;id&gt;</Code>, and deleting a folder moves its
-            contents up a level rather than deleting any flow. Flow folders use distinct drag MIME
-            types from Cases folders, so the two trees can't accept each other's items.
+            Clicking <strong>Flow</strong> in the sidebar opens the <Code>FlowsGrid</Code> view — your
+            whole flow library as a grid of folders and flow tiles, mirroring the Cases grid. Folder
+            management lives there rather than behind a sidebar header button (which was removed, to
+            match how Cases works). <Code>src/utils/flowFolders.ts</Code> stores the same shape as{' '}
+            <Code>caseFolders.ts</Code> under its own <Code>flow_folders</Code> key and reuses all the
+            same pure tree helpers; <Code>FlowsGrid</Code> also imports the generic folder UI
+            (breadcrumbs, folder tiles, the delete-confirm dialog) straight from <Code>CasesGrid</Code>,
+            so the two libraries can't drift apart — only the flow tile itself is bespoke.
+          </P>
+          <P>
+            Everything behaves like Cases: drag to file, drag tile-onto-tile to reorder, right-click for
+            Move to / Rename / Delete (works even when the target folder is collapsed), breadcrumb
+            navigation with folders as drop targets, and search that spans every folder at once. Flow
+            folders use distinct drag MIME types from Cases folders, so the two trees can't accept each
+            other's items. A folder is only a label: filing never touches{' '}
+            <Code>flow_data_&lt;id&gt;</Code>, and deleting a folder moves its contents up a level. The
+            sidebar still shows the same folders as an expandable tree — same store, so both views stay
+            in step.
           </P>
           <H3>Importing a flow</H3>
           <P>

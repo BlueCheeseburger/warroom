@@ -37,7 +37,7 @@ const KIND_LABEL: Record<CaseItemKind, string> = {
 
 type Drag = { type: 'item'; key: string } | { type: 'folder'; id: string } | null;
 
-const CARD_BASE: React.CSSProperties = {
+export const CARD_BASE: React.CSSProperties = {
   transition: 'transform .15s cubic-bezier(.4,0,.2,1), box-shadow .15s ease, border-color .14s ease, background .14s ease',
 };
 
@@ -463,7 +463,7 @@ export default function CasesGrid() {
 
 // ─── Breadcrumb ───────────────────────────────────────────────────────────────
 
-function Crumb({ label, active, highlighted, onClick, onDragOver, onDragLeave, onDrop }: {
+export function Crumb({ label, active, highlighted, onClick, onDragOver, onDragLeave, onDrop }: {
   label: string;
   active: boolean;
   highlighted: boolean;
@@ -495,7 +495,7 @@ function Crumb({ label, active, highlighted, onClick, onDragOver, onDragLeave, o
 
 // ─── Folder tile ──────────────────────────────────────────────────────────────
 
-function FolderIcon({ size = 15 }: { size?: number }) {
+export function FolderIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -504,7 +504,7 @@ function FolderIcon({ size = 15 }: { size?: number }) {
   );
 }
 
-function FolderTile({
+export function FolderTile({
   folder, count, renaming, renameDraft, highlighted, dimmed,
   onOpen, onStartRename, onRenameDraft, onCommitRename, onCancelRename, onDelete,
   onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
@@ -593,7 +593,7 @@ function FolderTile({
   );
 }
 
-function TileAction({ label, danger, onClick, children }: {
+export function TileAction({ label, danger, onClick, children }: {
   label: string;
   danger?: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -934,7 +934,7 @@ function SideBadge({ side }: { side: 'aff' | 'neg' }) {
 
 // ─── Delete confirm ───────────────────────────────────────────────────────────
 
-function DeleteFolderConfirm({ folder, parentName, onCancel, onConfirm }: {
+export function DeleteFolderConfirm({ folder, parentName, onCancel, onConfirm }: {
   folder: CaseFolder;
   parentName: string;
   onCancel: () => void;

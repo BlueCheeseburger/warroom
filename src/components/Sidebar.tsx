@@ -5,7 +5,7 @@ import { importFlowFromXlsx } from '../utils/flowImport';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder, findFolder,
-  createFolder, renameFolder, deleteFolder, pruneAssignments,
+  renameFolder, deleteFolder, pruneAssignments,
   sortByOrder, ensureOrderSeeded, moveInOrder,
   ITEM_DRAG_MIME, FOLDER_DRAG_MIME,
 } from '../utils/caseFolders';
@@ -87,14 +87,6 @@ export function IcoFolder() {
     </Ico>
   );
 }
-function IcoNewFolder() {
-  return (
-    <Ico size={14}>
-      <path d="M2 6.5v9a1 1 0 001 1h14a1 1 0 001-1V8.5a1 1 0 00-1-1H9.5l-2-2H3a1 1 0 00-1 1z"/>
-      <path d="M10 9.5v4M8 11.5h4"/>
-    </Ico>
-  );
-}
 export function IcoLibrary() {
   return (
     <Ico>
@@ -122,12 +114,18 @@ export function IcoImport() {
   );
 }
 export function IcoAutoFlow() {
-  // A small wand + sparkle — "AI builds this for you" (Auto Flow's sidebar trigger).
+  // A flow sheet (columns + header row) with a sparkle — "Warroom AI fills this
+  // in for you". Replaces an earlier wand whose diamond head turned to mush at
+  // 20px; a grid reads instantly as "a flow", and the sparkle carries the AI
+  // meaning without competing with it for pixels.
   return (
     <Ico>
-      <path d="M4 16L14 6" strokeWidth="1.6" strokeLinecap="round"/>
-      <path d="M12 4l2 2-2 2-2-2z" fill="currentColor" stroke="none"/>
-      <path d="M16.5 10.5v2.5M15.25 11.75h2.5" strokeLinecap="round"/>
+      <rect x="2.5" y="5.5" width="11.5" height="10.5" rx="1.4" />
+      <path d="M2.5 9h11.5" />
+      <path d="M8.25 9v7" />
+      {/* sparkle, top-right */}
+      <path d="M15.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L12.9 5.3l2.05-.85z"
+        fill="currentColor" stroke="none" />
     </Ico>
   );
 }
@@ -465,6 +463,7 @@ function ExpandedNav({
       <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: '1px solid var(--border-subtle)', minHeight: 36 }}>
         <button
           onClick={() => setView({ kind: 'home' })}
+          title="Home"
           className="flex items-center gap-1.5 rounded-lg transition"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--nav-section-color)' }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)'; }}
@@ -499,6 +498,7 @@ function ExpandedNav({
       <div className="px-2 pt-1.5">
         <button
           onClick={() => setSearchOpen(true)}
+          title="Search everything"
           className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg transition"
           style={{
             background: 'var(--nav-hover-bg)',
@@ -624,6 +624,7 @@ function NavRowPrimary({ active, onClick, icon, label }: {
   return (
     <button
       onClick={onClick}
+      title={label}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="w-full text-left px-2.5 py-1.5 text-xs flex items-center gap-2.5 transition rounded-lg font-semibold"
@@ -781,6 +782,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
       ) : (
         <button
           onClick={onNavigate}
+          title={folder.name}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
           onContextMenu={(e) => { if (hasMenu) { e.preventDefault(); e.stopPropagation(); setMenuOpen(true); } }}
           className="w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5 transition rounded-lg font-medium"
@@ -829,6 +831,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
           style={{ top: '100%', minWidth: '150px', border: '1px solid var(--border-subtle)' }}>
           {onRename && (
             <button onClick={(e) => { e.stopPropagation(); startRename(); }}
+              title="Rename folder"
               className="w-full text-left px-3 py-1.5 transition"
               style={{ color: 'var(--nav-active-color)' }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
@@ -838,6 +841,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
           )}
           {onDelete && (
             <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
+              title="Delete folder"
               className="w-full text-left px-3 py-1.5 transition"
               style={{ color: 'var(--danger, #ef4444)' }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
@@ -1271,9 +1275,6 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
     e.dataTransfer.setData(payload.kind === 'item' ? FLOW_ITEM_DRAG_MIME : FLOW_FOLDER_DRAG_MIME, payload.id);
   }
 
-  function newFolder() {
-    update((d) => createFolder(d, 'New folder', null));
-  }
   function doDeleteFolder(id: string) {
     // Contents move up to the parent (see caseFolders.deleteFolder) — no flow is deleted.
     const folder = findFolder(folders, id);
@@ -1355,11 +1356,12 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
   return (
     <Section
       title="Flow" icon={<IcoFlow />} action={createFlow} actionLabel="+"
+      actionTitle="New flow"
+      onTitleClick={() => setView({ kind: 'flows-grid' })}
       extraAction={importFlow} extraBusy={importing}
       extraTitle="Import flow from .xlsx" extraIcon={<IcoImport />}
       extraActions={[
-        { onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow — build a flow from speech docs', className: 'ai-glow-ring' },
-        { onClick: newFolder, icon: <IcoNewFolder />, title: 'New folder' },
+        { onClick: () => setAutoFlowOpen(true), icon: <IcoAutoFlow />, title: 'Auto Flow', className: 'ai-glow-ring' },
       ]}
     >
       {/* Anything not dropped on a folder row falls through to here = top level. */}
@@ -1405,6 +1407,7 @@ function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
       <div className="flex-1" />
       <div className="relative" ref={menuRef}>
         <button onClick={() => setMenuOpen((v) => !v)}
+          title="Move to folder"
           className="px-2 py-1 rounded-md transition font-medium"
           style={{ background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))' }}>
           Move to
@@ -1414,6 +1417,7 @@ function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
             style={{ minWidth: 170, maxWidth: 260, border: '1px solid var(--border-subtle)' }}>
             <div style={{ maxHeight: 200, overflowY: 'auto' }}>
               <button onClick={() => { onMove(null); setMenuOpen(false); }}
+                title="Move to top level"
                 className="w-full text-left px-3 py-1.5 transition block"
                 style={{ color: 'var(--nav-active-color)' }}
                 onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
@@ -1433,7 +1437,7 @@ function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
           </div>
         )}
       </div>
-      <button onClick={onDelete} className="px-2 py-1 rounded-md transition font-medium" style={{ color: 'rgb(var(--danger-rgb))' }}
+      <button onClick={onDelete} title="Delete selected" className="px-2 py-1 rounded-md transition font-medium" style={{ color: 'rgb(var(--danger-rgb))' }}
         onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgb(var(--danger-rgb) / 0.15)'}
         onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
         Delete
@@ -1453,10 +1457,10 @@ function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
 
 interface SectionExtraAction { onClick: () => void; icon: React.ReactNode; title?: string; busy?: boolean; className?: string }
 
-function Section({ title, children, action, actionLabel, icon, defaultOpen = true,
+function Section({ title, children, action, actionLabel, actionTitle, icon, defaultOpen = true,
   extraAction, extraIcon, extraTitle, extraBusy, extraActions, onTitleClick }: {
   title: string; children?: React.ReactNode; action?: () => void;
-  actionLabel?: string; icon?: React.ReactNode; defaultOpen?: boolean;
+  actionLabel?: string; actionTitle?: string; icon?: React.ReactNode; defaultOpen?: boolean;
   extraAction?: () => void; extraIcon?: React.ReactNode; extraTitle?: string; extraBusy?: boolean;
   /** For a second (or third) icon button beyond the single extraAction slot above — e.g. Flow's Import + Auto Flow buttons. Rendered after extraAction, before the "+" action. */
   extraActions?: SectionExtraAction[];
@@ -1482,6 +1486,7 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
       >
         <button
           onClick={toggle}
+          title={open ? 'Collapse section' : 'Expand section'}
           className="flex items-center gap-1.5 flex-1 min-w-0"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
         >
@@ -1562,6 +1567,7 @@ function Section({ title, children, action, actionLabel, icon, defaultOpen = tru
           {action && (
             <button
               onClick={action}
+              title={actionTitle}
               className="flex items-center justify-center transition rounded"
               style={{
                 width: 22, height: 22, flexShrink: 0,
