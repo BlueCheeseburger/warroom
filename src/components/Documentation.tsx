@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/26/26
+          Last updated: 7/27/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1257,6 +1257,24 @@ export default function Documentation() {
             combine).
           </P>
           <P>
+            <strong>Compare views in the sidebar.</strong> Every saved combination also surfaces as
+            a row under <strong>Cases → Compare views</strong> (<Code>CompareViewsGroup</Code> in{' '}
+            <Code>Sidebar.tsx</Code>), newest first, so a multi-doc setup is something you return to
+            rather than rebuild pane by pane. Clicking a row restores every pane in one go; the
+            per-combo widths/outline/sidebar memory is then applied by the viewer as usual. Hovering
+            a row reveals an × that forgets the grouping (with an Undo toast) — never the docs
+            themselves. Rows are labelled from the live Cases list, so renaming a doc renames it
+            here too, and <Code>pruneComboViews</Code> drops any view referencing a deleted doc
+            (guarded so an empty or partial recents read can't wipe the list).
+          </P>
+          <P>
+            <strong>Toolbar overflow menu.</strong> With 2+ panes open there isn't room for a full
+            toolbar per pane, so Reading time, Send to flow, Credibility, and Cross-Ex collapse into
+            a hover-opened <strong>⋯</strong> menu (<Code>ToolbarOverflowMenu</Code>), where they
+            keep their text labels. The two AI tools keep their gradient ring on their menu rows;
+            the ⋯ button itself doesn't get one, since opening a menu isn't an API call.
+          </P>
+          <P>
             <strong>Rename a doc.</strong> Double-click the doc's name in the toolbar to rename it
             in place — for an OpenCaseList-imported case this renames the case; for a plain file it
             renames the recents/sidebar entry. The file on disk is never touched.
@@ -1276,8 +1294,9 @@ export default function Documentation() {
             <strong>Dedicated space</strong>): <strong>Dedicated space</strong> opens a fixed-width
             column that isn't resizable — the active pane and its reading "partner" (the next pane
             to its right, or the previous one if it's the rightmost pane) share about 85% of the
-            view, every other pane shrinks to a thin sliver, and the row can scroll horizontally to
-            reach it. <strong>Squish neighbor</strong> instead just borrows the outline's width from
+            view. Every other pane keeps its full width and simply scrolls out of view to the left,
+            with a sliver of the nearest one left showing as a hint that the row scrolls — panes are
+            never squeezed down to make room. <strong>Squish neighbor</strong> instead borrows the outline's width from
             one neighboring pane — everything stays within the viewport, nothing scrolls, and the
             active pane's own reading width doesn't shrink. Dragging pane dividers is disabled while
             a "Dedicated space" outline is open (that split isn't adjustable); it works normally

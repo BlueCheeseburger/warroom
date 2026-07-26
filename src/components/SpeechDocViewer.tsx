@@ -8,7 +8,7 @@ import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './F
 import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
-import { comboKeyFor, loadComboLayout, saveComboLayout } from '../utils/docComboLayout';
+import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -705,37 +705,36 @@ function OutlinePanel({ items, activeId, onPick, onClose, onStep, dismissed, onD
   );
 }
 
-// Slim pull-tab fixed to the left edge of a doc pane — replaces the old
-// permanent sidebar-style outline button. Click (or drag right) to slide the
-// outline out as an overlay; it tucks back away rather than occupying a
-// permanent column, since panes are already tight on width when 2-3 are open.
-function OutlinePullTab({ active, count, onClick }: {
-  active: boolean; count: number; onClick: () => void;
-}) {
+// Slim pull-tab on the left edge of a doc pane — replaces the old permanent
+// sidebar-style outline button. Clicking it opens OutlinePanel as a real flex
+// sibling (pushing the doc over, not covering it); the panel's own header ×
+// closes it again. Only rendered while the outline is CLOSED, so this has no
+// "open" state of its own — the panel is its own close affordance.
+function OutlinePullTab({ count, onClick }: { count: number; onClick: () => void }) {
   const [tip, setTip] = useState(false);
+  const label = count > 0 ? `Outline · ${count} headings` : 'Outline';
   return (
     <div
       className="absolute z-30 flex items-center justify-center transition"
       style={{
-        left: active ? 248 : 0, top: '50%', transform: 'translateY(-50%)',
+        left: 0, top: '50%', transform: 'translateY(-50%)',
         width: 14, height: 56, borderRadius: '0 8px 8px 0',
-        background: active ? 'var(--nav-active-bg)' : 'var(--bg-elevated)',
+        background: 'var(--bg-elevated)',
         border: '1px solid var(--border-subtle)', borderLeft: 'none',
         boxShadow: 'var(--shadow-elevated)', cursor: 'pointer',
       }}
       onClick={onClick}
       onMouseEnter={() => setTip(true)}
       onMouseLeave={() => setTip(false)}
-      title={active ? 'Hide outline' : count > 0 ? `Outline · ${count} headings` : 'Outline'}
+      title={label}
     >
-      <svg width="7" height="7" viewBox="0 0 8 8" fill="none"
-        style={{ transform: active ? 'rotate(180deg)' : 'none', color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)' }}>
+      <svg width="7" height="7" viewBox="0 0 8 8" fill="none" style={{ color: 'var(--nav-inactive-color)' }}>
         <path d="M2 1.5l3 2.5-3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
-      {tip && !active && (
+      {tip && (
         <div className="absolute px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
           style={{ left: 18, top: '50%', transform: 'translateY(-50%)', background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
-          {count > 0 ? `Outline · ${count} headings` : 'Outline'}
+          {label}
         </div>
       )}
     </div>
@@ -819,14 +818,14 @@ function OcSourcePill({ teamName, checking, checkResult, onCheck }: {
 
 // Labeled toolbar pill (icon + text). Used for the panel-opening AI tools so
 // they read as distinct actions rather than another anonymous icon.
-function ToolbarPill({ active, label, icon, onClick, title, compact }: {
-  active: boolean; label: string; icon: React.ReactNode; onClick: () => void; title?: string; compact?: boolean;
+function ToolbarPill({ active, label, icon, onClick, title }: {
+  active: boolean; label: string; icon: React.ReactNode; onClick: () => void; title?: string;
 }) {
   return (
     <button
       onClick={onClick}
       title={title ?? label}
-      className={`ai-glow-ring flex items-center gap-1.5 h-7 rounded-lg transition text-[12px] font-medium shrink-0 ${compact ? 'w-7 justify-center px-0' : 'px-2.5'}`}
+      className="ai-glow-ring flex items-center gap-1.5 h-7 px-2.5 rounded-lg transition text-[12px] font-medium shrink-0"
       style={{
         background: active ? 'var(--nav-active-bg)' : 'transparent',
         boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
@@ -837,8 +836,79 @@ function ToolbarPill({ active, label, icon, onClick, title, compact }: {
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       {icon}
-      {!compact && label}
+      {label}
     </button>
+  );
+}
+
+// Three-dots overflow menu, opened on hover. Used in multi-pane compare view,
+// where a full-width toolbar per pane doesn't fit: the reading-time, send-to-
+// flow, credibility, and cross-ex controls fold in here instead. Inside the
+// menu they get their labels back (there's room), so nothing becomes a
+// mystery icon.
+function ToolbarOverflowMenu({ items }: {
+  // `ai` marks a row that triggers an AI/API call, so it keeps the blue→pink
+  // gradient ring it had as a toolbar pill. The ⋯ button itself is a plain
+  // container (its contents are a mix of AI and non-AI tools), so it stays
+  // unringed — otherwise the ring would promise an API call just to open a menu.
+  items: { label: string; hint?: string; icon: React.ReactNode; active: boolean; ai?: boolean; onClick: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef(0);
+  // A small close delay keeps the menu usable while the pointer crosses the
+  // gap between the button and the panel below it.
+  const openNow = () => { window.clearTimeout(closeTimer.current); setOpen(true); };
+  const closeSoon = () => { window.clearTimeout(closeTimer.current); closeTimer.current = window.setTimeout(() => setOpen(false), 160); };
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+
+  const anyActive = items.some(i => i.active);
+  return (
+    <div className="relative shrink-0" onMouseEnter={openNow} onMouseLeave={closeSoon}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="More tools"
+        className="flex items-center justify-center w-7 h-7 rounded-lg transition"
+        style={{
+          background: open || anyActive ? 'var(--nav-active-bg)' : 'transparent',
+          boxShadow: anyActive ? 'var(--nav-active-shadow)' : 'none',
+          border: 'none', cursor: 'pointer',
+          color: open || anyActive ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          className="absolute z-50 rounded-xl py-1"
+          style={{
+            top: 'calc(100% + 4px)', right: 0, minWidth: 190,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-elevated)',
+          }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              onClick={() => { it.onClick(); setOpen(false); }}
+              title={it.hint ?? it.label}
+              className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium transition text-left${it.ai ? ' ai-glow-ring' : ''}`}
+              style={{
+                background: it.active ? 'var(--nav-active-bg)' : 'transparent',
+                color: it.active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                border: 'none', cursor: 'pointer',
+              }}
+              onMouseEnter={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <span className="shrink-0 flex items-center justify-center w-5">{it.icon}</span>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2386,10 +2456,10 @@ export interface DocPaneProps {
   // fallback state below when these aren't passed.
   outlineOpen?: boolean;
   onOutlineOpenChange?: (open: boolean) => void;
-  // 'squish' (this pane's own outline, unadjusted layout — legacy/simple) or
-  // 'space' (dedicated non-adjustable column, generous/sliver panes, only
-  // meaningful when the wrapper is actually laying out >1 pane).
-  toolbarCompact?: boolean; // hide Credibility/Cross-Ex text labels, icon only
+  // Set while 2-3 panes are open: there isn't room for a full toolbar per pane,
+  // so the reading-time, send-to-flow, Credibility and Cross-Ex controls fold
+  // into a ⋯ overflow menu (keeping their labels there).
+  toolbarCompact?: boolean;
 }
 
 function DocPaneViewer({
@@ -3649,11 +3719,17 @@ function DocPaneViewer({
   return (
     <div
       className="flex flex-col h-full relative"
-      style={paneIndex !== 0 ? { borderLeft: '1px solid var(--border-subtle)' } : undefined}
+      /* No borderLeft here: the multi-pane wrapper renders a real divider
+         element between panes, so a border too would draw a double line. */
       onMouseDownCapture={onFocusPane}
     >
       {/* Toolbar */}
-      <div className="border-b border-line px-2 py-0.5 flex items-center gap-1.5 shrink-0 overflow-hidden">
+      {/* NOTE: no `overflow-hidden` here — the toolbar buttons' hover tooltips are
+          absolutely positioned *below* the bar, so clipping this row silently
+          swallows every tooltip in the pane. Toolbar contents are kept from
+          overflowing by shrinking instead: the title flexes with min-w-0, and in
+          multi-pane the analysis tools collapse into the ⋯ overflow menu. */}
+      <div className="border-b border-line px-2 py-0.5 flex items-center gap-1.5 shrink-0">
         {/* Document tools — grouped into a segmented cluster so the compact icon
             buttons read as one intentional control, not stray unlabeled buttons. */}
         <div
@@ -3676,18 +3752,22 @@ function DocPaneViewer({
               window.setTimeout(() => findInputRef.current?.focus(), 0);
             }}
           />
-          <ToolbarToggle
-            active={readOpen}
-            label="Reading time & auto-scroll"
-            icon={<IcoClock active={readOpen} />}
-            onClick={() => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; })}
-          />
-          <ToolbarToggle
-            active={flowSendOpen}
-            label="Send selection to a flow"
-            icon={<IcoSendFlow active={flowSendOpen} />}
-            onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
-          />
+          {!toolbarCompact && (
+            <>
+              <ToolbarToggle
+                active={readOpen}
+                label="Reading time & auto-scroll"
+                icon={<IcoClock active={readOpen} />}
+                onClick={() => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; })}
+              />
+              <ToolbarToggle
+                active={flowSendOpen}
+                label="Send selection to a flow"
+                icon={<IcoSendFlow active={flowSendOpen} />}
+                onClick={() => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; })}
+              />
+            </>
+          )}
           {canAddPane && onAddPane && (
             <>
               <div style={{ width: 1, height: 18, background: 'var(--border-subtle)', margin: '0 2px' }} />
@@ -3818,23 +3898,63 @@ function DocPaneViewer({
           )}
         </div>
 
-        {/* AI analysis tools — labeled so their purpose is obvious. */}
-        <ToolbarPill
-          active={credOpen}
-          label="Credibility"
-          title="Score card credibility"
-          icon={<IcoShield active={credOpen} />}
-          onClick={() => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; })}
-          compact={toolbarCompact}
-        />
-        <ToolbarPill
-          active={cxOpen}
-          label="Cross-Ex"
-          title="Practice cross-examination on this doc"
-          icon={<IcoCrossEx active={cxOpen} />}
-          onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
-          compact={toolbarCompact}
-        />
+        {/* AI analysis tools — labeled so their purpose is obvious. In multi-pane
+            compare view there's no room for two labelled pills per pane, so
+            these fold into the ⋯ menu (with their labels intact) alongside the
+            reading-time and send-to-flow tools. */}
+        {toolbarCompact ? (
+          <ToolbarOverflowMenu
+            items={[
+              {
+                label: 'Reading time',
+                hint: 'Reading time & auto-scroll',
+                icon: <IcoClock active={readOpen} />,
+                active: readOpen,
+                onClick: () => setReadOpen(v => { const next = !v; if (next) setFlowSendOpen(false); return next; }),
+              },
+              {
+                label: 'Send to flow',
+                hint: 'Send selection to a flow',
+                icon: <IcoSendFlow active={flowSendOpen} />,
+                active: flowSendOpen,
+                onClick: () => setFlowSendOpen(v => { const next = !v; if (next) setReadOpen(false); return next; }),
+              },
+              {
+                label: 'Credibility',
+                hint: 'Score card credibility',
+                icon: <IcoShield active={credOpen} />,
+                active: credOpen,
+                ai: true,
+                onClick: () => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; }),
+              },
+              {
+                label: 'Cross-Ex',
+                hint: 'Practice cross-examination on this doc',
+                icon: <IcoCrossEx active={cxOpen} />,
+                active: cxOpen,
+                ai: true,
+                onClick: () => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; }),
+              },
+            ]}
+          />
+        ) : (
+          <>
+            <ToolbarPill
+              active={credOpen}
+              label="Credibility"
+              title="Score card credibility"
+              icon={<IcoShield active={credOpen} />}
+              onClick={() => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; })}
+            />
+            <ToolbarPill
+              active={cxOpen}
+              label="Cross-Ex"
+              title="Practice cross-examination on this doc"
+              icon={<IcoCrossEx active={cxOpen} />}
+              onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
+            />
+          </>
+        )}
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
 
@@ -4019,7 +4139,7 @@ function DocPaneViewer({
           narrower than the panel's preferred width. */}
       <div className="flex-1 flex min-h-0 relative overflow-hidden">
         {step === 'viewing' && !outlineOpen && (
-          <OutlinePullTab active={outlineOpen} count={outline.length} onClick={() => setOutlineOpen(v => !v)} />
+          <OutlinePullTab count={outline.length} onClick={() => setOutlineOpen(true)} />
         )}
         {outlineOpen && step === 'viewing' && (
           <OutlinePanel
@@ -4114,7 +4234,13 @@ function DocPaneViewer({
 // combination of docs, or the same docs in different panes, starts fresh.
 
 const OUTLINE_SPACE_PX = 248; // matches OutlinePanel's own width
-const SLIVER_PX = 64; // how much of a "space"-mode non-active pane peeks through
+// In 'space' mode, how much of the viewport is left showing the pane *before*
+// the generous pair — so the row reads as "scrolled", not "one pane crushed".
+const SPACE_PEEK_FRACTION = 0.15;
+// Divider width, drag-enabled vs not. Kept as constants because the auto-scroll
+// offset math has to add up the same widths the row actually renders.
+const DIVIDER_PX = 5;
+const DIVIDER_LOCKED_PX = 1;
 
 /**
  * Pixel width for every open pane, given which (if any) pane has its outline
@@ -4151,18 +4277,24 @@ function computePaneWidthsPx(
     return widths;
   }
 
-  // 'space': the active pane shares 85% of the viewport's worth of reading
-  // width with its "partner" — the next pane if one exists, else the
-  // previous one — split evenly between them. Every other pane shrinks to a
-  // fixed sliver. The active pane's box is that reading share *plus* its own
-  // fixed-width outline column, so the total row width can exceed the
-  // viewport — that's what makes it horizontally scrollable.
+  // 'space': the active pane and its "partner" — the next pane if one exists,
+  // else the previous one — plus the outline column together fill ~85% of the
+  // viewport, with the remaining ~15% left as a peek of whatever pane sits
+  // before them.
+  //
+  // Every OTHER pane keeps its natural width, untouched. They go out of view by
+  // being *scrolled past*, not by being squeezed: the row's total width now
+  // exceeds the viewport, `overflow-x-auto` makes that scrollable, and the
+  // effect below scrolls the pair into place. Crushing them to a sliver instead
+  // (what this used to do) read as "the app broke my first doc" — and a pane a
+  // few dozen pixels wide can't render its own toolbar sanely either.
   const partnerIdx = activeIdx < n - 1 ? activeIdx + 1 : activeIdx - 1;
-  const readingShare = (0.85 * rowWidthPx) / 2;
-  return base.map((_, i) => {
+  const peek = SPACE_PEEK_FRACTION * rowWidthPx;
+  const readingShare = Math.max(160, (rowWidthPx - OUTLINE_SPACE_PX - peek) / 2);
+  return base.map((w, i) => {
     if (i === activeIdx) return readingShare + OUTLINE_SPACE_PX;
     if (i === partnerIdx) return readingShare;
-    return SLIVER_PX;
+    return w;
   });
 }
 
@@ -4206,11 +4338,13 @@ export default function SpeechDocViewer() {
   const [paneOutlineOpen, setPaneOutlineOpenState] = useState<boolean[]>([false, false, false]);
   const [paneWeights, setPaneWeights] = useState<number[]>([1, 1, 1]);
 
-  // Re-hydrate outline/width state whenever the combo actually changes.
+  // Re-hydrate outline/width state whenever the combo actually changes, and
+  // register the combo so it appears in the sidebar's compare-views list.
   const lastComboRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (comboKey === lastComboRef.current) return;
     lastComboRef.current = comboKey;
+    rememberComboView(comboKey, panePaths.filter((p): p is string => !!p));
     const saved = loadComboLayout(comboKey);
     const nextOutline: boolean[] = [false, false, false];
     saved?.outlineOpen?.forEach((v, i) => { if (i < 3) nextOutline[i] = v; });
@@ -4276,15 +4410,24 @@ export default function SpeechDocViewer() {
   const anyOutlineOpen = paneOutlineOpen.slice(0, openPaneCount).some(Boolean);
   const dividersEnabled = !(layoutMethod === 'space' && anyOutlineOpen);
 
-  // Auto-scroll so the active pane's outline + its reading partner are in
-  // view, leaving a peek of whatever's just before them.
+  // Auto-scroll so the generous pair (active pane + its outline + partner) sits
+  // in view, leaving SPACE_PEEK_FRACTION of the viewport showing the edge of
+  // whatever pane comes before them — that peek is how an untouched, full-width
+  // pane advertises "I'm still here, scroll left".
   useEffect(() => {
     if (layoutMethod !== 'space' || !scrollRowRef.current) return;
     const activeIdx = paneOutlineOpen.findIndex((v, i) => i < openPaneCount && v);
     if (activeIdx === -1) { scrollRowRef.current.scrollTo({ left: 0, behavior: 'smooth' }); return; }
+    const partnerIdx = activeIdx < openPaneCount - 1 ? activeIdx + 1 : activeIdx - 1;
+    const firstOfPair = Math.min(activeIdx, partnerIdx);
     let offset = 0;
-    for (let i = 0; i < activeIdx; i++) offset += paneWidthsPx[i];
-    scrollRowRef.current.scrollTo({ left: Math.max(0, offset - 24), behavior: 'smooth' });
+    // Dividers are always locked-width here (space mode + an open outline is
+    // exactly the condition that disables dragging), so use that width.
+    for (let i = 0; i < firstOfPair; i++) offset += paneWidthsPx[i] + DIVIDER_LOCKED_PX;
+    scrollRowRef.current.scrollTo({
+      left: Math.max(0, offset - SPACE_PEEK_FRACTION * rowWidthPx),
+      behavior: 'smooth',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMethod, JSON.stringify(paneOutlineOpen.slice(0, 3)), openPaneCount, rowWidthPx]);
 
@@ -4332,7 +4475,7 @@ export default function SpeechDocViewer() {
               onMouseDown={(e) => onDividerMouseDown(i - 1, e)}
               className="shrink-0 h-full relative"
               style={{
-                width: dividersEnabled ? 5 : 1,
+                width: dividersEnabled ? DIVIDER_PX : DIVIDER_LOCKED_PX,
                 cursor: dividersEnabled ? 'col-resize' : 'default',
                 background: 'var(--border-subtle)',
               }}

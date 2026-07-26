@@ -11,6 +11,20 @@ export interface ComboLayout {
   paneWidths?: number[]; // fractions summing to 1, one per open pane, in pane order
   outlineOpen?: boolean[]; // one per open pane, in pane order
   sidebarExpanded?: boolean; // manual override recorded while this combo was active; absent = no override
+  paths?: string[]; // the doc paths this combo is made of, in pane order — lets the sidebar re-open it
+  savedAt?: string; // ISO timestamp of when this combo was last open, for newest-first listing
+}
+
+/** One saved compare view, as the sidebar lists it. */
+export interface SavedComboView extends ComboLayout {
+  key: string;
+  paths: string[];
+}
+
+export const COMBO_LAYOUTS_CHANGED = 'warroom-doc-combos-changed';
+
+function announce() {
+  window.dispatchEvent(new CustomEvent(COMBO_LAYOUTS_CHANGED));
 }
 
 /**
@@ -57,4 +71,45 @@ export function saveComboLayout(key: string | null, patch: Partial<ComboLayout>)
   const keys = Object.keys(all);
   if (keys.length > MAX_ENTRIES) delete all[keys[0]];
   writeAll(all);
+  announce();
+}
+
+/**
+ * Records that this combination of docs is currently open, so it shows up in
+ * the sidebar's compare-views list and can be re-opened as a unit later.
+ * Called whenever a multi-pane view settles on a set of docs.
+ */
+export function rememberComboView(key: string | null, paths: string[]) {
+  if (!key || paths.length < 2) return;
+  saveComboLayout(key, { paths, savedAt: new Date().toISOString() });
+}
+
+/** Every saved compare view that still knows its doc paths, newest first. */
+export function listComboViews(): SavedComboView[] {
+  const all = readAll();
+  return Object.entries(all)
+    .filter(([, v]) => Array.isArray(v.paths) && v.paths.length >= 2)
+    .map(([key, v]) => ({ ...v, key, paths: v.paths as string[] }))
+    .sort((a, b) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''));
+}
+
+export function deleteComboView(key: string) {
+  const all = readAll();
+  if (!(key in all)) return;
+  delete all[key];
+  writeAll(all);
+  announce();
+}
+
+/** Drops saved views that reference a doc no longer in the user's library. */
+export function pruneComboViews(livePaths: Set<string>) {
+  const all = readAll();
+  let changed = false;
+  for (const [key, v] of Object.entries(all)) {
+    if (Array.isArray(v.paths) && v.paths.some((p) => !livePaths.has(p))) {
+      delete all[key];
+      changed = true;
+    }
+  }
+  if (changed) { writeAll(all); announce(); }
 }

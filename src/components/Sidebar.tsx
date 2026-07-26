@@ -14,7 +14,10 @@ import {
   FLOW_ITEM_DRAG_MIME, FLOW_FOLDER_DRAG_MIME,
 } from '../utils/flowFolders';
 import { buildCaseItems, CaseItem, deleteCaseAndBlocks } from '../utils/caseItems';
-import { comboKeyFor, saveComboLayout } from '../utils/docComboLayout';
+import {
+  comboKeyFor, saveComboLayout, listComboViews, deleteComboView, pruneComboViews,
+  COMBO_LAYOUTS_CHANGED, SavedComboView,
+} from '../utils/docComboLayout';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string; cardCount?: number }
@@ -417,8 +420,10 @@ export default function Sidebar() {
 function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, driveConfigured }: any) {
   const { setSearchOpen } = useApp();
   const isHome       = view.kind === 'home';
-  const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid';
-  const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'speech-doc' || view.kind === 'google-scholar';
+  // Speech docs live under Cases (the recents list IS the sidebar's Cases list),
+  // so an open speech doc lights Cases — not Cards, which is the card library.
+  const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid' || view.kind === 'speech-doc';
+  const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'google-scholar';
   const isOpponents  = view.kind === 'opponents' || view.kind === 'opponent' || view.kind === 'judge';
   const isTournament = view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
   const isFlow       = view.kind === 'flow' || view.kind === 'flows-grid';
@@ -1240,6 +1245,7 @@ function CasesSection({ view, setView, db }: {
         }}
       >
         {topFolders.length === 0 && items.length === 0 && <Empty>No cases yet</Empty>}
+        <CompareViewsGroup items={items} />
         {renderFolders(null, 0)}
         {looseItems.map((i) => renderItem(i, 0))}
       </div>
@@ -1855,4 +1861,120 @@ function NavItem({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="px-2 py-1 text-[11px] italic" style={{ color: 'var(--placeholder)' }}>{children}</div>;
+}
+
+// ── Saved compare views ───────────────────────────────────────────────────────
+
+/** Two overlapping pages — a multi-doc compare view. */
+function IcoCompareView() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="3" width="6" height="10" rx="1.2" />
+      <rect x="8.5" y="3" width="6" height="10" rx="1.2" />
+    </svg>
+  );
+}
+
+/**
+ * The compare views a user has built (2-3 docs open side by side), listed at
+ * the top of Cases so a multi-doc setup is a thing you can return to, not
+ * something you have to rebuild pane by pane. Clicking one restores every pane
+ * at once; the per-combo layout memory (widths, outline state, sidebar) is
+ * restored separately by SpeechDocViewer once the panes are set.
+ */
+function CompareViewsGroup({ items }: { items: CaseItem[] }) {
+  const setView = useApp((s) => s.setView);
+  const setExtraDocPane = useApp((s) => s.setExtraDocPane);
+  const setFocusedPane = useApp((s) => s.setFocusedPane);
+  const view = useApp((s) => s.view);
+  const extraDocPanes = useApp((s) => s.extraDocPanes);
+  const pushUndoToast = useApp((s) => s.pushUndoToast);
+
+  const [views, setViews] = useState<SavedComboView[]>(() => listComboViews());
+  useEffect(() => {
+    const reload = () => setViews(listComboViews());
+    window.addEventListener(COMBO_LAYOUTS_CHANGED, reload);
+    return () => window.removeEventListener(COMBO_LAYOUTS_CHANGED, reload);
+  }, []);
+
+  // Display names come from the live Cases list, so a doc renamed in the
+  // sidebar or the viewer shows its new name here too. Views referencing a
+  // deleted doc are pruned rather than shown as dangling paths.
+  const nameFor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const i of items) if (i.kind === 'speech-doc' && i.path) m.set(i.path, i.name);
+    return m;
+  }, [items]);
+
+  // Prune views whose docs are gone. Guarded on nameFor being non-empty: this
+  // DELETES saved views, and an empty/partial recents read would otherwise wipe
+  // every compare view the user has. Only run once we can see real docs.
+  useEffect(() => {
+    if (nameFor.size > 0) pruneComboViews(new Set(nameFor.keys()));
+  }, [nameFor]);
+
+  if (views.length === 0) return null;
+
+  const currentPaths = [
+    view.kind === 'speech-doc' ? (view as any).docPath : undefined,
+    extraDocPanes[0], extraDocPanes[1],
+  ].filter(Boolean).join('␟');
+
+  function openCombo(paths: string[]) {
+    setView({ kind: 'speech-doc', docPath: paths[0] });
+    setExtraDocPane(0, paths[1]);
+    setExtraDocPane(1, paths[2]);
+    setFocusedPane(0);
+  }
+
+  return (
+    <div className="mb-1">
+      <div className="px-2 pb-0.5 text-[10px] font-semibold tracking-wide uppercase" style={{ color: 'var(--nav-section-color)' }}>
+        Compare views
+      </div>
+      {views.map((v) => {
+        const names = v.paths.map((p) => (nameFor.get(p) ?? p.split(/[/\\]/).pop() ?? p).replace(/\.docx$/i, ''));
+        const label = `${names[0]} + ${names.length - 1} more`;
+        const active = currentPaths === v.key;
+        return (
+          <div key={v.key} className="group relative flex items-center">
+            <button
+              onClick={() => openCombo(v.paths)}
+              title={names.join('  ·  ')}
+              className="flex-1 flex items-center gap-1.5 min-w-0 text-left text-[12.5px] rounded-md px-2 py-1 transition"
+              style={{
+                background: active ? 'var(--nav-active-bg)' : 'transparent',
+                color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                border: 'none', cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <span className="shrink-0 opacity-70"><IcoCompareView /></span>
+              <span className="truncate">{label}</span>
+              <span className="shrink-0 text-[10px] tabular-nums opacity-60">{v.paths.length}</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const { key, ...snapshot } = v; // `key` is the map key, not part of the value
+                deleteComboView(key);
+                pushUndoToast(
+                  `Deleted compare view '${label}'`,
+                  () => saveComboLayout(key, snapshot),
+                );
+              }}
+              title="Remove compare view"
+              className="absolute right-1 flex items-center justify-center w-5 h-5 rounded opacity-0 group-hover:opacity-100 transition"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+            >
+              <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M4 4l10 10M14 4L4 14" />
+              </svg>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
