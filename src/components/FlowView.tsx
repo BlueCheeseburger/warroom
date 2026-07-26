@@ -1365,14 +1365,6 @@ export default function FlowView() {
 
   function deleteSheet(idx: number) {
     if (sheets.length <= 1) return;
-    // Settings → Flow → "Confirm before deleting a sheet". Off by default since
-    // deletion is already undoable (⌘Z) and the toast above gives a second
-    // chance — this is only for anyone who'd rather not rely on remembering to
-    // undo mid-round.
-    if (readFlowPrefs().confirmSheetDelete) {
-      const name = sheets[idx]?.name ?? 'this sheet';
-      if (!window.confirm(`Delete "${name}"? You can undo with ⌘Z right after.`)) return;
-    }
     rememberScroll();
     const saved = flushAndGetSheets();
     const goneName = saved[idx]?.name;

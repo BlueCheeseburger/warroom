@@ -1591,22 +1591,6 @@ export default function Settings() {
               </span>
             </label>
 
-            <label className="flex items-start gap-2.5 cursor-pointer mb-3">
-              <input
-                type="checkbox"
-                checked={flowPrefs.confirmSheetDelete}
-                onChange={(e) => setFlowPref('confirmSheetDelete', e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                <div className="text-xs font-medium text-ink/80">Confirm before deleting a sheet</div>
-                <div className="text-[11px] text-ink/45 mt-0.5 leading-snug">
-                  Off by default since deleting a sheet is already undoable (⌘Z). Turn this on for a
-                  belt-and-suspenders "are you sure?" before a tab (and everything on it) goes away.
-                </div>
-              </span>
-            </label>
-
             <label className="ai-glow-ring flex items-start gap-2.5 rounded-sm border border-line p-3 cursor-pointer">
               <input
                 type="checkbox"

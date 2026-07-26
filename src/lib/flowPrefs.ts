@@ -35,10 +35,6 @@ export interface FlowPrefs {
    * ensureSheetSummary). Off = tabs only ever show the free local tag preview —
    * no Warroom AI call, ever, from hovering. */
   aiTabSummaries: boolean;
-  /** Confirm before deleting a sheet with a native `confirm()` prompt. Off by
-   * default since sheet deletion is already undoable (⌘Z) — this is for anyone
-   * who'd rather not rely on remembering to undo mid-round. */
-  confirmSheetDelete: boolean;
 }
 
 export const FLOW_PREFS_KEY = 'warroom-flow-prefs';
@@ -51,7 +47,6 @@ export const FLOW_PREFS_DEFAULTS: FlowPrefs = {
   defaultFontSize: 13,
   autoFitColumns: true,
   aiTabSummaries: true,
-  confirmSheetDelete: false,
 };
 
 export function readFlowPrefs(): FlowPrefs {
@@ -68,7 +63,6 @@ export function readFlowPrefs(): FlowPrefs {
         ? p.defaultFontSize : FLOW_PREFS_DEFAULTS.defaultFontSize,
       autoFitColumns: typeof p.autoFitColumns === 'boolean' ? p.autoFitColumns : FLOW_PREFS_DEFAULTS.autoFitColumns,
       aiTabSummaries: typeof p.aiTabSummaries === 'boolean' ? p.aiTabSummaries : FLOW_PREFS_DEFAULTS.aiTabSummaries,
-      confirmSheetDelete: typeof p.confirmSheetDelete === 'boolean' ? p.confirmSheetDelete : FLOW_PREFS_DEFAULTS.confirmSheetDelete,
     };
   } catch {
     return { ...FLOW_PREFS_DEFAULTS };

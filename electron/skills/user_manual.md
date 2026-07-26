@@ -590,7 +590,6 @@ One settings block covering everything about how flows work by default. None of 
 | Setting | Description |
 |---------|-------------|
 | Auto-fit columns to window | On by default. Columns continuously stretch/shrink to fill the window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off if you'd rather set zoom yourself and have it stay put. |
-| Confirm before deleting a sheet | Off by default, since deleting a sheet is already undoable (⌘Z) with its own "Deleted 'X'" undo toast. Turn it on for a belt-and-suspenders confirmation before a tab (and everything on it) goes away. |
 | AI tab summaries on hover | On by default. Hovering a tab asks Warroom AI for a one-sentence summary of the argument on that sheet — cached after the first time, so it doesn't cost another call until the sheet's content changes. Turn it off and tabs only ever show the free local tag preview; Warroom AI is never called from a hover. |
 
 One **Reset to defaults** at the bottom resets all of it — colors included.

@@ -1933,11 +1933,6 @@ export default function Documentation() {
                   yourself and have it stay put.</span>
               </div>
               <div>
-                <span className="font-semibold text-ink">Confirm before deleting a sheet</span>
-                <span className="ml-2 text-ink/60">Off by default — sheet deletion is already undoable (⌘Z) with its
-                  own undo toast. Turn it on for a confirmation prompt before a tab goes away.</span>
-              </div>
-              <div>
                 <span className="font-semibold text-ink">AI tab summaries on hover</span>
                 <span className="ml-2 text-ink/60">On by default. Turn it off and hovering a tab never calls Warroom
                   AI — tabs only ever show the free local tag preview.</span>
