@@ -8,6 +8,7 @@ import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './F
 import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
+import { comboKeyFor, loadComboLayout, saveComboLayout } from '../utils/docComboLayout';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -818,14 +819,14 @@ function OcSourcePill({ teamName, checking, checkResult, onCheck }: {
 
 // Labeled toolbar pill (icon + text). Used for the panel-opening AI tools so
 // they read as distinct actions rather than another anonymous icon.
-function ToolbarPill({ active, label, icon, onClick, title }: {
-  active: boolean; label: string; icon: React.ReactNode; onClick: () => void; title?: string;
+function ToolbarPill({ active, label, icon, onClick, title, compact }: {
+  active: boolean; label: string; icon: React.ReactNode; onClick: () => void; title?: string; compact?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       title={title ?? label}
-      className="ai-glow-ring flex items-center gap-1.5 h-7 px-2.5 rounded-lg transition text-[12px] font-medium shrink-0"
+      className={`ai-glow-ring flex items-center gap-1.5 h-7 rounded-lg transition text-[12px] font-medium shrink-0 ${compact ? 'w-7 justify-center px-0' : 'px-2.5'}`}
       style={{
         background: active ? 'var(--nav-active-bg)' : 'transparent',
         boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
@@ -836,7 +837,7 @@ function ToolbarPill({ active, label, icon, onClick, title }: {
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       {icon}
-      {label}
+      {!compact && label}
     </button>
   );
 }
@@ -2379,9 +2380,22 @@ export interface DocPaneProps {
   onCloseExtraPane?: () => void;
   onAddPane?: () => void;
   canAddPane?: boolean;
+  // Outline-open is controlled by the multi-pane wrapper (not local state) so
+  // it can coordinate cross-pane layout (squish/space methods) and persist it
+  // per doc combination. Single-pane usage still gets a sane default via the
+  // fallback state below when these aren't passed.
+  outlineOpen?: boolean;
+  onOutlineOpenChange?: (open: boolean) => void;
+  // 'squish' (this pane's own outline, unadjusted layout — legacy/simple) or
+  // 'space' (dedicated non-adjustable column, generous/sliver panes, only
+  // meaningful when the wrapper is actually laying out >1 pane).
+  toolbarCompact?: boolean; // hide Credibility/Cross-Ex text labels, icon only
 }
 
-function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane }: DocPaneProps) {
+function DocPaneViewer({
+  paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane,
+  outlineOpen: outlineOpenProp, onOutlineOpenChange, toolbarCompact = false,
+}: DocPaneProps) {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
   // Folder-of-docx import files every doc it finds into a new Warroom folder
   // named after the OS folder it came from — aliased to avoid colliding with
@@ -2461,7 +2475,13 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
   const headingClassesRef = useRef<HeadingClasses | undefined>(undefined);
   const [recents, setRecents] = useState<RecentDoc[]>(getRecents);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineOpenState, setOutlineOpenState] = useState(false);
+  const outlineOpen = outlineOpenProp ?? outlineOpenState;
+  const setOutlineOpen = useCallback((next: boolean | ((v: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? (next as (v: boolean) => boolean)(outlineOpen) : next;
+    if (onOutlineOpenChange) onOutlineOpenChange(resolved); else setOutlineOpenState(resolved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlineOpen, onOutlineOpenChange]);
   // Settings → "Keep speech docs light": in dark mode, render the doc page
   // itself as light "paper" while the rest of the app stays dark. Default on.
   const [docLightInDark, setDocLightInDark] = useState(
@@ -3805,6 +3825,7 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
           title="Score card credibility"
           icon={<IcoShield active={credOpen} />}
           onClick={() => setCredOpen(v => { const next = !v; if (next) setCxOpen(false); return next; })}
+          compact={toolbarCompact}
         />
         <ToolbarPill
           active={cxOpen}
@@ -3812,6 +3833,7 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
           title="Practice cross-examination on this doc"
           icon={<IcoCrossEx active={cxOpen} />}
           onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
+          compact={toolbarCompact}
         />
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
@@ -4084,13 +4106,76 @@ function DocPaneViewer({ paneIndex = 0, paneDocPath, focused = true, onFocusPane
 // existing open-doc call site in the app targets pane 0). Panes 1 and 2 are
 // opened from a "compare doc" button in any pane's toolbar and load whatever
 // file the user drops/browses into them, independent of the main doc.
+//
+// Pane widths and per-pane outline-open state live here (not inside each
+// DocPaneViewer) so this wrapper can coordinate cross-pane layout and persist
+// both — plus a sidebar-expanded override — keyed to the exact, ordered set
+// of doc paths currently open (see utils/docComboLayout.ts). A different
+// combination of docs, or the same docs in different panes, starts fresh.
+
+const OUTLINE_SPACE_PX = 248; // matches OutlinePanel's own width
+const SLIVER_PX = 64; // how much of a "space"-mode non-active pane peeks through
+
+/**
+ * Pixel width for every open pane, given which (if any) pane has its outline
+ * open and which layout method is active. Each pane's outline still renders
+ * *inside* that pane at its own left edge (DocPaneViewer is unchanged) — this
+ * function's job is just to make sure that pane's box is wide enough (and its
+ * neighbor's narrow enough / wide enough) that the outline visually lands in
+ * the right place relative to the other panes.
+ */
+function computePaneWidthsPx(
+  n: number,
+  paneOutlineOpen: boolean[],
+  paneWeights: number[],
+  layoutMethod: 'squish' | 'space',
+  rowWidthPx: number,
+): number[] {
+  if (n <= 0 || rowWidthPx <= 0) return Array(n).fill(0);
+  const weights = paneWeights.slice(0, n);
+  const totalWeight = weights.reduce((a, b) => a + b, 0) || n;
+  const base = weights.map((w) => (w / totalWeight) * rowWidthPx);
+
+  const activeIdx = paneOutlineOpen.findIndex((v, i) => i < n && v);
+  if (activeIdx === -1 || n === 1) return base;
+
+  if (layoutMethod === 'squish') {
+    // Borrow the outline's width from one neighbor (left, or right for the
+    // leftmost pane) — total stays within the viewport, no scrolling. The
+    // active pane's own reading width is unaffected; the neighbor absorbs it.
+    const neighbor = activeIdx > 0 ? activeIdx - 1 : activeIdx + 1;
+    const steal = Math.min(OUTLINE_SPACE_PX, Math.max(0, base[neighbor] - 120));
+    const widths = [...base];
+    widths[neighbor] -= steal;
+    widths[activeIdx] += steal;
+    return widths;
+  }
+
+  // 'space': the active pane shares 85% of the viewport's worth of reading
+  // width with its "partner" — the next pane if one exists, else the
+  // previous one — split evenly between them. Every other pane shrinks to a
+  // fixed sliver. The active pane's box is that reading share *plus* its own
+  // fixed-width outline column, so the total row width can exceed the
+  // viewport — that's what makes it horizontally scrollable.
+  const partnerIdx = activeIdx < n - 1 ? activeIdx + 1 : activeIdx - 1;
+  const readingShare = (0.85 * rowWidthPx) / 2;
+  return base.map((_, i) => {
+    if (i === activeIdx) return readingShare + OUTLINE_SPACE_PX;
+    if (i === partnerIdx) return readingShare;
+    return SLIVER_PX;
+  });
+}
+
 export default function SpeechDocViewer() {
+  const view = useApp((s) => s.view);
   const extraDocPanes = useApp((s) => s.extraDocPanes);
   const setExtraDocPane = useApp((s) => s.setExtraDocPane);
   const focusedPane = useApp((s) => s.focusedPane);
   const setFocusedPane = useApp((s) => s.setFocusedPane);
 
+  const pane0Path = view.kind === 'speech-doc' ? (view as any).docPath as string | undefined : undefined;
   const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length;
+  const openPaneCount = 1 + openExtraCount;
   const canAddPane = openExtraCount < 2;
   const addPane = () => {
     const slot: 0 | 1 = extraDocPanes[0] === undefined ? 0 : 1;
@@ -4098,44 +4183,182 @@ export default function SpeechDocViewer() {
     setFocusedPane((slot + 1) as 1 | 2);
   };
 
-  // Force-collapse the sidebar while 2-3 panes are open (no room for it), and
-  // force it back open once we're down to a single pane — only on the
-  // transition edge, so a manual re-expand mid-compare isn't fought every render.
+  // Settings → outline layout method ('space' default). Read live so a
+  // mid-session Settings change applies on the next outline toggle.
+  const [layoutMethod, setLayoutMethod] = useState<'squish' | 'space'>(
+    () => (localStorage.getItem('warroom-doc-outline-layout') === 'squish' ? 'squish' : 'space')
+  );
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail?.method;
+      if (v === 'squish' || v === 'space') setLayoutMethod(v);
+    };
+    window.addEventListener('warroom-doc-outline-layout-changed', onChange);
+    return () => window.removeEventListener('warroom-doc-outline-layout-changed', onChange);
+  }, []);
+
+  // Identity for the currently-open combination of docs, in pane order.
+  // null (fewer than 2 resolved panes, or pane 0 is an OC case rather than a
+  // plain file) means "don't persist" — see comboKeyFor.
+  const panePaths = [pane0Path, extraDocPanes[0], extraDocPanes[1]].slice(0, openPaneCount);
+  const comboKey = comboKeyFor(panePaths);
+
+  const [paneOutlineOpen, setPaneOutlineOpenState] = useState<boolean[]>([false, false, false]);
+  const [paneWeights, setPaneWeights] = useState<number[]>([1, 1, 1]);
+
+  // Re-hydrate outline/width state whenever the combo actually changes.
+  const lastComboRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (comboKey === lastComboRef.current) return;
+    lastComboRef.current = comboKey;
+    const saved = loadComboLayout(comboKey);
+    const nextOutline: boolean[] = [false, false, false];
+    saved?.outlineOpen?.forEach((v, i) => { if (i < 3) nextOutline[i] = v; });
+    setPaneOutlineOpenState(nextOutline);
+    const nextWeights: number[] = [1, 1, 1];
+    saved?.paneWidths?.forEach((v, i) => { if (i < 3 && v > 0) nextWeights[i] = v; });
+    setPaneWeights(nextWeights);
+  }, [comboKey]);
+
+  // Force-collapse the sidebar the moment a 2nd pane opens (default), unless
+  // this exact combo has a remembered override; force it back open at 1 pane.
   const wasMultiRef = useRef(false);
+  const appliedOverrideForRef = useRef<string | null>(null);
   useEffect(() => {
     const isMulti = openExtraCount > 0;
-    if (isMulti !== wasMultiRef.current) {
-      window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: isMulti } }));
-      wasMultiRef.current = isMulti;
+    if (!isMulti) {
+      if (wasMultiRef.current) {
+        window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: false } }));
+      }
+      wasMultiRef.current = false;
+      appliedOverrideForRef.current = null;
+      return;
     }
-  }, [openExtraCount]);
+    if (!wasMultiRef.current) {
+      window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: true } }));
+    }
+    wasMultiRef.current = true;
+    if (comboKey && appliedOverrideForRef.current !== comboKey) {
+      appliedOverrideForRef.current = comboKey;
+      const saved = loadComboLayout(comboKey);
+      if (typeof saved?.sidebarExpanded === 'boolean') {
+        window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: !saved.sidebarExpanded } }));
+      }
+    }
+  }, [openExtraCount, comboKey]);
+
+  // Outline toggles from any pane land here. 'space' mode only makes sense
+  // for one outline at a time (it's "a whole new space", not several) —
+  // opening one closes any other. Persists into the current combo.
+  const handleOutlineOpenChange = useCallback((paneIdx: number, open: boolean) => {
+    setPaneOutlineOpenState((prev) => {
+      const next = [...prev];
+      if (open && layoutMethod === 'space') next.fill(false);
+      next[paneIdx] = open;
+      saveComboLayout(comboKey, { outlineOpen: next.slice(0, openPaneCount) });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutMethod, comboKey, openPaneCount]);
+
+  // ── Row width measurement + pane sizing ──────────────────────────────────
+  const scrollRowRef = useRef<HTMLDivElement>(null);
+  const [rowWidthPx, setRowWidthPx] = useState(0);
+  useEffect(() => {
+    const el = scrollRowRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setRowWidthPx(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const paneWidthsPx = computePaneWidthsPx(openPaneCount, paneOutlineOpen, paneWeights, layoutMethod, rowWidthPx);
+  const anyOutlineOpen = paneOutlineOpen.slice(0, openPaneCount).some(Boolean);
+  const dividersEnabled = !(layoutMethod === 'space' && anyOutlineOpen);
+
+  // Auto-scroll so the active pane's outline + its reading partner are in
+  // view, leaving a peek of whatever's just before them.
+  useEffect(() => {
+    if (layoutMethod !== 'space' || !scrollRowRef.current) return;
+    const activeIdx = paneOutlineOpen.findIndex((v, i) => i < openPaneCount && v);
+    if (activeIdx === -1) { scrollRowRef.current.scrollTo({ left: 0, behavior: 'smooth' }); return; }
+    let offset = 0;
+    for (let i = 0; i < activeIdx; i++) offset += paneWidthsPx[i];
+    scrollRowRef.current.scrollTo({ left: Math.max(0, offset - 24), behavior: 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutMethod, JSON.stringify(paneOutlineOpen.slice(0, 3)), openPaneCount, rowWidthPx]);
+
+  // ── Divider dragging ──────────────────────────────────────────────────────
+  const paneWeightsRef = useRef(paneWeights);
+  useEffect(() => { paneWeightsRef.current = paneWeights; }, [paneWeights]);
+
+  function onDividerMouseDown(i: number, e: React.MouseEvent) {
+    if (!dividersEnabled) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWeights = [...paneWeights];
+    function onMove(ev: MouseEvent) {
+      if (!rowWidthPx) return;
+      const totalWeight = startWeights.slice(0, openPaneCount).reduce((a, b) => a + b, 0) || openPaneCount;
+      const deltaWeight = ((ev.clientX - startX) / rowWidthPx) * totalWeight;
+      const minW = totalWeight * 0.12;
+      setPaneWeights((prev) => {
+        const next = [...prev];
+        next[i] = Math.max(minW, startWeights[i] + deltaWeight);
+        next[i + 1] = Math.max(minW, startWeights[i + 1] - deltaWeight);
+        return next;
+      });
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      saveComboLayout(comboKey, { paneWidths: paneWeightsRef.current.slice(0, openPaneCount) });
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  const panes = [
+    { key: 0 as const, docPath: undefined, isMain: true },
+    ...extraDocPanes.map((p, i) => ({ key: (i + 1) as 1 | 2, docPath: p, isMain: false })).filter((p) => p.docPath !== undefined),
+  ];
 
   return (
-    <div className="flex h-full min-h-0 w-full">
-      <div className="flex-1 min-w-0 h-full">
-        <DocPaneViewer
-          paneIndex={0}
-          focused={focusedPane === 0}
-          onFocusPane={() => setFocusedPane(0)}
-          onAddPane={addPane}
-          canAddPane={canAddPane}
-        />
-      </div>
-      {extraDocPanes.map((docPath, i) => docPath === undefined ? null : (
-        <div key={i} className="flex-1 min-w-0 h-full">
-          <DocPaneViewer
-            paneIndex={(i + 1) as 1 | 2}
-            paneDocPath={docPath || undefined}
-            focused={focusedPane === i + 1}
-            onFocusPane={() => setFocusedPane((i + 1) as 1 | 2)}
-            onCloseExtraPane={() => {
-              setExtraDocPane(i as 0 | 1, undefined);
-              if (focusedPane === i + 1) setFocusedPane(0);
-            }}
-            onAddPane={addPane}
-            canAddPane={canAddPane}
-          />
-        </div>
+    <div ref={scrollRowRef} className="flex h-full min-h-0 w-full overflow-x-auto scroll-thin">
+      {panes.map((p, i) => (
+        <React.Fragment key={p.key}>
+          {i > 0 && (
+            <div
+              onMouseDown={(e) => onDividerMouseDown(i - 1, e)}
+              className="shrink-0 h-full relative"
+              style={{
+                width: dividersEnabled ? 5 : 1,
+                cursor: dividersEnabled ? 'col-resize' : 'default',
+                background: 'var(--border-subtle)',
+              }}
+            />
+          )}
+          <div
+            className="h-full shrink-0"
+            style={rowWidthPx ? { width: paneWidthsPx[i], flex: '0 0 auto' } : { flex: '1 1 0%', minWidth: 0 }}
+          >
+            <DocPaneViewer
+              paneIndex={p.key}
+              paneDocPath={p.isMain ? undefined : (p.docPath || undefined)}
+              focused={focusedPane === p.key}
+              onFocusPane={() => setFocusedPane(p.key)}
+              onCloseExtraPane={p.isMain ? undefined : () => {
+                setExtraDocPane((p.key - 1) as 0 | 1, undefined);
+                if (focusedPane === p.key) setFocusedPane(0);
+              }}
+              onAddPane={addPane}
+              canAddPane={canAddPane}
+              outlineOpen={paneOutlineOpen[i]}
+              onOutlineOpenChange={(open) => handleOutlineOpenChange(i, open)}
+              toolbarCompact={openPaneCount > 1}
+            />
+          </div>
+        </React.Fragment>
       ))}
     </div>
   );

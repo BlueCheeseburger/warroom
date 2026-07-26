@@ -1236,7 +1236,25 @@ export default function Documentation() {
             pane so three open panes don't all react to the same keypress. Each extra pane has its
             own close (×) button next to its filename. Opening a second or third pane
             auto-collapses the left sidebar (no room for it); it re-expands once you're back down
-            to one pane.
+            to one pane — unless you manually re-expand it while comparing, in which case that
+            choice is remembered the next time you open this exact combination of docs (see below).
+            When 2+ panes are open, the Credibility and Cross-Ex buttons shrink to icon-only to save
+            room.
+          </P>
+          <P>
+            <strong>Resize panes.</strong> Drag the thin divider between two panes to resize them —
+            they start out equal. The divider itself never persists as a standalone preference; it's
+            saved as part of the remembered layout for the exact set of docs open together (see
+            next).
+          </P>
+          <P>
+            <strong>Layouts remember themselves per doc combination.</strong> Pane widths, which
+            pane(s) have their outline open, and any sidebar-expanded override are all saved
+            together, keyed to the exact, ordered set of doc paths currently open (
+            <Code>utils/docComboLayout.ts</Code>). Opening those same files together again — in the
+            same panes — restores exactly how you left it. A different set of docs, or the same docs
+            in different panes, starts fresh. Single-pane viewing never uses this (nothing to
+            combine).
           </P>
           <P>
             <strong>Rename a doc.</strong> Double-click the doc's name in the toolbar to rename it
@@ -1251,6 +1269,19 @@ export default function Documentation() {
             tuck it away. It starts closed every time a doc loads unless{' '}
             <strong>Always open the outline</strong> is on in Settings (see below), in which case
             it opens for every doc.
+          </P>
+          <P>
+            <strong>Outline layout in compare view.</strong> When 2-3 panes are open, opening an
+            outline affects the other panes in one of two ways, set in Settings (default{' '}
+            <strong>Dedicated space</strong>): <strong>Dedicated space</strong> opens a fixed-width
+            column that isn't resizable — the active pane and its reading "partner" (the next pane
+            to its right, or the previous one if it's the rightmost pane) share about 85% of the
+            view, every other pane shrinks to a thin sliver, and the row can scroll horizontally to
+            reach it. <strong>Squish neighbor</strong> instead just borrows the outline's width from
+            one neighboring pane — everything stays within the viewport, nothing scrolls, and the
+            active pane's own reading width doesn't shrink. Dragging pane dividers is disabled while
+            a "Dedicated space" outline is open (that split isn't adjustable); it works normally
+            otherwise.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
@@ -2001,6 +2032,10 @@ export default function Documentation() {
               <div>
                 <span className="font-semibold text-ink">Start docs in Focus mode</span>
                 <span className="ml-2 text-ink/60">Off by default. On hides body text and shows only card structure as soon as any doc opens.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Outline layout in compare view</span>
+                <span className="ml-2 text-ink/60">Dedicated space (default) or Squish neighbor — see "Outline layout in compare view" above.</span>
               </div>
             </div>
           </Card>

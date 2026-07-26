@@ -413,6 +413,18 @@ export default function Settings() {
     localStorage.setItem('warroom-doc-start-focus', String(val));
     setDocStartFocusState(val);
   }
+  // How opening an outline in a multi-pane compare view affects the other
+  // panes — 'space' (default) opens a dedicated non-adjustable column and
+  // reflows the row (may scroll horizontally); 'squish' just borrows the
+  // outline's width from a neighboring pane, staying within the viewport.
+  const [docOutlineLayout, setDocOutlineLayoutState] = useState<'squish' | 'space'>(
+    () => (localStorage.getItem('warroom-doc-outline-layout') === 'squish' ? 'squish' : 'space')
+  );
+  function setDocOutlineLayout(val: 'squish' | 'space') {
+    localStorage.setItem('warroom-doc-outline-layout', val);
+    setDocOutlineLayoutState(val);
+    window.dispatchEvent(new CustomEvent('warroom-doc-outline-layout-changed', { detail: { method: val } }));
+  }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
@@ -920,6 +932,35 @@ export default function Settings() {
               style={{ transform: docStartFocus ? 'translateX(18px)' : 'translateX(2px)' }}
             />
           </button>
+        </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="mb-1.5">
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Outline layout in compare view</div>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              How opening an outline affects the other panes when 2-3 docs are open side by side.
+            </p>
+          </div>
+          <div className="flex rounded-lg p-0.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+            {([
+              { value: 'space' as const, label: 'Dedicated space', hint: 'New fixed-width column; other panes shrink and the row can scroll.' },
+              { value: 'squish' as const, label: 'Squish neighbor', hint: 'Borrows width from one neighboring pane; everything stays on screen.' },
+            ]).map((o) => (
+              <button
+                key={o.value}
+                onClick={() => setDocOutlineLayout(o.value)}
+                title={o.hint}
+                className="flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition"
+                style={{
+                  background: docOutlineLayout === o.value ? 'var(--bg-card)' : 'transparent',
+                  color: docOutlineLayout === o.value ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  boxShadow: docOutlineLayout === o.value ? 'var(--nav-active-shadow)' : 'none',
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

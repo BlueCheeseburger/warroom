@@ -14,6 +14,7 @@ import {
   FLOW_ITEM_DRAG_MIME, FLOW_FOLDER_DRAG_MIME,
 } from '../utils/flowFolders';
 import { buildCaseItems, CaseItem, deleteCaseAndBlocks } from '../utils/caseItems';
+import { comboKeyFor, saveComboLayout } from '../utils/docComboLayout';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string; cardCount?: number }
@@ -40,9 +41,20 @@ function useCollapsed(): [boolean, () => void] {
   const [c, setC] = useState(() => {
     try { return localStorage.getItem('warroom-sb-collapsed') === 'true'; } catch { return false; }
   });
+  // Multi-pane speech doc state, read only to know (a) whether we're
+  // currently in a multi-pane compare view and (b) which exact combo of docs
+  // it is, so a manual toggle while multi-pane is active can be remembered
+  // as that combo's sidebar override (see docComboLayout.ts / SpeechDocViewer).
+  const view = useApp((s) => s.view);
+  const extraDocPanes = useApp((s) => s.extraDocPanes);
+  const isMultiPane = extraDocPanes.some((p) => p !== undefined);
+  const pane0Path = view.kind === 'speech-doc' ? (view as any).docPath as string | undefined : undefined;
+  const comboKey = isMultiPane ? comboKeyFor([pane0Path, extraDocPanes[0], extraDocPanes[1]]) : null;
+
   const toggle = () => setC(v => {
     const next = !v;
     try { localStorage.setItem('warroom-sb-collapsed', String(next)); } catch {}
+    if (isMultiPane && comboKey) saveComboLayout(comboKey, { sidebarExpanded: !next });
     return next;
   });
   // The speech doc viewer force-collapses the sidebar while 2-3 doc panes are
@@ -409,15 +421,10 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
   const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'speech-doc' || view.kind === 'google-scholar';
   const isOpponents  = view.kind === 'opponents' || view.kind === 'opponent' || view.kind === 'judge';
   const isTournament = view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
-  const isFlow       = view.kind === 'flow';
+  const isFlow       = view.kind === 'flow' || view.kind === 'flows-grid';
   const isDrive      = view.kind === 'gdrive';
   const isSettings   = view.kind === 'settings';
   const isTopics     = view.kind === 'topics';
-
-  function goFlow() {
-    if (flowsIndex.length > 0) setView({ kind: 'flow', flowId: flowsIndex[0].id });
-    else createFlow();
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -455,7 +462,7 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
           <IcoTournament />
         </CIcon>
 
-        <CIcon label="Flow" active={isFlow} onClick={goFlow}>
+        <CIcon label="Flow" active={isFlow} onClick={() => setView({ kind: 'flows-grid' })}>
           <IcoFlow />
         </CIcon>
 
