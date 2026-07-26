@@ -523,6 +523,29 @@ body {
 }
 .ai-glow-ring:hover::before { opacity: 1; }
 
+/* Accessibility: the in-app "Reduce motion" setting (Settings.tsx → General),
+   toggled via the `reduce-motion` class on <html> in App.tsx. Also honored
+   automatically from the OS-level `prefers-reduced-motion` media query below,
+   independent of the in-app toggle — either one is enough to turn it off.
+   `!important` + universal selector because this needs to win over every
+   component's own inline transition/animation styles, not just Tailwind's. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  transition-duration: 0.001ms !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Accessibility: when the user asks the OS to reduce transparency, fall back to
    the fully opaque surfaces and drop the blur. */
 @media (prefers-reduced-transparency: reduce) {

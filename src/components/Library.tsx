@@ -59,7 +59,7 @@ export async function copyCardToClipboard(card: Card): Promise<void> {
 type ViewMode = 'full' | 'compact';
 
 export default function Library() {
-  const { db, cardCutterOpen, setCardCutterOpen } = useApp();
+  const { db, cardCutterOpen, setCardCutterOpen, cardOutdatedYears } = useApp();
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('full');
   const [selectMode, setSelectMode] = useState(false);
@@ -86,7 +86,7 @@ export default function Library() {
     );
   }, [allCards, query]);
 
-  const outdatedCount = allCards.filter((c) => CURRENT_YEAR - c.year > 4).length;
+  const outdatedCount = allCards.filter((c) => CURRENT_YEAR - c.year > cardOutdatedYears).length;
 
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -214,10 +214,10 @@ interface LibraryCardProps {
 }
 
 function LibraryCard({ card, viewMode, selectMode, selected, onToggleSelect }: LibraryCardProps) {
-  const { setView } = useApp();
+  const { setView, cardOutdatedYears } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  const outdated = CURRENT_YEAR - card.year > 4;
+  const outdated = CURRENT_YEAR - card.year > cardOutdatedYears;
   const preview = card.body.length > 220 ? card.body.slice(0, 220) + '…' : card.body;
   const hasRuns = Array.isArray(card.bodyRuns) && card.bodyRuns.length > 0;
 

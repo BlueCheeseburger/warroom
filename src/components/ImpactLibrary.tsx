@@ -90,7 +90,7 @@ async function extractDoc(value: string, db: DB): Promise<string> {
 type Screen = 'browse' | 'contribute';
 
 export default function ImpactLibrary() {
-  const { setView, setChatOpen, db, pushUndoToast } = useApp();
+  const { setView, setChatOpen, db, pushUndoToast, skipDeleteConfirm } = useApp();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [entries, setEntries] = useState<ImpactLibraryEntry[]>([]);
@@ -159,7 +159,7 @@ export default function ImpactLibrary() {
   }
 
   async function handleDelete(entry: ImpactLibraryEntry) {
-    if (!confirm('Delete your library entry?')) return;
+    if (!skipDeleteConfirm && !confirm('Delete your library entry?')) return;
     const res = await impactlib.delete(entry.id);
     if (!res?.ok) return;
     setEntries((prev) => prev.filter((e) => e.id !== entry.id));

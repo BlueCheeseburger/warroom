@@ -52,7 +52,7 @@ export default function CaseView() {
 // ─── Block-based case header ──────────────────────────────────────────────────
 
 function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; cardCount: number }) {
-  const { update, setView, db, pushUndoToast } = useApp();
+  const { update, setView, db, pushUndoToast, skipDeleteConfirm } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
@@ -65,7 +65,7 @@ function CaseHeader({ c, blockCount, cardCount }: { c: any; blockCount: number; 
   }
 
   async function deleteCase() {
-    if (!confirm(`Delete "${c.name}"? This removes all its blocks and cards.`)) return;
+    if (!skipDeleteConfirm && !confirm(`Delete "${c.name}"? This removes all its blocks and cards.`)) return;
     const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
@@ -154,14 +154,14 @@ function BlockGroup({ label, blocks, type, caseId }: { label: string; blocks: Bl
 }
 
 function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
-  const { db, update, setView, pushUndoToast } = useApp();
+  const { db, update, setView, pushUndoToast, skipDeleteConfirm, cardOutdatedYears } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
   const cardCount = block.cards.length;
   const outdatedCount = block.cards.filter((id) => {
     const card = db.cards[id];
-    return card && new Date().getFullYear() - card.year > 4;
+    return card && new Date().getFullYear() - card.year > cardOutdatedYears;
   }).length;
 
   async function saveTitle() {
@@ -172,7 +172,7 @@ function BlockRow({ block, caseId }: { block: Block; caseId: string }) {
   }
 
   async function deleteBlock() {
-    if (!confirm(`Delete "${block.title}"?`)) return;
+    if (!skipDeleteConfirm && !confirm(`Delete "${block.title}"?`)) return;
     const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };

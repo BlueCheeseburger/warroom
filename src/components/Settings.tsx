@@ -100,6 +100,17 @@ const ANTHROPIC_MODEL_OPTIONS = [
 // Lite or Balanced.
 
 type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
+
+// Keys mirror NOTIF_CATEGORY_SETTINGS_KEY in electron/main.ts — a typo in either
+// place just makes a toggle a no-op rather than a crash, so keep them in sync by hand.
+type NotifyKey = 'notifyPairings' | 'notifyResults' | 'notifyTopics' | 'notifyJudges' | 'notifyOpponents';
+const NOTIFY_OPTIONS: { key: NotifyKey; label: string; blurb: string }[] = [
+  { key: 'notifyPairings',  label: 'New pairings',       blurb: 'A round is posted on Tabroom during a tournament you’re monitoring.' },
+  { key: 'notifyResults',   label: 'Round results',      blurb: 'A result is posted to your Tabroom inbox.' },
+  { key: 'notifyTopics',    label: 'New topics',         blurb: 'A new PF or LD resolution is released.' },
+  { key: 'notifyJudges',    label: 'Judge paradigm updates', blurb: 'A judge you’ve looked up updates their paradigm on Tabroom.' },
+  { key: 'notifyOpponents', label: 'Opponent disclosures', blurb: 'A tracked opponent discloses new rounds on OpenCaselist.' },
+];
 type ModelTier = 'lite' | 'balanced' | 'best';
 
 const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
@@ -283,7 +294,11 @@ function GDriveSettings() {
 }
 
 export default function Settings() {
-  const { currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission, setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme, setShortcutsOpen } = useApp();
+  const {
+    currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission,
+    setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme, setShortcutsOpen,
+    cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
+  } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
 
   // Whether the app is *effectively* dark right now, so the theme previews
@@ -336,6 +351,17 @@ export default function Settings() {
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
+  // Background notification categories — main-process state (electron/main.ts's
+  // fireNotif gate), not localStorage, since the headless daemon fires these too
+  // and needs the same app_settings file the GUI reads/writes. All default ON.
+  const [notifySettings, setNotifySettingsState] = useState<Record<NotifyKey, boolean>>({
+    notifyPairings: true, notifyResults: true, notifyTopics: true, notifyJudges: true, notifyOpponents: true,
+  });
+  async function setNotifySetting(key: NotifyKey, val: boolean) {
+    setNotifySettingsState((prev) => ({ ...prev, [key]: val }));
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, [key]: val });
+  }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
   // no main-process/IPC need). Default ON: dark-mode users still read the
   // actual doc page as light "paper" while the rest of the app stays dark.
@@ -489,6 +515,13 @@ export default function Settings() {
       if (typeof (s as any)?.lmstudioOptions === 'string') setLmOptions((s as any).lmstudioOptions);
       if ((s as any)?.lmstudioTools !== undefined) setLmTools((s as any).lmstudioTools !== false);
       // No 'lmstudio' entry — it's a local server with no key to store.
+      setNotifySettingsState({
+        notifyPairings:  (s as any)?.notifyPairings  !== false,
+        notifyResults:   (s as any)?.notifyResults   !== false,
+        notifyTopics:    (s as any)?.notifyTopics    !== false,
+        notifyJudges:    (s as any)?.notifyJudges    !== false,
+        notifyOpponents: (s as any)?.notifyOpponents !== false,
+      });
       const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
       const provider: AIProvider = (s as any)?.apiProvider ?? 'gemini';
@@ -887,6 +920,98 @@ export default function Settings() {
               style={{ transform: docStartFocus ? 'translateX(18px)' : 'translateX(2px)' }}
             />
           </button>
+        </div>
+      </div>
+
+      {/* General */}
+      <div id="settings-general" className="glass-card rounded-sm p-4 space-y-4 mb-4">
+        <div className="label mb-1">General</div>
+
+        <div className="flex items-center justify-between">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Card staleness (years)</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Cards older than this are flagged "outdated" in Library, blocks, Mission Brief, and when you cut a new one.
+            </p>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            className="input w-16 text-center ml-4 shrink-0"
+            value={cardOutdatedYears}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) setCardOutdatedYears(n);
+            }}
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Reduce motion</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Turn off transitions and animations across the app.
+            </p>
+          </div>
+          <button
+            onClick={() => setReduceMotion(!reduceMotion)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: reduceMotion ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: reduceMotion ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Skip delete confirmations</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Delete cases, blocks, tournaments, rounds, and impact library entries immediately, without
+              an "are you sure?" prompt. The Undo toast still shows either way, so you can always get it back.
+            </p>
+          </div>
+          <button
+            onClick={() => setSkipDeleteConfirm(!skipDeleteConfirm)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: skipDeleteConfirm ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: skipDeleteConfirm ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Background notifications</div>
+          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            Desktop notifications that can fire even when Warroom is closed, via the background watcher (see
+            Documentation → Background notifications). Turn off anything you don't want to be pinged about.
+          </p>
+          <div className="space-y-2.5">
+            {NOTIFY_OPTIONS.map((o) => (
+              <div key={o.key} className="flex items-center justify-between">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="text-xs font-medium" style={{ color: 'var(--ink)' }}>{o.label}</div>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>{o.blurb}</p>
+                </div>
+                <button
+                  onClick={() => setNotifySetting(o.key, !notifySettings[o.key])}
+                  className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+                  style={{ background: notifySettings[o.key] ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+                >
+                  <span
+                    className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                    style={{ transform: notifySettings[o.key] ? 'translateX(18px)' : 'translateX(2px)' }}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

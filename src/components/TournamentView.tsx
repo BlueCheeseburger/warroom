@@ -118,7 +118,7 @@ function researchOpponentInto(id: string, name: string, event: DebateEvent, upda
 }
 
 export default function TournamentView() {
-  const { db, update, setView, view, pushUndoToast } = useApp();
+  const { db, update, setView, view, pushUndoToast, skipDeleteConfirm } = useApp();
   const dangerCls = useDangerBtnClass();
   if (view.kind !== 'tournament') return null;
   const t = db.tournaments[view.tournamentId];
@@ -145,7 +145,7 @@ export default function TournamentView() {
     .filter(Boolean);
 
   async function deleteRound(roundId: string) {
-    if (!confirm('Delete this round?')) return;
+    if (!skipDeleteConfirm && !confirm('Delete this round?')) return;
     const snapshot = structuredClone(db);
     const round = db.rounds[roundId];
     await update((db) => {
@@ -158,7 +158,7 @@ export default function TournamentView() {
   }
 
   async function deleteTournament() {
-    if (!confirm(`Delete "${t.name}" and all its rounds?`)) return;
+    if (!skipDeleteConfirm && !confirm(`Delete "${t.name}" and all its rounds?`)) return;
     const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };

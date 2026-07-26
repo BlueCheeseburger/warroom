@@ -21,7 +21,7 @@ const COLORS: HighlightColor[] = ['yellow', 'cyan', 'green'];
 const FONT_SIZES: FontSize[] = [11, 8, 6, 3];
 
 export default function CardCutter({ onClose }: { onClose: () => void }) {
-  const { update } = useApp();
+  const { update, cardOutdatedYears } = useApp();
   const [step, setStep] = useState<Step>('pick');
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -199,7 +199,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
         const newCard: Card = {
           id, blockId: CUT_BLOCK_ID, tag, cite: cite.trim(), body: editText.trim(),
           bodyRuns: runs, images: allImgs.length ? allImgs : undefined,
-          year: yr, flagged: CURRENT_YEAR - yr > 4, createdAt: now,
+          year: yr, flagged: CURRENT_YEAR - yr > cardOutdatedYears, createdAt: now,
         };
         const existingCase = db.cases[CUT_CASE_ID];
         const cutCase = existingCase

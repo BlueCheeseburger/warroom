@@ -37,7 +37,7 @@ Cases are top-level positions (Aff or Neg). Each holds blocks (e.g. "T – Topic
 - **Add a block**: open a case → "+ Add block"
 - **Add cards manually**: open a block → "+ Add card"
 - **Import cards from a file**: open a block → "Import from file" → pick .pdf or .docx → AI extracts cards automatically
-- Cards 4+ years old are automatically flagged (highlighted in amber) as potentially outdated
+- Cards older than the staleness threshold (default 4 years, adjustable in Settings → General) are automatically flagged (highlighted in amber) as potentially outdated
 - **Share via chat**: open case/block → share button to send as attachment
 
 ---
@@ -555,6 +555,10 @@ Gear icon at bottom of sidebar.
 | Setting | Description |
 |---------|-------------|
 | Debate event | HS Policy, HS LD, HS PF, College Policy (NDT/CEDA), College LD (NFA-LD) |
+| Card staleness | How many years old a card can be before it's flagged outdated everywhere (default 4) |
+| Reduce motion | Turns off transitions and animations across the app |
+| Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
+| Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |
 | AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
 | Gemini API key | From aistudio.google.com. Required for all AI features. |
 | Gemini model | Flash Lite / Flash (default) / 3.5 Flash |

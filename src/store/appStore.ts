@@ -9,6 +9,8 @@ export type DebateEvent = 'policy' | 'pf' | 'ld';
 /** 'hover' = red only on hover (subtle); 'always' = red border always, deeper on hover */
 export type DangerHighlight = 'hover' | 'always';
 
+export const CARD_OUTDATED_YEARS_DEFAULT = 4;
+
 // Maps the full app_settings value (from onboarding) to a DebateEvent.
 export function mapSettingsEvent(e: string): DebateEvent {
   if (e === 'hspf') return 'pf';
@@ -72,6 +74,19 @@ interface AppState {
   direction: Direction;
   dangerHighlight: DangerHighlight;
   setDangerHighlight: (d: DangerHighlight) => void;
+  // How many years old a card can be before it's flagged as outdated everywhere
+  // (Library, MissionBrief, BlockView, CardCutter). Renderer-only display/creation
+  // preference, like theme/direction — nothing in the main process reads it.
+  cardOutdatedYears: number;
+  setCardOutdatedYears: (n: number) => void;
+  // Disables CSS transitions/animations app-wide. Renderer-only, like theme/direction.
+  reduceMotion: boolean;
+  setReduceMotion: (v: boolean) => void;
+  // Skips the window.confirm() on destructive deletes that still have one
+  // (case/block/tournament/round/impact-library-entry) — safe to offer now that
+  // those deletes all show an Undo toast. Renderer-only, like theme/direction.
+  skipDeleteConfirm: boolean;
+  setSkipDeleteConfirm: (v: boolean) => void;
   // Speech doc viewer side-by-side compare panes. Pane 0 is always the main
   // doc tracked by `view` (kind:'speech-doc'); these are the two *extra*
   // panes a user can open alongside it for side-by-side reading. Transient
@@ -164,6 +179,19 @@ export const useApp = create<AppState>((set, get) => ({
   direction: (localStorage.getItem('warroom-direction') as Direction | null) ?? 'calm',
   dangerHighlight: (localStorage.getItem('warroom-danger-highlight') as DangerHighlight | null) ?? 'always',
   setDangerHighlight: (d) => { localStorage.setItem('warroom-danger-highlight', d); set({ dangerHighlight: d }); },
+  cardOutdatedYears: (() => {
+    const v = parseInt(localStorage.getItem('warroom-card-outdated-years') ?? '', 10);
+    return Number.isFinite(v) && v > 0 ? v : CARD_OUTDATED_YEARS_DEFAULT;
+  })(),
+  setCardOutdatedYears: (n) => {
+    const v = Number.isFinite(n) && n > 0 ? Math.round(n) : CARD_OUTDATED_YEARS_DEFAULT;
+    localStorage.setItem('warroom-card-outdated-years', String(v));
+    set({ cardOutdatedYears: v });
+  },
+  reduceMotion: localStorage.getItem('warroom-reduce-motion') === 'true',
+  setReduceMotion: (v) => { localStorage.setItem('warroom-reduce-motion', String(v)); set({ reduceMotion: v }); },
+  skipDeleteConfirm: localStorage.getItem('warroom-skip-delete-confirm') === 'true',
+  setSkipDeleteConfirm: (v) => { localStorage.setItem('warroom-skip-delete-confirm', String(v)); set({ skipDeleteConfirm: v }); },
   extraDocPanes: [undefined, undefined],
   setExtraDocPane: (slot, docPath) => set((s) => {
     const next: [string | undefined, string | undefined] = [...s.extraDocPanes];

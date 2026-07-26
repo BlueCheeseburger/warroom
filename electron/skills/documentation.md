@@ -824,6 +824,10 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 | Setting | Description |
 |---------|-------------|
 | Debate event | HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD) |
+| General — card staleness | Years before a card is flagged outdated (default 4, `cardOutdatedYears` in `appStore.ts`, localStorage-backed). Read by Library, BlockView, CaseView, MissionBrief, CardCutter, ImportCards, and the Agent's card-save path. |
+| General — reduce motion | Toggles a `reduce-motion` class on `<html>` (see `index.css`) that zeroes transition/animation durations app-wide. `prefers-reduced-motion` at the OS level does the same independent of this toggle. |
+| General — skip delete confirmations | Suppresses `confirm()` on case/block/tournament/round/impact-library deletes. Safe since all of those already show an Undo toast (see "Undo Toasts" above). |
+| General — background notifications | 5 independent toggles (`notifyPairings`/`notifyResults`/`notifyTopics`/`notifyJudges`/`notifyOpponents`) gating `fireNotif()` in `main.ts` by category — new pairings, round results, new topics, judge paradigm updates, opponent disclosures. Stored in `app_settings` (not localStorage) since the headless daemon fires these too and reads the same file. All default on; only an explicit `false` disables one. |
 | AI provider | Gemini (default) · OpenAI · Anthropic · Grok · **LM Studio** (local). Persisted as `apiProvider` in `app_settings`. |
 | Gemini API key | Stored encrypted. Powers card extraction, block suggestions, and Warroom AI. |
 | Gemini model | Flash Lite / Flash (default) / 3.5 Flash |

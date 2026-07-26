@@ -1370,7 +1370,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   initialHistory: GeminiMsg[];
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
 }) {
-  const { update, agentSearchFns, db, setView, flowsIndex } = useApp();
+  const { update, agentSearchFns, db, setView, flowsIndex, cardOutdatedYears } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
   const [composerText, setComposerText] = useState('');
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
@@ -1877,7 +1877,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                   ...db,
                   cases:  { ...db.cases,  [AGENT_CASE_ID]:  agentCase },
                   blocks: { ...db.blocks, [AGENT_BLOCK_ID]: { ...agentBlock, cards: [...agentBlock.cards, cardId], updatedAt: now } },
-                  cards:  { ...db.cards,  [cardId]: { id: cardId, blockId: AGENT_BLOCK_ID, tag, cite, body, year, flagged: new Date().getFullYear() - year > 4, createdAt: now } },
+                  cards:  { ...db.cards,  [cardId]: { id: cardId, blockId: AGENT_BLOCK_ID, tag, cite, body, year, flagged: new Date().getFullYear() - year > cardOutdatedYears, createdAt: now } },
                 };
               });
               steps = steps.map((s) => s.id === stepId ? { ...s, label: `Saved "${tag}" to library`, status: 'done' } : s);

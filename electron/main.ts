@@ -482,6 +482,25 @@ interface NotifTarget {
   rendererEvent?: { channel: string; payload: any };
 }
 
+// Every category defaults ON (matches pre-toggle behavior) — only an explicit
+// `false` in app_settings turns one off. Keyed by the same string Settings.tsx
+// writes, so a typo in either place shows up as a toggle that silently does
+// nothing rather than a crash — worth grepping both sides if one is added.
+type NotifCategory = 'pairings' | 'results' | 'topics' | 'judges' | 'opponents';
+const NOTIF_CATEGORY_SETTINGS_KEY: Record<NotifCategory, string> = {
+  pairings: 'notifyPairings',
+  results: 'notifyResults',
+  topics: 'notifyTopics',
+  judges: 'notifyJudges',
+  opponents: 'notifyOpponents',
+};
+async function notifCategoryEnabled(category: NotifCategory): Promise<boolean> {
+  try {
+    const s = await readJson('app_settings') as any;
+    return s?.[NOTIF_CATEGORY_SETTINGS_KEY[category]] !== false;
+  } catch { return true; }
+}
+
 function openViaDeepLink(target: DS.DeepLinkTarget) {
   const url = DS.buildDeepLink(target);
   // Packaged: spawn the app binary directly with the URL as argv — a fresh GUI
@@ -497,8 +516,9 @@ function openViaDeepLink(target: DS.DeepLinkTarget) {
   shell.openExternal(url).catch(() => {});
 }
 
-function fireNotif(opts: { title: string; body: string; silent?: boolean; target: NotifTarget }) {
+async function fireNotif(opts: { title: string; body: string; silent?: boolean; target: NotifTarget; category: NotifCategory }) {
   try {
+    if (!(await notifCategoryEnabled(opts.category))) return;
     if (!ElectronNotification.isSupported()) return;
     const n = new ElectronNotification({ title: opts.title, body: opts.body, silent: opts.silent ?? false });
     n.on('click', () => {
@@ -4767,6 +4787,7 @@ async function tbPoll() {
           deepLink: { kind: 'tournament', id: dbTournamentId, round: pairing.roundNumber },
           rendererEvent: { channel: 'tabroom:monitor:notifClick', payload: { dbTournamentId, roundNumber: pairing.roundNumber } },
         },
+        category: 'pairings',
       });
 
       // No renderer to feed in daemon mode — the OS notification above is the
@@ -5069,6 +5090,7 @@ async function tbInboxPoll() {
           deepLink: { kind: 'tournament', id: dbTournamentId, round: item.roundNum },
           rendererEvent: { channel: 'tabroom:inbox:resultClick', payload: { dbTournamentId, roundNumber: item.roundNum } },
         },
+        category: 'results',
       });
       mainWin?.webContents.send('tabroom:inbox:result', { ...item, dbTournamentId });
     }
@@ -6873,6 +6895,7 @@ function fireTopicNotification(eventType: 'pf' | 'ld', resolution: string) {
       deepLink: { kind: 'topic', id: eventType },
       rendererEvent: { channel: 'navigate-to-topics', payload: eventType },
     },
+    category: 'topics',
   });
 }
 
@@ -7074,6 +7097,7 @@ async function checkFollowedJudgeUpdates(): Promise<void> {
               deepLink: { kind: 'judge', id: String(judge.id) },
               rendererEvent: { channel: 'scouting:openJudge', payload: judge.id },
             },
+            category: 'judges',
           });
         }
 
@@ -7115,6 +7139,7 @@ async function checkFollowedOpponentUpdates(): Promise<void> {
               deepLink: { kind: 'opponent', id: String(opp.id) },
               rendererEvent: { channel: 'scouting:openOpponent', payload: opp.id },
             },
+            category: 'opponents',
           });
           // Update stored count
           const fresh = await readJson('db.json');

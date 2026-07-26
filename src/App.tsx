@@ -63,7 +63,7 @@ const CHAT_MAX_W = 600;
 const CHAT_DEFAULT_W = 320;
 
 export default function App() {
-  const { init, ready, theme, direction, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen, autoFlowOpen, setAutoFlowOpen } = useApp();
+  const { init, ready, theme, direction, reduceMotion, chatOpen, geminiOpen, setView, flowsIndex, setFlowsIndex, event, showOnboarding, setShowOnboarding, searchOpen, setSearchOpen, setShortcutsOpen, autoFlowOpen, setAutoFlowOpen } = useApp();
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('warroom-chat-width') ?? '', 10);
     return isNaN(saved) ? CHAT_DEFAULT_W : Math.max(CHAT_MIN_W, Math.min(CHAT_MAX_W, saved));
@@ -507,6 +507,13 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.direction = direction;
   }, [direction]);
+
+  // Reduce motion — a global CSS override (see `.reduce-motion` in index.css)
+  // rather than per-component checks, so it also catches third-party/webview
+  // animations and anything future code adds without remembering to check a flag.
+  useEffect(() => {
+    document.documentElement.classList.toggle('reduce-motion', reduceMotion);
+  }, [reduceMotion]);
 
   // Windows: keep the native caption-button overlay in sync with the current
   // theme by reading the live titlebar background and pushing it to main.

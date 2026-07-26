@@ -1834,6 +1834,42 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD)</span>
               </div>
               <div>
+                <span className="font-semibold text-ink">General — card staleness</span>
+                <span className="ml-2 text-ink/60">
+                  Years before a card is flagged outdated (default 4). Renderer-only store field
+                  (<Code>cardOutdatedYears</Code> in <Code>appStore.ts</Code>), read everywhere a card's age
+                  is displayed or set — Library, BlockView, CaseView, MissionBrief, CardCutter, ImportCards,
+                  and the Agent's own card-save path.
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">General — reduce motion</span>
+                <span className="ml-2 text-ink/60">
+                  Toggles the <Code>reduce-motion</Code> class on <Code>&lt;html&gt;</Code> (see <Code>index.css</Code>),
+                  which zeroes transition/animation durations app-wide. The OS-level <Code>prefers-reduced-motion</Code>{' '}
+                  media query does the same independent of this toggle.
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">General — skip delete confirmations</span>
+                <span className="ml-2 text-ink/60">
+                  Suppresses the <Code>confirm()</Code> prompt on case/block/tournament/round/impact-library
+                  deletes. Safe to enable now that all of those show an Undo toast (see the Undo section above)
+                  — deleting is never actually final either way.
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">General — background notifications</span>
+                <span className="ml-2 text-ink/60">
+                  Five independent toggles (new pairings, round results, new topics, judge paradigm updates,
+                  opponent disclosures) gating <Code>fireNotif()</Code> in <Code>electron/main.ts</Code> by
+                  category. Stored as <Code>notifyPairings</Code>/<Code>notifyResults</Code>/<Code>notifyTopics</Code>/
+                  <Code>notifyJudges</Code>/<Code>notifyOpponents</Code> in <Code>app_settings</Code> — main-process
+                  state, not localStorage, since the headless daemon fires these too and reads the same file. All
+                  default on; only an explicit <Code>false</Code> turns one off.
+                </span>
+              </div>
+              <div>
                 <span className="font-semibold text-ink">AI provider</span>
                 <span className="ml-2 text-ink/60">Gemini (default) · OpenAI · Anthropic · Grok · LM Studio (local). Persisted as <Code>apiProvider</Code>.</span>
               </div>

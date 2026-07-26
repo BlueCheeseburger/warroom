@@ -18,10 +18,8 @@ function longCite(cite: string): string {
   const comma = cite.indexOf(',');
   return comma > 0 ? cite.slice(comma + 1).trim() : '';
 }
-const OUTDATED_THRESHOLD = 4;
-
-function isOutdated(year: number) {
-  return CURRENT_YEAR - year > OUTDATED_THRESHOLD;
+function isOutdated(year: number, thresholdYears: number) {
+  return CURRENT_YEAR - year > thresholdYears;
 }
 
 export default function BlockView() {
@@ -41,7 +39,7 @@ export default function BlockView() {
 }
 
 function BlockHeader({ block, parentCase, cardCount }: any) {
-  const { db, update, setView, pushUndoToast } = useApp();
+  const { db, update, setView, pushUndoToast, skipDeleteConfirm } = useApp();
   const dangerCls = useDangerBtnClass();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(block.title);
@@ -56,7 +54,7 @@ function BlockHeader({ block, parentCase, cardCount }: any) {
   }
 
   async function deleteBlock() {
-    if (!confirm(`Delete "${block.title}" and all its cards?`)) return;
+    if (!skipDeleteConfirm && !confirm(`Delete "${block.title}" and all its cards?`)) return;
     const snapshot = structuredClone(db);
     await update((db) => {
       const next = { ...db };
@@ -128,12 +126,12 @@ function PrepCardList({ block, cards }: { block: any; cards: Card[] }) {
 }
 
 function CardRow({ card, blockId }: { card: Card; blockId: string }) {
-  const { db, update, pushUndoToast } = useApp();
+  const { db, update, pushUndoToast, cardOutdatedYears } = useApp();
   const dangerCls = useDangerBtnClass();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
-  const outdated = isOutdated(card.year);
+  const outdated = isOutdated(card.year, cardOutdatedYears);
 
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -219,7 +217,7 @@ function AddCardForm({ blockId }: { blockId: string }) {
 }
 
 function CardEditor({ card, blockId, onDone }: { card?: Card; blockId: string; onDone: () => void }) {
-  const { update } = useApp();
+  const { update, cardOutdatedYears } = useApp();
   const [tag, setTag] = useState(card?.tag ?? '');
   const [cite, setCite] = useState(card?.cite ?? '');
   const [body, setBody] = useState(card?.body ?? '');
@@ -230,14 +228,14 @@ function CardEditor({ card, blockId, onDone }: { card?: Card; blockId: string; o
     if (card) {
       await update((db) => ({
         ...db,
-        cards: { ...db.cards, [card.id]: { ...card, tag, cite, body, year: Number(year), flagged: isOutdated(Number(year)) } },
+        cards: { ...db.cards, [card.id]: { ...card, tag, cite, body, year: Number(year), flagged: isOutdated(Number(year), cardOutdatedYears) } },
       }));
     } else {
       const id = crypto.randomUUID();
       const newCard: Card = {
         id, blockId, tag, cite, body,
         year: Number(year),
-        flagged: isOutdated(Number(year)),
+        flagged: isOutdated(Number(year), cardOutdatedYears),
         createdAt: new Date().toISOString(),
       };
       await update((db) => ({

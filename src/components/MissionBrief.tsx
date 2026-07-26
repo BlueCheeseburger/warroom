@@ -590,7 +590,7 @@ function MissionBriefAI({ round, opponent }: { round: Round; opponent: any }) {
 // ─── Suggested blocks ─────────────────────────────────────────────────────────
 
 function SuggestedBlocks({ round, opponent }: { round: Round; opponent: any }) {
-  const { db, update, setView } = useApp();
+  const { db, update, setView, cardOutdatedYears } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const allBlocks = Object.values(db.blocks);
@@ -673,7 +673,7 @@ function SuggestedBlocks({ round, opponent }: { round: Round; opponent: any }) {
           const cardCount = block.cards.length;
           const outdated = block.cards.filter((id) => {
             const c = db.cards[id];
-            return c && CURRENT_YEAR - c.year > 4;
+            return c && CURRENT_YEAR - c.year > cardOutdatedYears;
           }).length;
           return (
             <button
@@ -702,7 +702,7 @@ function SuggestedBlocks({ round, opponent }: { round: Round; opponent: any }) {
 // ─── Checklist ────────────────────────────────────────────────────────────────
 
 function Checklist({ round, opponent }: { round: Round; opponent: any }) {
-  const { db, update } = useApp();
+  const { db, update, cardOutdatedYears } = useApp();
   const [judgeNotes, setJudgeNotes] = useState(round.judgeNotes ?? '');
   const [dirty, setDirty] = useState(false);
 
@@ -717,7 +717,7 @@ function Checklist({ round, opponent }: { round: Round; opponent: any }) {
     if (!block) return;
     const count = block.cards.filter((id) => {
       const c = db.cards[id];
-      return c && CURRENT_YEAR - c.year > 4;
+      return c && CURRENT_YEAR - c.year > cardOutdatedYears;
     }).length;
     if (count > 0) outdatedWarnings.push(`${count} outdated in ${block.title}`);
   });

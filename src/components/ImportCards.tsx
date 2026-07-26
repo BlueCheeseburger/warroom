@@ -12,7 +12,7 @@ interface Props {
 type Step = 'idle' | 'loading' | 'review' | 'error';
 
 export default function ImportCards({ blockId, onDone }: Props) {
-  const { update } = useApp();
+  const { update, cardOutdatedYears } = useApp();
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState('');
   const [extracted, setExtracted] = useState<ExtractedCard[]>([]);
@@ -56,7 +56,7 @@ export default function ImportCards({ blockId, onDone }: Props) {
           cite: ec.cite,
           body: ec.body,
           year: ec.year,
-          flagged: new Date().getFullYear() - ec.year > 4,
+          flagged: new Date().getFullYear() - ec.year > cardOutdatedYears,
           createdAt: now,
         };
       });
