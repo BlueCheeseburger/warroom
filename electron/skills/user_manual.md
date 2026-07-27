@@ -545,6 +545,15 @@ Chat icon in the title bar.
 - **Unread badge** shown on chat icon
 - **Encryption**: every message and shared attachment is encrypted on your device (AES-256-GCM) before it's sent, so the cloud server only ever stores scrambled ciphertext — a leak of just the message data reveals nothing. The key is derived from your team's invite code, so keep that code private. Note this is not zero-knowledge encryption: the invite code is also stored on the server (it has to be, to let people join), so it's strong protection against a data leak, not a guarantee that the service operator can't read messages. Warroom AI never reads your team-chat history.
 
+### Team Files
+A file icon in the chat header (next to Direct Messages and Room Settings) opens **Team Files** — a shared file library separate from the message stream, so important docs don't get buried by chatter.
+
+- **Upload**: "+ Add file" → pick a .docx. It's encrypted and shared with the whole team instantly.
+- **Each file shows**: its name, when it was last modified, and who uploaded it.
+- **Auto-update**: if you're the one who uploaded a file, Warroom watches your local copy — the next time you save changes in Word (or wherever you edit it), your team's copy updates automatically, no re-upload needed. This only works while your Warroom app is open on the device you uploaded from; a 🔄 "auto-updating" tag shows on files your device is actively watching.
+- **Open a file**: click its name to view it in the Speech Doc Viewer.
+- **Delete**: only the uploader can delete their own file (trash icon).
+
 ---
 
 ## Google Drive

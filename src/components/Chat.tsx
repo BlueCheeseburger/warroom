@@ -20,8 +20,9 @@ import ChatMessageBubble, { AttachmentChip as ChatAttachmentChip } from './ChatM
 import MentionPicker from './MentionPicker';
 import TeamSetup from './TeamSetup';
 import RoomSettings from './RoomSettings';
+import TeamFiles from './TeamFiles';
 
-type ChatView = 'team' | 'dm-list' | { kind: 'dm'; channel: DMChannel };
+type ChatView = 'team' | 'dm-list' | 'files' | { kind: 'dm'; channel: DMChannel };
 
 export default function Chat() {
   const { currentUser, currentTeam, chatOpen, setChatOpen, setCurrentUser, setCurrentTeam, setTeamMembers } = useApp();
@@ -134,6 +135,27 @@ export default function Chat() {
     if (!currentUser) setChatView('team');
   }, [currentUser]);
 
+  // Team Files auto-update: this device's fs.watch (electron/main.ts) fires
+  // 'chat:localTeamFileChanged' whenever a file THIS device uploaded changes on
+  // disk. Encryption only happens in the renderer (chatCrypto.ts uses Web Crypto),
+  // so main.ts can't push the update itself — it hands off the plaintext bytes
+  // (over IPC, not network) and this effect encrypts + writes them to Supabase.
+  // Lives in the top-level Chat() component (always mounted, see App.tsx) so it
+  // keeps working even when the Files panel isn't open or the chat is closed.
+  useEffect(() => {
+    if (!currentTeam) return;
+    const off = window.warroom.teamFiles.onLocalFileChanged(async ({ fileId }) => {
+      try {
+        const bytesRes = await window.warroom.teamFiles.readWatchedBytes(fileId);
+        if (!bytesRes.ok || !bytesRes.data?.base64) return;
+        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const encData = await encryptText(key, bytesRes.data.base64);
+        await window.warroom.teamFiles.updateContent(fileId, encData);
+      } catch {}
+    });
+    return off;
+  }, [currentTeam?.id, currentTeam?.invite_code]);
+
   // Centralized sign-out: clears Supabase session, saved auto-login credentials,
   // all in-memory chat state, the cached optimistic data, and resets the view.
   async function handleSignOut() {
@@ -160,6 +182,7 @@ export default function Chat() {
         onClose={() => setChatOpen(false)}
         onSettings={() => setShowSettings(true)}
         onDMList={() => setChatView('dm-list')}
+        onFiles={() => setChatView('files')}
         onSignOut={handleSignOut}
       />
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -169,6 +192,8 @@ export default function Chat() {
           <TeamSetup onDone={() => {}} />
         ) : chatView === 'dm-list' ? (
           <DMList onOpenDM={(ch) => setChatView({ kind: 'dm', channel: ch })} />
+        ) : chatView === 'files' ? (
+          <TeamFiles />
         ) : typeof chatView === 'object' && chatView.kind === 'dm' ? (
           <DMBody channel={chatView.channel} onAddMember={() => {}} />
         ) : (
@@ -182,18 +207,21 @@ export default function Chat() {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onSignOut }: {
+function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onFiles, onSignOut }: {
   chatView: ChatView;
   onBack: () => void;
   onClose: () => void;
   onSettings: () => void;
   onDMList: () => void;
+  onFiles: () => void;
   onSignOut: () => void;
 }) {
   const { currentTeam } = useApp();
   const [copied, setCopied] = React.useState(false);
   const inDM = typeof chatView === 'object' && chatView.kind === 'dm';
   const inDMList = chatView === 'dm-list';
+  const inFiles = chatView === 'files';
+  const inSubview = inDM || inDMList || inFiles;
 
   function handleCopyCode() {
     if (!currentTeam) return;
@@ -204,12 +232,13 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onSignOut
 
   let title = currentTeam ? currentTeam.name : 'Team Chat';
   if (inDMList) title = 'Direct Messages';
+  if (inFiles) title = 'Team Files';
   if (inDM) title = (chatView as any).channel.name ?? dmChannelTitle((chatView as any).channel);
 
   return (
     <div className="glass-titlebar h-10 flex items-center gap-2 px-3 shrink-0"
       style={{ borderBottom: '1px solid var(--border-side)' }}>
-      {(inDM || inDMList) && (
+      {inSubview && (
         <button onClick={onBack} className="text-sm mr-0.5 shrink-0"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}>
           ←
@@ -217,7 +246,7 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onSignOut
       )}
       <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--ink)' }}>{title}</span>
 
-      {currentTeam && !inDM && !inDMList && (
+      {currentTeam && !inSubview && (
         <button title={`Invite code — click to copy`}
           className="text-[10px] font-mono px-1.5 py-0.5 rounded transition-colors shrink-0"
           style={copied
@@ -228,10 +257,13 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onSignOut
         </button>
       )}
 
-      {currentTeam && !inDM && !inDMList && (
+      {currentTeam && !inSubview && (
+        <IconBtn title="Team files" onClick={onFiles}><FilesIcon /></IconBtn>
+      )}
+      {currentTeam && !inSubview && (
         <IconBtn title="Direct messages" onClick={onDMList}><DMIcon /></IconBtn>
       )}
-      {currentTeam && !inDM && !inDMList && (
+      {currentTeam && !inSubview && (
         <IconBtn title="Room settings" onClick={onSettings}><SettingsIcon /></IconBtn>
       )}
       <IconBtn title="Sign out" onClick={onSignOut}><SignOutIcon /></IconBtn>
@@ -1335,6 +1367,9 @@ function PlusIcon() {
 }
 function DMIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 9h8M8 13h5" /><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" /></svg>;
+}
+function FilesIcon() {
+  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>;
 }
 function SettingsIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>;

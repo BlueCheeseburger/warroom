@@ -331,6 +331,33 @@ const api = {
       return () => ipcRenderer.removeListener('chat:newDMMessage', handler);
     },
   },
+  // Per-team file library, separate from the message stream. name/dataB64 are
+  // encrypted client-side (chatCrypto.ts) before crossing this bridge — see
+  // team_files table + handlers in main.ts for the full design.
+  teamFiles: {
+    getAll: (teamId: string) => ipcRenderer.invoke('chat:getTeamFiles', teamId),
+    upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) =>
+      ipcRenderer.invoke('chat:uploadTeamFile', payload),
+    updateContent: (fileId: string, dataB64: string) => ipcRenderer.invoke('chat:updateTeamFileContent', fileId, dataB64),
+    delete: (fileId: string) => ipcRenderer.invoke('chat:deleteTeamFile', fileId),
+    subscribe: (teamId: string) => ipcRenderer.invoke('chat:subscribeTeamFiles', teamId),
+    unsubscribe: () => ipcRenderer.invoke('chat:unsubscribeTeamFiles'),
+    onChange: (cb: (p: { eventType: string; row: any }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('chat:teamFileChange', handler);
+      return () => ipcRenderer.removeListener('chat:teamFileChange', handler);
+    },
+    // Local file-watch (powers auto-update) — see main.ts for the fs.watch side.
+    watchLocal: (fileId: string, filePath: string) => ipcRenderer.invoke('chat:watchLocalTeamFile', fileId, filePath),
+    unwatchLocal: (fileId: string) => ipcRenderer.invoke('chat:unwatchLocalTeamFile', fileId),
+    isWatching: (fileId: string) => ipcRenderer.invoke('chat:isWatchingTeamFile', fileId),
+    readWatchedBytes: (fileId: string) => ipcRenderer.invoke('chat:readWatchedTeamFileBytes', fileId),
+    onLocalFileChanged: (cb: (p: { fileId: string }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('chat:localTeamFileChanged', handler);
+      return () => ipcRenderer.removeListener('chat:localTeamFileChanged', handler);
+    },
+  },
   gdrive: {
     status: () => ipcRenderer.invoke('gdrive:status'),
     connect: () => ipcRenderer.invoke('gdrive:connect'),

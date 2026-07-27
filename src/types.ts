@@ -529,6 +529,20 @@ declare global {
         editDMMessage: (messageId: string, content: string) => Promise<{ ok: boolean; error?: string }>;
         deleteDMMessage: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
       };
+      teamFiles: {
+        getAll: (teamId: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
+        upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) => Promise<{ ok: boolean; data?: any; error?: string }>;
+        updateContent: (fileId: string, dataB64: string) => Promise<{ ok: boolean; error?: string }>;
+        delete: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+        subscribe: (teamId: string) => Promise<void>;
+        unsubscribe: () => Promise<void>;
+        onChange: (cb: (p: { eventType: string; row: any }) => void) => () => void;
+        watchLocal: (fileId: string, filePath: string) => Promise<{ ok: boolean; error?: string }>;
+        unwatchLocal: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+        isWatching: (fileId: string) => Promise<{ ok: boolean; data?: boolean; error?: string }>;
+        readWatchedBytes: (fileId: string) => Promise<{ ok: boolean; data?: { base64: string }; error?: string }>;
+        onLocalFileChanged: (cb: (p: { fileId: string }) => void) => () => void;
+      };
       gdrive: {
         status: () => Promise<{ connected: boolean }>;
         connect: () => Promise<{ ok: boolean; error?: string }>;
@@ -650,6 +664,21 @@ export interface ChatMessage {
   reply_to_id?: string | null;
   reply_to_sender_name?: string | null;
   reply_to_content?: string | null;
+}
+
+// A file in a team's file library (separate from the chat message stream).
+// `name` and `data_b64` arrive from Supabase as ciphertext — decrypt with the
+// team key (chatCrypto.ts) before use. `data_b64` decrypts to the raw file
+// bytes, base64-encoded.
+export interface TeamFile {
+  id: string;
+  team_id: string;
+  uploader_id: string;
+  uploader_name: string;
+  name: string;
+  data_b64: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // Item queued for attachment when user picks a mention

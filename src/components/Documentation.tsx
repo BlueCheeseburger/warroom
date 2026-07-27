@@ -1875,6 +1875,40 @@ export default function Documentation() {
             The chat panel is resizable (260–600 px, default 320 px). Width is persisted in
             <Code>localStorage</Code> as <Code>warroom-chat-width</Code>.
           </P>
+          <H3>Team Files</H3>
+          <P>
+            A file icon in the chat header opens <Code>TeamFiles.tsx</Code> — a per-team file
+            library backed by the <Code>team_files</Code> table, kept separate from the message
+            stream. Each row stores <Code>name</Code> and <Code>data_b64</Code> (the raw file
+            bytes, base64) encrypted client-side with the team key exactly like message content;
+            <Code>uploader_name</Code> stays plaintext, the same tier as a message's sender name.
+            The list shows file name, "Modified &lt;relative time&gt;", and uploader. Opening a
+            file decrypts <Code>data_b64</Code>, writes it to a temp file via <Code>fs.writeTempFile</Code>,
+            and opens it in the Speech Doc Viewer. Only the uploader can delete their own file
+            (RLS-enforced, same pattern as message edit/delete).
+          </P>
+          <P>
+            <strong>Auto-update</strong> works by having the uploader's own device watch the local
+            file on disk with Node's <Code>fs.watch</Code> (electron/main.ts), debounced 1.2s to
+            absorb multiple change events per save. On a debounced change, main.ts sends the raw
+            (unencrypted, IPC-only) bytes to the renderer via <Code>chat:localTeamFileChanged</Code> —
+            encryption must happen in the renderer since <Code>chatCrypto.ts</Code> uses the Web
+            Crypto API, not available the same way in the main process. An effect in the top-level{' '}
+            <Code>Chat()</Code> component (always mounted, per App.tsx, so it works even when the
+            Files panel is closed) re-encrypts and calls <Code>chat:updateTeamFileContent</Code>,
+            bumping <Code>updated_at</Code>. Every other team member's client is subscribed to
+            Postgres changes on <Code>team_files</Code> (same realtime pattern as chat messages)
+            and sees the row update live.
+          </P>
+          <P>
+            The mapping of file id → local path is persisted device-side only, in{' '}
+            <Code>team_file_watches.json</Code> — it never syncs anywhere, since it's only
+            meaningful on the machine that uploaded each file. Watches are restored from that file
+            at every app launch (<Code>restoreTeamFileWatches</Code>), so auto-update survives a
+            restart without re-uploading. This means auto-update only works while the uploader's
+            own Warroom app is running — teammates just see <Code>updated_at</Code> move and
+            re-open the file for the latest version.
+          </P>
         </section>
 
         {/* ── Google Drive ──────────────────────────────────────────── */}
@@ -2112,9 +2146,11 @@ export default function Documentation() {
             stores ciphertext. Each team has one symmetric key, derived from the team's invite code
             via <Code>PBKDF2</Code> (200k iterations, salted with the team id). Because every member
             already knows the invite code, everyone derives the identical key with no key exchange,
-            and the derived key itself is never transmitted. Sender name, timestamps, and attachment
-            labels stay readable for display; only the actual content is encrypted. Warroom AI does
-            not read team-chat history, so no plaintext is ever sent to the AI provider.
+            and the derived key itself is never transmitted. Team Files uses the same key and
+            mechanism for uploaded file names and content. Sender name, timestamps, attachment
+            labels, and file uploader names stay readable for display; only the actual content
+            (message text, attachment data, file bytes) is encrypted. Warroom AI does not read
+            team-chat history, so no plaintext is ever sent to the AI provider.
           </P>
           <P>
             <strong>What this does and doesn't protect.</strong> This is <em>not</em> end-to-end /
