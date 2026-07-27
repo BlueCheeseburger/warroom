@@ -35,6 +35,7 @@ export default function TeamFiles() {
   const [watchingIds, setWatchingIds] = useState<Set<string>>(new Set());
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -153,68 +154,80 @@ export default function TeamFiles() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="shrink-0 px-3 pt-3 pb-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-side)' }}>
-        <div>
-          <div className="text-xs font-semibold" style={{ color: 'var(--ink)' }}>Team Files</div>
-          <div className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-            Separate from chat — .docx files your team shares here
-          </div>
-        </div>
-        <button className="btn-primary text-xs px-3 py-1 shrink-0" title="Upload a .docx to share with your team" onClick={handleUpload} disabled={uploading}>
-          {uploading ? 'Uploading…' : '+ Add file'}
-        </button>
-      </div>
-      {error && <p className="text-xs px-3 pt-2" style={{ color: '#ef4444' }}>{error}</p>}
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-2">
+        {error && <p className="text-xs pb-1" style={{ color: '#ef4444' }}>{error}</p>}
         {loading ? (
           <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
         ) : files.length === 0 ? (
           <div className="text-xs text-center pt-6 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
             No files yet.<br />Upload a .docx to share it with your team.
           </div>
-        ) : files.map((f) => (
-          <div key={f.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg"
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}>
-            <span className="text-lg leading-none shrink-0">📝</span>
-            <button
-              className="flex-1 min-w-0 text-left"
-              title="Open in Speech Doc Viewer"
-              onClick={() => handleOpen(f)}
-              disabled={openingId === f.id}
-              style={{ background: 'transparent', border: 'none', cursor: openingId === f.id ? 'default' : 'pointer' }}
+        ) : files.map((f) => {
+          const isHovered = hoveredId === f.id;
+          const isMine = f.uploader_id === currentUser?.id;
+          return (
+            <div
+              key={f.id}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors"
+              style={{ background: isHovered ? 'var(--nav-hover-bg)' : 'var(--bg-card)', border: '1px solid var(--border-side)' }}
+              onMouseEnter={() => setHoveredId(f.id)}
+              onMouseLeave={() => setHoveredId((cur) => (cur === f.id ? null : cur))}
             >
-              <div className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                {openingId === f.id ? 'Opening…' : f.name}
-              </div>
-              <div className="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap" style={{ color: 'var(--nav-inactive-color)' }}>
-                <span>Modified {timeAgo(f.updated_at)}</span>
-                <span>·</span>
-                <span>by {f.uploader_name}</span>
-                {watchingIds.has(f.id) && (
-                  <>
-                    <span>·</span>
-                    <span style={{ color: '#10b981' }} title="This device watches your local file and pushes updates automatically when you save changes">
-                      🔄 auto-updating
-                    </span>
-                  </>
-                )}
-              </div>
-            </button>
-            {f.uploader_id === currentUser?.id && (
+              <span className="text-lg leading-none shrink-0">📝</span>
               <button
-                title="Delete"
-                onClick={() => handleDelete(f)}
-                disabled={deletingId === f.id}
-                className="w-6 h-6 flex items-center justify-center rounded transition shrink-0"
-                style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+                className="flex-1 min-w-0 text-left"
+                title="Open in Speech Doc Viewer"
+                onClick={() => handleOpen(f)}
+                disabled={openingId === f.id}
+                style={{ background: 'transparent', border: 'none', cursor: openingId === f.id ? 'default' : 'pointer' }}
               >
-                <TrashIcon />
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>
+                    {openingId === f.id ? 'Opening…' : f.name}
+                  </span>
+                  {watchingIds.has(f.id) && (
+                    <span
+                      className="text-[11px] leading-none shrink-0"
+                      title="This device watches your local file and pushes updates automatically when you save changes"
+                    >
+                      🔄
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--nav-inactive-color)' }}>
+                  Modified {timeAgo(f.updated_at)} · {f.uploader_name}
+                </div>
               </button>
-            )}
-          </div>
-        ))}
+              {isMine && (
+                <button
+                  title="Delete"
+                  onClick={() => handleDelete(f)}
+                  disabled={deletingId === f.id}
+                  className="w-6 h-6 flex items-center justify-center rounded transition shrink-0"
+                  style={{
+                    color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+                    cursor: isHovered ? 'pointer' : 'default',
+                    opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+                >
+                  <TrashIcon />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+        <button
+          className="btn-primary w-full text-xs py-1.5"
+          title="Upload a .docx to share with your team"
+          onClick={handleUpload}
+          disabled={uploading}
+        >
+          {uploading ? 'Uploading…' : '+ Add file'}
+        </button>
       </div>
     </div>
   );
