@@ -4352,10 +4352,29 @@ export default function SpeechDocViewer() {
   // Re-hydrate outline/width state whenever the combo actually changes, and
   // register the combo so it appears in the sidebar's compare-views list.
   const lastComboRef = useRef<string | null | undefined>(undefined);
+  // Combos this session actually built up from scratch. Only these are treated
+  // as scratch work that a further edit may supersede — a view restored from
+  // the sidebar was saved on purpose, so editing it forks a new entry instead
+  // of consuming the original.
+  const sessionBuiltRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (comboKey === lastComboRef.current) return;
+    const prevKey = lastComboRef.current;
     lastComboRef.current = comboKey;
-    rememberComboView(comboKey, panePaths.filter((p): p is string => !!p));
+    // Already on disk => the user navigated to a view that already existed
+    // (restored from the sidebar), not one they just built. Such a view is
+    // never scratch work, so it can neither be superseded nor supersede.
+    const wasExisting = !!loadComboLayout(comboKey);
+    const supersedes = prevKey && sessionBuiltRef.current.has(prevKey) ? prevKey : null;
+    rememberComboView(comboKey, panePaths.filter((p): p is string => !!p), supersedes);
+    if (!wasExisting) {
+      if (supersedes) sessionBuiltRef.current.delete(supersedes);
+      if (comboKey) sessionBuiltRef.current.add(comboKey);
+    }
+    // Read AFTER remembering: when this edit superseded the previous combo,
+    // that combo's pane widths and outline state were carried onto this key,
+    // and re-reading is what keeps them applied live instead of snapping back
+    // to defaults every time a pane's doc changes.
     const saved = loadComboLayout(comboKey);
     const nextOutline: boolean[] = [false, false, false];
     saved?.outlineOpen?.forEach((v, i) => { if (i < 3) nextOutline[i] = v; });

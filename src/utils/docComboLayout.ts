@@ -79,19 +79,36 @@ export function saveComboLayout(key: string | null, patch: Partial<ComboLayout>)
  * the sidebar's compare-views list and can be re-opened as a unit later.
  * Called whenever a multi-pane view settles on a set of docs.
  */
-export function rememberComboView(key: string | null, paths: string[]) {
+/**
+ * Records the combination of docs currently open side by side.
+ *
+ * `supersedesKey` is the combo the user was in immediately before, and only when
+ * that combo was itself built during this session. Changing any pane — adding a
+ * third doc, or clicking a different doc in the sidebar while compare panes stay
+ * open — changes the *set* of open docs and lands here again. Without this, every
+ * such change registered a whole new compare view, so a single session left a
+ * pile of near-identical entries behind. Treating it as an edit of the view
+ * you're already in keeps that to one entry that follows your work.
+ *
+ * Two deliberate exceptions:
+ *   - If `key` is already saved, the user navigated *back to* an existing view
+ *     rather than editing into a new one, so nothing is superseded.
+ *   - A combo restored from the sidebar is never passed as `supersedesKey` by the
+ *     caller, so editing a view you deliberately saved forks a new entry instead
+ *     of quietly consuming the original.
+ */
+export function rememberComboView(key: string | null, paths: string[], supersedesKey?: string | null) {
   if (!key || paths.length < 2) return;
-  // Opening docs one at a time walks through intermediate combos (2 docs, then
-  // 3). Drop any saved view whose paths are a leading subset of this one, so
-  // building up to a 3-doc view leaves one entry, not two.
   const all = readAll();
-  let pruned = false;
-  for (const [k, v] of Object.entries(all)) {
-    if (k === key || !Array.isArray(v.paths) || v.paths.length >= paths.length) continue;
-    if (v.paths.every((p, i) => paths[i] === p)) { delete all[k]; pruned = true; }
+  const isExisting = key in all;
+  let carried: ComboLayout = {};
+  if (!isExisting && supersedesKey && supersedesKey !== key && all[supersedesKey]) {
+    const { paths: _p, savedAt: _s, ...layout } = all[supersedesKey];
+    carried = layout; // keep pane widths / outline state across the edit
+    delete all[supersedesKey];
+    writeAll(all);
   }
-  if (pruned) writeAll(all);
-  saveComboLayout(key, { paths, savedAt: new Date().toISOString() });
+  saveComboLayout(key, { ...carried, paths, savedAt: new Date().toISOString() });
 }
 
 /** Every saved compare view that still knows its doc paths, newest first. */
