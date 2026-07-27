@@ -81,6 +81,16 @@ export function saveComboLayout(key: string | null, patch: Partial<ComboLayout>)
  */
 export function rememberComboView(key: string | null, paths: string[]) {
   if (!key || paths.length < 2) return;
+  // Opening docs one at a time walks through intermediate combos (2 docs, then
+  // 3). Drop any saved view whose paths are a leading subset of this one, so
+  // building up to a 3-doc view leaves one entry, not two.
+  const all = readAll();
+  let pruned = false;
+  for (const [k, v] of Object.entries(all)) {
+    if (k === key || !Array.isArray(v.paths) || v.paths.length >= paths.length) continue;
+    if (v.paths.every((p, i) => paths[i] === p)) { delete all[k]; pruned = true; }
+  }
+  if (pruned) writeAll(all);
   saveComboLayout(key, { paths, savedAt: new Date().toISOString() });
 }
 

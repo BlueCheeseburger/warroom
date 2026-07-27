@@ -1934,7 +1934,7 @@ function CompareViewsGroup({ items }: { items: CaseItem[] }) {
       </div>
       {views.map((v) => {
         const names = v.paths.map((p) => (nameFor.get(p) ?? p.split(/[/\\]/).pop() ?? p).replace(/\.docx$/i, ''));
-        const label = `${names[0]} + ${names.length - 1} more`;
+        const label = names.join('  ·  ');
         const active = currentPaths === v.key;
         return (
           <div key={v.key} className="group relative flex items-center">

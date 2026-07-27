@@ -2445,6 +2445,12 @@ function SendToFlowPopover({ container, flows, activeHeadingId, anchorTop, onClo
 export interface DocPaneProps {
   paneIndex?: 0 | 1 | 2;
   paneDocPath?: string;
+  // An extra pane loads its file locally (drop / picker / recents click), so
+  // the store would otherwise never learn which doc is actually in it — it'd
+  // stay `''` ("open, nothing loaded"). That silently broke every feature keyed
+  // on the *set* of open docs (per-combination layout memory, sidebar compare
+  // views), since those saw only one real path. Panes report their path up here.
+  onPaneDocPathChange?: (path: string) => void;
   focused?: boolean;
   onFocusPane?: () => void;
   onCloseExtraPane?: () => void;
@@ -2463,7 +2469,7 @@ export interface DocPaneProps {
 }
 
 function DocPaneViewer({
-  paneIndex = 0, paneDocPath, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane,
+  paneIndex = 0, paneDocPath, onPaneDocPathChange, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane,
   outlineOpen: outlineOpenProp, onOutlineOpenChange, toolbarCompact = false,
 }: DocPaneProps) {
   const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
@@ -3447,6 +3453,11 @@ function DocPaneViewer({
     const name = path.split(/[/\\]/).pop() ?? path;
     setFilePath(path);
     setFileName(name);
+    // Tell the wrapper which doc actually landed in this pane. Safe to call
+    // before the render finishes: the auto-load effect compares against
+    // loadedPath (already set above), so the resulting prop change is a no-op
+    // rather than a reload loop.
+    onPaneDocPathChange?.(path);
     setStep('loading');
     setError('');
     setBusy('speech-doc', 'Loading…');
@@ -4488,6 +4499,7 @@ export default function SpeechDocViewer() {
             <DocPaneViewer
               paneIndex={p.key}
               paneDocPath={p.isMain ? undefined : (p.docPath || undefined)}
+              onPaneDocPathChange={p.isMain ? undefined : (path) => setExtraDocPane((p.key - 1) as 0 | 1, path)}
               focused={focusedPane === p.key}
               onFocusPane={() => setFocusedPane(p.key)}
               onCloseExtraPane={p.isMain ? undefined : () => {
