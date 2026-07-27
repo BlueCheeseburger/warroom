@@ -4,7 +4,13 @@
 // just swapping which pane a file is in — is a different combination and
 // starts fresh. Single-pane viewing never touches this (nothing to combine).
 
-const STORAGE_KEY = 'warroom-doc-combo-layouts';
+// v2: the v1 key accumulated a junk entry every time the user clicked a doc in
+// the sidebar while compare panes were open (each click changed the open set,
+// and every changed set registered as a brand-new view). Those stale entries
+// can't be told apart from intentional ones after the fact, so the key is
+// bumped to drop them — these are shortcuts that rebuild themselves as soon as
+// you open docs side by side again, not user data.
+const STORAGE_KEY = 'warroom-doc-combo-layouts-v2';
 const MAX_ENTRIES = 60; // cap so this can't grow unbounded over a long-lived install
 
 export interface ComboLayout {
@@ -82,20 +88,21 @@ export function saveComboLayout(key: string | null, patch: Partial<ComboLayout>)
 /**
  * Records the combination of docs currently open side by side.
  *
- * `supersedesKey` is the combo the user was in immediately before, and only when
- * that combo was itself built during this session. Changing any pane — adding a
- * third doc, or clicking a different doc in the sidebar while compare panes stay
- * open — changes the *set* of open docs and lands here again. Without this, every
- * such change registered a whole new compare view, so a single session left a
- * pile of near-identical entries behind. Treating it as an edit of the view
- * you're already in keeps that to one entry that follows your work.
+ * `supersedesKey` is simply the combo the user was in immediately before, if any.
+ * Changing any pane — adding a third doc, or clicking a different doc in the
+ * sidebar while compare panes stay open — changes the *set* of open docs and
+ * lands here again. Without superseding, every such change registered a whole
+ * new compare view, so a single session left a pile of near-identical entries
+ * behind. Treating it as an edit of the view you're already in keeps that to one
+ * entry that follows your work.
  *
- * Two deliberate exceptions:
- *   - If `key` is already saved, the user navigated *back to* an existing view
- *     rather than editing into a new one, so nothing is superseded.
- *   - A combo restored from the sidebar is never passed as `supersedesKey` by the
- *     caller, so editing a view you deliberately saved forks a new entry instead
- *     of quietly consuming the original.
+ * The one exception is data-driven rather than session-driven, deliberately: if
+ * `key` is **already saved**, the user navigated back to a view that exists (e.g.
+ * picked it from the sidebar) rather than editing into a new one, so nothing is
+ * superseded and both survive. An earlier version instead tracked which combos
+ * were built in the current session, which quietly broke on hot-reload — the
+ * refs reset, the combo you were in stopped counting as yours, and the next edit
+ * forked a duplicate again.
  */
 export function rememberComboView(key: string | null, paths: string[], supersedesKey?: string | null) {
   if (!key || paths.length < 2) return;

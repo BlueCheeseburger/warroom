@@ -3,6 +3,7 @@ import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
+import { exportSettings, importSettings } from '../utils/settingsExport';
 
 type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
@@ -300,6 +301,28 @@ export default function Settings() {
     cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
   } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [settingsExportStatus, setSettingsExportStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [settingsExportMsg, setSettingsExportMsg] = useState('');
+  const [settingsImportStatus, setSettingsImportStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [settingsImportMsg, setSettingsImportMsg] = useState('');
+
+  async function handleExportSettings() {
+    setSettingsExportStatus('working'); setSettingsExportMsg('');
+    const res = await exportSettings();
+    if (res.canceled) { setSettingsExportStatus('idle'); return; }
+    if (!res.ok) { setSettingsExportStatus('error'); setSettingsExportMsg(res.error ?? 'Export failed'); return; }
+    setSettingsExportStatus('done');
+    setTimeout(() => setSettingsExportStatus('idle'), 2500);
+  }
+
+  async function handleImportSettings() {
+    setSettingsImportStatus('working'); setSettingsImportMsg('');
+    const res = await importSettings();
+    if (res.canceled) { setSettingsImportStatus('idle'); return; }
+    if (!res.ok) { setSettingsImportStatus('error'); setSettingsImportMsg(res.error ?? 'Import failed'); return; }
+    setSettingsImportStatus('done');
+    setSettingsImportMsg('Some settings (like theme) need a restart to fully apply.');
+  }
 
   // Whether the app is *effectively* dark right now, so the theme previews
   // reflect the live mode (system follows the OS preference).
@@ -1923,7 +1946,9 @@ export default function Settings() {
             { label: 'Direct message text', tag: 'encrypted' },
             { label: 'Shared attachment data (cases, blocks, flows, opponents, tournaments, speech docs)', tag: 'encrypted' },
             { label: 'Quoted reply snippets', tag: 'encrypted' },
+            { label: 'Team Files — file names & content', tag: 'encrypted' },
             { label: 'Sender names, timestamps & attachment labels', tag: 'plaintext' },
+            { label: 'Team Files — uploader names & modified time', tag: 'plaintext' },
             { label: 'User accounts & team membership', tag: 'plaintext' },
           ].map(({ label, tag }) => (
             <div key={label} className="flex items-center gap-2">
@@ -1993,6 +2018,33 @@ export default function Settings() {
         >
           View shortcuts
         </button>
+      </div>
+
+      {/* Import / Export Settings */}
+      <div className="glass-card rounded-sm p-4 mb-4">
+        <div className="label mb-1">Import / Export Settings</div>
+        <p className="text-xs text-ink/50 mb-3">
+          Save your preferences (debate event, AI provider/model, theme, notifications, and more) to a
+          file, or load them on another device. <strong>API keys and passwords are never included</strong> —
+          you'll need to re-enter those after importing.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button className="btn shrink-0" onClick={handleExportSettings} disabled={settingsExportStatus === 'working'}>
+            {settingsExportStatus === 'working' ? 'Exporting…' : settingsExportStatus === 'done' ? 'Saved ✓' : 'Export settings'}
+          </button>
+          <button className="btn shrink-0" onClick={handleImportSettings} disabled={settingsImportStatus === 'working'}>
+            {settingsImportStatus === 'working' ? 'Importing…' : settingsImportStatus === 'done' ? 'Imported ✓' : 'Import settings'}
+          </button>
+        </div>
+        {settingsExportStatus === 'error' && (
+          <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{settingsExportMsg}</p>
+        )}
+        {settingsImportStatus === 'error' && (
+          <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{settingsImportMsg}</p>
+        )}
+        {settingsImportStatus === 'done' && (
+          <p className="text-xs mt-2" style={{ color: 'var(--nav-inactive-color)' }}>{settingsImportMsg}</p>
+        )}
       </div>
 
       {/* More settings */}

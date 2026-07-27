@@ -4313,6 +4313,7 @@ export default function SpeechDocViewer() {
   const view = useApp((s) => s.view);
   const extraDocPanes = useApp((s) => s.extraDocPanes);
   const setExtraDocPane = useApp((s) => s.setExtraDocPane);
+  const setMainDocPath = useApp((s) => s.setMainDocPath);
   const focusedPane = useApp((s) => s.focusedPane);
   const setFocusedPane = useApp((s) => s.setFocusedPane);
 
@@ -4352,25 +4353,16 @@ export default function SpeechDocViewer() {
   // Re-hydrate outline/width state whenever the combo actually changes, and
   // register the combo so it appears in the sidebar's compare-views list.
   const lastComboRef = useRef<string | null | undefined>(undefined);
-  // Combos this session actually built up from scratch. Only these are treated
-  // as scratch work that a further edit may supersede — a view restored from
-  // the sidebar was saved on purpose, so editing it forks a new entry instead
-  // of consuming the original.
-  const sessionBuiltRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (comboKey === lastComboRef.current) return;
-    const prevKey = lastComboRef.current;
+    // Whatever combo we were just in gets superseded, so editing a pane updates
+    // the view you're in rather than spawning a near-identical one. Passing the
+    // previous key unconditionally is intentional: rememberComboView declines to
+    // supersede when the new key already exists, which is the only case that
+    // should preserve both, and unlike session-tracking it survives hot-reload.
+    const prevKey = lastComboRef.current ?? null;
     lastComboRef.current = comboKey;
-    // Already on disk => the user navigated to a view that already existed
-    // (restored from the sidebar), not one they just built. Such a view is
-    // never scratch work, so it can neither be superseded nor supersede.
-    const wasExisting = !!loadComboLayout(comboKey);
-    const supersedes = prevKey && sessionBuiltRef.current.has(prevKey) ? prevKey : null;
-    rememberComboView(comboKey, panePaths.filter((p): p is string => !!p), supersedes);
-    if (!wasExisting) {
-      if (supersedes) sessionBuiltRef.current.delete(supersedes);
-      if (comboKey) sessionBuiltRef.current.add(comboKey);
-    }
+    rememberComboView(comboKey, panePaths.filter((p): p is string => !!p), prevKey);
     // Read AFTER remembering: when this edit superseded the previous combo,
     // that combo's pane widths and outline state were carried onto this key,
     // and re-reading is what keeps them applied live instead of snapping back
@@ -4518,7 +4510,9 @@ export default function SpeechDocViewer() {
             <DocPaneViewer
               paneIndex={p.key}
               paneDocPath={p.isMain ? undefined : (p.docPath || undefined)}
-              onPaneDocPathChange={p.isMain ? undefined : (path) => setExtraDocPane((p.key - 1) as 0 | 1, path)}
+              onPaneDocPathChange={p.isMain
+                ? setMainDocPath
+                : (path) => setExtraDocPane((p.key - 1) as 0 | 1, path)}
               focused={focusedPane === p.key}
               onFocusPane={() => setFocusedPane(p.key)}
               onCloseExtraPane={p.isMain ? undefined : () => {

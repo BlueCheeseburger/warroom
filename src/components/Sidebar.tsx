@@ -1920,6 +1920,9 @@ function CompareViewsGroup({ items }: { items: CaseItem[] }) {
     extraDocPanes[0], extraDocPanes[1],
   ].filter(Boolean).join('␟');
 
+  // Order matters: setView deliberately clears the compare panes (navigating
+  // anywhere leaves compare mode), so the extra panes must be set AFTER it to
+  // survive. Both run in the same tick, so there's no flash of a single pane.
   function openCombo(paths: string[]) {
     setView({ kind: 'speech-doc', docPath: paths[0] });
     setExtraDocPane(0, paths[1]);

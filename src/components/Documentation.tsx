@@ -1301,7 +1301,11 @@ export default function Documentation() {
             rather than rebuild pane by pane. Clicking a row restores every pane in one go; the
             per-combo widths/outline/sidebar memory is then applied by the viewer as usual. Hovering
             a row reveals an × that forgets the grouping (with an Undo toast) — never the docs
-            themselves. Rows are labelled from the live Cases list, so renaming a doc renames it
+            themselves. Changing a pane's doc updates the view you're in rather than registering
+            another near-identical one; a genuinely new side-by-side setup gets its own entry.
+            Clicking any doc in the sidebar (or back/forward) leaves compare mode entirely and opens
+            that doc alone — <Code>setView</Code>/<Code>goBack</Code>/<Code>goForward</Code> clear{' '}
+            <Code>extraDocPanes</Code>, so a compare layout is never a state you get stuck in. Rows are labelled from the live Cases list, so renaming a doc renames it
             here too, and <Code>pruneComboViews</Code> drops any view referencing a deleted doc
             (guarded so an empty or partial recents read can't wipe the list).
           </P>

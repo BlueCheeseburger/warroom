@@ -93,6 +93,13 @@ interface AppState {
   // (not persisted) — cleared on app restart like any other open-doc state.
   extraDocPanes: [string | undefined, string | undefined];
   setExtraDocPane: (slot: 0 | 1, docPath: string | undefined) => void;
+  /**
+   * Records which doc the MAIN pane just loaded (dropped / picked in its own
+   * drop zone), without the side effects of `setView`: no nav-history entry
+   * (the view didn't change, it gained a file) and no clearing of the compare
+   * panes (this is the main pane reporting in, not the user navigating away).
+   */
+  setMainDocPath: (docPath: string) => void;
   focusedPane: 0 | 1 | 2;
   setFocusedPane: (pane: 0 | 1 | 2) => void;
   event: DebateEvent;
@@ -200,6 +207,11 @@ export const useApp = create<AppState>((set, get) => ({
   }),
   focusedPane: 0,
   setFocusedPane: (pane) => set({ focusedPane: pane }),
+  setMainDocPath: (docPath) => set((s) => (
+    s.view.kind === 'speech-doc' && (s.view as any).docPath !== docPath
+      ? { view: { ...s.view, docPath } }
+      : {}
+  )),
   event: (localStorage.getItem('warroom-event') as DebateEvent | null) ?? 'policy',
   flowsIndex: [],
   ready: false,
@@ -239,20 +251,35 @@ export const useApp = create<AppState>((set, get) => ({
   setPendingFindQuery: (q) => set({ pendingFindQuery: q }),
   pendingDisclosureQuery: '',
   setPendingDisclosureQuery: (q) => set({ pendingDisclosureQuery: q }),
+  // Navigating anywhere leaves side-by-side compare mode. Without this, clicking
+  // a doc in the sidebar while 2-3 panes were open only swapped the doc *inside*
+  // pane 0 — the compare layout stayed up, so the user couldn't get back to
+  // reading one doc on its own, and every such click silently redefined the set
+  // of open docs. Restoring a saved compare view works by setting the extra
+  // panes immediately AFTER setView, so it re-populates them in the same tick.
   setView: (v) => set((s) => {
     const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);
     const newHistory = [...trimmed, v].slice(-60);
-    return { view: v, navHistory: newHistory, navHistoryIndex: newHistory.length - 1 };
+    return {
+      view: v, navHistory: newHistory, navHistoryIndex: newHistory.length - 1,
+      extraDocPanes: [undefined, undefined], focusedPane: 0,
+    };
   }),
   goBack: () => set((s) => {
     if (s.navHistoryIndex <= 0) return s;
     const newIndex = s.navHistoryIndex - 1;
-    return { view: s.navHistory[newIndex], navHistoryIndex: newIndex };
+    return {
+      view: s.navHistory[newIndex], navHistoryIndex: newIndex,
+      extraDocPanes: [undefined, undefined], focusedPane: 0,
+    };
   }),
   goForward: () => set((s) => {
     if (s.navHistoryIndex >= s.navHistory.length - 1) return s;
     const newIndex = s.navHistoryIndex + 1;
-    return { view: s.navHistory[newIndex], navHistoryIndex: newIndex };
+    return {
+      view: s.navHistory[newIndex], navHistoryIndex: newIndex,
+      extraDocPanes: [undefined, undefined], focusedPane: 0,
+    };
   }),
   setEvent: (e) => { localStorage.setItem('warroom-event', e); set({ event: e }); },
   setFlowsIndex: (idx) => set({ flowsIndex: idx }),
