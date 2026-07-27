@@ -92,6 +92,8 @@ export interface Opponent {
   teamId?: string; // OpenCaselist team ID
   caselist?: string; // OpenCaselist caselist slug (e.g. 'hspolicy25')
   notes: string;
+  /** Items tagged in this opponent's private (non-shared) notes. See notes.attachTag for the shared-team equivalent. */
+  noteTags?: NoteTag[];
   disclosures: {
     pulledAt?: string;
     roundsDisclosed?: number;
@@ -157,6 +159,27 @@ export interface SharedNote {
   updated_at: string;
 }
 
+export type NoteTagType = 'speechdoc' | 'flow' | 'case' | 'opponent' | 'judge';
+
+/** An item tagged on a private (non-shared) opponent/judge note. Stored locally only. */
+export interface NoteTag {
+  id: string;
+  type: NoteTagType;
+  name: string;
+  refId: string; // local db id / flow id / speech-doc file path this points at
+}
+
+/** An item tagged on a shared (team) note — a row in the generalized message_attachments table. */
+export interface NoteTagRow {
+  id: string;
+  type: NoteTagType;
+  name: string;
+  data: any;
+  note_user_id: string;
+  note_user_name: string;
+  created_at?: string;
+}
+
 export interface JudgeRound {
   tournament: string; date: string; level: string;
   event: string; round: string; aff: string; neg: string;
@@ -171,6 +194,8 @@ export interface Judge {
   paradigm: string | null;
   record?: JudgeRound[];
   notes: string;
+  /** Items tagged in this judge's private (non-shared) notes. See notes.attachTag for the shared-team equivalent. */
+  noteTags?: NoteTag[];
   tabroomUrl: string;
   savedAt: string;
   paradigmFetchedAt: string | null;
@@ -546,6 +571,9 @@ declare global {
       notes: {
         get: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: SharedNote[]; error?: string }>;
         upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) => Promise<{ ok: boolean; error?: string }>;
+        attachTag: (p: { teamId: string; entityType: string; entityId: string; userId: string; userName: string; type: string; name: string; data: any }) => Promise<{ ok: boolean; data?: NoteTagRow; error?: string }>;
+        getTags: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: NoteTagRow[]; error?: string }>;
+        removeTag: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;
       };
       platform: string;
       setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => Promise<boolean>;

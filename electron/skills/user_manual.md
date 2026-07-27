@@ -112,6 +112,17 @@ Opponent profiles store scouting data.
 
 ---
 
+## Tagging in notes
+On any opponent or judge's Notes section, click **+ Tag** to attach a speech doc, flow, case, opponent, or judge to that note — it shows up as a small clickable chip you (or a teammate) can click to jump straight to it.
+
+- Click **+ Tag**, search for the item (same picker as @mentions in Team Chat), and pick it.
+- Click a chip to open what it points to. Click the **×** on a chip to remove it.
+- **Private notes**: the tag stays on your device only, pointing at your local copy — nothing is uploaded.
+- **Shared (team) notes**: the tag is uploaded to your team, so it's there next time a teammate opens that opponent/judge. Tagging a speech doc you dragged in locally uploads the file itself (up to 2.5MB) so a teammate can actually open it; tagging an OpenCaselist-imported case is instant since it's already fetchable by link. If a tagged flow isn't in your app yet, opening the chip imports a copy for you. If a tagged opponent/judge isn't in your list yet, opening the chip takes you to Scouting so you can search for them.
+- Tags don't update live — like the shared notes themselves, a teammate sees your new tag the next time they open that opponent/judge, not instantly.
+
+---
+
 ## Tournaments & Rounds
 
 - **Add tournament**: Tournaments → "+ New tournament"

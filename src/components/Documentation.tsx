@@ -671,6 +671,34 @@ export default function Documentation() {
             Opponents can be looked up by team name via OpenCaselist full-text search and/or
             Debate Land search. The app de-duplicates across local DB and search results.
           </P>
+          <H3>Tagging in notes</H3>
+          <P>
+            The Notes editor on an opponent or judge profile (<Code>SharedNotesEditor</Code>) has a{' '}
+            <strong>+ Tag</strong> button that opens the same picker used for @mentions in chat,
+            letting you attach a speech doc, flow, case, opponent, or judge to that note as a small
+            clickable chip. Tagging works differently depending on whether the note is private or
+            shared with your team:
+          </P>
+          <UL>
+            <LI>
+              <strong>Private notes</strong> — tags are stored locally (<Code>noteTags</Code> on the
+              opponent/judge record) and just point at the local item; nothing is uploaded.
+            </LI>
+            <LI>
+              <strong>Shared (team) notes</strong> — tagging inserts a row into the generalized{' '}
+              <Code>message_attachments</Code> table (the same table chat attachments use, now also
+              keyed by <Code>team_id</Code> + <Code>note_entity_type</Code>/<Code>note_entity_id</Code>{' '}
+              + the tagging user instead of requiring a chat message). A tagged local speech doc has
+              its docx bytes read and uploaded (capped at 2.5MB, same limit as OpenCaselist caching)
+              so a teammate can open it directly; a tagged OpenCaselist-imported case just stores its
+              source URL, since that's already fetchable. Tags on a teammate's shared note show up as
+              read-only chips the next time you open that opponent/judge — there's no live push, and
+              private tags never leave your device. Opening a teammate's flow tag that you don't
+              already have imports a snapshot as a new local flow; an opponent/judge tag navigates by
+              a stable cross-user id (OpenCaselist team ID or Tabroom judge ID) if you have a matching
+              local record, otherwise it opens Scouting so you can search for them.
+            </LI>
+          </UL>
         </section>
 
         {/* ── Tournaments & Rounds ───────────────────────────────────── */}

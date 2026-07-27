@@ -733,6 +733,8 @@ function NotesEditor({ opp }: { opp: any }) {
       localNotes={notes}
       onLocalChange={setNotes}
       onLocalSave={saveLocal}
+      localTags={opp.noteTags ?? []}
+      onLocalTagsChange={(tags) => update((db) => ({ ...db, opponents: { ...db.opponents, [opp.id]: { ...db.opponents[opp.id], noteTags: tags } } }))}
     />
   );
 }

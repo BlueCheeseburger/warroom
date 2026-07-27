@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import { SharedNote, ChatTeam } from '../types';
+import { SharedNote, ChatTeam, NoteTag, NoteTagRow, NoteTagType, PendingMention } from '../types';
+import NoteTagBar, { DisplayTag } from './NoteTagBar';
 
 interface Props {
   /** 'opponent' or 'judge' */
@@ -17,6 +18,13 @@ interface Props {
   onLocalChange: (val: string) => void;
   /** Called to persist local notes (e.g. update DB). */
   onLocalSave: (val: string) => void;
+  /** Items tagged on the private (non-shared) note. Purely local — no upload. */
+  localTags?: NoteTag[];
+  onLocalTagsChange?: (tags: NoteTag[]) => void;
+}
+
+function computeOpponentStableId(o: any): string {
+  return o?.teamId ? String(o.teamId) : `${o?.school ?? ''}/${o?.teamName ?? ''}`.toLowerCase().replace(/\s+/g, '-');
 }
 
 const PREF_KEY_PREFIX = 'notes_vis_';
@@ -24,8 +32,9 @@ const PREF_KEY_PREFIX = 'notes_vis_';
 export default function SharedNotesEditor({
   entityType, entityId, entityName,
   localNotes, onLocalChange, onLocalSave,
+  localTags = [], onLocalTagsChange,
 }: Props) {
-  const { currentUser, currentTeam } = useApp();
+  const { currentUser, currentTeam, db, flowsIndex, setFlowsIndex, event, setView } = useApp();
 
   // All teams the user is in (earliest joined first). Falls back to the single
   // currentTeam until the full list loads.
@@ -110,6 +119,177 @@ export default function SharedNotesEditor({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isShared, entityType, entityId, visibility, currentUser?.id]);
+
+  // ── Tags (shared/team mode) ────────────────────────────────────────────────
+  // Loaded alongside shared notes; kept in a separate table (generalized
+  // message_attachments) so tagging isn't gated on the note text existing yet.
+  const [sharedTags, setSharedTags] = useState<NoteTagRow[]>([]);
+  const [pendingTags, setPendingTags] = useState<{ id: string; type: string; name: string }[]>([]);
+  const [tagError, setTagError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isShared || visibility === 'private') { setSharedTags([]); return; }
+    let cancelled = false;
+    window.warroom.notes.getTags({ teamId: visibility, entityType, entityId }).then((res) => {
+      if (!cancelled && res.ok) setSharedTags(res.data ?? []);
+    });
+    return () => { cancelled = true; };
+  }, [isShared, entityType, entityId, visibility]);
+
+  async function buildTagPayload(item: PendingMention): Promise<{ type: NoteTagType; name: string; data: any } | null> {
+    if (item.type === 'speechdoc') {
+      const filePath = item.data?.filePath;
+      if (!filePath) return null;
+      const res = await window.warroom.fs.readFileBytes(filePath);
+      if (!res?.ok || !res.base64) { setTagError('Could not read that file.'); return null; }
+      if (res.base64.length > 2_500_000) { setTagError('That doc is too large to share (2.5MB max).'); return null; }
+      return { type: 'speechdoc', name: item.name, data: { kind: 'bytes', base64: res.base64, fileName: item.name } };
+    }
+    if (item.type === 'case') {
+      const c = item.data?.case;
+      if (c?.ocSource) {
+        return { type: 'case', name: item.name, data: { kind: 'url', url: c.ocSource.url, teamName: c.ocSource.teamName, localRefId: item.id } };
+      }
+      return { type: 'case', name: item.name, data: { kind: 'unavailable', localRefId: item.id } };
+    }
+    if (item.type === 'flow') {
+      let flow: any = null;
+      try { flow = await window.warroom.storage.read(`flow_${item.id}`); } catch {}
+      return { type: 'flow', name: item.name, data: { kind: 'snapshot', flow, localRefId: item.id } };
+    }
+    if (item.type === 'opponent') {
+      const o = item.data?.opponent;
+      return { type: 'opponent', name: item.name, data: { kind: 'pointer', entityStableId: computeOpponentStableId(o), localRefId: item.id } };
+    }
+    if (item.type === 'judge') {
+      const j = item.data?.judge;
+      return { type: 'judge', name: item.name, data: { kind: 'pointer', entityStableId: j?.personId, localRefId: item.id } };
+    }
+    return null;
+  }
+
+  async function handleAddSharedTag(item: PendingMention) {
+    if (!currentUser || visibility === 'private') return;
+    setTagError(null);
+    const tempId = crypto.randomUUID();
+    setPendingTags((prev) => [...prev, { id: tempId, type: item.type, name: item.name }]);
+    try {
+      const built = await buildTagPayload(item);
+      if (!built) return;
+      const userName = currentUser.displayName || (currentUser as any).email || 'Unknown';
+      const res = await window.warroom.notes.attachTag({
+        teamId: visibility, entityType, entityId,
+        userId: currentUser.id, userName,
+        type: built.type, name: built.name, data: built.data,
+      });
+      if (res.ok && res.data) setSharedTags((prev) => [...prev, res.data as NoteTagRow]);
+      else setTagError(res.error ?? 'Could not save that tag.');
+    } finally {
+      setPendingTags((prev) => prev.filter((p) => p.id !== tempId));
+    }
+  }
+
+  async function handleRemoveSharedTag(id: string) {
+    setSharedTags((prev) => prev.filter((t) => t.id !== id));
+    await window.warroom.notes.removeTag(id);
+  }
+
+  async function openTagRow(row: NoteTagRow) {
+    setTagError(null);
+    const mine = row.note_user_id === currentUser?.id;
+    const d = row.data ?? {};
+    if (row.type === 'speechdoc' && d.kind === 'bytes' && d.base64) {
+      const res = await window.warroom.fs.writeTempFile(d.base64, d.fileName || `${row.name}.docx`);
+      if (res?.ok && res.path) setView({ kind: 'speech-doc', docPath: res.path } as any);
+      else setTagError('Could not open that file.');
+      return;
+    }
+    if (row.type === 'case') {
+      if (mine && d.localRefId && db.cases[d.localRefId]) { setView({ kind: 'case', caseId: d.localRefId } as any); return; }
+      if (d.kind === 'url' && d.url) {
+        const fetched = await window.warroom.opencaselist.fetchFileToTemp(d.url);
+        if (fetched?.ok && fetched.tempPath) setView({ kind: 'speech-doc', docPath: fetched.tempPath } as any);
+        else setTagError('Could not fetch that doc — the source link may be gone.');
+        return;
+      }
+      setTagError(`${row.name} isn't available on your device yet.`);
+      return;
+    }
+    if (row.type === 'flow') {
+      if (d.localRefId && flowsIndex.some((f) => f.id === d.localRefId)) { setView({ kind: 'flow', flowId: d.localRefId } as any); return; }
+      if (d.kind === 'snapshot' && d.flow) {
+        const newId = crypto.randomUUID();
+        await window.warroom.storage.write(`flow_${newId}`, d.flow);
+        const meta = { id: newId, name: d.flow?.name || row.name, event: d.flow?.event || event };
+        const newIndex = [...flowsIndex, meta];
+        setFlowsIndex(newIndex);
+        await window.warroom.storage.write('flows_index', newIndex);
+        setView({ kind: 'flow', flowId: newId } as any);
+        return;
+      }
+      setTagError(`${row.name} isn't available on your device yet.`);
+      return;
+    }
+    if (row.type === 'opponent' || row.type === 'judge') {
+      if (mine && d.localRefId) {
+        setView(row.type === 'opponent' ? { kind: 'opponent', opponentId: d.localRefId } as any : { kind: 'judge', judgeId: d.localRefId } as any);
+        return;
+      }
+      const stableId = d.entityStableId;
+      if (row.type === 'opponent') {
+        const match: any = Object.values(db.opponents).find((o: any) => computeOpponentStableId(o) === stableId);
+        if (match) { setView({ kind: 'opponent', opponentId: match.id } as any); return; }
+      } else {
+        const match: any = Object.values(db.judges ?? {}).find((j: any) => j.personId === stableId);
+        if (match) { setView({ kind: 'judge', judgeId: match.id } as any); return; }
+      }
+      setView({ kind: 'opponents' } as any);
+      return;
+    }
+  }
+
+  // ── Tags (private/local mode) ──────────────────────────────────────────────
+  async function handleAddLocalTag(item: PendingMention) {
+    if (!onLocalTagsChange) return;
+    let refId = item.id;
+    let name = item.name;
+    if (item.type === 'opponent' || item.type === 'judge' || item.type === 'flow' || item.type === 'case' || item.type === 'speechdoc') {
+      refId = item.type === 'speechdoc' ? (item.data?.filePath ?? item.id) : item.id;
+    } else {
+      return;
+    }
+    const tag: NoteTag = { id: crypto.randomUUID(), type: item.type as NoteTagType, name, refId };
+    onLocalTagsChange([...localTags, tag]);
+  }
+
+  function handleRemoveLocalTag(id: string) {
+    onLocalTagsChange?.(localTags.filter((t) => t.id !== id));
+  }
+
+  async function openLocalTag(tag: NoteTag) {
+    setTagError(null);
+    if (tag.type === 'speechdoc') { setView({ kind: 'speech-doc', docPath: tag.refId } as any); return; }
+    if (tag.type === 'case') {
+      if (db.cases[tag.refId]) { setView({ kind: 'case', caseId: tag.refId } as any); return; }
+      setTagError(`${tag.name} no longer exists.`);
+      return;
+    }
+    if (tag.type === 'flow') {
+      if (flowsIndex.some((f) => f.id === tag.refId)) { setView({ kind: 'flow', flowId: tag.refId } as any); return; }
+      setTagError(`${tag.name} no longer exists.`);
+      return;
+    }
+    if (tag.type === 'opponent') {
+      if (db.opponents[tag.refId]) { setView({ kind: 'opponent', opponentId: tag.refId } as any); return; }
+      setTagError(`${tag.name} no longer exists.`);
+      return;
+    }
+    if (tag.type === 'judge') {
+      if (db.judges?.[tag.refId]) { setView({ kind: 'judge', judgeId: tag.refId } as any); return; }
+      setTagError(`${tag.name} no longer exists.`);
+      return;
+    }
+  }
 
   const doUpsert = useCallback(async (content: string) => {
     if (!currentUser || visibility === 'private') return;
@@ -227,7 +407,7 @@ export default function SharedNotesEditor({
 
       {/* My notes */}
       {isShared ? (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="text-xs text-ink/40 font-medium">
             {currentUser?.displayName || 'You'}
           </div>
@@ -239,33 +419,66 @@ export default function SharedNotesEditor({
             onChange={(e) => handleMySharedChange(e.target.value)}
             style={{ fontFamily: 'inherit' }}
           />
+          <NoteTagBar
+            tags={[
+              ...sharedTags.filter((t) => t.note_user_id === currentUser?.id).map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name })),
+              ...pendingTags.map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name, pending: true })),
+            ]}
+            onAdd={handleAddSharedTag}
+            onRemove={handleRemoveSharedTag}
+            onOpen={(tag) => { const row = sharedTags.find((t) => t.id === tag.id); if (row) openTagRow(row); }}
+            error={tagError}
+          />
         </div>
       ) : (
-        <textarea
-          className="input w-full resize-none text-xs"
-          rows={4}
-          placeholder="Add your notes…"
-          value={localNotes}
-          onChange={(e) => handleLocalChange(e.target.value)}
-          style={{ fontFamily: 'inherit' }}
-        />
+        <div className="space-y-1.5">
+          <textarea
+            className="input w-full resize-none text-xs"
+            rows={4}
+            placeholder="Add your notes…"
+            value={localNotes}
+            onChange={(e) => handleLocalChange(e.target.value)}
+            style={{ fontFamily: 'inherit' }}
+          />
+          {onLocalTagsChange && (
+            <NoteTagBar
+              tags={localTags.map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name }))}
+              onAdd={handleAddLocalTag}
+              onRemove={handleRemoveLocalTag}
+              onOpen={(tag) => { const t = localTags.find((lt) => lt.id === tag.id); if (t) openLocalTag(t); }}
+              error={tagError}
+            />
+          )}
+        </div>
       )}
 
       {/* Teammates' notes, each behind a labeled divider */}
       {isShared && !loading && otherNotes.length > 0 && (
         <div className="space-y-3 pt-1">
-          {otherNotes.map((n) => (
-            <div key={n.user_id}>
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
-                <span className="text-xs text-ink/40 font-medium shrink-0">{n.user_name}</span>
-                <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+          {otherNotes.map((n) => {
+            const theirTags = sharedTags.filter((t) => t.note_user_id === n.user_id);
+            return (
+              <div key={n.user_id}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+                  <span className="text-xs text-ink/40 font-medium shrink-0">{n.user_name}</span>
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+                </div>
+                <p className="text-xs text-ink/55 leading-relaxed whitespace-pre-wrap px-1">
+                  {n.content}
+                </p>
+                {theirTags.length > 0 && (
+                  <div className="px-1 mt-1.5">
+                    <NoteTagBar
+                      tags={theirTags.map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name }))}
+                      readOnly
+                      onOpen={(tag) => { const row = theirTags.find((t) => t.id === tag.id); if (row) openTagRow(row); }}
+                    />
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-ink/55 leading-relaxed whitespace-pre-wrap px-1">
-                {n.content}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

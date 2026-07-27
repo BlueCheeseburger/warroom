@@ -783,3 +783,96 @@ create trigger rl_impact_votes_trigger before insert or update on impact_library
 alter table rate_limit_events enable row level security;
 -- No client-facing policies on purpose: rate_limit_events is only ever touched
 -- by the security-definer functions above, never directly by client queries.
+
+-- ─── Migration: note tag attachments (tag docs/flows/opponents/judges in notes) ─
+-- Generalizes message_attachments so a row can be tied to a shared_notes
+-- entity (team_id + entity_type + entity_id + owning user) instead of only
+-- a chat message. Lets users tag docs/flows/opponents/judges in opponent
+-- and judge notes, visible to teammates the next time they open that entity.
+
+alter table message_attachments add column if not exists team_id uuid references teams(id) on delete cascade;
+alter table message_attachments add column if not exists note_entity_type text check (note_entity_type in ('opponent','judge'));
+alter table message_attachments add column if not exists note_entity_id text;
+alter table message_attachments add column if not exists note_user_id uuid references auth.users(id);
+alter table message_attachments add column if not exists note_user_name text;
+alter table message_attachments add column if not exists created_at timestamptz default now();
+
+alter table message_attachments drop constraint if exists message_attachments_parent_check;
+alter table message_attachments add constraint message_attachments_parent_check
+  check (
+    message_id is not null
+    or (note_entity_type is not null and note_entity_id is not null and note_user_id is not null and team_id is not null)
+  );
+
+alter table message_attachments drop constraint if exists message_attachments_type_check;
+alter table message_attachments add constraint message_attachments_type_check
+  check (type in ('case', 'block', 'flow', 'opponent', 'member', 'image', 'speechdoc', 'judge'));
+
+create index if not exists message_attachments_note_idx
+  on message_attachments(team_id, note_entity_type, note_entity_id);
+
+drop policy if exists "team_members_can_read_attachments" on message_attachments;
+create policy "team_members_can_read_attachments" on message_attachments
+  for select using (
+    (message_id is not null and exists (
+      select 1 from messages m where m.id = message_id and is_team_member(m.team_id)
+    ))
+    or (note_entity_type is not null and is_team_member(team_id))
+  );
+
+drop policy if exists "team_members_can_insert_attachments" on message_attachments;
+create policy "team_members_can_insert_attachments" on message_attachments
+  for insert with check (
+    (message_id is not null and exists (
+      select 1 from messages m where m.id = message_id and is_team_member(m.team_id)
+    ))
+    or (note_entity_type is not null and note_user_id = auth.uid() and is_team_member(team_id))
+  );
+
+drop policy if exists "note_owner_can_delete_attachments" on message_attachments;
+create policy "note_owner_can_delete_attachments" on message_attachments
+  for delete using (note_entity_type is not null and note_user_id = auth.uid());
+
+-- ─── Team Files ────────────────────────────────────────────────────────────────
+-- A per-team file library, separate from the chat message stream. Each row is one
+-- uploaded document. `name` and `data_b64` (the raw file bytes, base64-encoded)
+-- are encrypted client-side with the team key exactly like message content — see
+-- src/lib/chatCrypto.ts. `uploader_name` stays plaintext (same tier as sender_name
+-- on messages) purely for display.
+--
+-- "Auto-update": the uploader's own client watches the local file on disk (see
+-- team_file_watches.json + fs.watch in electron/main.ts) and pushes a re-encrypted
+-- data_b64 + bumped updated_at whenever that file changes on disk — but only while
+-- that uploader's Warroom app is running. Other members just see updated_at move
+-- and can re-open the file to get the latest version; nothing polls on their end.
+create table if not exists team_files (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid references teams(id) on delete cascade not null,
+  uploader_id uuid references auth.users(id),
+  uploader_name text not null,
+  name text not null,        -- encrypted
+  data_b64 text not null,    -- encrypted (base64 of raw file bytes)
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists team_files_team_idx on team_files(team_id, updated_at desc);
+
+alter table team_files enable row level security;
+
+drop policy if exists "team_files_select" on team_files;
+create policy "team_files_select" on team_files
+  for select using (is_team_member(team_id));
+
+drop policy if exists "team_files_insert" on team_files;
+create policy "team_files_insert" on team_files
+  for insert with check (is_team_member(team_id) and uploader_id = auth.uid());
+
+-- Only the uploader can push new content (auto-update) or rename their own file.
+drop policy if exists "team_files_update_own" on team_files;
+create policy "team_files_update_own" on team_files
+  for update using (uploader_id = auth.uid()) with check (uploader_id = auth.uid());
+
+drop policy if exists "team_files_delete_own" on team_files;
+create policy "team_files_delete_own" on team_files
+  for delete using (uploader_id = auth.uid());

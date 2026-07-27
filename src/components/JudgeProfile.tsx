@@ -228,6 +228,11 @@ export default function JudgeProfile() {
                   localNotes={notes}
                   onLocalChange={(val) => setNotes(val)}
                   onLocalSave={(val) => handleNotesChange(val)}
+                  localTags={savedJudge?.noteTags ?? []}
+                  onLocalTagsChange={(tags) => {
+                    if (!judgeId) return;
+                    update((db) => ({ ...db, judges: { ...db.judges, [judgeId]: { ...db.judges[judgeId], noteTags: tags } } }));
+                  }}
                 />
               </div>
             )}

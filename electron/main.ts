@@ -9,7 +9,7 @@ import type { TouchBarButton, TouchBarLabel } from 'electron';
 // as a value, same as this file's other type/value name pairs.)
 const { TouchBarButton, TouchBarLabel, TouchBarSpacer } = TouchBar;
 import { join, normalize, basename, sep, extname } from 'path';
-import { promises as fs, existsSync } from 'fs';
+import { promises as fs, existsSync, watch as fsWatch } from 'fs';
 import { execFile, spawn } from 'child_process';
 import https from 'https';
 import http from 'http';
@@ -5497,6 +5497,50 @@ ipcMain.handle('notes:upsert', async (_e, payload: {
   } catch (e) { return sbErr(e); }
 });
 
+// Tag attachments: a doc/flow/opponent/judge tagged inside opponent/judge notes.
+// These reuse message_attachments but key off (team_id, note_entity_type,
+// note_entity_id, note_user_id) instead of a chat message, so a tag is visible
+// to teammates the next time they open that opponent/judge's notes.
+ipcMain.handle('notes:attachTag', async (_e, payload: {
+  teamId: string; entityType: string; entityId: string;
+  userId: string; userName: string;
+  type: string; name: string; data: any;
+}) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { teamId, entityType, entityId, userId, userName, type, name, data } = payload;
+    const { data: row, error } = await sb.from('message_attachments').insert({
+      team_id: teamId, note_entity_type: entityType, note_entity_id: entityId,
+      note_user_id: userId, note_user_name: userName,
+      type, name, data: data ?? {},
+    }).select().single();
+    if (error) return sbErr(error);
+    return sbOk(row);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('notes:getTags', async (_e, payload: { teamId: string; entityType: string; entityId: string }) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { teamId, entityType, entityId } = payload;
+    const { data, error } = await sb.from('message_attachments')
+      .select('id, type, name, data, note_user_id, note_user_name, created_at')
+      .eq('team_id', teamId).eq('note_entity_type', entityType).eq('note_entity_id', entityId)
+      .order('created_at', { ascending: true });
+    if (error) return sbErr(error);
+    return sbOk(data ?? []);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('notes:removeTag', async (_e, attachmentId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('message_attachments').delete().eq('id', attachmentId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
 ipcMain.handle('chat:sendMessage', async (_e, payload: any) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
@@ -6305,6 +6349,174 @@ ipcMain.handle('chat:unsubscribeDM', async () => {
   dmChannel?.unsubscribe();
   dmChannel = null;
 });
+
+// ─── Team Files ─────────────────────────────────────────────────────────────────
+// A per-team file library, separate from the chat message stream (supabase/schema.sql
+// `team_files`). `name` and `data_b64` (the raw file bytes, base64) are encrypted
+// client-side with the team key before they ever reach these handlers — main.ts only
+// ever moves ciphertext. `uploader_name` stays plaintext, same tier as message sender
+// names elsewhere.
+//
+// "Auto-update": the uploader's OWN device watches the local file on disk (fs.watch
+// below) and, on change, asks the renderer to re-encrypt + push new content. This only
+// works while that uploader's Warroom app is running — other members just see
+// `updated_at` move and re-open the file to get the latest version.
+
+let teamFilesChannel: any = null;
+
+ipcMain.handle('chat:getTeamFiles', async (_e, teamId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('team_files').select('*').eq('team_id', teamId).order('updated_at', { ascending: false });
+    if (error) return sbErr(error);
+    return sbOk(data ?? []);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:uploadTeamFile', async (_e, payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('team_files').insert({
+      team_id: payload.teamId, uploader_id: payload.uploaderId, uploader_name: payload.uploaderName,
+      name: payload.name, data_b64: payload.dataB64,
+    }).select().single();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:updateTeamFileContent', async (_e, fileId: string, dataB64: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('team_files').update({ data_b64: dataB64, updated_at: new Date().toISOString() }).eq('id', fileId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:deleteTeamFile', async (_e, fileId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    await unwatchLocalTeamFile(fileId); // no-op on devices not watching this file
+    const { error } = await sb.from('team_files').delete().eq('id', fileId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:subscribeTeamFiles', async (_e, teamId: string) => {
+  if (!sb || !mainWin) return;
+  teamFilesChannel?.unsubscribe();
+  teamFilesChannel = sb.channel(`team-files-${teamId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_files', filter: `team_id=eq.${teamId}` },
+      (payload: any) => {
+        mainWin?.webContents.send('chat:teamFileChange', { eventType: payload.eventType, row: payload.new ?? payload.old });
+      }
+    ).subscribe();
+});
+
+ipcMain.handle('chat:unsubscribeTeamFiles', async () => {
+  teamFilesChannel?.unsubscribe();
+  teamFilesChannel = null;
+});
+
+// ── Local file watching (powers auto-update) ───────────────────────────────────
+// fileId -> local absolute path, persisted to team_file_watches.json so watches are
+// restored on every launch. This map NEVER syncs anywhere — it only means anything
+// on the device that actually uploaded each file.
+const teamFileWatchHandles = new Map<string, ReturnType<typeof fsWatch>>();
+const teamFileDebounceTimers = new Map<string, NodeJS.Timeout>();
+
+async function loadTeamFileWatchMap(): Promise<Record<string, string>> {
+  return (await readJson('team_file_watches.json')) ?? {};
+}
+async function saveTeamFileWatchMap(map: Record<string, string>): Promise<void> {
+  await writeJson('team_file_watches.json', map);
+}
+
+function stopWatchingTeamFile(fileId: string) {
+  teamFileWatchHandles.get(fileId)?.close();
+  teamFileWatchHandles.delete(fileId);
+  const t = teamFileDebounceTimers.get(fileId);
+  if (t) { clearTimeout(t); teamFileDebounceTimers.delete(fileId); }
+}
+
+async function startWatchingTeamFile(fileId: string, filePath: string) {
+  stopWatchingTeamFile(fileId); // idempotent — replaces any existing watcher for this id
+  try {
+    const handle = fsWatch(filePath, { persistent: false }, () => {
+      // Debounce — editors (Word, Google Docs desktop sync) fire several change
+      // events per save.
+      const existing = teamFileDebounceTimers.get(fileId);
+      if (existing) clearTimeout(existing);
+      teamFileDebounceTimers.set(fileId, setTimeout(() => {
+        teamFileDebounceTimers.delete(fileId);
+        mainWin?.webContents.send('chat:localTeamFileChanged', { fileId });
+      }, 1200));
+    });
+    teamFileWatchHandles.set(fileId, handle);
+  } catch {
+    // File may be temporarily locked/missing mid-save; restoreTeamFileWatches()
+    // retries on next launch, and the user can always re-upload manually.
+  }
+}
+
+async function unwatchLocalTeamFile(fileId: string) {
+  stopWatchingTeamFile(fileId);
+  const map = await loadTeamFileWatchMap();
+  if (map[fileId]) { delete map[fileId]; await saveTeamFileWatchMap(map); }
+}
+
+// Called by the renderer right after a successful upload, so this device starts
+// watching the file it just shared.
+ipcMain.handle('chat:watchLocalTeamFile', async (_e, fileId: string, filePath: string) => {
+  try {
+    checkPath(filePath);
+    const map = await loadTeamFileWatchMap();
+    map[fileId] = filePath;
+    await saveTeamFileWatchMap(map);
+    await startWatchingTeamFile(fileId, filePath);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:unwatchLocalTeamFile', async (_e, fileId: string) => {
+  await unwatchLocalTeamFile(fileId);
+  return sbOk(null);
+});
+
+// So the UI can show an "auto-updating" indicator only on the device actually
+// watching each file (never true for a file a teammate uploaded).
+ipcMain.handle('chat:isWatchingTeamFile', async (_e, fileId: string) => {
+  const map = await loadTeamFileWatchMap();
+  return sbOk(!!map[fileId]);
+});
+
+// Reads current bytes for a locally-watched file — called after the debounced
+// change event fires, so the renderer can re-encrypt and push the update.
+ipcMain.handle('chat:readWatchedTeamFileBytes', async (_e, fileId: string) => {
+  try {
+    const map = await loadTeamFileWatchMap();
+    const filePath = map[fileId];
+    if (!filePath) return sbErr('Not watching this file on this device');
+    checkPath(filePath);
+    const buf = await fs.readFile(filePath);
+    return sbOk({ base64: buf.toString('base64') });
+  } catch (e: any) { return sbErr(e.message ?? String(e)); }
+});
+
+// Restores every watch this device previously registered — called once at startup
+// so auto-update keeps working across restarts without re-uploading anything.
+async function restoreTeamFileWatches() {
+  try {
+    const map = await loadTeamFileWatchMap();
+    for (const [fileId, filePath] of Object.entries(map)) {
+      if (existsSync(filePath)) await startWatchingTeamFile(fileId, filePath);
+      // Missing paths are left in the map (e.g. an unmounted drive) — harmless;
+      // they simply won't auto-update until the path exists again.
+    }
+  } catch {}
+}
 
 // ─── Impact Library (global shared library) — Supabase CRUD ────────────────────
 // Not team-scoped: every signed-in user reads the same pool and can contribute.
@@ -7442,6 +7654,7 @@ app.whenReady().then(async () => {
     checkTopicsOnLaunch().catch(() => {});
     scheduleTopicWatcher();
     scheduleScoutingWatcher();
+    restoreTeamFileWatches().catch(() => {});
   });
 });
 // Only the GUI process owns the heartbeat file — never let a daemon process clear it.

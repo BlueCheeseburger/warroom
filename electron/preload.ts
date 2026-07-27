@@ -396,6 +396,12 @@ const api = {
       ipcRenderer.invoke('notes:get', p),
     upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) =>
       ipcRenderer.invoke('notes:upsert', p),
+    attachTag: (p: { teamId: string; entityType: string; entityId: string; userId: string; userName: string; type: string; name: string; data: any }) =>
+      ipcRenderer.invoke('notes:attachTag', p),
+    getTags: (p: { teamId: string; entityType: string; entityId: string }) =>
+      ipcRenderer.invoke('notes:getTags', p),
+    removeTag: (attachmentId: string) =>
+      ipcRenderer.invoke('notes:removeTag', attachmentId),
   },
   platform: process.platform,
   setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>

@@ -238,6 +238,12 @@ Opponent profiles store scouting data for teams you might face. Each opponent tr
 ### Opponent search
 Opponents can be looked up by team name via OpenCaselist full-text search and/or Debate Land search. The app de-duplicates across local DB and search results.
 
+### Tagging in notes
+The Notes editor on an opponent or judge profile (`SharedNotesEditor.tsx`) has a **+ Tag** button that opens the same picker used for @mentions in chat (`MentionPicker.tsx`), letting a speech doc, flow, case, opponent, or judge be attached to that note as a small clickable chip (`NoteTagBar.tsx`).
+
+- **Private notes** — tags are stored locally as `noteTags` on the opponent/judge record (`db.opponents[id].noteTags` / `db.judges[id].noteTags`); nothing is uploaded, and the tag just points at the local item by id (or local file path for a speech doc).
+- **Shared (team) notes** — tagging inserts a row into the generalized `message_attachments` table (Supabase). That table, previously only usable for chat attachments (FK'd to a `message_id`), now also accepts rows keyed by `team_id` + `note_entity_type`/`note_entity_id` + the tagging user's id (`note_user_id`/`note_user_name`), via new IPC handlers `notes:attachTag` / `notes:getTags` / `notes:removeTag` in `electron/main.ts`. A tagged local speech doc has its docx bytes read (`fs:readFileBytes`) and uploaded as base64 in the row's `data` jsonb, capped at 2.5MB (same limit as the OpenCaselist doc cache); a tagged OpenCaselist-imported case just stores its source URL (`data: { kind: 'url', url, teamName }`) since that's already fetchable via `opencaselist:fetchFileToTemp`. Opening either kind writes the bytes to a temp file (`fs:writeTempFile`, auto-trusted since it lives under `os.tmpdir()/warroom`) and opens it through the normal speech-doc viewer path — no new viewer code needed. A tagged flow that the opener doesn't have locally is imported as a new flow from a stored JSON snapshot; a tagged opponent/judge is resolved by a stable cross-user id (OpenCaselist team ID or Tabroom judge `personId`) against the opener's local records, falling back to the Scouting list if no match exists. Tags on a teammate's shared note render as read-only chips the next time that opponent/judge is opened — there's no realtime push, matching how shared note text itself works today.
+
 ---
 
 ## Tournaments & Rounds
