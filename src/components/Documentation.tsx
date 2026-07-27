@@ -688,15 +688,25 @@ export default function Documentation() {
               <strong>Shared (team) notes</strong> — tagging inserts a row into the generalized{' '}
               <Code>message_attachments</Code> table (the same table chat attachments use, now also
               keyed by <Code>team_id</Code> + <Code>note_entity_type</Code>/<Code>note_entity_id</Code>{' '}
-              + the tagging user instead of requiring a chat message). A tagged local speech doc has
-              its docx bytes read and uploaded (capped at 2.5MB, same limit as OpenCaselist caching)
-              so a teammate can open it directly; a tagged OpenCaselist-imported case just stores its
-              source URL, since that's already fetchable. Tags on a teammate's shared note show up as
-              read-only chips the next time you open that opponent/judge — there's no live push, and
-              private tags never leave your device. Opening a teammate's flow tag that you don't
-              already have imports a snapshot as a new local flow; an opponent/judge tag navigates by
-              a stable cross-user id (OpenCaselist team ID or Tabroom judge ID) if you have a matching
-              local record, otherwise it opens Scouting so you can search for them.
+              + the tagging user instead of requiring a chat message). A tagged OpenCaselist-imported
+              case just stores its source URL, since that's already fetchable. Tags on a teammate's
+              shared note show up as read-only chips the next time you open that opponent/judge —
+              there's no live push, and private tags never leave your device. Opening a teammate's
+              flow tag that you don't already have imports a snapshot as a new local flow; an
+              opponent/judge tag navigates by a stable cross-user id (OpenCaselist team ID or Tabroom
+              judge ID) if you have a matching local record, otherwise it opens Scouting so you can
+              search for them.
+            </LI>
+            <LI>
+              <strong>Tagging a local speech doc</strong> — first checked against your team's{' '}
+              <strong>Team Files</strong> library (name + exact byte match, decrypted client-side with
+              the team key). If a match exists, the tag just points at that existing entry — no
+              re-upload, no prompt. If not, you're asked <em>"Also add '[name]' to Team Files?"</em>{' '}
+              before anything is sent: choosing <strong>Add</strong> encrypts and uploads it into
+              Team Files (capped at 2.5MB, same limit as OpenCaselist caching) and the tag references
+              that entry; choosing <strong>Skip</strong> embeds the (unencrypted) bytes directly on
+              the tag instead, same as before Team Files existed. Either way a teammate opening the
+              tag gets a real, openable copy of the doc.
             </LI>
           </UL>
         </section>

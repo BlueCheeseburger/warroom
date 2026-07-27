@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
 import { SharedNote, ChatTeam, NoteTag, NoteTagRow, NoteTagType, PendingMention } from '../types';
 import NoteTagBar, { DisplayTag } from './NoteTagBar';
+import { getTeamKey, encryptText, decryptText } from '../lib/chatCrypto';
 
 interface Props {
   /** 'opponent' or 'judge' */
@@ -136,15 +137,74 @@ export default function SharedNotesEditor({
     return () => { cancelled = true; };
   }, [isShared, entityType, entityId, visibility]);
 
-  async function buildTagPayload(item: PendingMention): Promise<{ type: NoteTagType; name: string; data: any } | null> {
-    if (item.type === 'speechdoc') {
-      const filePath = item.data?.filePath;
-      if (!filePath) return null;
-      const res = await window.warroom.fs.readFileBytes(filePath);
-      if (!res?.ok || !res.base64) { setTagError('Could not read that file.'); return null; }
-      if (res.base64.length > 2_500_000) { setTagError('That doc is too large to share (2.5MB max).'); return null; }
-      return { type: 'speechdoc', name: item.name, data: { kind: 'bytes', base64: res.base64, fileName: item.name } };
+  // ── Team Files dedup (shared/team mode only) ───────────────────────────────
+  // A tagged local doc is checked against the team's existing Team Files
+  // (name + exact byte match) before we ask whether to add it there too, so
+  // re-tagging the same file never creates a second copy or re-prompts.
+  const [pendingConfirm, setPendingConfirm] = useState<{ fileName: string; base64: string } | null>(null);
+
+  async function findMatchingTeamFile(fileName: string, base64: string): Promise<string | null> {
+    if (!activeTeam) return null;
+    try {
+      const res = await window.warroom.teamFiles.getAll(visibility);
+      if (!res.ok || !res.data) return null;
+      const key = await getTeamKey(visibility, activeTeam.invite_code);
+      for (const f of res.data) {
+        const name = await decryptText(key, f.name);
+        if (name !== fileName) continue;
+        const data = await decryptText(key, f.data_b64);
+        if (data === base64) return f.id;
+      }
+      return null;
+    } catch { return null; }
+  }
+
+  async function attachSharedTag(type: NoteTagType, name: string, data: any) {
+    if (!currentUser || visibility === 'private') return;
+    const tempId = crypto.randomUUID();
+    setPendingTags((prev) => [...prev, { id: tempId, type, name }]);
+    try {
+      const userName = currentUser.displayName || (currentUser as any).email || 'Unknown';
+      const res = await window.warroom.notes.attachTag({
+        teamId: visibility, entityType, entityId,
+        userId: currentUser.id, userName,
+        type, name, data,
+      });
+      if (res.ok && res.data) setSharedTags((prev) => [...prev, res.data as NoteTagRow]);
+      else setTagError(res.error ?? 'Could not save that tag.');
+    } finally {
+      setPendingTags((prev) => prev.filter((p) => p.id !== tempId));
     }
+  }
+
+  /** Resolves the "Also add to Team Files?" prompt for a not-yet-seen local doc. */
+  async function confirmAddToTeamFiles(addToFiles: boolean) {
+    if (!pendingConfirm || !currentUser || visibility === 'private') { setPendingConfirm(null); return; }
+    const { fileName, base64 } = pendingConfirm;
+    setPendingConfirm(null);
+    if (!addToFiles) {
+      await attachSharedTag('speechdoc', fileName, { kind: 'bytes', base64, fileName });
+      return;
+    }
+    if (!activeTeam) return;
+    const tempId = crypto.randomUUID();
+    setPendingTags((prev) => [...prev, { id: tempId, type: 'speechdoc', name: fileName }]);
+    try {
+      const key = await getTeamKey(visibility, activeTeam.invite_code);
+      const userName = currentUser.displayName || (currentUser as any).email || 'Unknown';
+      const [encName, encData] = await Promise.all([encryptText(key, fileName), encryptText(key, base64)]);
+      const res = await window.warroom.teamFiles.upload({
+        teamId: visibility, uploaderId: currentUser.id, uploaderName: userName, name: encName, dataB64: encData,
+      });
+      if (!res.ok || !res.data) { setTagError(res.error ?? 'Could not add to Team Files.'); return; }
+      setPendingTags((prev) => prev.filter((p) => p.id !== tempId));
+      await attachSharedTag('speechdoc', fileName, { kind: 'teamFile', teamFileId: res.data.id });
+    } finally {
+      setPendingTags((prev) => prev.filter((p) => p.id !== tempId));
+    }
+  }
+
+  async function buildTagPayload(item: PendingMention): Promise<{ type: NoteTagType; name: string; data: any } | null> {
     if (item.type === 'case') {
       const c = item.data?.case;
       if (c?.ocSource) {
@@ -171,22 +231,20 @@ export default function SharedNotesEditor({
   async function handleAddSharedTag(item: PendingMention) {
     if (!currentUser || visibility === 'private') return;
     setTagError(null);
-    const tempId = crypto.randomUUID();
-    setPendingTags((prev) => [...prev, { id: tempId, type: item.type, name: item.name }]);
-    try {
-      const built = await buildTagPayload(item);
-      if (!built) return;
-      const userName = currentUser.displayName || (currentUser as any).email || 'Unknown';
-      const res = await window.warroom.notes.attachTag({
-        teamId: visibility, entityType, entityId,
-        userId: currentUser.id, userName,
-        type: built.type, name: built.name, data: built.data,
-      });
-      if (res.ok && res.data) setSharedTags((prev) => [...prev, res.data as NoteTagRow]);
-      else setTagError(res.error ?? 'Could not save that tag.');
-    } finally {
-      setPendingTags((prev) => prev.filter((p) => p.id !== tempId));
+    if (item.type === 'speechdoc') {
+      const filePath = item.data?.filePath;
+      if (!filePath) return;
+      const res = await window.warroom.fs.readFileBytes(filePath);
+      if (!res?.ok || !res.base64) { setTagError('Could not read that file.'); return; }
+      if (res.base64.length > 2_500_000) { setTagError('That doc is too large to share (2.5MB max).'); return; }
+      const existingId = await findMatchingTeamFile(item.name, res.base64);
+      if (existingId) { await attachSharedTag('speechdoc', item.name, { kind: 'teamFile', teamFileId: existingId }); return; }
+      setPendingConfirm({ fileName: item.name, base64: res.base64 });
+      return;
     }
+    const built = await buildTagPayload(item);
+    if (!built) return;
+    await attachSharedTag(built.type, built.name, built.data);
   }
 
   async function handleRemoveSharedTag(id: string) {
@@ -198,10 +256,26 @@ export default function SharedNotesEditor({
     setTagError(null);
     const mine = row.note_user_id === currentUser?.id;
     const d = row.data ?? {};
-    if (row.type === 'speechdoc' && d.kind === 'bytes' && d.base64) {
-      const res = await window.warroom.fs.writeTempFile(d.base64, d.fileName || `${row.name}.docx`);
-      if (res?.ok && res.path) setView({ kind: 'speech-doc', docPath: res.path } as any);
-      else setTagError('Could not open that file.');
+    if (row.type === 'speechdoc') {
+      if (d.kind === 'bytes' && d.base64) {
+        const res = await window.warroom.fs.writeTempFile(d.base64, d.fileName || `${row.name}.docx`);
+        if (res?.ok && res.path) setView({ kind: 'speech-doc', docPath: res.path } as any);
+        else setTagError('Could not open that file.');
+        return;
+      }
+      if (d.kind === 'teamFile' && d.teamFileId) {
+        if (!activeTeam) { setTagError('Not signed into a team.'); return; }
+        const res = await window.warroom.teamFiles.getAll(visibility);
+        const fileRow = res.ok ? res.data?.find((f: any) => f.id === d.teamFileId) : null;
+        if (!fileRow) { setTagError('That file is no longer in Team Files.'); return; }
+        const key = await getTeamKey(visibility, activeTeam.invite_code);
+        const base64 = await decryptText(key, fileRow.data_b64);
+        const wt = await window.warroom.fs.writeTempFile(base64, row.name);
+        if (wt?.ok && wt.path) setView({ kind: 'speech-doc', docPath: wt.path } as any);
+        else setTagError('Could not open that file.');
+        return;
+      }
+      setTagError(`${row.name} isn't available on your device yet.`);
       return;
     }
     if (row.type === 'case') {
@@ -429,6 +503,18 @@ export default function SharedNotesEditor({
             onOpen={(tag) => { const row = sharedTags.find((t) => t.id === tag.id); if (row) openTagRow(row); }}
             error={tagError}
           />
+          {pendingConfirm && (
+            <div className="flex items-center gap-2 text-[11px] px-2 py-1.5 rounded-md"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              <span className="flex-1 truncate">Also add "{pendingConfirm.fileName}" to Team Files?</span>
+              <button onClick={() => confirmAddToTeamFiles(true)} className="btn-primary text-[10px] px-2 py-0.5" title="Add this file to your team's shared file library">
+                Add
+              </button>
+              <button onClick={() => confirmAddToTeamFiles(false)} className="btn text-[10px] px-2 py-0.5" title="Tag it here without adding to Team Files">
+                Skip
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-1.5">
