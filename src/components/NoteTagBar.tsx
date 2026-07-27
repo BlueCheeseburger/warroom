@@ -100,6 +100,7 @@ export default function NoteTagBar({
                   query={query}
                   onSelect={(item) => { setPicking(false); setQuery(''); onAdd(item); }}
                   onClose={() => setPicking(false)}
+                  types={['speechdoc', 'case', 'flow', 'opponent', 'judge']}
                 />
               </div>
             </div>

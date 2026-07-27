@@ -6,11 +6,14 @@ interface Props {
   query: string;
   onSelect: (item: PendingMention) => void;
   onClose: () => void;
+  /** Restrict which categories render/are selectable. Omit to show everything (default, used by chat @mentions). */
+  types?: PendingMention['type'][];
 }
 
-export default function MentionPicker({ query, onSelect, onClose }: Props) {
+export default function MentionPicker({ query, onSelect, onClose, types }: Props) {
   const { db, flowsIndex, teamMembers, currentUser } = useApp();
   const q = query.toLowerCase();
+  const allowed = (t: string) => !types || (types as string[]).includes(t);
 
   // Speech doc recents from localStorage (these are the "cases" shown in the sidebar)
   const speechDocs = useMemo(() => {
@@ -147,52 +150,71 @@ export default function MentionPicker({ query, onSelect, onClose }: Props) {
     [db.judges, q]
   );
 
-  const all = [...speechDocs, ...cases, ...blocks, ...flows, ...opponents, ...tournaments, ...members, ...judges];
-  if (all.length === 0) return null;
+  const shownSpeechDocs = allowed('speechdoc') ? speechDocs : [];
+  const shownCases = allowed('case') ? cases : [];
+  const shownBlocks = allowed('block') ? blocks : [];
+  const shownFlows = allowed('flow') ? flows : [];
+  const shownOpponents = allowed('opponent') ? opponents : [];
+  const shownTournaments = allowed('tournament') ? tournaments : [];
+  const shownMembers = allowed('member') ? members : [];
+  const shownJudges = allowed('judge') ? judges : [];
+
+  const all = [...shownSpeechDocs, ...shownCases, ...shownBlocks, ...shownFlows, ...shownOpponents, ...shownTournaments, ...shownMembers, ...shownJudges];
+  if (all.length === 0) {
+    if (!types) return null; // unrestricted picker: no matches at all → render nothing, same as before
+    return (
+      <div
+        className="absolute bottom-full left-0 right-0 mb-1 rounded-md shadow-lg z-50 px-3 py-2 text-xs"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', color: 'var(--nav-inactive-color)' }}
+      >
+        {q ? `No matches for "${query}"` : 'Nothing to tag yet'}
+      </div>
+    );
+  }
 
   return (
     <div
       className="absolute bottom-full left-0 right-0 mb-1 rounded-md shadow-lg overflow-hidden z-50 max-h-72 overflow-y-auto"
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}
     >
-      {members.length > 0 && (
+      {shownMembers.length > 0 && (
         <Section label="People">
-          {members.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownMembers.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {speechDocs.length > 0 && (
+      {shownSpeechDocs.length > 0 && (
         <Section label="Speech Docs">
-          {speechDocs.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownSpeechDocs.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {cases.length > 0 && (
+      {shownCases.length > 0 && (
         <Section label="Cases">
-          {cases.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownCases.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {blocks.length > 0 && (
+      {shownBlocks.length > 0 && (
         <Section label="Blocks">
-          {blocks.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownBlocks.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {flows.length > 0 && (
+      {shownFlows.length > 0 && (
         <Section label="Flows">
-          {flows.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownFlows.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {opponents.length > 0 && (
+      {shownOpponents.length > 0 && (
         <Section label="Opponents">
-          {opponents.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownOpponents.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {tournaments.length > 0 && (
+      {shownTournaments.length > 0 && (
         <Section label="Tournaments">
-          {tournaments.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownTournaments.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
-      {judges.length > 0 && (
+      {shownJudges.length > 0 && (
         <Section label="Judges">
-          {judges.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
+          {shownJudges.map((item) => <Item key={item.id} item={item} onSelect={onSelect} />)}
         </Section>
       )}
     </div>
