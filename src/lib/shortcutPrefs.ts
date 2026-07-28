@@ -29,6 +29,7 @@ export const DEFAULT_BINDINGS: Record<string, KeyBinding> = {
   'flow-redo':         { mod: true, shift: true,  alt: false, key: 'z' },
   'flow-link':         { mod: true, shift: false, alt: false, key: 'l' },
   'flow-sheet-new':    { mod: true, shift: false, alt: false, key: 't' },
+  'doc-toggle-comments': { mod: true, shift: true, alt: false, key: 'c' },
 };
 
 const DISABLED_KEY = 'warroom-disabled-shortcuts';

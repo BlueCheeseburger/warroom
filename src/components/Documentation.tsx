@@ -428,8 +428,9 @@ export default function Documentation() {
           </P>
           <P>
             The list groups shortcuts into <strong>Global</strong> (⌘K search, ⌘/ this list, Esc),{' '}
-            <strong>Find on a page</strong> (⌘F), <strong>AI panel & team chat</strong> (Enter/Shift+Enter/@),
-            and <strong>Flow editor</strong> (formatting, undo/redo, arrow-drawing, cell navigation).
+            <strong>Find on a page</strong> (⌘F), <strong>AI panel & team chat</strong> (Enter/Shift+Enter/@),{' '}
+            <strong>Speech doc viewer</strong> (⌘⇧C toggles comments), and <strong>Flow editor</strong>{' '}
+            (formatting, undo/redo, arrow-drawing, cell navigation).
             When a new global or component-level keyboard shortcut is added anywhere in the app, add it
             here too — grep for <Code>metaKey || e.ctrlKey</Code> across <Code>src/</Code> to find every
             shortcut currently wired up.
@@ -1343,6 +1344,18 @@ export default function Documentation() {
             active pane's own reading width doesn't shrink. Dragging pane dividers is disabled while
             a "Dedicated space" outline is open (that split isn't adjustable); it works normally
             otherwise.
+          </P>
+          <P>
+            <strong>Comments.</strong> Select text in a doc and click the comment bubble that appears
+            to leave a note on it, Google-Docs style — visible to <strong>Team</strong> by default, or{' '}
+            <strong>Only me</strong>. The highlighted span gets a light purple wash (deliberately not
+            cyan/yellow/green, so it never reads as the document's own evidence emphasis), and
+            comments live in a right-side panel opened via the <strong>Comments</strong> toolbar
+            button — click a comment to jump to its highlight. Only the author can delete their own
+            comment. A dedicated eye-icon button (and <Code>⌘⇧C</Code> / <Code>Ctrl+Shift+C</Code>)
+            hides comments and their highlights together for a clean read, and un-hides them again.
+            Requires being signed into a team (the button and shortcut are inert without one); team
+            comments sync live to teammates viewing the same doc.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}

@@ -58,6 +58,12 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: 'Speech doc viewer',
+    shortcuts: [
+      { id: 'doc-toggle-comments', keys: [`${MOD}⇧C`], label: 'Show / hide comments and their highlights' },
+    ],
+  },
+  {
     title: 'Flow editor',
     shortcuts: [
       { id: 'flow-bold', keys: [`${MOD}B`], label: 'Bold' },

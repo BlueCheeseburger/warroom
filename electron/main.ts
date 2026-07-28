@@ -6420,6 +6420,69 @@ ipcMain.handle('chat:unsubscribeTeamFiles', async () => {
   teamFilesChannel = null;
 });
 
+// ── Speech-doc comments ─────────────────────────────────────────────────────────
+// Team-scoped comments anchored to a span of text in an open .docx — see
+// doc_comments in supabase/schema.sql for the anchoring scheme and RLS (team
+// comments readable by any team member, private ones only by their author; RLS
+// is what actually enforces the visibility split, not this handler). One
+// realtime channel per team, same pattern as chat:subscribeTeamFiles — the
+// renderer filters events down to whichever doc is actually open.
+
+let docCommentsChannel: any = null;
+
+ipcMain.handle('docComments:get', async (_e, teamId: string, docKey: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('doc_comments').select('*')
+      .eq('team_id', teamId).eq('doc_key', docKey).order('created_at', { ascending: true });
+    if (error) return sbErr(error);
+    return sbOk(data ?? []);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('docComments:add', async (_e, payload: {
+  teamId: string; docKey: string; docName: string; userId: string; userName: string;
+  visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
+  body: string;
+}) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('doc_comments').insert({
+      team_id: payload.teamId, doc_key: payload.docKey, doc_name: payload.docName,
+      user_id: payload.userId, user_name: payload.userName, visibility: payload.visibility,
+      anchor_text: payload.anchorText, anchor_para_index: payload.anchorParaIndex,
+      anchor_occurrence: payload.anchorOccurrence, body: payload.body,
+    }).select().single();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('docComments:delete', async (_e, commentId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('doc_comments').delete().eq('id', commentId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('docComments:subscribe', async (_e, teamId: string) => {
+  if (!sb || !mainWin) return;
+  docCommentsChannel?.unsubscribe();
+  docCommentsChannel = sb.channel(`doc-comments-${teamId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'doc_comments', filter: `team_id=eq.${teamId}` },
+      (payload: any) => {
+        mainWin?.webContents.send('docComments:change', { eventType: payload.eventType, row: payload.new ?? payload.old });
+      }
+    ).subscribe();
+});
+
+ipcMain.handle('docComments:unsubscribe', async () => {
+  docCommentsChannel?.unsubscribe();
+  docCommentsChannel = null;
+});
+
 // ── Local file watching (powers auto-update) ───────────────────────────────────
 // fileId -> local absolute path, persisted to team_file_watches.json so watches are
 // restored on every launch. This map NEVER syncs anywhere — it only means anything

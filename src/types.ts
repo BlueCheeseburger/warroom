@@ -543,6 +543,18 @@ declare global {
         readWatchedBytes: (fileId: string) => Promise<{ ok: boolean; data?: { base64: string }; error?: string }>;
         onLocalFileChanged: (cb: (p: { fileId: string }) => void) => () => void;
       };
+      docComments: {
+        get: (teamId: string, docKey: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
+        add: (payload: {
+          teamId: string; docKey: string; docName: string; userId: string; userName: string;
+          visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
+          body: string;
+        }) => Promise<{ ok: boolean; data?: any; error?: string }>;
+        delete: (commentId: string) => Promise<{ ok: boolean; error?: string }>;
+        subscribe: (teamId: string) => Promise<void>;
+        unsubscribe: () => Promise<void>;
+        onChange: (cb: (p: { eventType: string; row: any }) => void) => () => void;
+      };
       gdrive: {
         status: () => Promise<{ connected: boolean }>;
         connect: () => Promise<{ ok: boolean; error?: string }>;

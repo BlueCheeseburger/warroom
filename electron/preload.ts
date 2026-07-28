@@ -358,6 +358,24 @@ const api = {
       return () => ipcRenderer.removeListener('chat:localTeamFileChanged', handler);
     },
   },
+  // Team-scoped comments anchored to a span of text in an open speech doc —
+  // see doc_comments in supabase/schema.sql and the handlers in main.ts.
+  docComments: {
+    get: (teamId: string, docKey: string) => ipcRenderer.invoke('docComments:get', teamId, docKey),
+    add: (payload: {
+      teamId: string; docKey: string; docName: string; userId: string; userName: string;
+      visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
+      body: string;
+    }) => ipcRenderer.invoke('docComments:add', payload),
+    delete: (commentId: string) => ipcRenderer.invoke('docComments:delete', commentId),
+    subscribe: (teamId: string) => ipcRenderer.invoke('docComments:subscribe', teamId),
+    unsubscribe: () => ipcRenderer.invoke('docComments:unsubscribe'),
+    onChange: (cb: (p: { eventType: string; row: any }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('docComments:change', handler);
+      return () => ipcRenderer.removeListener('docComments:change', handler);
+    },
+  },
   gdrive: {
     status: () => ipcRenderer.invoke('gdrive:status'),
     connect: () => ipcRenderer.invoke('gdrive:connect'),

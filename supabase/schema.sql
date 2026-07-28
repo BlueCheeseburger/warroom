@@ -876,3 +876,52 @@ create policy "team_files_update_own" on team_files
 drop policy if exists "team_files_delete_own" on team_files;
 create policy "team_files_delete_own" on team_files
   for delete using (uploader_id = auth.uid());
+
+-- ─── Speech-doc comments ───────────────────────────────────────────────────────
+-- Teammates can highlight a span of text in an open .docx and leave a note on
+-- it, Google-Docs style. Team-visible by default; a comment can instead be
+-- marked private (visibility='private'), visible only to its author. Anchored
+-- by paragraph index + occurrence rather than any DOM id, since docx-preview
+-- assigns no stable per-paragraph identity across renders — see
+-- anchor_para_index/anchor_occurrence and the resolution logic in
+-- SpeechDocViewer.tsx.
+create table if not exists doc_comments (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid references teams(id) on delete cascade not null,
+  doc_key text not null,              -- absolute file path, or 'oc:<url>' for an OC-imported case
+  doc_name text not null,             -- display name at comment time (doc may be renamed later)
+  user_id uuid references auth.users(id) not null,
+  user_name text not null,
+  visibility text not null default 'team' check (visibility in ('team', 'private')),
+  anchor_text text not null,          -- the exact highlighted text; also the re-find fallback
+  anchor_para_index int not null,     -- index into containerRef's querySelectorAll('p') at comment time
+  anchor_occurrence int not null default 0, -- which Nth match of anchor_text, for repeated phrases
+  body text not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists doc_comments_doc_idx on doc_comments(team_id, doc_key);
+
+alter table doc_comments enable row level security;
+
+-- Team comments are readable by any team member; private ones only by their author.
+drop policy if exists "read_doc_comments" on doc_comments;
+create policy "read_doc_comments" on doc_comments
+  for select using (
+    (visibility = 'team' and is_team_member(team_id))
+    or (visibility = 'private' and user_id = auth.uid())
+  );
+
+drop policy if exists "insert_doc_comments" on doc_comments;
+create policy "insert_doc_comments" on doc_comments
+  for insert with check (user_id = auth.uid() and is_team_member(team_id));
+
+-- Editing is same-author only (no cross-editing someone else's note).
+drop policy if exists "update_own_doc_comments" on doc_comments;
+create policy "update_own_doc_comments" on doc_comments
+  for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "delete_own_doc_comments" on doc_comments;
+create policy "delete_own_doc_comments" on doc_comments
+  for delete using (user_id = auth.uid());

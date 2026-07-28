@@ -394,6 +394,7 @@ Opens .docx files in-app.
 - **Fewer buttons per pane**: with 2+ panes open, each pane's toolbar folds Reading time, Send to flow, Credibility, and Cross-Ex into a **⋯** menu (hover it to open) so the doc name and the essentials still fit. They keep their full labels inside the menu.
 - **Outline**: a slim pull-tab on the left edge of each pane — click it (or its arrow) to open a panel listing every heading in the doc — pockets, hats, blocks, and card tags — indented by level, with the same expand/collapse arrows as Word's own outline view. Opening it pushes your doc over rather than covering it; click the tab (or the panel's own × ) to tuck it away. It starts closed each time you open a doc, unless you've turned on **Always open the outline** in Settings — see the "Outline" bullet below for navigation details (jump-to-entry, layers, warnings), they all still apply, just reached via the pull-tab instead of a toolbar button or permanent side panel.
 - **Outline layout when comparing docs**: with 2-3 panes open, opening an outline can affect the others two ways (set in Settings, default **Dedicated space**): **Dedicated space** opens a column that isn't resizable — the pane you opened it on, plus its neighbor toward the end of the row (or the one before it, if it's the last pane), share most of the width. Your other docs aren't shrunk at all; they just scroll off to the left, with an edge of the nearest one still showing so you know to scroll back. **Squish neighbor** just borrows the outline's width from one neighboring pane instead, so nothing scrolls and your reading width doesn't shrink. Dragging dividers is turned off while a Dedicated-space outline is open.
+- **Comments**: select text and click the comment bubble that appears to leave a note on it, Google-Docs style. Comments go to your **team** by default — everyone signed into the same team sees them, live, while you're both viewing the doc — or pick **Only me** to keep one just for yourself. The highlighted text gets a light purple wash, deliberately different from the document's own evidence highlighting, so it never looks like part of the original doc. Open the **Comments** panel (toolbar) to see every thread and jump to one; only you can delete your own comments. The eye-icon button next to it (or **⌘⇧C** / **Ctrl+Shift+C**) hides comments and their highlights together for a clean read — press it again to bring them back. Requires being signed into a team.
 - **Fonts**: docs written in Calibri (the debate default) render in Calibri — or a clean sans-serif stand-in on machines without it — instead of falling back to a serif font. This holds for the whole document: if a doc used to show sans-serif headings but serif body text, it now renders consistently throughout. Docs that genuinely use Times New Roman still render in Times New Roman.
 
 ### Cases imported from OpenCaseList
@@ -650,6 +651,9 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **Escape**: close mention picker or attach menu
 - **@**: type in the composer (AI panel or team chat) to open the mention picker
 
+### In a speech doc
+- **⌘⇧C / Ctrl+Shift+C**: show / hide comments and their text highlights
+
 ### In a flow
 - **⌘B / ⌘I / ⌘U / ⌘⇧X / ⌘⇧H**: bold / italic / underline / strikethrough / highlight in a cell
 - **⌘F**: find across all sheets in the flow
@@ -676,4 +680,4 @@ Your changes are saved on this device and apply everywhere that shortcut is used
 ---
 
 ## Data & Storage
-All local data in app userData folder. Sensitive values (API keys, passwords, tokens) encrypted via OS keychain. JSON files use write-then-rename to prevent data loss on crash. Chat data syncs via Supabase, with all message content and shared attachments encrypted client-side (AES-256-GCM) so the server only stores ciphertext. This is defense-in-depth against a data leak, not zero-knowledge encryption — the team key is derived from the invite code, which is also stored server-side.
+All local data in app userData folder. Sensitive values (API keys, passwords, tokens) encrypted via OS keychain. JSON files use write-then-rename to prevent data loss on crash. Chat data syncs via Supabase, with all message content and shared attachments encrypted client-side (AES-256-GCM) so the server only stores ciphertext. This is defense-in-depth against a data leak, not zero-knowledge encryption — the team key is derived from the invite code, which is also stored server-side. Doc comments (and opponent/judge notes) sync via Supabase too, but as plaintext — a lighter-sensitivity, easily-deleted annotation layer, not message history.

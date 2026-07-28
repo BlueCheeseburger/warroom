@@ -275,6 +275,33 @@ function IcoCrossEx({ active }: { active?: boolean }) {
   );
 }
 
+// A single speech bubble with a "+" — adding/viewing a comment thread.
+function IcoComment({ active }: { active?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 4.5A1.5 1.5 0 0 1 4 3h10a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 14 12H7l-3 2.7V12H4a1.5 1.5 0 0 1-1.5-1.5z" />
+      <path d="M9 6.3v3.4M7.3 8h3.4" opacity={active ? 1 : 0.75} />
+    </svg>
+  );
+}
+
+// Open / crossed-out eye — toggles comments + their highlights visible or hidden.
+function IcoCommentsEye({ visible }: { visible: boolean }) {
+  return visible ? (
+    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 9s2.8-5.5 8-5.5S17 9 17 9s-2.8 5.5-8 5.5S1 9 1 9z" />
+      <circle cx="9" cy="9" r="2.2" />
+    </svg>
+  ) : (
+    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 9s2.8-5.5 8-5.5c1.5 0 2.8.4 3.9 1M17 9s-1 2-2.9 3.5M4.4 4.4C2.4 5.7 1 9 1 9" />
+      <path d="M6.8 10.7A2.2 2.2 0 0 1 9 6.8" />
+      <path d="M9.3 11.2c.9-.1 1.6-.8 1.9-1.6" />
+      <line x1="1.5" y1="1.5" x2="16.5" y2="16.5" />
+    </svg>
+  );
+}
+
 // Send to flow — a small grid/table with an arrow pointing into it.
 function IcoSendFlow({ active }: { active?: boolean }) {
   return (
@@ -847,26 +874,37 @@ function ToolbarPill({ active, label, icon, onClick, title }: {
 // menu they get their labels back (there's room), so nothing becomes a
 // mystery icon.
 function ToolbarOverflowMenu({ items }: {
-  // `ai` marks a row that triggers an AI/API call, so it keeps the blue→pink
-  // gradient ring it had as a toolbar pill. The ⋯ button itself is a plain
-  // container (its contents are a mix of AI and non-AI tools), so it stays
-  // unringed — otherwise the ring would promise an API call just to open a menu.
+  // `ai` marks a row that triggers an AI/API call — it gets a small gradient
+  // dot instead of the full `.ai-glow-ring` treatment other AI buttons use.
+  // The ring is built for an isolated round/pill button (it protrudes 2px
+  // past its own edges via a negative inset); on rows stacked edge-to-edge
+  // with zero gap, that protrusion bled into the row above/below and the
+  // menu's own border, drawing what looked like a broken rectangle rather
+  // than a glow. A dot carries the same blue→pink "this calls an AI" signal
+  // without needing room around the element to render into.
   items: { label: string; hint?: string; icon: React.ReactNode; active: boolean; ai?: boolean; onClick: () => void }[];
 }) {
   const [open, setOpen] = useState(false);
+  const [tip, setTip] = useState(false);
   const closeTimer = useRef(0);
   // A small close delay keeps the menu usable while the pointer crosses the
   // gap between the button and the panel below it.
-  const openNow = () => { window.clearTimeout(closeTimer.current); setOpen(true); };
+  const openNow = () => { window.clearTimeout(closeTimer.current); setOpen(true); setTip(false); };
   const closeSoon = () => { window.clearTimeout(closeTimer.current); closeTimer.current = window.setTimeout(() => setOpen(false), 160); };
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   const anyActive = items.some(i => i.active);
+  // Blank line between the plain utilities and the AI tools — two visually
+  // distinct groups (one causes an API call, one doesn't), same grouping this
+  // menu replaced (a divider separated the tool cluster from the AI pills).
+  const firstAiIdx = items.findIndex(i => i.ai);
+
   return (
     <div className="relative shrink-0" onMouseEnter={openNow} onMouseLeave={closeSoon}>
       <button
         onClick={() => setOpen(v => !v)}
-        title="More tools"
+        onFocus={() => setTip(true)}
+        onBlur={() => setTip(false)}
         className="flex items-center justify-center w-7 h-7 rounded-lg transition"
         style={{
           background: open || anyActive ? 'var(--nav-active-bg)' : 'transparent',
@@ -879,32 +917,51 @@ function ToolbarOverflowMenu({ items }: {
           <circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
         </svg>
       </button>
+      {/* Native `title` would show its own browser tooltip at the same time as
+          the dropdown once open (they raced visibly), so this is a controlled
+          tooltip that hides itself the moment the menu opens. */}
+      {tip && !open && (
+        <div className="absolute top-full mt-1.5 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap z-50 pointer-events-none select-none"
+          style={{ right: 0, background: 'var(--bg-elevated)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)' }}>
+          More tools
+        </div>
+      )}
       {open && (
         <div
-          className="absolute z-50 rounded-xl py-1"
+          className="absolute z-50 rounded-xl p-1"
           style={{
             top: 'calc(100% + 4px)', right: 0, minWidth: 190,
             background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
             boxShadow: 'var(--shadow-elevated)',
           }}
         >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              onClick={() => { it.onClick(); setOpen(false); }}
-              title={it.hint ?? it.label}
-              className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium transition text-left${it.ai ? ' ai-glow-ring' : ''}`}
-              style={{
-                background: it.active ? 'var(--nav-active-bg)' : 'transparent',
-                color: it.active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
-                border: 'none', cursor: 'pointer',
-              }}
-              onMouseEnter={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-              onMouseLeave={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              <span className="shrink-0 flex items-center justify-center w-5">{it.icon}</span>
-              {it.label}
-            </button>
+          {items.map((it, idx) => (
+            <React.Fragment key={it.label}>
+              {idx === firstAiIdx && idx > 0 && (
+                <div style={{ height: 1, margin: '4px 6px', background: 'var(--border-subtle)' }} />
+              )}
+              <button
+                onClick={() => { it.onClick(); setOpen(false); }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition text-left"
+                style={{
+                  background: it.active ? 'var(--nav-active-bg)' : 'transparent',
+                  color: it.active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  border: 'none', cursor: 'pointer',
+                }}
+                onMouseEnter={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+                onMouseLeave={e => { if (!it.active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              >
+                <span className="shrink-0 flex items-center justify-center w-5">{it.icon}</span>
+                <span className="flex-1">{it.label}</span>
+                {it.ai && (
+                  <span
+                    className="shrink-0 rounded-full"
+                    style={{ width: 6, height: 6, background: 'linear-gradient(135deg, #3b82f6, #ec4899)' }}
+                    title="Uses Warroom AI"
+                  />
+                )}
+              </button>
+            </React.Fragment>
           ))}
         </div>
       )}
@@ -1317,6 +1374,120 @@ function paintFindHighlights(all: Range[], active: Range | null) {
   if (active) reg.set(FIND_HL_ACTIVE, new H(active));
 }
 
+// ── Doc comments ─────────────────────────────────────────────────────────────
+// Team (or private) comments anchored to a highlighted span of doc text —
+// Google-Docs style. `doc_comments` in supabase/schema.sql is the source of
+// truth; a comment is anchored by (paragraph index, occurrence of its exact
+// text within that paragraph) rather than any DOM id, since docx-preview
+// assigns no stable per-paragraph identity across renders. Same CSS Custom
+// Highlight API as in-doc find (paints without mutating the DOM), on its own
+// registry name and a deliberately different color so a comment's highlight
+// never reads as the document's own cyan/yellow/green evidence emphasis.
+const COMMENT_HL = 'wr-comment';
+
+interface DocComment {
+  id: string;
+  team_id: string;
+  doc_key: string;
+  doc_name: string;
+  user_id: string;
+  user_name: string;
+  visibility: 'team' | 'private';
+  anchor_text: string;
+  anchor_para_index: number;
+  anchor_occurrence: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Index of the (0-based) `n`th occurrence of `needle` in `haystack`, or -1. */
+function nthIndexOf(haystack: string, needle: string, n: number): number {
+  if (!needle) return -1;
+  let idx = -1;
+  for (let i = 0; i <= n; i++) {
+    idx = haystack.indexOf(needle, idx + 1);
+    if (idx === -1) return -1;
+  }
+  return idx;
+}
+
+/** How many non-overlapping times `needle` occurs in `haystack`. */
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0, idx = -1;
+  while ((idx = haystack.indexOf(needle, idx + 1)) !== -1) count++;
+  return count;
+}
+
+/** Converts a flat character offset within `root`'s text content into a Range. */
+function rangeFromTextOffset(root: Element, start: number, len: number): Range | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let startNode: Text | null = null, startOffset = 0;
+  let endNode: Text | null = null, endOffset = 0;
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    const nodeLen = node.data.length;
+    if (startNode === null && pos + nodeLen >= start) { startNode = node; startOffset = start - pos; }
+    if (startNode !== null && pos + nodeLen >= start + len) { endNode = node; endOffset = start + len - pos; break; }
+    pos += nodeLen;
+  }
+  if (!startNode || !endNode) return null;
+  const r = document.createRange();
+  r.setStart(startNode, startOffset);
+  r.setEnd(endNode, endOffset);
+  return r;
+}
+
+/** The flat character offset of (node, offset) within `paraEl`'s text content. */
+function textOffsetWithinParagraph(paraEl: Element, node: Node, offset: number): number {
+  const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let n: Text | null;
+  while ((n = walker.nextNode() as Text | null)) {
+    if (n === node) return pos + offset;
+    pos += n.data.length;
+  }
+  return pos;
+}
+
+/** Walks up from `node` to find which of `paras` contains it, or -1. */
+function closestParagraphIndex(node: Node, paras: Element[]): number {
+  let el: Element | null = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+  while (el) {
+    const idx = paras.indexOf(el);
+    if (idx !== -1) return idx;
+    el = el.parentElement;
+  }
+  return -1;
+}
+
+/**
+ * Resolves a saved comment back to a live Range in the currently-rendered doc.
+ * Tries the recorded paragraph index first (the fast, common case where
+ * nothing has changed); falls back to a whole-document search for the
+ * anchor text if that paragraph no longer contains it — e.g. the underlying
+ * file was re-imported with different content. A drifted anchor still lands
+ * on *a* matching occurrence rather than silently vanishing.
+ */
+function resolveCommentAnchor(paras: Element[], c: DocComment): Range | null {
+  const tryParagraph = (p: Element | undefined): Range | null => {
+    if (!p) return null;
+    const text = p.textContent ?? '';
+    const idx = nthIndexOf(text, c.anchor_text, c.anchor_occurrence);
+    if (idx === -1) return null;
+    return rangeFromTextOffset(p, idx, c.anchor_text.length);
+  };
+  const direct = tryParagraph(paras[c.anchor_para_index]);
+  if (direct) return direct;
+  for (const p of paras) {
+    const found = tryParagraph(p);
+    if (found) return found;
+  }
+  return null;
+}
+
 // ── Reading time / WPM ─────────────────────────────────────────────────────
 const WPM_KEY = 'warroom-reading-wpm';
 function loadWpm(): number {
@@ -1669,6 +1840,90 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
         <div className="h-full rounded-full" style={{ width: `${value * 10}%`, background: `rgb(${credColor(value)})` }} />
       </div>
       <span className="text-[10px] tabular-nums w-[22px] text-right shrink-0" style={{ color: 'rgb(var(--ink-rgb))' }}>{value}</span>
+    </div>
+  );
+}
+
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return day < 7 ? `${day}d ago` : new Date(iso).toLocaleDateString();
+}
+
+function CommentsPanel({ comments, currentUserId, onScrollTo, onDelete, onClose }: {
+  comments: DocComment[];
+  currentUserId: string | undefined;
+  onScrollTo: (id: string) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const sorted = [...comments].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return (
+    <div className="shrink-0 flex flex-col h-full" style={{ width: 'min(300px, 85%)', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
+      <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <span style={{ color: 'rgb(var(--ink-rgb))' }}><IcoComment active /></span>
+        <div className="flex flex-col min-w-0 flex-1">
+          <span className="text-[12.5px] font-semibold leading-tight truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Comments</span>
+          <span className="text-[10px] leading-tight" style={{ color: 'var(--nav-inactive-color)' }}>
+            {sorted.length} comment{sorted.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} tooltipAlign="right" />
+      </div>
+
+      <div className="flex-1 overflow-y-auto scroll-thin px-2.5 py-2.5 space-y-2">
+        {sorted.length === 0 && (
+          <div className="px-1 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            No comments yet. Select text in the doc and click the comment bubble that appears to leave one.
+          </div>
+        )}
+        {sorted.map((c) => (
+          <div
+            key={c.id}
+            className="group rounded-lg p-2.5 cursor-pointer transition"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+            onClick={() => onScrollTo(c.id)}
+          >
+            <div
+              className="text-[10.5px] leading-snug mb-1.5 pl-1.5 line-clamp-2"
+              style={{ color: 'var(--nav-inactive-color)', borderLeft: '2px solid rgba(147,51,234,0.5)' }}
+            >
+              "{c.anchor_text}"
+            </div>
+            <div className="flex items-start gap-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11.5px] font-semibold truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>{c.user_name}</span>
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{relativeTime(c.created_at)}</span>
+                  {c.visibility === 'private' && (
+                    <span className="text-[9.5px] shrink-0 px-1 py-px rounded" style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-nest)' }} title="Only visible to you">
+                      only me
+                    </span>
+                  )}
+                </div>
+                <div className="text-[12px] leading-snug whitespace-pre-wrap" style={{ color: 'rgb(var(--ink-rgb))' }}>{c.body}</div>
+              </div>
+              {c.user_id === currentUserId && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+                  title="Delete comment"
+                  className="shrink-0 flex items-center justify-center w-5 h-5 rounded opacity-0 group-hover:opacity-100 transition"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <path d="M4 4l10 10M14 4L4 14" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2472,7 +2727,7 @@ function DocPaneViewer({
   paneIndex = 0, paneDocPath, onPaneDocPathChange, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane,
   outlineOpen: outlineOpenProp, onOutlineOpenChange, toolbarCompact = false,
 }: DocPaneProps) {
-  const { setBusy, view, setView, event, flowsIndex, db, update } = useApp();
+  const { setBusy, view, setView, event, flowsIndex, db, update, currentUser, currentTeam } = useApp();
   // Folder-of-docx import files every doc it finds into a new Warroom folder
   // named after the OS folder it came from — aliased to avoid colliding with
   // useApp()'s own `update` above, which mutates the db, not folder assignments.
@@ -2640,6 +2895,41 @@ function DocPaneViewer({
   const [credLoading, setCredLoading] = useState(false);
   const [credError, setCredError] = useState('');
   const credHashRef = useRef('');
+  // Doc comments (Google-Docs style, team-visible by default). commentsVisible
+  // is a single combined on/off — the ⌘⇧C shortcut and the toolbar toggle both
+  // flip it, hiding the panel AND every highlight together (not two separate
+  // states), matching what was asked for directly.
+  const [comments, setComments] = useState<DocComment[]>([]);
+  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+  const [commentsVisible, setCommentsVisible] = useState(
+    () => localStorage.getItem('warroom-doc-comments-visible') !== 'false'
+  );
+  const [pendingComment, setPendingComment] = useState<{ range: Range; x: number; y: number; quote: string } | null>(null);
+  const [composerVisibility, setComposerVisibility] = useState<'team' | 'private'>('team');
+  const [composerBody, setComposerBody] = useState('');
+  const [composerPosting, setComposerPosting] = useState(false);
+  const commentRangesRef = useRef<Map<string, Range>>(new Map());
+  function toggleCommentsVisible() {
+    setCommentsVisible(v => {
+      const next = !v;
+      try { localStorage.setItem('warroom-doc-comments-visible', String(next)); } catch { /* ignore */ }
+      // Hiding closes the panel and cancels any open composer too — "hides the
+      // comments and the highlight" means a genuinely clean read, not just the
+      // in-text highlight with the thread list still sitting open.
+      if (!next) { setCommentsPanelOpen(false); setPendingComment(null); }
+      return next;
+    });
+  }
+  // The Comments toolbar button opens the panel — and if comments are
+  // currently hidden, un-hides them first rather than opening a panel full of
+  // threads the user can't otherwise see any highlight for.
+  function toggleCommentsPanel() {
+    if (!commentsVisible) {
+      setCommentsVisible(true);
+      try { localStorage.setItem('warroom-doc-comments-visible', 'true'); } catch { /* ignore */ }
+    }
+    setCommentsPanelOpen((v) => !v);
+  }
   // Highlight-outlier warning dismissals (per-doc, loaded from localStorage)
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3106,7 +3396,7 @@ function DocPaneViewer({
   // ── Selection word-count bubble ─────────────────────────────────────────
   // While text is selected in the doc, float a small pill near the end of the
   // selection showing the spoken word count (same rule as the reading timer).
-  const [selBubble, setSelBubble] = useState<{ x: number; y: number; count: number } | null>(null);
+  const [selBubble, setSelBubble] = useState<{ x: number; y: number; count: number; range: Range } | null>(null);
   useEffect(() => {
     if (step !== 'viewing') { setSelBubble(null); return; }
     let t = 0;
@@ -3120,7 +3410,10 @@ function DocPaneViewer({
       if (!count) { setSelBubble(null); return; }
       const rects = r.getClientRects();
       const last = rects.length ? rects[rects.length - 1] : r.getBoundingClientRect();
-      setSelBubble({ x: last.right, y: last.bottom, count });
+      // Cloned: the live Range mutates/collapses as the selection changes, but
+      // the comment composer needs a snapshot of exactly what was selected at
+      // the moment "Add comment" is clicked, which can be well after this fires.
+      setSelBubble({ x: last.right, y: last.bottom, count, range: r.cloneRange() });
     };
     const onChange = () => { window.clearTimeout(t); t = window.setTimeout(update, 180); };
     // Hide on scroll — the viewport-anchored position goes stale immediately.
@@ -3134,6 +3427,140 @@ function DocPaneViewer({
       wrap?.removeEventListener('scroll', onScroll);
     };
   }, [step]);
+
+  // ── Doc comments ──────────────────────────────────────────────────────────
+  // filePath doubles as this doc's comment key: it's the real path for a
+  // plain file, or the synthetic `oc:<url>` loadOcCase already uses — either
+  // way it's the same identity the rest of this component treats as "which
+  // doc is this."
+  const docKey = filePath;
+
+  // Fetch comments whenever the open doc or team changes. No team, no comments
+  // feature — it's fundamentally a team surface, so the toolbar toggle and
+  // selection popover are hidden entirely rather than shown disabled.
+  useEffect(() => {
+    // Clear synchronously on every docKey change (not just when there's no
+    // team) — otherwise, for the brief window between this doc's DOM already
+    // being rendered and the fetch below resolving, the anchor-resolving
+    // effect would try to place the PREVIOUS doc's comments into the new
+    // doc's text.
+    setComments([]);
+    if (!docKey || !currentTeam) return;
+    let cancelled = false;
+    (async () => {
+      const res = await window.warroom.docComments.get(currentTeam.id, docKey);
+      if (!cancelled && res.ok) setComments(res.data ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, [docKey, currentTeam?.id]);
+
+  // Live updates from teammates — see the subscribe effect in the wrapper
+  // (SpeechDocViewer's default export) for why this listens on a window event
+  // instead of subscribing itself.
+  useEffect(() => {
+    function onChange(e: Event) {
+      const { eventType, row } = (e as CustomEvent).detail ?? {};
+      if (!row || row.doc_key !== docKey) return;
+      setComments((prev) => {
+        if (eventType === 'DELETE') return prev.filter((c) => c.id !== row.id);
+        if (eventType === 'INSERT') return prev.some((c) => c.id === row.id) ? prev : [...prev, row];
+        return prev.map((c) => (c.id === row.id ? row : c)); // UPDATE
+      });
+    }
+    window.addEventListener('warroom-doc-comment-change', onChange);
+    return () => window.removeEventListener('warroom-doc-comment-change', onChange);
+  }, [docKey]);
+
+  // Resolve every comment to a live Range and paint the highlight registry.
+  // Re-runs whenever comments change, the doc (re)renders, or visibility toggles.
+  useEffect(() => {
+    const cont = containerRef.current;
+    const reg = (CSS as any)?.highlights;
+    const H = (window as any)?.Highlight;
+    if (step !== 'viewing' || !cont || !reg || !H) return;
+    const paras = Array.from(cont.querySelectorAll('p'));
+    const ranges = new Map<string, Range>();
+    for (const c of comments) {
+      const r = resolveCommentAnchor(paras, c);
+      if (r) ranges.set(c.id, r);
+    }
+    commentRangesRef.current = ranges;
+    if (commentsVisible && ranges.size) reg.set(COMMENT_HL, new H(...ranges.values()));
+    else reg.delete(COMMENT_HL);
+  }, [comments, step, commentsVisible]);
+
+  // Inject the comment-highlight style once — a light, deliberately distinct
+  // wash so it never reads as one of the document's own cyan/yellow/green
+  // evidence highlights (see DEBATE_DOC_STRUCTURE.md).
+  useEffect(() => {
+    if (document.getElementById('wr-comment-style')) return;
+    const el = document.createElement('style');
+    el.id = 'wr-comment-style';
+    el.textContent = `::highlight(${COMMENT_HL}){background-color:rgba(147,51,234,0.14);}`;
+    document.head.appendChild(el);
+  }, []);
+
+  // ⌘⇧C shows/hides comments and their highlights together. Only the focused
+  // pane responds, same as ⌘F — with 2-3 panes mounted, only one should react.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!focused) return;
+      if (step === 'viewing' && matchesShortcut(e, 'doc-toggle-comments')) {
+        e.preventDefault();
+        toggleCommentsVisible();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focused, step]);
+
+  const scrollToComment = useCallback((id: string) => {
+    const r = commentRangesRef.current.get(id);
+    if (!r) return;
+    const el = r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : (r.startContainer as Element);
+    el?.scrollIntoView({ behavior: 'auto', block: 'center' });
+  }, []);
+
+  function openComposerFromSelection() {
+    if (!selBubble) return;
+    setPendingComment({ range: selBubble.range, x: selBubble.x, y: selBubble.y, quote: selBubble.range.toString() });
+    setComposerVisibility('team');
+    setComposerBody('');
+    setSelBubble(null);
+  }
+
+  async function postComment() {
+    const cont = containerRef.current;
+    if (!pendingComment || !currentTeam || !currentUser || !composerBody.trim() || !cont) return;
+    setComposerPosting(true);
+    try {
+      const { range, quote } = pendingComment;
+      const paras = Array.from(cont.querySelectorAll('p'));
+      const paraIndex = closestParagraphIndex(range.startContainer, paras);
+      if (paraIndex === -1) return;
+      const paraEl = paras[paraIndex];
+      const paraText = paraEl.textContent ?? '';
+      const startOffset = textOffsetWithinParagraph(paraEl, range.startContainer, range.startOffset);
+      const occurrence = countOccurrences(paraText.slice(0, startOffset), quote);
+      const res = await window.warroom.docComments.add({
+        teamId: currentTeam.id, docKey, docName: fileName,
+        userId: currentUser.id, userName: currentUser.displayName,
+        visibility: composerVisibility, anchorText: quote,
+        anchorParaIndex: paraIndex, anchorOccurrence: occurrence,
+        body: composerBody.trim(),
+      });
+      if (res.ok && res.data) setComments((prev) => [...prev, res.data]);
+      setPendingComment(null);
+      setComposerBody('');
+    } finally {
+      setComposerPosting(false);
+    }
+  }
+
+  async function deleteComment(id: string) {
+    setComments((prev) => prev.filter((c) => c.id !== id)); // optimistic
+    await window.warroom.docComments.delete(id);
+  }
 
   // Smooth-scroll the document to a heading and flash it briefly.
   const scrollToHeading = useCallback((id: string) => {
@@ -3308,6 +3735,9 @@ function DocPaneViewer({
     setActiveHeadingId(null);
     setDocWords(0);
     headingClassesRef.current = undefined;
+    // A pending composer's Range is anchored into the doc about to be replaced —
+    // meaningless (and possibly detached) once that DOM is torn down.
+    setPendingComment(null);
   }
 
   // Render already-decoded docx bytes: paint the container, then build the
@@ -3946,6 +4376,13 @@ function DocPaneViewer({
                 ai: true,
                 onClick: () => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; }),
               },
+              ...(currentTeam ? [{
+                label: 'Comments',
+                hint: comments.length ? `Comments · ${comments.length}` : 'Comments',
+                icon: <IcoComment active={commentsPanelOpen} />,
+                active: commentsPanelOpen,
+                onClick: toggleCommentsPanel,
+              }] : []),
             ]}
           />
         ) : (
@@ -3964,7 +4401,24 @@ function DocPaneViewer({
               icon={<IcoCrossEx active={cxOpen} />}
               onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
             />
+            {currentTeam && (
+              <ToolbarPill
+                active={commentsPanelOpen}
+                label="Comments"
+                title={comments.length ? `Comments · ${comments.length}` : 'Comments'}
+                icon={<IcoComment active={commentsPanelOpen} />}
+                onClick={toggleCommentsPanel}
+              />
+            )}
           </>
+        )}
+
+        {currentTeam && (
+          <IconBtn
+            icon={<IcoCommentsEye visible={commentsVisible} />}
+            label={commentsVisible ? 'Hide comments and highlights (⌘⇧C)' : 'Show comments and highlights (⌘⇧C)'}
+            onClick={toggleCommentsVisible}
+          />
         )}
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
@@ -3992,6 +4446,81 @@ function DocPaneViewer({
           onOpenInWord={isOc ? undefined : () => window.warroom.shell.openPath(filePath)}
           onExportDocx={exportDocx}
         />
+      )}
+
+      {/* New-comment composer — floats near the selection that triggered it. */}
+      {pendingComment && (
+        <div
+          className="fixed z-50 rounded-xl p-3"
+          style={{
+            left: Math.max(12, pendingComment.x - 260), top: pendingComment.y + 12, width: 280,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-elevated)',
+          }}
+        >
+          <div
+            className="text-[11px] leading-snug mb-2 pl-2 line-clamp-3"
+            style={{ color: 'var(--nav-inactive-color)', borderLeft: '2px solid rgba(147,51,234,0.5)' }}
+          >
+            "{pendingComment.quote}"
+          </div>
+          <textarea
+            autoFocus
+            value={composerBody}
+            onChange={(e) => setComposerBody(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.preventDefault(); setPendingComment(null); }
+              else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); postComment(); }
+            }}
+            placeholder="Comment…"
+            rows={3}
+            className="w-full text-[12.5px] rounded-lg px-2 py-1.5 outline-none resize-none mb-2"
+            style={{ background: 'var(--bg-input)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)' }}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex rounded-lg p-0.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              {([
+                { value: 'team' as const, label: 'Team', title: 'Visible to your whole team (default)' },
+                { value: 'private' as const, label: 'Only me', title: 'Visible only to you' },
+              ]).map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setComposerVisibility(o.value)}
+                  title={o.title}
+                  className="px-2 py-1 rounded-md text-[11px] font-semibold transition"
+                  style={{
+                    background: composerVisibility === o.value ? 'var(--bg-card)' : 'transparent',
+                    color: composerVisibility === o.value ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPendingComment(null)}
+                title="Cancel (Esc)"
+                className="text-[11.5px] font-medium px-2 py-1 rounded-md transition"
+                style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={postComment}
+                disabled={!composerBody.trim() || composerPosting}
+                title="Post comment (⌘Enter)"
+                className="text-[11.5px] font-semibold px-2.5 py-1 rounded-md transition"
+                style={{
+                  color: '#fff', background: 'var(--accent, #4285F4)', border: 'none',
+                  cursor: composerBody.trim() ? 'pointer' : 'default',
+                  opacity: composerBody.trim() && !composerPosting ? 1 : 0.5,
+                }}
+              >
+                Post
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Find bar (top-right overlay) */}
@@ -4203,6 +4732,21 @@ function DocPaneViewer({
               {selBubble.count} word{selBubble.count === 1 ? '' : 's'}
             </div>
           )}
+          {selBubble && currentTeam && commentsVisible && (
+            <button
+              className="fixed z-40 flex items-center justify-center rounded-full transition"
+              style={{
+                left: selBubble.x + 6, top: selBubble.y + 26, width: 24, height: 24,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                boxShadow: 'var(--shadow-elevated)', color: 'var(--nav-inactive-color)', cursor: 'pointer',
+              }}
+              title="Add comment"
+              onMouseDown={(e) => e.preventDefault()} // don't let the click itself collapse the selection
+              onClick={openComposerFromSelection}
+            >
+              <IcoComment />
+            </button>
+          )}
         </div>
         {cxOpen && step === 'viewing' && (
           <CrossExPanel
@@ -4224,6 +4768,15 @@ function DocPaneViewer({
             onClose={() => setCredOpen(false)}
             dismissed={dismissedWarnings}
             onDismiss={dismissWarning}
+          />
+        )}
+        {commentsPanelOpen && commentsVisible && step === 'viewing' && (
+          <CommentsPanel
+            comments={comments}
+            currentUserId={currentUser?.id}
+            onScrollTo={scrollToComment}
+            onDelete={deleteComment}
+            onClose={() => setCommentsPanelOpen(false)}
           />
         )}
       </div>
@@ -4252,6 +4805,9 @@ const SPACE_PEEK_FRACTION = 0.15;
 // offset math has to add up the same widths the row actually renders.
 const DIVIDER_PX = 5;
 const DIVIDER_LOCKED_PX = 1;
+// Drag a divider within this many px of an exact 50/50 split between its two
+// panes and it snaps there — a small magnetic zone around dead center.
+const DIVIDER_SNAP_PX = 10;
 
 /**
  * Pixel width for every open pane, given which (if any) pane has its outline
@@ -4316,6 +4872,24 @@ export default function SpeechDocViewer() {
   const setMainDocPath = useApp((s) => s.setMainDocPath);
   const focusedPane = useApp((s) => s.focusedPane);
   const setFocusedPane = useApp((s) => s.setFocusedPane);
+  const currentTeam = useApp((s) => s.currentTeam);
+
+  // One realtime subscription for doc comments, owned here rather than by each
+  // pane: up to 3 DocPaneViewer instances can be mounted at once, and main.ts
+  // keeps only a single active Supabase channel per `docComments:subscribe`
+  // call — if each pane subscribed independently, whichever unmounted first
+  // would call `unsubscribe` and kill live updates for every other open pane.
+  // This wrapper is the one instance that always exists, so it's the one safe
+  // owner. Panes never call subscribe/unsubscribe themselves; they just listen
+  // for the window event this re-broadcasts and filter by their own doc_key.
+  useEffect(() => {
+    if (!currentTeam) return;
+    window.warroom.docComments.subscribe(currentTeam.id);
+    const off = window.warroom.docComments.onChange((p) => {
+      window.dispatchEvent(new CustomEvent('warroom-doc-comment-change', { detail: p }));
+    });
+    return () => { off(); window.warroom.docComments.unsubscribe(); };
+  }, [currentTeam?.id]);
 
   const pane0Path = view.kind === 'speech-doc' ? (view as any).docPath as string | undefined : undefined;
   const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length;
@@ -4467,10 +5041,20 @@ export default function SpeechDocViewer() {
       const totalWeight = startWeights.slice(0, openPaneCount).reduce((a, b) => a + b, 0) || openPaneCount;
       const deltaWeight = ((ev.clientX - startX) / rowWidthPx) * totalWeight;
       const minW = totalWeight * 0.12;
+      let a = Math.max(minW, startWeights[i] + deltaWeight);
+      let b = Math.max(minW, startWeights[i + 1] - deltaWeight);
+      // Magnetic snap to an exact 50/50 split between these two panes: once
+      // the drag is within DIVIDER_SNAP_PX of dead center, lock to it, so
+      // "roughly halfway" reliably lands on perfectly halfway instead of
+      // needing pixel-perfect aim.
+      const pxPerWeight = rowWidthPx / totalWeight;
+      if (Math.abs(a - b) * pxPerWeight < DIVIDER_SNAP_PX) {
+        a = b = (a + b) / 2;
+      }
       setPaneWeights((prev) => {
         const next = [...prev];
-        next[i] = Math.max(minW, startWeights[i] + deltaWeight);
-        next[i + 1] = Math.max(minW, startWeights[i + 1] - deltaWeight);
+        next[i] = a;
+        next[i + 1] = b;
         return next;
       });
     }
