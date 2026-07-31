@@ -60,7 +60,7 @@ const GROUPS: Group[] = [
   {
     title: 'Speech doc viewer',
     shortcuts: [
-      { id: 'doc-toggle-comments', keys: [`${MOD}⇧C`], label: 'Show / hide comments and their highlights' },
+      { id: 'doc-insert-comment', keys: [`${MOD}⌥M`], label: 'Comment on the selected text' },
     ],
   },
   {

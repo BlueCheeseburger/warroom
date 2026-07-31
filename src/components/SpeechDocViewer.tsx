@@ -94,9 +94,9 @@ function setOcCached(url: string, base64: string) {
 
 // ── Icon buttons with tooltip ──────────────────────────────────────────────
 
-function IconBtn({ icon, label, onClick, danger, tooltipAlign = 'center' }: {
+function IconBtn({ icon, label, onClick, danger, active, tooltipAlign = 'center' }: {
   icon: React.ReactNode; label: string; onClick: () => void;
-  danger?: boolean; tooltipAlign?: 'left' | 'center' | 'right';
+  danger?: boolean; active?: boolean; tooltipAlign?: 'left' | 'center' | 'right';
 }) {
   const [tip, setTip] = useState(false);
   const tipStyle: React.CSSProperties =
@@ -108,9 +108,14 @@ function IconBtn({ icon, label, onClick, danger, tooltipAlign = 'center' }: {
       <button
         onClick={onClick}
         className="flex items-center justify-center w-7 h-7 rounded-lg transition"
-        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: danger ? 'rgb(var(--danger-rgb))' : 'var(--nav-inactive-color)' }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        style={{
+          background: active ? 'var(--nav-active-bg)' : 'transparent',
+          boxShadow: active ? 'var(--nav-active-shadow)' : 'none',
+          border: 'none', cursor: 'pointer',
+          color: danger ? 'rgb(var(--danger-rgb))' : active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+        }}
+        onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
         {icon}
       </button>
@@ -281,23 +286,6 @@ function IcoComment({ active }: { active?: boolean }) {
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={active ? 1.9 : 1.6} strokeLinecap="round" strokeLinejoin="round">
       <path d="M2.5 4.5A1.5 1.5 0 0 1 4 3h10a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 14 12H7l-3 2.7V12H4a1.5 1.5 0 0 1-1.5-1.5z" />
       <path d="M9 6.3v3.4M7.3 8h3.4" opacity={active ? 1 : 0.75} />
-    </svg>
-  );
-}
-
-// Open / crossed-out eye — toggles comments + their highlights visible or hidden.
-function IcoCommentsEye({ visible }: { visible: boolean }) {
-  return visible ? (
-    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 9s2.8-5.5 8-5.5S17 9 17 9s-2.8 5.5-8 5.5S1 9 1 9z" />
-      <circle cx="9" cy="9" r="2.2" />
-    </svg>
-  ) : (
-    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 9s2.8-5.5 8-5.5c1.5 0 2.8.4 3.9 1M17 9s-1 2-2.9 3.5M4.4 4.4C2.4 5.7 1 9 1 9" />
-      <path d="M6.8 10.7A2.2 2.2 0 0 1 9 6.8" />
-      <path d="M9.3 11.2c.9-.1 1.6-.8 1.9-1.6" />
-      <line x1="1.5" y1="1.5" x2="16.5" y2="16.5" />
     </svg>
   );
 }
@@ -2895,12 +2883,11 @@ function DocPaneViewer({
   const [credLoading, setCredLoading] = useState(false);
   const [credError, setCredError] = useState('');
   const credHashRef = useRef('');
-  // Doc comments (Google-Docs style, team-visible by default). commentsVisible
-  // is a single combined on/off — the ⌘⇧C shortcut and the toolbar toggle both
-  // flip it, hiding the panel AND every highlight together (not two separate
-  // states), matching what was asked for directly.
+  // Doc comments (Google-Docs style, team-visible by default). One combined
+  // on/off: the single Comments toolbar button both opens the sidebar and
+  // shows every highlight (closing it hides both), matching how the button
+  // itself is described — there's no separate "hide highlights only" state.
   const [comments, setComments] = useState<DocComment[]>([]);
-  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(
     () => localStorage.getItem('warroom-doc-comments-visible') !== 'false'
   );
@@ -2913,22 +2900,9 @@ function DocPaneViewer({
     setCommentsVisible(v => {
       const next = !v;
       try { localStorage.setItem('warroom-doc-comments-visible', String(next)); } catch { /* ignore */ }
-      // Hiding closes the panel and cancels any open composer too — "hides the
-      // comments and the highlight" means a genuinely clean read, not just the
-      // in-text highlight with the thread list still sitting open.
-      if (!next) { setCommentsPanelOpen(false); setPendingComment(null); }
+      if (!next) setPendingComment(null); // closing cancels any open composer too
       return next;
     });
-  }
-  // The Comments toolbar button opens the panel — and if comments are
-  // currently hidden, un-hides them first rather than opening a panel full of
-  // threads the user can't otherwise see any highlight for.
-  function toggleCommentsPanel() {
-    if (!commentsVisible) {
-      setCommentsVisible(true);
-      try { localStorage.setItem('warroom-doc-comments-visible', 'true'); } catch { /* ignore */ }
-    }
-    setCommentsPanelOpen((v) => !v);
   }
   // Highlight-outlier warning dismissals (per-doc, loaded from localStorage)
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
@@ -3500,25 +3474,43 @@ function DocPaneViewer({
     document.head.appendChild(el);
   }, []);
 
-  // ⌘⇧C shows/hides comments and their highlights together. Only the focused
-  // pane responds, same as ⌘F — with 2-3 panes mounted, only one should react.
+  // ⌘⌥M (Ctrl+Alt+M on Windows) — Google Docs' own "insert comment" shortcut
+  // — opens the comment composer on the current text selection. Only fires
+  // with a live, non-collapsed selection, same as clicking the floating
+  // comment bubble; a bare keypress with nothing selected does nothing.
+  // Only the focused pane responds, same as ⌘F — with 2-3 panes mounted,
+  // only one should react.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!focused) return;
-      if (step === 'viewing' && matchesShortcut(e, 'doc-toggle-comments')) {
+      if (step === 'viewing' && matchesShortcut(e, 'doc-insert-comment')) {
+        if (!currentTeam || !selBubble) return;
         e.preventDefault();
-        toggleCommentsVisible();
+        if (!commentsVisible) {
+          setCommentsVisible(true);
+          try { localStorage.setItem('warroom-doc-comments-visible', 'true'); } catch { /* ignore */ }
+        }
+        openComposerFromSelection();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focused, step]);
+  }, [focused, step, currentTeam, selBubble, commentsVisible]);
 
   const scrollToComment = useCallback((id: string) => {
     const r = commentRangesRef.current.get(id);
     if (!r) return;
-    const el = r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : (r.startContainer as Element);
-    el?.scrollIntoView({ behavior: 'auto', block: 'center' });
+    const el = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : (r.startContainer as Element)) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'auto', block: 'center' });
+    const prevBg = el.style.backgroundColor;
+    const prevTrans = el.style.transition;
+    el.style.transition = 'background-color 0.25s ease';
+    el.style.backgroundColor = 'rgba(147, 51, 234, 0.35)';
+    window.setTimeout(() => {
+      el.style.backgroundColor = prevBg;
+      window.setTimeout(() => { el.style.transition = prevTrans; }, 300);
+    }, 650);
   }, []);
 
   function openComposerFromSelection() {
@@ -4376,13 +4368,6 @@ function DocPaneViewer({
                 ai: true,
                 onClick: () => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; }),
               },
-              ...(currentTeam ? [{
-                label: 'Comments',
-                hint: comments.length ? `Comments · ${comments.length}` : 'Comments',
-                icon: <IcoComment active={commentsPanelOpen} />,
-                active: commentsPanelOpen,
-                onClick: toggleCommentsPanel,
-              }] : []),
             ]}
           />
         ) : (
@@ -4401,22 +4386,14 @@ function DocPaneViewer({
               icon={<IcoCrossEx active={cxOpen} />}
               onClick={() => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; })}
             />
-            {currentTeam && (
-              <ToolbarPill
-                active={commentsPanelOpen}
-                label="Comments"
-                title={comments.length ? `Comments · ${comments.length}` : 'Comments'}
-                icon={<IcoComment active={commentsPanelOpen} />}
-                onClick={toggleCommentsPanel}
-              />
-            )}
           </>
         )}
 
         {currentTeam && (
           <IconBtn
-            icon={<IcoCommentsEye visible={commentsVisible} />}
-            label={commentsVisible ? 'Hide comments and highlights (⌘⇧C)' : 'Show comments and highlights (⌘⇧C)'}
+            icon={<IcoComment active={commentsVisible} />}
+            label={comments.length ? `Comments (${comments.length}) · ⌘⌥M` : 'Comments · ⌘⌥M'}
+            active={commentsVisible}
             onClick={toggleCommentsVisible}
           />
         )}
@@ -4770,13 +4747,13 @@ function DocPaneViewer({
             onDismiss={dismissWarning}
           />
         )}
-        {commentsPanelOpen && commentsVisible && step === 'viewing' && (
+        {commentsVisible && step === 'viewing' && (
           <CommentsPanel
             comments={comments}
             currentUserId={currentUser?.id}
             onScrollTo={scrollToComment}
             onDelete={deleteComment}
-            onClose={() => setCommentsPanelOpen(false)}
+            onClose={toggleCommentsVisible}
           />
         )}
       </div>
@@ -4873,6 +4850,8 @@ export default function SpeechDocViewer() {
   const focusedPane = useApp((s) => s.focusedPane);
   const setFocusedPane = useApp((s) => s.setFocusedPane);
   const currentTeam = useApp((s) => s.currentTeam);
+  const forceChatOpen = useApp((s) => s.forceChatOpen);
+  const forceGeminiOpen = useApp((s) => s.forceGeminiOpen);
 
   // One realtime subscription for doc comments, owned here rather than by each
   // pane: up to 3 DocPaneViewer instances can be mounted at once, and main.ts
@@ -4952,13 +4931,23 @@ export default function SpeechDocViewer() {
 
   // Force-collapse the sidebar the moment a 2nd pane opens (default), unless
   // this exact combo has a remembered override; force it back open at 1 pane.
+  // The Warroom AI panel and team chat panel carry the same logic — they're
+  // side panels too, and multi-pane leaves no room for them either. Unlike
+  // the sidebar (which just toggles collapsed/expanded), these panels default
+  // to *closed* far more often, so instead of always force-opening them on
+  // the way out, we restore whatever they were set to right before this
+  // multi-pane stretch began.
   const wasMultiRef = useRef(false);
   const appliedOverrideForRef = useRef<string | null>(null);
+  const chatWasOpenRef = useRef(false);
+  const geminiWasOpenRef = useRef(false);
   useEffect(() => {
     const isMulti = openExtraCount > 0;
     if (!isMulti) {
       if (wasMultiRef.current) {
         window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: false } }));
+        forceChatOpen(chatWasOpenRef.current);
+        forceGeminiOpen(geminiWasOpenRef.current);
       }
       wasMultiRef.current = false;
       appliedOverrideForRef.current = null;
@@ -4966,6 +4955,11 @@ export default function SpeechDocViewer() {
     }
     if (!wasMultiRef.current) {
       window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: true } }));
+      const st = useApp.getState();
+      chatWasOpenRef.current = st.chatOpen;
+      geminiWasOpenRef.current = st.geminiOpen;
+      if (st.chatOpen) forceChatOpen(false);
+      if (st.geminiOpen) forceGeminiOpen(false);
     }
     wasMultiRef.current = true;
     if (comboKey && appliedOverrideForRef.current !== comboKey) {
@@ -4974,6 +4968,8 @@ export default function SpeechDocViewer() {
       if (typeof saved?.sidebarExpanded === 'boolean') {
         window.dispatchEvent(new CustomEvent('warroom-force-sidebar-collapse', { detail: { collapsed: !saved.sidebarExpanded } }));
       }
+      if (typeof saved?.chatOpen === 'boolean') forceChatOpen(saved.chatOpen);
+      if (typeof saved?.geminiOpen === 'boolean') forceGeminiOpen(saved.geminiOpen);
     }
   }, [openExtraCount, comboKey]);
 

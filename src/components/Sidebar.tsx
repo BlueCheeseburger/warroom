@@ -1931,10 +1931,7 @@ function CompareViewsGroup({ items }: { items: CaseItem[] }) {
   }
 
   return (
-    <div className="mb-1">
-      <div className="px-2 pb-0.5 text-[10px] font-semibold tracking-wide uppercase" style={{ color: 'var(--nav-section-color)' }}>
-        Compare views
-      </div>
+    <div className="mb-1 pb-1" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
       {views.map((v) => {
         const names = v.paths.map((p) => (nameFor.get(p) ?? p.split(/[/\\]/).pop() ?? p).replace(/\.docx$/i, ''));
         const label = names.join('  ·  ');

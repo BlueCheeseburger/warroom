@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DB, emptyDB, ChatUser, ChatTeam, ChatMember } from '../types';
 import { loadDB, saveDB } from '../utils/storage';
+import { comboKeyFor, saveComboLayout } from '../utils/docComboLayout';
 
 export type Theme = 'system' | 'light' | 'dark';
 /** Visual direction (look & feel) — independent of light/dark mode. */
@@ -130,6 +131,12 @@ interface AppState {
   // Chat actions
   setChatOpen: (open: boolean) => void;
   setGeminiOpen: (open: boolean) => void;
+  // Force-set variants used only by the speech doc viewer's auto-collapse
+  // effect (opening/leaving a multi-pane view) — unlike setChatOpen/
+  // setGeminiOpen these never record a per-combo override, since a forced
+  // change isn't the user expressing a preference for this combo.
+  forceChatOpen: (open: boolean) => void;
+  forceGeminiOpen: (open: boolean) => void;
   geminiActiveId: string | null;
   setGeminiActiveId: (id: string | null) => void;
   setCurrentUser: (user: ChatUser | null) => void;
@@ -333,8 +340,24 @@ export const useApp = create<AppState>((set, get) => ({
     await saveDB(next);
   },
   setShowOnboarding: (show) => set({ showOnboarding: show }),
-  setChatOpen: (open) => set({ chatOpen: open }),
-  setGeminiOpen: (open) => set({ geminiOpen: open }),
+  setChatOpen: (open) => set((s) => {
+    const comboKey = comboKeyFor([
+      s.view.kind === 'speech-doc' ? (s.view as any).docPath : undefined,
+      s.extraDocPanes[0], s.extraDocPanes[1],
+    ]);
+    if (comboKey) saveComboLayout(comboKey, { chatOpen: open });
+    return { chatOpen: open };
+  }),
+  setGeminiOpen: (open) => set((s) => {
+    const comboKey = comboKeyFor([
+      s.view.kind === 'speech-doc' ? (s.view as any).docPath : undefined,
+      s.extraDocPanes[0], s.extraDocPanes[1],
+    ]);
+    if (comboKey) saveComboLayout(comboKey, { geminiOpen: open });
+    return { geminiOpen: open };
+  }),
+  forceChatOpen: (open) => set({ chatOpen: open }),
+  forceGeminiOpen: (open) => set({ geminiOpen: open }),
   setGeminiActiveId: (id) => set({ geminiActiveId: id }),
   setCurrentUser: (user) => set({ currentUser: user }),
   setCurrentTeam: (team) => set({ currentTeam: team }),

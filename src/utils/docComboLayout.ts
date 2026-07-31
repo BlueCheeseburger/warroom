@@ -17,6 +17,8 @@ export interface ComboLayout {
   paneWidths?: number[]; // fractions summing to 1, one per open pane, in pane order
   outlineOpen?: boolean[]; // one per open pane, in pane order
   sidebarExpanded?: boolean; // manual override recorded while this combo was active; absent = no override
+  chatOpen?: boolean; // same override, for the team chat side panel
+  geminiOpen?: boolean; // same override, for the Warroom AI side panel
   paths?: string[]; // the doc paths this combo is made of, in pane order — lets the sidebar re-open it
   savedAt?: string; // ISO timestamp of when this combo was last open, for newest-first listing
 }
