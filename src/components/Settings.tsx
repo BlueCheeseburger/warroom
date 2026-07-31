@@ -157,8 +157,15 @@ const LMSTUDIO_MODEL_OPTIONS = [
   },
 ] as const;
 
-/** Starting point for the options blob, shown as the placeholder in Settings. */
+/** Starting point for the options blob, shown as the placeholder in Settings
+ *  and auto-filled in on first focus so the user edits instead of typing from scratch. */
 const LMSTUDIO_OPTIONS_EXAMPLE = '{\n  "temperature": 0.1,\n  "max_tokens": 8192,\n  "top_p": 0.95,\n  "ttl": 3600\n}';
+
+/** Same auto-fill treatment for the per-call model override field — every AI
+ *  call in the app already resolves to one of these three tiers (see
+ *  getProviderForTask in electron/main.ts), so this is genuinely "one entry
+ *  per call" without needing a per-feature id for every handler. */
+const LMSTUDIO_PERCALL_EXAMPLE = '{\n  "lite": "google/gemma-4-e4b",\n  "balanced": "google/gemma-4-12b",\n  "best": "google/gemma-4-12b-qat"\n}';
 
 function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
   if (provider === 'gemini') {
@@ -208,6 +215,77 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
     );
   }
   return null;
+}
+
+// ─── Settings outline nav ───────────────────────────────────────────────────
+// Jump-to-section list down the left side, mirroring the `settings-*` ids on
+// each card below in document order. Highlights whichever section is nearest
+// the top of the viewport via IntersectionObserver, so it also works as a
+// passive "where am I" indicator while scrolling, not just a click target.
+
+const SETTINGS_NAV: { id: string; label: string }[] = [
+  { id: 'settings-appearance',      label: 'Appearance' },
+  { id: 'settings-speechdocs',      label: 'Speech docs & cases' },
+  { id: 'settings-general',         label: 'General' },
+  { id: 'settings-event',           label: 'Debate event' },
+  { id: 'settings-apikey',          label: 'AI API key' },
+  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
+  { id: 'settings-gdrive',          label: 'Google Drive' },
+  { id: 'settings-flow',            label: 'Flow' },
+  { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
+  { id: 'settings-storage',         label: 'Storage' },
+  { id: 'settings-documentation',   label: 'Documentation' },
+  { id: 'settings-usermanual',      label: 'User Manual' },
+  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
+  { id: 'settings-importexport',    label: 'Import / Export' },
+  { id: 'settings-more',            label: 'More settings' },
+];
+
+function SettingsOutline() {
+  const [active, setActive] = useState(SETTINGS_NAV[0].id);
+
+  useEffect(() => {
+    const els = SETTINGS_NAV
+      .map((s) => document.getElementById(s.id))
+      .filter((el): el is HTMLElement => !!el);
+    if (els.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: '-88px 0px -65% 0px', threshold: 0 },
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <nav className="hidden lg:block shrink-0 sticky self-start" style={{ width: 172, top: 24 }}>
+      {SETTINGS_NAV.map((s) => {
+        const isActive = active === s.id;
+        return (
+          <button
+            key={s.id}
+            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="w-full text-left px-2.5 py-1.5 rounded-md text-xs transition truncate block"
+            style={{
+              background: isActive ? 'var(--nav-active-bg)' : 'transparent',
+              color: isActive ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+              fontWeight: isActive ? 600 : 400,
+              border: 'none', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+            onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            {s.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
 }
 
 function GDriveSettings() {
@@ -353,11 +431,45 @@ export default function Settings() {
   const [lmModel, setLmModel] = useState(LMSTUDIO_DEFAULT_MODEL);
   const [lmOptions, setLmOptions] = useState('');
   const [lmTools, setLmTools] = useState(true);
+  const [lmPerCallModels, setLmPerCallModels] = useState('');
+  const [lmAdvancedOpen, setLmAdvancedOpen] = useState(false);
   const [lmSaved, setLmSaved] = useState(false);
+  // What's actually persisted — the Save button's label/style is driven off
+  // whether the current fields differ from this, not off an ephemeral flash,
+  // so it doesn't misleadingly say "Save" again just because a re-render or
+  // scroll happened after a successful save.
+  const [lmSnapshot, setLmSnapshot] = useState({
+    baseUrl: LMSTUDIO_DEFAULT_BASE_URL, model: LMSTUDIO_DEFAULT_MODEL, options: '', tools: true, perCallModels: '',
+  });
+  const lmDirty =
+    lmBaseUrl.trim() !== lmSnapshot.baseUrl ||
+    (lmModel.trim() || LMSTUDIO_DEFAULT_MODEL) !== lmSnapshot.model ||
+    lmOptions !== lmSnapshot.options ||
+    lmTools !== lmSnapshot.tools ||
+    lmPerCallModels !== lmSnapshot.perCallModels;
+  // API key box has its own draft-vs-saved gap too (typed but not yet clicked
+  // Save/Edit) — folded into the same "unsaved changes" concept below.
+  const apiKeyDirty = apiProvider !== 'lmstudio' && apiKey !== (savedKeys[apiProvider] ?? '');
   /** Model ids fetched from the running server — null until the user asks for them. */
   const [lmFound, setLmFound] = useState<string[] | null>(null);
+  // Separate from `lmFound` itself so re-collapsing doesn't throw away the last
+  // fetch — clicking "Loaded models" again just toggles visibility unless the
+  // list has never been fetched yet.
+  const [lmLoadedOpen, setLmLoadedOpen] = useState(false);
   const [lmBusy, setLmBusy] = useState<null | 'list' | 'test'>(null);
   const [lmMsg, setLmMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  const lmPerCallModelsError = (() => {
+    const raw = lmPerCallModels.trim();
+    if (!raw) return null;
+    try {
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return 'Must be a JSON object, e.g. { "lite": "…", "balanced": "…", "best": "…" }';
+      return null;
+    } catch (e: any) {
+      return `Not valid JSON — ${e?.message ?? 'check the syntax'}`;
+    }
+  })();
 
   /** Invalid JSON in the options box is surfaced inline; main.ts also ignores it rather than failing a call. */
   const lmOptionsError = (() => {
@@ -545,10 +657,18 @@ export default function Settings() {
       } else {
         setTokenSavingDefault((s as any)?.geminiModel === 'flash-lite');
       }
-      if ((s as any)?.lmstudioBaseUrl) setLmBaseUrl((s as any).lmstudioBaseUrl);
-      if ((s as any)?.lmstudioModel) setLmModel((s as any).lmstudioModel);
-      if (typeof (s as any)?.lmstudioOptions === 'string') setLmOptions((s as any).lmstudioOptions);
-      if ((s as any)?.lmstudioTools !== undefined) setLmTools((s as any).lmstudioTools !== false);
+      const lmBaseUrlLoaded = (s as any)?.lmstudioBaseUrl || LMSTUDIO_DEFAULT_BASE_URL;
+      const lmModelLoaded = (s as any)?.lmstudioModel || LMSTUDIO_DEFAULT_MODEL;
+      const lmOptionsLoaded = typeof (s as any)?.lmstudioOptions === 'string' ? (s as any).lmstudioOptions : '';
+      const lmToolsLoaded = (s as any)?.lmstudioTools !== false;
+      const lmPerCallLoaded = (s as any)?.lmstudioPerCallModels && typeof (s as any).lmstudioPerCallModels === 'object'
+        ? JSON.stringify((s as any).lmstudioPerCallModels, null, 2) : '';
+      setLmBaseUrl(lmBaseUrlLoaded);
+      setLmModel(lmModelLoaded);
+      setLmOptions(lmOptionsLoaded);
+      setLmTools(lmToolsLoaded);
+      setLmPerCallModels(lmPerCallLoaded);
+      setLmSnapshot({ baseUrl: lmBaseUrlLoaded, model: lmModelLoaded, options: lmOptionsLoaded, tools: lmToolsLoaded, perCallModels: lmPerCallLoaded });
       // No 'lmstudio' entry — it's a local server with no key to store.
       setNotifySettingsState({
         notifyPairings:  (s as any)?.notifyPairings  !== false,
@@ -619,18 +739,34 @@ export default function Settings() {
   }
   const LM_NO_BRIDGE = 'Warroom needs a restart to load the LM Studio connection (it is set up when the app starts). Quit and reopen Warroom, then try again.';
 
-  /** Persist the whole LM Studio block at once — URL, model, options, tool toggle. */
+  /** Persist the whole LM Studio block at once — URL, model, options, tool toggle,
+   *  per-call overrides. A malformed per-call JSON block is dropped rather than
+   *  failing the save (same tolerance as the options field — see resolveLmStudioConfig). */
   async function saveLmStudio(patch?: Partial<{ lmstudioModel: string }>) {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    const resolvedModel = (patch?.lmstudioModel ?? lmModel).trim() || LMSTUDIO_DEFAULT_MODEL;
+    let perCallModels: Record<string, string> | undefined;
+    const rawPerCall = lmPerCallModels.trim();
+    if (rawPerCall) {
+      try {
+        const parsed = JSON.parse(rawPerCall);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) perCallModels = parsed;
+      } catch { /* ignored on purpose, same as lmstudioOptions */ }
+    }
     const next = {
       ...s,
       apiProvider: 'lmstudio',
       lmstudioBaseUrl: lmBaseUrl.trim() || LMSTUDIO_DEFAULT_BASE_URL,
-      lmstudioModel: (patch?.lmstudioModel ?? lmModel).trim() || LMSTUDIO_DEFAULT_MODEL,
+      lmstudioModel: resolvedModel,
       lmstudioOptions: lmOptions,
       lmstudioTools: lmTools,
+      lmstudioPerCallModels: perCallModels ?? {},
     };
     await window.warroom?.storage.write('app_settings', next);
+    if (patch?.lmstudioModel !== undefined) setLmModel(resolvedModel);
+    setLmSnapshot({
+      baseUrl: next.lmstudioBaseUrl, model: resolvedModel, options: lmOptions, tools: lmTools, perCallModels: lmPerCallModels,
+    });
     setLmSaved(true);
     setTimeout(() => setLmSaved(false), 2000);
     window.dispatchEvent(new CustomEvent('warroom-settings-change', {
@@ -792,13 +928,41 @@ export default function Settings() {
     }
   }
 
+  // Warn before leaving Settings with an unsaved LM Studio edit or a typed-but-
+  // not-yet-saved API key. Most fields on this page auto-save the instant you
+  // click/toggle them (theme, event, notifications, model picks…) — these two
+  // are the only real "draft" inputs, since they need an explicit Save click.
+  const unsavedRef = React.useRef(false);
+  unsavedRef.current = lmDirty || apiKeyDirty;
+  const settingsViewRef = React.useRef(view);
+  settingsViewRef.current = view;
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!unsavedRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (unsavedRef.current) {
+        const leave = window.confirm('You have unsaved changes in Settings (LM Studio or API key). Leave without saving?');
+        if (!leave) setTimeout(() => setView(settingsViewRef.current), 0);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className="p-8 max-w-xl">
+    <div className="p-8 max-w-5xl mx-auto">
       <div className="label mb-1">Settings</div>
       <h1 className="text-lg font-semibold mb-6 text-ink">App settings</h1>
 
+      <div className="flex items-start gap-8">
+        <SettingsOutline />
+        <div className="flex-1 min-w-0 max-w-2xl">
+
       {/* Appearance */}
-      <div className="glass-card rounded-sm p-4 space-y-4 mb-4">
+      <div id="settings-appearance" className="glass-card rounded-sm p-4 space-y-4 mb-4">
         <div>
           <div className="label mb-1">Theme</div>
           <p className="text-xs mb-3 text-ink/50">
@@ -852,7 +1016,7 @@ export default function Settings() {
       </div>
 
       {/* Speech docs & cases */}
-      <div className="glass-card rounded-sm p-4 space-y-4 mb-4">
+      <div id="settings-speechdocs" className="glass-card rounded-sm p-4 space-y-4 mb-4">
         <div>
           <div className="label mb-1">Speech docs & cases</div>
           <p className="text-xs mb-1 text-ink/50">
@@ -1080,7 +1244,7 @@ export default function Settings() {
       </div>
 
       {/* Event */}
-      <div className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      <div id="settings-event" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div>
           <div className="label mb-1">Debate event</div>
           <p className="text-xs mb-3 text-ink/50">
@@ -1113,7 +1277,7 @@ export default function Settings() {
       </div>
 
       {/* API key */}
-      <div className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      <div id="settings-apikey" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div className="label mb-1">AI API key</div>
 
         {/* Provider toggle — auto-switches on key entry, also manually selectable */}
@@ -1242,14 +1406,23 @@ export default function Settings() {
                   onChange={(e) => setLmModel(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && saveLmStudio()}
                 />
-                <button className="btn text-xs" onClick={fetchLmModels} disabled={lmBusy !== null}>
-                  {lmBusy === 'list' ? 'Checking…' : 'Loaded models'}
+                <button
+                  className="btn text-xs"
+                  onClick={() => {
+                    if (lmLoadedOpen) { setLmLoadedOpen(false); return; }
+                    setLmLoadedOpen(true);
+                    if (!lmFound) fetchLmModels();
+                  }}
+                  disabled={lmBusy !== null}
+                >
+                  {lmBusy === 'list' ? 'Checking…' : lmLoadedOpen ? 'Hide loaded models' : 'Loaded models'}
                 </button>
               </div>
             </div>
 
-            {/* Models actually available on the running server */}
-            {lmFound && lmFound.length > 0 && (
+            {/* Models actually available on the running server — collapses back
+                into the button above instead of staying pinned open once fetched. */}
+            {lmLoadedOpen && lmFound && lmFound.length > 0 && (
               <div>
                 <div className="label mb-1">Loaded models</div>
                 <p className="text-xs mb-2 text-ink/50">Reported by your server — click one to use it.</p>
@@ -1272,51 +1445,102 @@ export default function Settings() {
               </div>
             )}
 
-            {/* Request options */}
-            <div>
-              <div className="label mb-1">Model options <span className="opacity-50 font-normal">(optional)</span></div>
-              <p className="text-xs mb-2 text-ink/50 leading-relaxed">
-                JSON merged into every request, overriding Warroom's defaults — <code>temperature</code>,{' '}
-                <code>max_tokens</code>, <code>top_p</code>, <code>top_k</code>,{' '}
-                <code>repeat_penalty</code>, <code>seed</code>, and <code>ttl</code> (seconds before
-                LM Studio auto-unloads the model). Context length and GPU offload are set in LM Studio
-                itself when you load the model — they aren't settable over its API.
-              </p>
-              <textarea
-                className="input w-full font-mono text-xs"
-                rows={5}
-                spellCheck={false}
-                placeholder={LMSTUDIO_OPTIONS_EXAMPLE}
-                value={lmOptions}
-                onChange={(e) => setLmOptions(e.target.value)}
-              />
-              {lmOptionsError && (
-                <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmOptionsError}</p>
+            {/* Advanced — closed by default so the common path (pick a preset,
+                Save) isn't buried under rarely-touched knobs. */}
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
+              <button
+                onClick={() => setLmAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium transition"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)', opacity: 0.75 }}
+              >
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: lmAdvancedOpen ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }}>
+                  <polyline points="4 2 8 6 4 10" />
+                </svg>
+                Advanced
+              </button>
+
+              {lmAdvancedOpen && (
+                <div className="space-y-4 mt-3">
+                  {/* Request options */}
+                  <div>
+                    <div className="label mb-1">Model options <span className="opacity-50 font-normal">(optional)</span></div>
+                    <p className="text-xs mb-2 text-ink/50 leading-relaxed">
+                      JSON merged into every request, overriding Warroom's defaults — <code>temperature</code>,{' '}
+                      <code>max_tokens</code>, <code>top_p</code>, <code>top_k</code>,{' '}
+                      <code>repeat_penalty</code>, <code>seed</code>, and <code>ttl</code> (seconds before
+                      LM Studio auto-unloads the model). Context length and GPU offload are set in LM Studio
+                      itself when you load the model — they aren't settable over its API.
+                    </p>
+                    <textarea
+                      className="input w-full font-mono text-xs"
+                      rows={5}
+                      spellCheck={false}
+                      placeholder={LMSTUDIO_OPTIONS_EXAMPLE}
+                      value={lmOptions}
+                      onFocus={() => { if (!lmOptions.trim()) setLmOptions(LMSTUDIO_OPTIONS_EXAMPLE); }}
+                      onChange={(e) => setLmOptions(e.target.value)}
+                    />
+                    {lmOptionsError && (
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmOptionsError}</p>
+                    )}
+                  </div>
+
+                  {/* Tool-calling toggle */}
+                  <div>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={lmTools}
+                        onChange={(e) => setLmTools(e.target.checked)}
+                      />
+                      <span className="text-xs text-ink/70 leading-relaxed">
+                        Let the model call Warroom's tools (search cards, read flows, save tournaments…).
+                        Gemma 4 supports this natively, and for models that don't, LM Studio falls back to
+                        a prompt-based format rather than failing — so leave this on unless a model is
+                        clearly struggling with it.
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Per-call model override */}
+                  <div>
+                    <div className="label mb-1">Model per AI call <span className="opacity-50 font-normal">(optional)</span></div>
+                    <p className="text-xs mb-2 text-ink/50 leading-relaxed">
+                      Every AI call in Warroom runs as one of three tiers — <code>lite</code> (cheap/simple
+                      jobs like naming a chat), <code>balanced</code> (normal chat and extraction), or{' '}
+                      <code>best</code> (deep analysis). Set a different loaded model id per tier here; any
+                      tier left out uses the <strong style={{ color: 'var(--ink)' }}>Model</strong> above.
+                    </p>
+                    <textarea
+                      className="input w-full font-mono text-xs"
+                      rows={4}
+                      spellCheck={false}
+                      placeholder={LMSTUDIO_PERCALL_EXAMPLE}
+                      value={lmPerCallModels}
+                      onFocus={() => { if (!lmPerCallModels.trim()) setLmPerCallModels(LMSTUDIO_PERCALL_EXAMPLE); }}
+                      onChange={(e) => setLmPerCallModels(e.target.value)}
+                    />
+                    {lmPerCallModelsError && (
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmPerCallModelsError}</p>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Tool-calling toggle */}
-            <div>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={lmTools}
-                  onChange={(e) => setLmTools(e.target.checked)}
-                />
-                <span className="text-xs text-ink/70 leading-relaxed">
-                  Let the model call Warroom's tools (search cards, read flows, save tournaments…).
-                  Gemma 4 supports this natively, and for models that don't, LM Studio falls back to
-                  a prompt-based format rather than failing — so leave this on unless a model is
-                  clearly struggling with it.
-                </span>
-              </label>
-            </div>
-
-            {/* Save + end-to-end test */}
+            {/* Save + end-to-end test. Save only reads as actionable ("Save",
+                accent) while something differs from what's persisted — once it
+                matches, it settles into the same neutral styling as Test
+                connection and just says "Saved", not a transient checkmark. */}
             <div className="flex items-center gap-2">
-              <button className="btn-primary" onClick={() => saveLmStudio()}>
-                {lmSaved ? 'Saved ✓' : 'Save'}
+              <button
+                className={lmDirty ? 'btn-primary' : 'btn text-xs'}
+                onClick={() => saveLmStudio()}
+                disabled={!lmDirty}
+              >
+                {lmDirty ? 'Save' : 'Saved'}
               </button>
               <button className="btn text-xs" onClick={testLmStudio} disabled={lmBusy !== null}>
                 {lmBusy === 'test' ? 'Testing…' : 'Test connection'}
@@ -1560,7 +1784,7 @@ export default function Settings() {
       )}
 
       {/* OpenCaselist */}
-      <div className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      <div id="settings-opencaselist" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div>
           <div className="label mb-1">OpenCaselist / Tabroom login</div>
           <p className="text-xs mb-2 text-ink/50">
@@ -1907,7 +2131,7 @@ export default function Settings() {
       </div>
 
       {/* Storage */}
-      <div className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      <div id="settings-storage" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div className="label mb-1">Storage</div>
 
         <div className="space-y-2">
@@ -1976,7 +2200,7 @@ export default function Settings() {
       </div>
 
       {/* Documentation */}
-      <div className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
+      <div id="settings-documentation" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
         <div>
           <div className="label mb-1">Documentation</div>
           <p className="text-xs text-ink/50">Full reference for all features, data model, and architecture. Warroom is primarily built for policy debate but also supports PF and LD.</p>
@@ -1990,7 +2214,7 @@ export default function Settings() {
       </div>
 
       {/* User Manual */}
-      <div className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
+      <div id="settings-usermanual" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
         <div>
           <div className="label mb-1">User Manual</div>
           <p className="text-xs text-ink/50">Step-by-step guide to using every feature — navigation, cases, flows, the speech timer, AI tools, and more. Searchable with ⌘F.</p>
@@ -2004,7 +2228,7 @@ export default function Settings() {
       </div>
 
       {/* Keyboard Shortcuts */}
-      <div className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
+      <div id="settings-shortcuts" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
         <div>
           <div className="label mb-1">Keyboard Shortcuts</div>
           <p className="text-xs text-ink/50">
@@ -2021,7 +2245,7 @@ export default function Settings() {
       </div>
 
       {/* Import / Export Settings */}
-      <div className="glass-card rounded-sm p-4 mb-4">
+      <div id="settings-importexport" className="glass-card rounded-sm p-4 mb-4">
         <div className="label mb-1">Import / Export Settings</div>
         <p className="text-xs text-ink/50 mb-3">
           Save your preferences (debate event, AI provider/model, theme, notifications, and more) to a
@@ -2048,7 +2272,7 @@ export default function Settings() {
       </div>
 
       {/* More settings */}
-      <div className="mb-4">
+      <div id="settings-more" className="mb-4">
         <button
           className="flex items-center gap-2 w-full px-1 py-1.5 text-xs font-medium transition"
           style={{ color: 'var(--nav-inactive-color)', background: 'none', border: 'none', cursor: 'pointer' }}
@@ -2136,6 +2360,9 @@ export default function Settings() {
             </div>
           </div>
         )}
+      </div>
+
+        </div>
       </div>
     </div>
   );

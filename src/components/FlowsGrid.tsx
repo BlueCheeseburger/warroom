@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
+import { useMenuA11y } from '../hooks/useMenuA11y';
 import {
   childFolders,
   folderTrail,
@@ -441,8 +442,16 @@ function FlowTile({
         onDragOver={onReorderOver}
         onDragLeave={onReorderLeave}
         onDrop={onReorderDrop}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        onMouseEnter={(e) => {
+          setHover(true);
+          e.currentTarget.style.borderColor = 'var(--accent)';
+          e.currentTarget.style.transform = 'translateY(-1px)';
+        }}
+        onMouseLeave={(e) => {
+          setHover(false);
+          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          e.currentTarget.style.transform = '';
+        }}
         title={flow.name}
         className="rounded-lg overflow-hidden select-none"
         style={{
@@ -517,16 +526,19 @@ function FlowTileMenu({ folderChoices, currentFolderId, onMoveTo, onRename, onDe
   onDelete: () => void;
   onClose: () => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDoc = () => onClose();
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [onClose]);
+  useMenuA11y(true, ref, onClose);
 
   const options = folderChoices.filter((f) => f.id !== currentFolderId);
 
   return (
     <div
+      ref={ref}
       className="glass-popover absolute right-2 z-50 rounded-lg py-1 text-xs shadow-xl"
       style={{ top: '100%', minWidth: 170, maxWidth: 250, border: '1px solid var(--border-subtle)' }}
       onMouseDown={(e) => e.stopPropagation()}

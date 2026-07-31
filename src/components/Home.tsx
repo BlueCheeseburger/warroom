@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
 import { Case, Round, Side, Tournament } from '../types';
 import { GeminiIcon } from './GeminiPanel';
+import { useMenuA11y } from '../hooks/useMenuA11y';
 
 type TournStatus = 'live' | 'upcoming' | 'past';
 
@@ -368,11 +369,10 @@ function FloatingMenu({ x, y, items, onClose }: {
     function down(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function key(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
     document.addEventListener('mousedown', down);
-    document.addEventListener('keydown', key);
-    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+    return () => document.removeEventListener('mousedown', down);
   }, [onClose]);
+  useMenuA11y(true, ref, onClose);
 
   // Clamp to viewport
   const left = Math.min(x, window.innerWidth - 145);
@@ -429,9 +429,9 @@ function BigStat({ label, value, sub, accent }: { label: string; value: number; 
       onMouseEnter={(e) => onCardEnter(e)}
       onMouseLeave={(e) => onCardLeave(e)}
     >
-      <div className="label mb-1">{label}</div>
-      <div className={`text-3xl font-bold tabular-nums ${ACCENT_CLASSES[accent]}`}>{value}</div>
-      {sub && <div className="text-[11px] mt-1 text-ink/40">{sub}</div>}
+      <div className="label mb-1 truncate">{label}</div>
+      <div className={`text-3xl font-bold tabular-nums truncate ${ACCENT_CLASSES[accent]}`}>{value}</div>
+      {sub && <div className="text-[11px] mt-1 text-ink/40 truncate">{sub}</div>}
     </div>
   );
 }
@@ -961,6 +961,7 @@ function GeminiConvRow({ conv, onOpen, onRename, onDelete }: {
     document.addEventListener('mousedown', outside);
     return () => document.removeEventListener('mousedown', outside);
   }, [menuOpen]);
+  useMenuA11y(menuOpen, menuRef, () => setMenuOpen(false));
 
   useEffect(() => {
     if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
@@ -1084,6 +1085,21 @@ function GeminiConvRow({ conv, onOpen, onRename, onDelete }: {
 
 function QuickActions() {
   const { setView, chatOpen, setChatOpen } = useApp();
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Below this width, two-column text buttons start clipping their labels —
+  // switch to a denser icon-only grid instead of letting text overflow.
+  const [iconOnly, setIconOnly] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setIconOnly(w > 0 && w < 210);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const actions = [
     { label: 'Flow sheet', icon: '⌨', onClick: () => setView({ kind: 'flow' }) },
@@ -1096,20 +1112,23 @@ function QuickActions() {
   ];
 
   return (
-    <div className="glass-card rounded-xl p-4">
+    <div className="glass-card rounded-xl p-4" ref={containerRef}>
       <div className="label mb-3">Quick actions</div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className={iconOnly ? 'grid grid-cols-4 gap-2' : 'grid grid-cols-2 gap-2'}>
         {actions.map((a) => (
           <button
             key={a.label}
             onClick={a.onClick}
-            className="flex flex-col items-start rounded-lg px-3 py-2.5 text-left"
+            title={a.label}
+            className={iconOnly
+              ? 'flex items-center justify-center rounded-lg py-2.5'
+              : 'flex flex-col items-start rounded-lg px-3 py-2.5 text-left'}
             style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', ...CARD_BASE }}
             onMouseEnter={(e) => onCardEnter(e)}
             onMouseLeave={(e) => onCardLeave(e)}
           >
-            <span className="text-base mb-1">{a.icon}</span>
-            <span className="text-xs font-medium text-ink">{a.label}</span>
+            <span className={iconOnly ? 'text-base' : 'text-base mb-1'}>{a.icon}</span>
+            {!iconOnly && <span className="text-xs font-medium text-ink truncate w-full">{a.label}</span>}
           </button>
         ))}
       </div>
@@ -1162,9 +1181,9 @@ export function ImpactCalcCard() {
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
               style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)' }}
             >
-              <span className="text-sm leading-none">{f.icon}</span>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-ink/80 leading-tight">{f.label}</div>
+              <span className="text-sm leading-none shrink-0">{f.icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold text-ink/80 leading-tight truncate">{f.label}</div>
                 <div className="text-[10px] text-ink/40 truncate">{f.sub}</div>
               </div>
             </div>

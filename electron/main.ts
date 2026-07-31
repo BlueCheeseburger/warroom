@@ -698,10 +698,12 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   return 'balanced';
 }
 
-/** Reads app_settings and resolves the LM Studio config. */
-async function lmstudioConfig(): Promise<LmStudioConfig> {
+/** Reads app_settings and resolves the LM Studio config. `tier` applies the
+ *  Advanced per-call model override in Settings when set — see
+ *  resolveLmStudioConfig's doc comment in electron/lmstudio.ts. */
+async function lmstudioConfig(tier?: ModelTier): Promise<LmStudioConfig> {
   const s = await readJson('app_settings').catch(() => null) as any;
-  return resolveLmStudioConfig(s);
+  return resolveLmStudioConfig(s, tier);
 }
 
 /** POST to LM Studio's OpenAI-compatible chat endpoint, mapping both failure kinds. */
@@ -743,12 +745,15 @@ async function getProviderForTask(
   const provider: Provider = s?.apiProvider ?? 'gemini';
 
   if (provider === 'lmstudio') {
-    // No tiers: one locally-loaded model serves every task, so `taskTier` is
-    // deliberately ignored here. The `apiKey` is a placeholder, not a credential
-    // — LM Studio needs none — and returning a non-empty string keeps the
-    // `if (!apiKey) throw 'NO_KEY'` guard in callAI and the agent turn meaningful
-    // for the hosted providers without every call site special-casing local mode.
-    const { model } = await lmstudioConfig();
+    // No cost tiers of its own — one locally-loaded model serves every task —
+    // but `taskTier` still selects a per-call override if the user set one in
+    // Settings → Advanced (lmstudioPerCallModels). 'user' means "whatever the
+    // user is driving directly", which has no tier-specific override slot.
+    // The `apiKey` is a placeholder, not a credential — LM Studio needs none —
+    // and returning a non-empty string keeps the `if (!apiKey) throw 'NO_KEY'`
+    // guard in callAI and the agent turn meaningful for the hosted providers
+    // without every call site special-casing local mode.
+    const { model } = await lmstudioConfig(taskTier === 'user' ? undefined : taskTier);
     return { provider, modelId: model, apiKey: 'local' };
   }
 

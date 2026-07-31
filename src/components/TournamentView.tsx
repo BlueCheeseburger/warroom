@@ -579,6 +579,12 @@ function ImportFromEmailModal({ tournamentId, onDone }: { tournamentId: string; 
   // Abort flag — if user cancels/re-pastes before pipeline finishes, discard results
   const pipelineActive = React.useRef(false);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { pipelineActive.current = false; onDone(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onDone]);
+
   function applyParsed(d: { round: number; side: 'aff' | 'neg'; room: string | null; time: string | null; aff_team: string; neg_team: string; isBye?: boolean; judge?: string | null }) {
     setNum(d.round ?? 1);
     setSide(d.side ?? 'aff');

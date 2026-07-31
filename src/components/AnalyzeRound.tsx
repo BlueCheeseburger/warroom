@@ -205,6 +205,12 @@ export default function AnalyzeRound({
   const [docsLoading, setDocsLoading] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const [pendingQuestion, setPendingQuestion] = useState<AIQuestion | null>(null);
   const [clarifications, setClarifications] = useState<AIClarification[]>([]);
   const [answering, setAnswering] = useState(false);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
 import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks, readSpeechDocRecents, writeSpeechDocRecents } from '../utils/caseItems';
+import { useMenuA11y } from '../hooks/useMenuA11y';
 import {
   useCaseFolders,
   childFolders,
@@ -807,6 +808,7 @@ function ItemMenu({ folderChoices, currentFolderId, onMoveTo, onRename, onDelete
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [onClose]);
+  useMenuA11y(true, ref, onClose);
 
   const moveOptions = folderChoices.filter((f) => f.id !== currentFolderId);
 
@@ -871,6 +873,7 @@ function ItemSelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
+  useMenuA11y(menuOpen, menuRef, () => setMenuOpen(false));
 
   return (
     <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px]"

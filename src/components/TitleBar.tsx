@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp, Theme, DebateEvent } from '../store/appStore';
 import { AIProviderIcon } from './GeminiPanel';
 import { CoinFace, CoinIcon } from './Coin';
+import { useMenuA11y } from '../hooks/useMenuA11y';
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
@@ -126,6 +127,7 @@ function SpeechTimer() {
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
   }, [dropdownOpen]);
+  useMenuA11y(dropdownOpen, dropdownRef, () => setDropdownOpen(false));
 
   function selectSlot(i: number) {
     setSlotIdx(i);
@@ -290,24 +292,27 @@ function SpeechTimer() {
         </button>
       )}
 
-      {/* Speech type dropdown trigger */}
+      {/* Speech type dropdown trigger — fixed width sized to the longest
+          possible label ("Constructive") so switching labels never shifts
+          the coin/nav-arrows to its left (see CLAUDE.md "Top bar / fixed-
+          position UI"). Label itself truncates rather than growing. */}
       <div ref={dropdownRef} style={{ position: 'relative' }}>
         <button
           onClick={() => setDropdownOpen((v) => !v)}
-          className="flex items-center gap-1 px-2 py-0.5 rounded transition"
+          className="flex items-center justify-between gap-1 px-2 py-0.5 rounded transition"
           style={{
             background: dropdownOpen ? 'var(--nav-hover-bg)' : 'transparent',
             color: 'var(--titlebar-label)',
             fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            border: 'none', cursor: 'pointer', minWidth: 90, ...nd,
+            border: 'none', cursor: 'pointer', width: 108, ...nd,
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
           onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
         >
-          {slot.label}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{slot.label}</span>
           {/* viewBox matches the rendered box 1:1 (was an 8×6 viewBox squeezed
               into a 7×7 square, which letterboxed to 7×5.25 and rendered soft). */}
-          <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="1 1 4 5 7 1" />
           </svg>
         </button>
@@ -423,9 +428,12 @@ function SpeechTimer() {
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       >
-        {/* 12px render for a 12-unit viewBox — 1 unit = 1px, so the 1.6 stroke
-            isn't scaled to a fractional width (was 11px for a 12 viewBox). */}
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {/* Viewbox padded 1 unit on every side (13x13 mapped into a 12px box)
+            — the arrowhead's stroke reaches y=1-0.8=0.2 in the unpadded
+            0-12 box, and SVG's default overflow:hidden root clips that top
+            sliver. The pad gives the stroke headroom without changing the
+            path's own coordinates or the rendered icon's apparent size. */}
+        <svg width="12" height="12" viewBox="-0.5 -0.5 13 13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10.5 2.5A5 5 0 1 0 11 6" />
           <polyline points="10.5 1 10.5 4 7.5 4" />
         </svg>
@@ -458,6 +466,7 @@ function CoinFlip() {
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
   }, [open]);
+  useMenuA11y(open, dropdownRef, () => setOpen(false));
 
   // Touch Bar "flip" button: open the popover and run a real flip, visible
   // on-screen (the animation itself can't live on the Touch Bar — see the

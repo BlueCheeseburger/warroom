@@ -54,8 +54,17 @@ export interface LmStudioConfig {
  * A malformed options blob is IGNORED rather than fatal: the user types into that
  * box freely, and a half-finished `{"temp` must never be the reason an AI call
  * fails. Settings surfaces the JSON error inline instead.
+ *
+ * `tier` is optional and only matters for the Advanced per-call override in
+ * Settings: LM Studio has no cost tiers of its own (one loaded model serves
+ * every task), but every AI call in the app already resolves to 'lite' /
+ * 'balanced' / 'best' before reaching here (see getProviderForTask in
+ * main.ts), so `settings.lmstudioPerCallModels` piggybacks on that existing
+ * granularity instead of needing a new per-feature identifier plumbed through
+ * every call site. Falls back to `lmstudioModel` when no override is set for
+ * that tier, same as when `tier` is omitted entirely.
  */
-export function resolveLmStudioConfig(settings: any): LmStudioConfig {
+export function resolveLmStudioConfig(settings: any, tier?: 'lite' | 'balanced' | 'best'): LmStudioConfig {
   let options: Record<string, any> = {};
   const rawOpts = settings?.lmstudioOptions;
   if (typeof rawOpts === 'string' && rawOpts.trim()) {
@@ -66,9 +75,12 @@ export function resolveLmStudioConfig(settings: any): LmStudioConfig {
   } else if (rawOpts && typeof rawOpts === 'object' && !Array.isArray(rawOpts)) {
     options = rawOpts as Record<string, any>;
   }
+  const defaultModel = String(settings?.lmstudioModel ?? '').trim() || LMSTUDIO_DEFAULT_MODEL;
+  const perCall = settings?.lmstudioPerCallModels;
+  const override = tier && perCall && typeof perCall === 'object' ? String(perCall[tier] ?? '').trim() : '';
   return {
     baseUrl: normalizeLmStudioUrl(settings?.lmstudioBaseUrl),
-    model: String(settings?.lmstudioModel ?? '').trim() || LMSTUDIO_DEFAULT_MODEL,
+    model: override || defaultModel,
     options,
     // Defaults ON: opt-out, not opt-in, so tool-capable local models work with no setup.
     sendTools: settings?.lmstudioTools !== false,

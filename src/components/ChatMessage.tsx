@@ -202,6 +202,14 @@ function MessageText({ content }: { content: string }) {
 function ImageAttachment({ attachment }: { attachment: any }) {
   const [lightbox, setLightbox] = React.useState(false);
   const src = attachment.data?.src;
+
+  React.useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [lightbox]);
+
   if (!src) return null;
   return (
     <>

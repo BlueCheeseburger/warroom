@@ -490,16 +490,21 @@ Instead of a cloud API, Warroom can talk to **LM Studio** — a free app that ru
 **Model options**
 Three presets are offered: **Gemma 4 12B QAT** (near-12B quality, much smaller memory footprint), **Gemma 4 12B** (the default — strongest, needs the most RAM/VRAM), and **Gemma 4 E4B** (fastest and lightest, use this if the 12B models are slow or run out of memory).
 
-These are just shortcuts. The exact model id depends on how you downloaded it, so you can type **any** model id, or pick from **Loaded models** — that list comes from your own server, so it's always right.
+These are just shortcuts. The exact model id depends on how you downloaded it, so you can type **any** model id, or pick from **Loaded models** — that list comes from your own server, so it's always right. Click **Loaded models** again to collapse the list back into the button.
 
-**Model options box (optional)**
-JSON that gets merged into every request, overriding Warroom's defaults — `temperature`, `max_tokens`, `top_p`, `top_k`, `repeat_penalty`, `seed`, and `ttl` (seconds before LM Studio unloads the model to free memory). For example:
+**Advanced (collapsed by default)**
+Click **Advanced** to reveal the request-options JSON, the tool-calling checkbox, and per-call model overrides — kept closed since the default model + Save is all most people need.
 
-```json
-{ "temperature": 0.1, "max_tokens": 8192, "ttl": 3600 }
-```
+- **Model options** — JSON merged into every request, overriding Warroom's defaults — `temperature`, `max_tokens`, `top_p`, `top_k`, `repeat_penalty`, `seed`, and `ttl` (seconds before LM Studio unloads the model to free memory). Clicking into the empty box fills in a working example you can edit instead of typing from scratch:
 
-Context length and GPU offload aren't in here — those are set inside LM Studio when you load the model, because its API doesn't accept them.
+  ```json
+  { "temperature": 0.1, "max_tokens": 8192, "ttl": 3600 }
+  ```
+
+  Context length and GPU offload aren't in here — those are set inside LM Studio when you load the model, because its API doesn't accept them.
+- **Model per AI call** — every AI call in Warroom already runs as one of three tiers (cheap/simple, normal, or deep-analysis). This box lets you point each tier at a different loaded model, e.g. a small fast model for the cheap tier and a bigger one for deep analysis. Any tier you leave out uses the **Model** picked above.
+
+The **Save** button only reads as active (and says "Save") while something here differs from what's actually saved — once it matches, it says "Saved" and looks like the Test connection button next to it, not an orange action button.
 
 **Things to expect**
 - **It's slower than the cloud.** A 12B model on a laptop can take a while on long jobs like Auto Flow or Round Analysis. Warroom waits up to 10 minutes before giving up. If you're hitting that, switch to Gemma 4 E4B.
@@ -672,8 +677,8 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 ### Customizing shortcuts
 Most of the shortcuts above (not the plain typing/navigation ones like Enter, Tab, or arrow keys) can be **disabled or rebound** to a different combo from the **⌘/** shortcuts list:
 
-- **Disable one**: click the small power icon to the right of its key badge — it turns red and the key dims with a line through it. Click again to re-enable.
-- **Rebind one**: double-click its key badge, then press your new combo (it must include ⌘/Ctrl or ⌥ — Shift alone isn't accepted, since Shift+letter is just typing a capital letter). Press Esc to cancel instead. If your combo is already used by another active shortcut, it'll tell you and ask for a different one.
+- **Disable one**: click its key badge — hovering first shows a faint strikethrough preview, and clicking turns the badge red with a full strikethrough. Click again to re-enable.
+- **Rebind one**: click the pencil icon to the shortcut's left, then press your new combo (it must include ⌘/Ctrl or ⌥ — Shift alone isn't accepted, since Shift+letter is just typing a capital letter). Press Esc to cancel instead. If your combo is already used by another active shortcut, it'll tell you and ask for a different one.
 - **Reset one back to default**: a small "reset" link appears next to any shortcut you've customized.
 - A few multi-key groups (jumping between sheets ⌘1–9, moving a row ⌘↑/⌘↓) can be disabled but not individually rebound, since they're not a single combo.
 

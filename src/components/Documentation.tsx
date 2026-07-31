@@ -454,11 +454,11 @@ export default function Documentation() {
             speech doc viewer, and flows — one toggle or rebind, three call sites).
           </P>
           <P>
-            Two separate controls, no checkboxes: a small power icon sits to the right of a shortcut's
-            key badge — click it to disable/re-enable (the key dims and gets struck through, the icon
-            turns red while off). It stays visibly present rather than hover-only, since it's meant to
-            read as a real button. <strong>Double-click the key badge itself</strong> to rebind — the
-            keys turn into a "Press new keys…" prompt, and the next keydown with{' '}
+            Two separate controls that never share a gesture: <strong>click a shortcut's key badge
+            itself</strong> to disable/re-enable it — hovering previews a faint strikethrough across the
+            whole badge, and a disabled badge settles into a persistent red tint + red strikethrough (not
+            just dimmed text). A separate <strong>pencil icon to the shortcut's left</strong> opens
+            rebinding — the keys turn into a "Press new keys…" prompt, and the next keydown with{' '}
             <Code>⌘</Code>/<Code>Ctrl</Code> or <Code>⌥</Code> held becomes the new binding{' '}
             (<Code>isBindingValid</Code> rejects anything without a real modifier — Shift alone doesn't
             count, since Shift+letter is just typing a capital letter in a text field, and this runs
@@ -2050,7 +2050,7 @@ export default function Documentation() {
               </div>
               <div>
                 <span className="font-semibold text-ink">LM Studio</span>
-                <span className="ml-2 text-ink/60">Server URL, model id, request options (JSON), and a tool-calling toggle. No API key — see the LM Studio section.</span>
+                <span className="ml-2 text-ink/60">Server URL, model id, and Loaded models. An Advanced section (closed by default) holds request options (JSON), the tool-calling toggle, and a per-tier model override. No API key — see the LM Studio section.</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Gemini model</span>

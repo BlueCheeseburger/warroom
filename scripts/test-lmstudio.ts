@@ -58,6 +58,14 @@ console.log('\nresolveLmStudioConfig');
   eq('custom model trimmed', c.model, 'my/custom-model');
 }
 {
+  const s = { lmstudioModel: 'default-model', lmstudioPerCallModels: { lite: 'lite-model', best: '  spaced-model  ' } };
+  eq('per-call override for tier', resolveLmStudioConfig(s, 'lite').model, 'lite-model');
+  eq('per-call override trimmed', resolveLmStudioConfig(s, 'best').model, 'spaced-model');
+  eq('no override for unset tier falls back to default', resolveLmStudioConfig(s, 'balanced').model, 'default-model');
+  eq('no tier passed falls back to default', resolveLmStudioConfig(s).model, 'default-model');
+  eq('blank override falls back to default', resolveLmStudioConfig({ lmstudioModel: 'default-model', lmstudioPerCallModels: { lite: '   ' } }, 'lite').model, 'default-model');
+}
+{
   const c = resolveLmStudioConfig({ lmstudioOptions: '{"temperature":0.7,"ttl":60}' });
   eq('options parsed from JSON string', c.options, { temperature: 0.7, ttl: 60 });
 }

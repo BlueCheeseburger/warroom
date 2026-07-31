@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
 import gdriveLogo from '../assets/gdrive-logo.png';
 import { importFlowFromXlsx } from '../utils/flowImport';
+import { useMenuA11y } from '../hooks/useMenuA11y';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
   isSelfOrDescendant, flattenFolders, folderTrail, CaseFolder, findFolder,
@@ -817,6 +818,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [menuOpen]);
+  useMenuA11y(menuOpen, menuRef, () => setMenuOpen(false));
 
   useEffect(() => {
     if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
@@ -1476,6 +1478,7 @@ function SelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
+  useMenuA11y(menuOpen, menuRef, () => setMenuOpen(false));
 
   return (
     <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1 rounded-lg text-[11px]"
@@ -1700,6 +1703,7 @@ function NavItem({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [menuOpen]);
+  useMenuA11y(menuOpen, menuRef, () => setMenuOpen(false));
 
   useEffect(() => {
     if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }

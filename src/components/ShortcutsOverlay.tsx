@@ -13,16 +13,19 @@ import {
 // Shortcuts" section + Documentation.tsx to match (same discipline as the docs
 // sync rule for everything else).
 //
-// Disabling: any shortcut with a stable `id` (rebindable or not) can be turned
-// off per-user via the small power icon to the right of its key badge.
-//
-// Rebinding: shortcuts with a DEFAULT_BINDINGS entry (shortcutPrefs.ts) can be
-// remapped to a different combo — double-click the key badge to start
-// "recording" (press any key with ⌘/Ctrl or ⌥ held; Esc cancels). A few
-// multi-key groups (sheet-switching ⌘1-9, the ⌘↑/⌘↓ row-move pair) are
-// disableable but not individually rebindable, since they don't reduce to one
-// combo. Every consuming keydown handler calls matchesShortcut(e, id) so a
-// rebind or disable takes effect everywhere that id is wired up. ⌘/ itself is
+// Disabling and rebinding are deliberately different gestures so they never
+// fight for the same control:
+// - Disabling: click a shortcut's key badge itself — hovering previews a
+//   faint strikethrough, and a disabled badge settles into a red tint + red
+//   strikethrough. Works for any shortcut with a stable `id`.
+// - Rebinding: click the pencil icon to a shortcut's left (only shown for
+//   shortcuts with a DEFAULT_BINDINGS entry in shortcutPrefs.ts) to start
+//   "recording" — press any key with ⌘/Ctrl or ⌥ held; Esc cancels. A few
+//   multi-key groups (sheet-switching ⌘1-9, the ⌘↑/⌘↓ row-move pair) are
+//   disableable but not individually rebindable, since they don't reduce to
+//   one combo.
+// Every consuming keydown handler calls matchesShortcut(e, id) so a rebind or
+// disable takes effect everywhere that id is wired up. ⌘/ itself is
 // disableable/rebindable, but the Settings → Keyboard Shortcuts button always
 // opens this overlay regardless, so it's never a dead end.
 
@@ -87,52 +90,65 @@ const GROUPS: Group[] = [
   },
 ];
 
-function Kbd({ children, disabled, rebindable, onDoubleClick }: {
-  children: React.ReactNode; disabled?: boolean; rebindable?: boolean; onDoubleClick?: () => void;
+// A shortcut's key badge. Clicking it toggles disable — a faint strikethrough
+// previews on hover, and settles into a full red tint + red strikethrough once
+// disabled, so "this click disables it" reads before you commit to the click.
+// Rebinding is a *different* gesture entirely (the pencil button to the row's
+// left) so the two actions never fight for the same control.
+function Kbd({ children, disabled, clickable, onClick, title }: {
+  children: React.ReactNode; disabled?: boolean; clickable?: boolean; onClick?: () => void; title?: string;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const Tag: any = clickable ? 'button' : 'kbd';
   return (
-    <kbd
-      onDoubleClick={onDoubleClick}
-      title={rebindable ? 'Double-click to change' : undefined}
-      className="text-xs font-mono px-1.5 py-0.5 rounded transition"
+    <Tag
+      onClick={clickable ? onClick : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={title}
+      className="relative text-xs font-mono px-1.5 py-0.5 rounded transition"
       style={{
-        background: 'var(--bg-input)',
-        border: '1px solid var(--border-med)',
+        background: disabled ? 'color-mix(in srgb, var(--neg, #ef4444) 16%, var(--bg-input))' : 'var(--bg-input)',
+        border: `1px solid ${disabled ? 'var(--neg, #ef4444)' : 'var(--border-med)'}`,
         boxShadow: disabled ? 'none' : 'inset 0 -1.5px 0 var(--border-med)',
-        color: 'var(--ink)',
-        cursor: rebindable ? 'pointer' : 'default',
-        opacity: disabled ? 0.4 : 1,
-        textDecoration: disabled ? 'line-through' : 'none',
+        color: disabled ? 'var(--neg, #ef4444)' : 'var(--ink)',
+        cursor: clickable ? 'pointer' : 'default',
         userSelect: 'none',
+        overflow: 'hidden',
       }}
     >
       {children}
-    </kbd>
+      {clickable && (
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute', left: 2, right: 2, top: '50%', height: 1,
+            background: 'currentColor',
+            opacity: disabled ? 1 : (hovered ? 0.35 : 0),
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            transition: 'opacity 120ms ease',
+          }}
+        />
+      )}
+    </Tag>
   );
 }
 
-// Small, always-present (not hover-only) power-toggle to the right of a
-// shortcut's key badge — a real, discoverable "disable" control rather than
-// something the user has to know to hover for.
-function DisableToggle({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+// Pencil button to a shortcut's left — the sole entry point into rebinding,
+// kept visually and functionally separate from the disable click on the badge.
+function EditBinding({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      title={disabled ? 'Disabled — click to re-enable' : 'Click to disable'}
-      className="w-5 h-5 flex items-center justify-center rounded transition"
-      style={{
-        opacity: disabled ? 0.85 : 0.4,
-        background: 'transparent',
-        border: 'none',
-        cursor: 'pointer',
-        color: disabled ? 'var(--neg)' : 'var(--nav-inactive-color)',
-      }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = disabled ? '0.85' : '0.4'; }}
+      title="Change this shortcut"
+      className="w-5 h-5 flex items-center justify-center rounded transition shrink-0"
+      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', opacity: 0.55 }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.55'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="10" cy="10" r="7" />
-        <path d="M5.5 5.5l9 9" />
+        <path d="M14.2 3.3a1.5 1.5 0 0 1 2.1 2.1L6.5 15.2l-3 .8.8-3z" />
       </svg>
     </button>
   );
@@ -324,22 +340,20 @@ export default function ShortcutsOverlay() {
                                 reset
                               </button>
                             )}
+                            {rebindable && (
+                              <EditBinding onClick={() => { setRecordError(''); setRecordingId(s.id!); }} />
+                            )}
                             {displayKeys.map((k, j) => (
                               <Kbd
                                 key={j}
                                 disabled={disabled}
-                                rebindable={rebindable}
-                                onDoubleClick={rebindable ? () => { setRecordError(''); setRecordingId(s.id!); } : undefined}
+                                clickable={!!s.id}
+                                title={s.id ? (disabled ? 'Disabled — click to re-enable' : 'Click to disable') : undefined}
+                                onClick={() => { if (s.id) { toggleShortcutDisabled(s.id); bump(); } }}
                               >
                                 {k}
                               </Kbd>
                             ))}
-                            {s.id && (
-                              <DisableToggle
-                                disabled={disabled}
-                                onClick={() => { toggleShortcutDisabled(s.id!); bump(); }}
-                              />
-                            )}
                           </>
                         )}
                       </div>

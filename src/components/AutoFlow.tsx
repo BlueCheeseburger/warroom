@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
 import { AIQuestion, AIClarification, ExtractedFlowCard } from '../types';
 import AIQuestionPrompt from './AIQuestionPrompt';
@@ -146,6 +146,12 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // Preloaded at upload: word count of every tagline, keyed `fileName tag`.
   // Ready to become the AI summary's word cap without recomputing later.
   const wordCounts = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && step !== 'writing') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, step]);
 
   // Target step
   const [targetMode, setTargetMode] = useState<'new' | 'existing'>('new');

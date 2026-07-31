@@ -35,6 +35,12 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     return () => obs.disconnect();
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // selection (step 2) — paragraph-granularity: click to toggle whole paragraphs
   const [includedParas, setIncludedParas] = useState<Set<number>>(new Set());
   const [pickedImages, setPickedImages] = useState<Set<number>>(new Set());
