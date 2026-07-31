@@ -122,7 +122,7 @@ An opponent or judge's Notes section shows a row of pills at the top — **Priva
 - Click a chip to open what it points to. Click the **×** on a chip to remove it.
 - **Private notes**: the tag stays on your device only, pointing at your local copy — nothing is uploaded.
 - **Shared (team) notes**: the tag is uploaded to your team, so it's there next time a teammate opens that opponent/judge. Tagging an OpenCaselist-imported case is instant since it's already fetchable by link. If a tagged flow isn't in your app yet, opening the chip imports a copy for you. If a tagged opponent/judge isn't in your list yet, opening the chip takes you to Scouting so you can search for them.
-- **Tagging a local speech doc**: if that exact file is already in your team's **Team Files**, it's reused automatically — no upload, no prompt. Otherwise you're asked *"Also add '[name]' to Team Files?"* — **Add** puts it in Team Files (so it's browsable there too, not just via this tag) and the tag points at it; **Skip** attaches it to just this tag instead, same as before.
+- **Tagging a local speech doc**: if that exact file is already in your team's **Team Files**, it's reused automatically. Otherwise it's added to Team Files automatically too, no prompt — so it's browsable there as well, not just via this tag.
 - Tags don't update live — like the shared notes themselves, a teammate sees your new tag the next time they open that opponent/judge, not instantly.
 
 ---
@@ -550,26 +550,46 @@ Nearly every "fire it off and wait" AI feature in Warroom (card cutting, Auto Fl
 ---
 
 ## Team Chat
-Chat icon in the title bar.
+Chat icon in the title bar (click again to close it — no separate close button).
 
 - **Sign in**: Settings → Chat
 - **Create team**: in chat panel → "Create team" → share invite code
 - **Join team**: in chat panel → "Join team" → enter invite code
-- **DMs**: click a teammate's name
-- **Share attachments**: cases, blocks, flows, opponents, tournaments, speech docs — all shareable in messages
+- **All chats**: the chat-bubble icon in the header opens a single list of everything you're in — your team room, DMs, and group DMs, each with an identity icon (see "Chat icons" below)
+- **DMs**: pick a teammate (or several, for a group DM) from All Chats
+- **Room/DM name**: shown truncated in the header — hover it to see the full name
+- **Invite code**: moved out of the header; it's in Room Settings (gear icon) now, alongside **Leave room**. DM/group DM settings (gear icon while in a DM) has its own **Leave conversation** button.
+- **Share attachments**: cases, blocks, flows, opponents, tournaments, speech docs — all shareable in messages. In the composer, type **@** to attach or mention anything (there's no separate attach button); pasting a copied image still works too.
+- **Sending a message**: the message appears in the thread immediately. If it fails to actually send, it's pulled back out, your text is restored to the box, and the error shows below the composer — so a slow connection never looks like it silently ate your message.
+- **Send / dictate**: one round button at the end of the composer does double duty — it's the dictation mic when the box is empty, and turns into the Send button the moment you've typed something or attached a file.
 - **Edit / delete**: hover your own message in a room or DM for Edit and Delete buttons
 - **Reply**: hover any message (yours or someone else's) for a Reply button — quotes that message above your new one so context is clear without starting a separate thread. Click the quoted snippet on a sent message to jump back to the original.
 - **Unread badge** shown on chat icon
 - **Encryption**: every message and shared attachment is encrypted on your device (AES-256-GCM) before it's sent, so the cloud server only ever stores scrambled ciphertext — a leak of just the message data reveals nothing. The key is derived from your team's invite code, so keep that code private. Note this is not zero-knowledge encryption: the invite code is also stored on the server (it has to be, to let people join), so it's strong protection against a data leak, not a guarantee that the service operator can't read messages. Warroom AI never reads your team-chat history.
 
+### Chat icons
+Every team room, DM, and group DM gets its own identity icon, used in All Chats, Quick Chat, and elsewhere:
+- **Team room**: a rounded square with the team's initials.
+- **DM**: a circle with that person's initials, on a color that's always the same for them (picked from a small fixed palette, chosen to stay readable in every app theme).
+- **Group DM**: a circle split into up to 4 quadrants, one initial per each of the first 4 people who joined.
+
 ### Team Files
-A file icon in the chat header (next to Direct Messages and Room Settings) opens **Team Files** — a shared file library separate from the message stream, so important docs don't get buried by chatter.
+Team rooms have a shared file library separate from the message stream, so important docs don't get buried by chatter. By default it's a **Chat / Files** bar right under the room name; Settings → Chat can switch that to a single Files icon in the header instead (Settings → Chat → "Team files display"). DMs and group DMs don't get a Files list — attachments there stay in the message stream.
 
 - **Upload**: "+ Add file" → pick a .docx. It's encrypted and shared with the whole team instantly.
+- **Sent in chat, not just uploaded**: a speech doc you attach directly to a team-room message (not via "+ Add file") is automatically added to Team Files too, with the same auto-update watch — you don't have to upload it twice.
 - **Each file shows**: its name, when it was last modified, and who uploaded it.
-- **Auto-update**: if you're the one who uploaded a file, Warroom watches your local copy — the next time you save changes in Word (or wherever you edit it), your team's copy updates automatically, no re-upload needed. This only works while your Warroom app is open on the device you uploaded from; a 🔄 "auto-updating" tag shows on files your device is actively watching.
-- **Open a file**: click its name to view it in the Speech Doc Viewer.
-- **Delete**: only the uploader can delete their own file (trash icon).
+- **Auto-update**: if you're the one who uploaded a file (or sent it as a chat attachment), Warroom watches your local copy — the next time you save changes in Word (or wherever you edit it), your team's copy updates automatically, no re-upload needed. This only works while your Warroom app is open on the device you uploaded from; a 🔄 "auto-updating" tag shows on files your device is actively watching.
+- **Open a file**: click its name to view it in the Speech Doc Viewer (or, for an AI-summarized file, to show the summary — see below).
+- **Remove**: only the uploader sees this (trash icon). Unlike a full delete, it clears the file's content but keeps the row — the name, uploader, and dates stay visible as a record that a file used to be there.
+
+### Large speech docs (over 2MB)
+Speech docs and flows over 2MB can't be sent or uploaded whole. You'll get a choice instead:
+- **Summarize with Warroom AI**: produces a part-by-part summary (tag, cite, and core warrant for every card, in document order) that stands in for the real file — anyone who tries to open the attachment sees the summary instead.
+- **Send name only**: the attachment still shows up with its file name, but no content — this is permanent for that message/upload (there's no later "upgrade to full content").
+
+### Quick Chat
+Off by default (Settings → Chat → "Quick chat"). Turning it on opens a picker where you choose which team room, DMs, and group DMs to pin — each pin shows as its identity icon in the title bar, just left of the main chat icon, and jumps straight to that conversation when clicked. You can also give any pin a keyboard shortcut; the app checks it against every other shortcut in the app (and every other pin) and won't let two collide — if you pick one that's taken, it offers to rebind whichever one you want to change, right there.
 
 ---
 
@@ -609,6 +629,8 @@ Gear icon at bottom of sidebar.
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |
 | Google Drive | OAuth Client ID + Client Secret |
 | Sharing default | "Can edit" or "Can view" for shared attachments |
+| Team files display | Chat/Files toggle bar under the room name (default), or a single Files icon in the header |
+| Quick chat | Off by default. Turning it on opens a picker to choose which team room/DMs/group DMs get pinned to the title bar, with an optional keyboard shortcut per pin — see "Quick Chat" below |
 | Flow | Column colors, new-flow defaults, and live editor behavior — one block, see below |
 | Setup wizard | Re-run onboarding |
 

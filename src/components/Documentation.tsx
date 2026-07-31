@@ -723,12 +723,10 @@ export default function Documentation() {
               <strong>Tagging a local speech doc</strong> — first checked against your team's{' '}
               <strong>Team Files</strong> library (name + exact byte match, decrypted client-side with
               the team key). If a match exists, the tag just points at that existing entry — no
-              re-upload, no prompt. If not, you're asked <em>"Also add '[name]' to Team Files?"</em>{' '}
-              before anything is sent: choosing <strong>Add</strong> encrypts and uploads it into
-              Team Files (capped at 2.5MB, same limit as OpenCaselist caching) and the tag references
-              that entry; choosing <strong>Skip</strong> embeds the (unencrypted) bytes directly on
-              the tag instead, same as before Team Files existed. Either way a teammate opening the
-              tag gets a real, openable copy of the doc.
+              re-upload. If not, it's added automatically, no confirmation: the file is encrypted and
+              uploaded into Team Files (capped at 2.5MB, same limit as OpenCaselist caching) and the
+              tag references that entry, so a teammate opening the tag gets a real, openable copy of
+              the doc.
             </LI>
           </UL>
         </section>
@@ -1916,7 +1914,7 @@ export default function Documentation() {
           </P>
           <UL>
             <LI>Team creation with invite codes; members can join/leave; owner can kick members</LI>
-            <LI>Channel messages and direct messages (DMs) between team members</LI>
+            <LI>Channel messages and direct messages (DMs) between team members, plus group DMs</LI>
             <LI>Message editing and deletion</LI>
             <LI>Quote-reply: hover any message for a Reply button that quotes it above your next message (not a thread — a snapshot of sender name + content, so it stays intact even if the original is later edited or deleted). Clicking a quoted snippet scrolls to the original if still loaded.</LI>
             <LI>Attachments: cases, blocks, flows, opponents, images, speech docs — shared with edit or view permissions</LI>
@@ -1934,17 +1932,62 @@ export default function Documentation() {
             The chat panel is resizable (260–600 px, default 320 px). Width is persisted in
             <Code>localStorage</Code> as <Code>warroom-chat-width</Code>.
           </P>
+          <H3>Composer: send/dictate button, optimistic send, autogrow</H3>
+          <P>
+            <Code>SendDictateButton.tsx</Code> is one icon-only button shared by team chat, DMs,
+            and Warroom AI: a dictation mic when the box is empty, swapping to a send icon once
+            there's content. <Code>variant="solid"</Code> (chat) uses <Code>var(--item-selected-bg)</Code>;{' '}
+            <Code>variant="gradient"</Code> (Warroom AI) uses the same blue→pink gradient as{' '}
+            <Code>.ai-glow-ring</Code> plus a small spark badge. <Code>useAutoGrowTextarea.ts</Code>{' '}
+            grows the composer up to 1/3 of the chat panel's own height (measured via a{' '}
+            <Code>panelRef</Code> on the root container, not the window), then scrolls internally.
+          </P>
+          <P>
+            Sending a message is optimistic: <Code>sendMessage()</Code>/<Code>send()</Code> push a
+            client-generated <Code>tmp-*</Code> id into the message list and clear the composer{' '}
+            <em>before</em> the network call resolves. On success the placeholder is dropped and
+            the authoritative row arrives via the same realtime subscription that delivers other
+            members' messages (it fires for the sender's own inserts too). On failure the
+            placeholder is removed and the composer text/attachments/reply are restored, with the
+            real error shown inline.
+          </P>
+          <H3>Avatars</H3>
+          <P>
+            <Code>Avatar.tsx</Code> is the shared identity icon for a team room, DM, or group DM,
+            used in the all-chats list, Quick Chat, and the pin picker. Team room = rounded square,{' '}
+            <Code>var(--accent)</Code> background, team initials. DM = circle, background from{' '}
+            <Code>paletteColorFor(userId)</Code> (a small hash over a fixed 6-color palette chosen
+            to read on every theme), person's initials. Group DM = circle split into a 2×2 grid,
+            one initial per each of the first 4 members in <Code>channel.members</Code> order.
+          </P>
           <H3>Team Files</H3>
           <P>
-            A file icon in the chat header opens <Code>TeamFiles.tsx</Code> — a per-team file
-            library backed by the <Code>team_files</Code> table, kept separate from the message
-            stream. Each row stores <Code>name</Code> and <Code>data_b64</Code> (the raw file
+            Team rooms (not DMs — DMs stay chat-only) have a per-team file library, <Code>TeamFiles.tsx</Code>,
+            backed by the <Code>team_files</Code> table, kept separate from the message stream.
+            Reached via a Chat/Files toggle bar under the room header by default, or a single Files
+            icon in the header if Settings → Chat → "Team files display" is set to icon mode (
+            <Code>getFilesBarStyle()</Code>/<Code>setFilesBarStyle()</Code> in <Code>chatPrefs.ts</Code>,
+            localStorage key <Code>warroom-files-bar-style</Code>). A speech-doc attachment sent
+            directly in a team-room chat message (not just via "+ Add file") auto-forwards into{' '}
+            <Code>team_files</Code> too, reusing <Code>teamFiles.upload</Code> — see{' '}
+            <Code>forwardSpeechdocToTeamFiles()</Code> in Chat.tsx, fired from{' '}
+            <Code>sendMessage()</Code> after a successful send, skipped for oversized/summarized
+            attachments (nothing to forward).
+          </P>
+          <P>
+            Each row stores <Code>name</Code> and <Code>data_b64</Code> (the raw file
             bytes, base64) encrypted client-side with the team key exactly like message content;
             <Code>uploader_name</Code> stays plaintext, the same tier as a message's sender name.
             The list shows file name, "Modified &lt;relative time&gt;", and uploader. Opening a
             file decrypts <Code>data_b64</Code>, writes it to a temp file via <Code>fs.writeTempFile</Code>,
-            and opens it in the Speech Doc Viewer. Only the uploader can delete their own file
-            (RLS-enforced, same pattern as message edit/delete).
+            and opens it in the Speech Doc Viewer.
+          </P>
+          <P>
+            <strong>Remove vs. delete:</strong> the trash icon (uploader only) calls{' '}
+            <Code>chat:removeTeamFileContent</Code>, which clears <Code>data_b64</Code> and sets{' '}
+            <Code>removed = true</Code> but keeps the row — name, uploader, and dates stay visible
+            as a record. This is distinct from <Code>chat:deleteTeamFile</Code> (a full row delete,
+            RLS-scoped to the uploader), which the UI no longer calls but which still exists.
           </P>
           <P>
             <strong>Auto-update</strong> works by having the uploader's own device watch the local
@@ -1967,6 +2010,48 @@ export default function Documentation() {
             restart without re-uploading. This means auto-update only works while the uploader's
             own Warroom app is running — teammates just see <Code>updated_at</Code> move and
             re-open the file for the latest version.
+          </P>
+          <H3>Oversized attachments (2MB cap) and AI summarization</H3>
+          <P>
+            <Code>fileSizeGate.ts</Code> defines <Code>MAX_ATTACHMENT_BYTES</Code> (2MB). Both the
+            chat composer's speechdoc/flow mention-attach (Chat.tsx <Code>handleMentionSelect</Code>)
+            and Team Files' "+ Add file" (<Code>TeamFiles.tsx</Code> <Code>handleUpload</Code>)
+            measure the source before sending, and show <Code>OversizedFilePopup.tsx</Code> when
+            it's over the cap. "Send name only" attaches/uploads a placeholder (
+            <Code>{'{ oversized: true, sizeBytes }'}</Code> for chat, empty <Code>data_b64</Code>{' '}
+            for Team Files) with no real content, permanently — there is no later "upgrade to full
+            content" path. "Summarize with Warroom AI" calls the new{' '}
+            <Code>speechdoc:summarizeForAttachment</Code> IPC handler with the already-extracted
+            doc text (chat/Team Files both call <Code>speechdoc:extract</Code> client-side first,
+            so the handler never re-parses the docx itself) and the <Code>cx_debate</Code> skill
+            injected into the prompt, wrapped in <Code>withDelayedRetry</Code> per the AI-retry
+            convention. The result is stored as <Code>{'{ summarized: true, summary }'}</Code> on a
+            chat attachment, or in <Code>team_files.summary_text</Code> (a new nullable column,
+            encrypted like <Code>name</Code>/<Code>data_b64</Code>) for a Team Files upload.
+            Wherever the attachment is later opened — <Code>ChatMessage.tsx</Code>'s{' '}
+            <Code>AttachmentChip</Code>, or <Code>TeamFiles.tsx</Code>'s row — it shows the summary
+            (or a "too large, name only" notice) instead of trying to open real content that was
+            never sent.
+          </P>
+          <H3>Quick Chat</H3>
+          <P>
+            Off by default (<Code>chatPrefs.ts</Code>: <Code>isQuickChatEnabled()</Code>/
+            <Code>setQuickChatEnabled()</Code>, localStorage <Code>warroom-quick-chat-enabled</Code>).
+            Settings → Chat → "Quick chat" opens <Code>QuickChatPicker.tsx</Code>, which lets the
+            user pin the team room and/or any DM/group DM (<Code>warroom-quick-chat-pins</Code>,
+            a <Code>QuickChatPin[]</Code>) and optionally assign each pin a keyboard shortcut,
+            stored separately in <Code>warroom-quick-chat-bindings</Code> (keyed by{' '}
+            <Code>quickchat-&lt;pinId&gt;</Code>, reusing <Code>shortcutPrefs.ts</Code>'s{' '}
+            <Code>KeyBinding</Code> shape but not its registry, since pins are dynamic/user-defined
+            rather than a fixed app shortcut list). <Code>findQuickChatConflict()</Code> checks a
+            candidate binding against every core app shortcut (<Code>DEFAULT_BINDINGS</Code>) and
+            every other pin before allowing it — a clash surfaces a rebind-in-place prompt (see the
+            CLAUDE.md rule "Keyboard shortcuts must not conflict"), resolvable fully inline when
+            both sides are pins, or by opening the full Shortcuts overlay when the clash is with a
+            core app shortcut. Pinned icons render in <Code>TitleBar.tsx</Code>'s{' '}
+            <Code>QuickChatBar</Code>, just left of the main chat icon; clicking one (or firing its
+            shortcut) sets <Code>appStore</Code>'s <Code>pendingChatTarget</Code>, which the
+            always-mounted <Code>Chat()</Code> component consumes to jump to that room/DM.
           </P>
         </section>
 

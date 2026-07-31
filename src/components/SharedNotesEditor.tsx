@@ -162,7 +162,6 @@ function TeamPanel({
   const [mySharedNote, setMySharedNote] = useState(() => initialNotes.find((n) => n.user_id === currentUser?.id)?.content ?? '');
   const [sharedTags, setSharedTags] = useState<NoteTagRow[]>(initialTags);
   const [pendingTags, setPendingTags] = useState<{ id: string; type: string; name: string }[]>([]);
-  const [pendingConfirm, setPendingConfirm] = useState<{ fileName: string; base64: string } | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -231,12 +230,9 @@ function TeamPanel({
     }
   }
 
-  /** Resolves the "Also add to Team Files?" prompt for a not-yet-seen local doc. */
-  async function confirmAddToTeamFiles(addToFiles: boolean) {
-    if (!pendingConfirm || !currentUser) { setPendingConfirm(null); return; }
-    const { fileName, base64 } = pendingConfirm;
-    setPendingConfirm(null);
-    if (!addToFiles) { await attachSharedTag('speechdoc', fileName, { kind: 'bytes', base64, fileName }); return; }
+  /** New local doc, no existing Team Files match — add it automatically, no prompt. */
+  async function addToTeamFilesAndTag(fileName: string, base64: string) {
+    if (!currentUser) return;
     const tempId = crypto.randomUUID();
     setPendingTags((prev) => [...prev, { id: tempId, type: 'speechdoc', name: fileName }]);
     try {
@@ -284,7 +280,7 @@ function TeamPanel({
       if (res.base64.length > 2_500_000) { setTagError('That doc is too large to share (2.5MB max).'); return; }
       const existingId = await findMatchingTeamFile(item.name, res.base64);
       if (existingId) { await attachSharedTag('speechdoc', item.name, { kind: 'teamFile', teamFileId: existingId }); return; }
-      setPendingConfirm({ fileName: item.name, base64: res.base64 });
+      await addToTeamFilesAndTag(item.name, res.base64);
       return;
     }
     const built = await buildTagPayload(item);
@@ -404,18 +400,6 @@ function TeamPanel({
           error={tagError}
         />
       )}
-      {pendingConfirm && (
-        <div className="flex items-center gap-2 text-[11px] px-2 py-1.5 rounded-md"
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-          <span className="flex-1 truncate">Also add "{pendingConfirm.fileName}" to Team Files?</span>
-          <button onClick={() => confirmAddToTeamFiles(true)} className="btn-primary text-[10px] px-2 py-0.5" title="Add this file to your team's shared file library">
-            Add
-          </button>
-          <button onClick={() => confirmAddToTeamFiles(false)} className="btn text-[10px] px-2 py-0.5" title="Tag it here without adding to Team Files">
-            Skip
-          </button>
-        </div>
-      )}
       {otherNotes.length > 0 && (
         <div className="space-y-3 pt-1">
           {otherNotes.map((n) => {
@@ -455,7 +439,7 @@ function SlotToggle({ label, active, onClick, activeBg, activeColor }: {
       title={active ? `Hide ${label} notes` : `Show ${label} notes`}
       className="text-[11px] font-medium px-2 py-0.5 rounded-full transition shrink-0"
       style={active
-        ? { background: activeBg ?? 'var(--bg-card)', color: activeColor ?? 'var(--ink-color)', border: activeBg ? 'none' : '1px solid var(--border-side)' }
+        ? { background: activeBg ?? 'var(--accent-color, #6366f1)', color: activeColor ?? '#fff', border: 'none' }
         : { background: 'var(--bg-elevated)', color: 'var(--label-color)', border: '1px solid var(--border-subtle)' }}
     >
       {label}

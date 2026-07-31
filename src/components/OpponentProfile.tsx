@@ -723,7 +723,10 @@ function NotesEditor({ opp }: { opp: any }) {
     : `${opp.school ?? ''}/${opp.teamName ?? ''}`.toLowerCase().replace(/\s+/g, '-');
 
   function saveLocal(val: string) {
-    update((db) => ({ ...db, opponents: { ...db.opponents, [opp.id]: { ...opp, notes: val } } }));
+    // Merge against the live store value (db.opponents[opp.id]), not the closed-over
+    // `opp` prop — that prop can be stale by the time this debounced save fires,
+    // which was clobbering a noteTags update made in the interim.
+    update((db) => ({ ...db, opponents: { ...db.opponents, [opp.id]: { ...db.opponents[opp.id], notes: val } } }));
   }
 
   return (
