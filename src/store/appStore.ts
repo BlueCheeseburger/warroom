@@ -137,6 +137,10 @@ interface AppState {
   // change isn't the user expressing a preference for this combo.
   forceChatOpen: (open: boolean) => void;
   forceGeminiOpen: (open: boolean) => void;
+  // Set by a Quick Chat pin (top bar) to tell the always-mounted Chat panel
+  // which room/DM to jump to; Chat.tsx consumes and clears it.
+  pendingChatTarget: { kind: 'team' } | { kind: 'dm'; channelId: string } | null;
+  setPendingChatTarget: (t: { kind: 'team' } | { kind: 'dm'; channelId: string } | null) => void;
   geminiActiveId: string | null;
   setGeminiActiveId: (id: string | null) => void;
   setCurrentUser: (user: ChatUser | null) => void;
@@ -224,6 +228,8 @@ export const useApp = create<AppState>((set, get) => ({
   ready: false,
   busyViews: {},
   chatOpen: false,
+  pendingChatTarget: null,
+  setPendingChatTarget: (t) => set({ pendingChatTarget: t }),
   geminiOpen: false,
   geminiActiveId: null,
   impactCalcOpen: false,

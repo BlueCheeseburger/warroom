@@ -21,7 +21,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
   return (
     <div
       id={`msg-${message.id}`}
-      className={`flex flex-col gap-1 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
+      className={`flex flex-col gap-0.5 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -46,7 +46,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
 
       {/* Bubble */}
       <div
-        className="w-fit max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed"
+        className="w-fit max-w-[85%] px-2.5 py-1.5 rounded-xl text-[13px] leading-snug"
         style={isSelf
           ? { background: '#0077ed', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
           : { background: 'var(--bg-card)', color: 'var(--ink)', border: '1px solid var(--border-side)', overflowWrap: 'break-word', wordBreak: 'break-word' }}
@@ -133,7 +133,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
       )}
 
       {/* Footer: edit/delete (own) + timestamp — buttons always in DOM to prevent layout shift */}
-      <div className={`flex items-center h-5 gap-1 px-0.5 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex items-center h-4 gap-0.5 px-0.5 -mt-0.5 ${isSelf ? 'justify-end' : 'justify-start'}`}>
         {isSelf && (
           <>
             <button
@@ -322,6 +322,21 @@ export function AttachmentChip({ attachment, isSelf, onImportFlow, onImportCase,
     }
 
     if (attachment.type === 'speechdoc') {
+      if (d.oversized) {
+        return (
+          <div className="text-[10px] leading-relaxed" style={{ color: '#d97706' }}>
+            This file was too large to send in full — only the name was shared.
+          </div>
+        );
+      }
+      if (d.summarized) {
+        return (
+          <div className="text-[10px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>
+            <div className="font-semibold mb-1" style={{ color: '#d97706' }}>AI summary (file was too large to send in full)</div>
+            {d.summary}
+          </div>
+        );
+      }
       const text = d.full || d.tokenSaving;
       if (!text) return null;
       return (

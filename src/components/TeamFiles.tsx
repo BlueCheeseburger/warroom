@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { TeamFile } from '../types';
 import { getTeamKey, encryptText, decryptText } from '../lib/chatCrypto';
+import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
+import OversizedFilePopup from './OversizedFilePopup';
 
 // A per-team file library, separate from the chat message stream. Files are
 // uploaded once (encrypted client-side, see chatCrypto.ts) and the uploader's
@@ -10,8 +12,9 @@ import { getTeamKey, encryptText, decryptText } from '../lib/chatCrypto';
 // fs.watch machinery in electron/main.ts. This component only reads/writes
 // team_files rows and renders the list; it doesn't own the watch itself.
 
-interface DecryptedFile extends Omit<TeamFile, 'name'> {
+interface DecryptedFile extends Omit<TeamFile, 'name' | 'summary_text'> {
   name: string;
+  summary_text: string | null;
 }
 
 function timeAgo(iso: string): string {
@@ -36,6 +39,12 @@ export default function TeamFiles() {
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [expandedSummary, setExpandedSummary] = useState<{ id: string; text: string } | null>(null);
+
+  // Oversized-upload gate: set once a chosen file is measured as over the cap.
+  const [oversized, setOversized] = useState<{ path: string; filename: string; base64: string; sizeBytes: number } | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summarizeError, setSummarizeError] = useState('');
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -50,7 +59,8 @@ export default function TeamFiles() {
       try {
         const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
         const name = await decryptText(key, p.row.name);
-        const decrypted: DecryptedFile = { ...p.row, name };
+        const summary_text = p.row.summary_text ? await decryptText(key, p.row.summary_text) : null;
+        const decrypted: DecryptedFile = { ...p.row, name, summary_text };
         setFiles((prev) => {
           const idx = prev.findIndex((f) => f.id === decrypted.id);
           const next = idx === -1 ? [decrypted, ...prev] : prev.map((f, i) => (i === idx ? decrypted : f));
@@ -86,6 +96,7 @@ export default function TeamFiles() {
         const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
         const decrypted = await Promise.all((res.data as TeamFile[]).map(async (f) => ({
           ...f, name: await decryptText(key, f.name),
+          summary_text: f.summary_text ? await decryptText(key, f.summary_text) : null,
         })));
         setFiles(decrypted);
       } catch {
@@ -101,25 +112,42 @@ export default function TeamFiles() {
     try {
       const path = await window.warroom.dialog.openFile(['docx']);
       if (!path) return;
-      setUploading(true);
       const bytesRes = await window.warroom.fs.readFileBytes(path);
       if (!bytesRes.ok || !bytesRes.base64) throw new Error(bytesRes.error ?? 'Failed to read file');
       const filename = path.split(/[\\/]/).pop() ?? 'Document.docx';
+      const sizeBytes = base64SizeBytes(bytesRes.base64);
+      if (sizeBytes > MAX_ATTACHMENT_BYTES) {
+        setOversized({ path, filename, base64: bytesRes.base64, sizeBytes });
+        return;
+      }
+      await finishUpload(path, filename, bytesRes.base64);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to upload file');
+    }
+  }
+
+  async function finishUpload(path: string, filename: string, base64: string, summaryText?: string) {
+    if (!currentUser || !currentTeam) return;
+    setUploading(true);
+    try {
       const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
-      const [encName, encData] = await Promise.all([
+      const [encName, encData, encSummary] = await Promise.all([
         encryptText(key, filename),
-        encryptText(key, bytesRes.base64),
+        encryptText(key, base64),
+        summaryText ? encryptText(key, summaryText) : Promise.resolve(undefined),
       ]);
       const res = await window.warroom.teamFiles.upload({
         teamId: currentTeam.id, uploaderId: currentUser.id, uploaderName: currentUser.displayName,
-        name: encName, dataB64: encData,
+        name: encName, dataB64: encData, summaryText: encSummary,
       });
       if (!res.ok || !res.data) throw new Error(res.error ?? 'Upload failed');
-      await window.warroom.teamFiles.watchLocal(res.data.id, path);
-      setWatchingIds((prev) => new Set(prev).add(res.data.id));
-      // Optimistic prepend — realtime will also deliver this row, but the id
-      // match in onChange's upsert-by-id logic means it just replaces in place.
-      setFiles((prev) => (prev.find((f) => f.id === res.data.id) ? prev : [{ ...res.data, name: filename }, ...prev]));
+      // Only watch the local file for auto-update when the real content was sent —
+      // a name-only or summarized upload has nothing on Supabase to keep in sync.
+      if (base64) {
+        await window.warroom.teamFiles.watchLocal(res.data.id, path);
+        setWatchingIds((prev) => new Set(prev).add(res.data.id));
+      }
+      setFiles((prev) => (prev.find((f) => f.id === res.data.id) ? prev : [{ ...res.data, name: filename, summary_text: summaryText ?? null }, ...prev]));
     } catch (e: any) {
       setError(e?.message ?? 'Failed to upload file');
     } finally {
@@ -127,8 +155,37 @@ export default function TeamFiles() {
     }
   }
 
+  function cancelOversized() { setOversized(null); setSummarizeError(''); }
+
+  async function uploadOversizedNameOnly() {
+    if (!oversized) return;
+    setOversized(null);
+    await finishUpload(oversized.path, oversized.filename, '');
+  }
+
+  async function summarizeOversizedUpload() {
+    if (!oversized) return;
+    setSummarizing(true); setSummarizeError('');
+    try {
+      const extractRes = await (window.warroom as any)?.speechdoc?.extract(oversized.path);
+      if (!extractRes?.ok) throw new Error(extractRes?.error ?? 'Failed to read document');
+      const text = extractRes.data.full || extractRes.data.tokenSaving || '';
+      const res = await (window.warroom as any)?.speechdoc?.summarizeForAttachment(text, oversized.filename);
+      if (!res?.ok) throw new Error(res?.error ?? 'Summarization failed');
+      const { path, filename } = oversized;
+      setOversized(null);
+      await finishUpload(path, filename, '', res.data);
+    } catch (e: any) {
+      setSummarizeError(e?.message ?? 'Failed to summarize');
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
   async function handleOpen(file: DecryptedFile) {
-    if (!currentTeam || openingId) return;
+    if (!currentTeam || openingId || file.removed) return;
+    if (file.summary_text) { setExpandedSummary((cur) => cur?.id === file.id ? null : { id: file.id, text: file.summary_text! }); return; }
+    if (!file.data_b64) return; // name-only upload, nothing to open
     setOpeningId(file.id);
     setError('');
     try {
@@ -144,17 +201,31 @@ export default function TeamFiles() {
     }
   }
 
-  async function handleDelete(file: DecryptedFile) {
+  // Clears the file's content but keeps the row — name, uploader, and dates
+  // stay visible to the team as a record that a file used to live here.
+  async function handleRemove(file: DecryptedFile) {
     setDeletingId(file.id);
-    const res = await window.warroom.teamFiles.delete(file.id);
-    if (res.ok) setFiles((prev) => prev.filter((f) => f.id !== file.id));
-    else setError(res.error ?? 'Failed to delete file');
+    const res = await window.warroom.teamFiles.removeContent(file.id);
+    if (res.ok) setFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, removed: true, data_b64: '' } : f));
+    else setError(res.error ?? 'Failed to remove file');
     setDeletingId(null);
   }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-2">
+        {oversized && (
+          <OversizedFilePopup
+            fileName={oversized.filename}
+            sizeBytes={oversized.sizeBytes}
+            allowSummarize
+            summarizing={summarizing}
+            error={summarizeError}
+            onSummarize={summarizeOversizedUpload}
+            onSendNameOnly={uploadOversizedNameOnly}
+            onCancel={cancelOversized}
+          />
+        )}
         {error && <p className="text-xs pb-1" style={{ color: '#ef4444' }}>{error}</p>}
         {loading ? (
           <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
@@ -165,55 +236,63 @@ export default function TeamFiles() {
         ) : files.map((f) => {
           const isHovered = hoveredId === f.id;
           const isMine = f.uploader_id === currentUser?.id;
+          const noContent = !f.data_b64 && !f.summary_text;
+          const statusLabel = f.removed ? 'Removed' : f.summary_text ? 'AI summary — too large to send in full' : noContent ? 'Too large — name only' : `Modified ${timeAgo(f.updated_at)}`;
           return (
-            <div
-              key={f.id}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors"
-              style={{ background: isHovered ? 'var(--nav-hover-bg)' : 'var(--bg-card)', border: '1px solid var(--border-side)' }}
-              onMouseEnter={() => setHoveredId(f.id)}
-              onMouseLeave={() => setHoveredId((cur) => (cur === f.id ? null : cur))}
-            >
-              <span className="text-lg leading-none shrink-0">📝</span>
-              <button
-                className="flex-1 min-w-0 text-left"
-                title="Open in Speech Doc Viewer"
-                onClick={() => handleOpen(f)}
-                disabled={openingId === f.id}
-                style={{ background: 'transparent', border: 'none', cursor: openingId === f.id ? 'default' : 'pointer' }}
+            <div key={f.id}>
+              <div
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors"
+                style={{ background: isHovered && !f.removed ? 'var(--nav-hover-bg)' : 'var(--bg-card)', border: '1px solid var(--border-side)', opacity: f.removed ? 0.55 : 1 }}
+                onMouseEnter={() => setHoveredId(f.id)}
+                onMouseLeave={() => setHoveredId((cur) => (cur === f.id ? null : cur))}
               >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                    {openingId === f.id ? 'Opening…' : f.name}
-                  </span>
-                  {watchingIds.has(f.id) && (
-                    <span
-                      className="text-[11px] leading-none shrink-0"
-                      title="This device watches your local file and pushes updates automatically when you save changes"
-                    >
-                      🔄
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--nav-inactive-color)' }}>
-                  Modified {timeAgo(f.updated_at)} · {f.uploader_name}
-                </div>
-              </button>
-              {isMine && (
+                <span className="text-lg leading-none shrink-0">📝</span>
                 <button
-                  title="Delete"
-                  onClick={() => handleDelete(f)}
-                  disabled={deletingId === f.id}
-                  className="w-6 h-6 flex items-center justify-center rounded transition shrink-0"
-                  style={{
-                    color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
-                    cursor: isHovered ? 'pointer' : 'default',
-                    opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+                  className="flex-1 min-w-0 text-left"
+                  title={f.removed ? 'Removed by uploader' : f.summary_text ? 'Show AI summary' : noContent ? 'No content — too large to send' : 'Open in Speech Doc Viewer'}
+                  onClick={() => handleOpen(f)}
+                  disabled={openingId === f.id || f.removed || noContent && !f.summary_text}
+                  style={{ background: 'transparent', border: 'none', cursor: f.removed || (noContent && !f.summary_text) ? 'default' : openingId === f.id ? 'default' : 'pointer' }}
                 >
-                  <TrashIcon />
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>
+                      {openingId === f.id ? 'Opening…' : f.name}
+                    </span>
+                    {!f.removed && watchingIds.has(f.id) && (
+                      <span
+                        className="text-[11px] leading-none shrink-0"
+                        title="This device watches your local file and pushes updates automatically when you save changes"
+                      >
+                        🔄
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] mt-0.5 truncate" style={{ color: f.summary_text || noContent ? '#d97706' : 'var(--nav-inactive-color)' }}>
+                    {statusLabel} · {f.uploader_name}
+                  </div>
                 </button>
+                {isMine && !f.removed && (
+                  <button
+                    title="Remove — clears the file but keeps its record"
+                    onClick={() => handleRemove(f)}
+                    disabled={deletingId === f.id}
+                    className="w-6 h-6 flex items-center justify-center rounded transition shrink-0"
+                    style={{
+                      color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+                      cursor: isHovered ? 'pointer' : 'default',
+                      opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+              {expandedSummary?.id === f.id && (
+                <div className="mt-1 px-3 py-2 rounded-lg text-[11px] leading-relaxed whitespace-pre-wrap" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', color: 'var(--ink)' }}>
+                  {expandedSummary.text}
+                </div>
               )}
             </div>
           );

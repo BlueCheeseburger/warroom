@@ -1,17 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { linkifyText } from '../lib/linkify';
-
-function MicIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-      <line x1="8" y1="23" x2="16" y2="23" />
-    </svg>
-  );
-}
-
 import { useApp, FlowMeta } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { getTeamKey, encryptText, encryptOutgoing, decryptMessage } from '../lib/chatCrypto';
@@ -20,15 +8,26 @@ import ChatMessageBubble, { AttachmentChip as ChatAttachmentChip } from './ChatM
 import MentionPicker from './MentionPicker';
 import TeamSetup from './TeamSetup';
 import RoomSettings from './RoomSettings';
+import DMSettings from './DMSettings';
 import TeamFiles from './TeamFiles';
+import { ChatAvatar, AvatarSpec } from './Avatar';
+import SendDictateButton from './SendDictateButton';
+import { useAutoGrowTextarea } from '../hooks/useAutoGrowTextarea';
+import { getFilesBarStyle, onChatPrefsChange, FilesBarStyle } from '../lib/chatPrefs';
+import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
+import OversizedFilePopup from './OversizedFilePopup';
 
 type ChatView = 'team' | 'dm-list' | 'files' | { kind: 'dm'; channel: DMChannel };
 
 export default function Chat() {
-  const { currentUser, currentTeam, chatOpen, setChatOpen, setCurrentUser, setCurrentTeam, setTeamMembers } = useApp();
+  const { currentUser, currentTeam, chatOpen, setCurrentUser, setCurrentTeam, setTeamMembers, pendingChatTarget, setPendingChatTarget } = useApp();
   const [ready, setReady] = useState(false);
   const [chatView, setChatView] = useState<ChatView>('team');
   const [showSettings, setShowSettings] = useState(false);
+  const [dmSettingsFor, setDmSettingsFor] = useState<DMChannel | null>(null);
+  const [filesBarStyle, setFilesBarStyleState] = useState<FilesBarStyle>(getFilesBarStyle());
+
+  useEffect(() => onChatPrefsChange(() => setFilesBarStyleState(getFilesBarStyle())), []);
 
   useEffect(() => {
     async function restoreUser(userId: string) {
@@ -135,13 +134,33 @@ export default function Chat() {
     if (!currentUser) setChatView('team');
   }, [currentUser]);
 
+  // Quick Chat pins (TitleBar) request a specific room/DM be shown — consume and clear.
+  useEffect(() => {
+    if (!pendingChatTarget || !currentTeam) return;
+    if (pendingChatTarget.kind === 'team') {
+      setChatView('team');
+      setPendingChatTarget(null);
+      return;
+    }
+    let cancelled = false;
+    window.warroom.chat.getDMChannels(currentTeam.id).then((res) => {
+      if (cancelled || !res.ok) return;
+      const ch = (res.data as DMChannel[]).find((c) => c.id === (pendingChatTarget as any).channelId);
+      if (ch) setChatView({ kind: 'dm', channel: ch });
+      setPendingChatTarget(null);
+    });
+    return () => { cancelled = true; };
+  }, [pendingChatTarget, currentTeam?.id]);
+
   // Team Files auto-update: this device's fs.watch (electron/main.ts) fires
-  // 'chat:localTeamFileChanged' whenever a file THIS device uploaded changes on
-  // disk. Encryption only happens in the renderer (chatCrypto.ts uses Web Crypto),
-  // so main.ts can't push the update itself — it hands off the plaintext bytes
-  // (over IPC, not network) and this effect encrypts + writes them to Supabase.
-  // Lives in the top-level Chat() component (always mounted, see App.tsx) so it
-  // keeps working even when the Files panel isn't open or the chat is closed.
+  // 'chat:localTeamFileChanged' whenever a file THIS device uploaded (or a
+  // speechdoc sent in team chat with a real local path — see the same watch
+  // wired up in sendMessage below) changes on disk. Encryption only happens in
+  // the renderer (chatCrypto.ts uses Web Crypto), so main.ts can't push the
+  // update itself — it hands off the plaintext bytes (over IPC, not network)
+  // and this effect encrypts + writes them to Supabase. Lives in the top-level
+  // Chat() component (always mounted, see App.tsx) so it keeps working even
+  // when the Files panel isn't open or the chat is closed.
   useEffect(() => {
     if (!currentTeam) return;
     const off = window.warroom.teamFiles.onLocalFileChanged(async ({ fileId }) => {
@@ -174,16 +193,19 @@ export default function Chat() {
 
   if (!chatOpen) return null;
 
+  const inDM = typeof chatView === 'object' && chatView.kind === 'dm';
+
   return (
     <div className="flex flex-col h-full relative w-full" style={{ background: 'var(--bg-main)' }}>
       <ChatHeader
         chatView={chatView}
         onBack={() => setChatView('team')}
-        onClose={() => setChatOpen(false)}
         onSettings={() => setShowSettings(true)}
+        onDMSettings={() => { if (inDM) setDmSettingsFor((chatView as any).channel); }}
         onDMList={() => setChatView('dm-list')}
         onFiles={() => setChatView('files')}
         onSignOut={handleSignOut}
+        filesBarStyle={filesBarStyle}
       />
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {!ready ? (
@@ -191,47 +213,90 @@ export default function Chat() {
         ) : !currentUser || !currentTeam ? (
           <TeamSetup onDone={() => {}} />
         ) : chatView === 'dm-list' ? (
-          <DMList onOpenDM={(ch) => setChatView({ kind: 'dm', channel: ch })} />
-        ) : chatView === 'files' ? (
-          <TeamFiles />
+          <AllChatsList
+            onOpenTeam={() => setChatView('team')}
+            onOpenDM={(ch) => setChatView({ kind: 'dm', channel: ch })}
+          />
         ) : typeof chatView === 'object' && chatView.kind === 'dm' ? (
-          <DMBody channel={chatView.channel} onAddMember={() => {}} />
+          <DMBody channel={chatView.channel} />
         ) : (
-          <ChatBody />
+          <TeamRoomPane chatView={chatView} setChatView={setChatView} filesBarStyle={filesBarStyle} />
         )}
       </div>
       {showSettings && <RoomSettings onClose={() => setShowSettings(false)} />}
+      {dmSettingsFor && (
+        <DMSettings
+          channel={dmSettingsFor}
+          onClose={() => setDmSettingsFor(null)}
+          onLeft={() => { setDmSettingsFor(null); setChatView('dm-list'); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Team room pane (Chat | Files split, or Chat with a Files icon) ───────────
+
+function TeamRoomPane({ chatView, setChatView, filesBarStyle }: {
+  chatView: ChatView; setChatView: (v: ChatView) => void; filesBarStyle: FilesBarStyle;
+}) {
+  const showingFiles = chatView === 'files';
+  return (
+    <div className="flex flex-col h-full">
+      {filesBarStyle === 'split' && (
+        <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+          <button
+            className="flex-1 text-[11px] font-semibold py-1.5 transition"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: !showingFiles ? 'var(--ink)' : 'var(--nav-inactive-color)',
+              borderBottom: !showingFiles ? '2px solid var(--accent)' : '2px solid transparent',
+            }}
+            onClick={() => setChatView('team')}
+          >
+            Chat
+          </button>
+          <button
+            className="flex-1 text-[11px] font-semibold py-1.5 transition"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: showingFiles ? 'var(--ink)' : 'var(--nav-inactive-color)',
+              borderBottom: showingFiles ? '2px solid var(--accent)' : '2px solid transparent',
+            }}
+            onClick={() => setChatView('files')}
+          >
+            Files
+          </button>
+        </div>
+      )}
+      <div className="flex-1 min-h-0">
+        {showingFiles ? <TeamFiles /> : <ChatBody />}
+      </div>
     </div>
   );
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onFiles, onSignOut }: {
+function ChatHeader({ chatView, onBack, onSettings, onDMSettings, onDMList, onFiles, onSignOut, filesBarStyle }: {
   chatView: ChatView;
   onBack: () => void;
-  onClose: () => void;
   onSettings: () => void;
+  onDMSettings: () => void;
   onDMList: () => void;
   onFiles: () => void;
   onSignOut: () => void;
+  filesBarStyle: FilesBarStyle;
 }) {
   const { currentTeam } = useApp();
-  const [copied, setCopied] = React.useState(false);
+  const [nameHovered, setNameHovered] = useState(false);
   const inDM = typeof chatView === 'object' && chatView.kind === 'dm';
   const inDMList = chatView === 'dm-list';
   const inFiles = chatView === 'files';
-  const inSubview = inDM || inDMList || inFiles;
-
-  function handleCopyCode() {
-    if (!currentTeam) return;
-    navigator.clipboard?.writeText(currentTeam.invite_code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
+  const inSubview = inDM || inDMList;
 
   let title = currentTeam ? currentTeam.name : 'Team Chat';
-  if (inDMList) title = 'Direct Messages';
+  if (inDMList) title = 'All Chats';
   if (inFiles) title = 'Team Files';
   if (inDM) title = (chatView as any).channel.name ?? dmChannelTitle((chatView as any).channel);
 
@@ -244,30 +309,27 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onFiles, 
           ←
         </button>
       )}
-      <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--ink)' }}>{title}</span>
+      <div className="relative flex-1 min-w-0" onMouseEnter={() => setNameHovered(true)} onMouseLeave={() => setNameHovered(false)}>
+        <span
+          className="text-xs font-semibold block truncate"
+          style={nameHovered
+            ? { color: 'var(--ink)', position: 'absolute', top: 0, left: 0, whiteSpace: 'nowrap', background: 'var(--bg-titlebar)', paddingRight: 6, zIndex: 30 }
+            : { color: 'var(--ink)' }}
+        >
+          {title}
+        </span>
+      </div>
 
-      {currentTeam && !inSubview && (
-        <button title={`Invite code — click to copy`}
-          className="text-[10px] font-mono px-1.5 py-0.5 rounded transition-colors shrink-0"
-          style={copied
-            ? { background: '#166534', color: '#86efac', border: '1px solid #166534' }
-            : { background: 'var(--bg-card)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-side)' }}
-          onClick={handleCopyCode}>
-          {copied ? '✓ copied' : currentTeam.invite_code}
-        </button>
-      )}
-
-      {currentTeam && !inSubview && (
+      {currentTeam && !inSubview && filesBarStyle === 'icon' && (
         <IconBtn title="Team files" onClick={onFiles}><FilesIcon /></IconBtn>
       )}
       {currentTeam && !inSubview && (
-        <IconBtn title="Direct messages" onClick={onDMList}><DMIcon /></IconBtn>
+        <IconBtn title="All chats" onClick={onDMList}><DMIcon /></IconBtn>
       )}
-      {currentTeam && !inSubview && (
-        <IconBtn title="Room settings" onClick={onSettings}><SettingsIcon /></IconBtn>
+      {currentTeam && !inDMList && (
+        <IconBtn title={inDM ? 'DM settings' : 'Room settings'} onClick={inDM ? onDMSettings : onSettings}><SettingsIcon /></IconBtn>
       )}
       <IconBtn title="Sign out" onClick={onSignOut}><SignOutIcon /></IconBtn>
-      <IconBtn title="Close chat" onClick={onClose}><CloseIcon /></IconBtn>
     </div>
   );
 }
@@ -275,14 +337,13 @@ function ChatHeader({ chatView, onBack, onClose, onSettings, onDMList, onFiles, 
 // ─── Team chat body ───────────────────────────────────────────────────────────
 
 function ChatBody() {
-  const { currentUser, currentTeam, chatOpen, clearUnread, incrementUnread, db } = useApp();
+  const { currentUser, currentTeam, chatOpen, clearUnread, incrementUnread } = useApp();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [loading, setLoading] = useState(true);
   const [composerText, setComposerText] = useState('');
   const [pendingMentions, setPendingMentions] = useState<PendingMention[]>([]);
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -291,7 +352,9 @@ function ChatBody() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
-  const attachMenuRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useAutoGrowTextarea(textareaRef, panelRef, composerText);
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -315,18 +378,17 @@ function ChatBody() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (chatOpen) clearUnread(); }, [chatOpen]);
 
-  // Close picker/attach menu on outside click
+  // Close picker on outside click
   useEffect(() => {
-    if (!showMentionPicker && !showAttachMenu) return;
+    if (!showMentionPicker) return;
     function onMouseDown(e: MouseEvent) {
       if (composerRef.current && !composerRef.current.contains(e.target as Node)) {
         setShowMentionPicker(false);
-        setShowAttachMenu(false);
       }
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [showMentionPicker, showAttachMenu]);
+  }, [showMentionPicker]);
 
   async function loadMessages() {
     if (!currentTeam) return;
@@ -353,35 +415,67 @@ function ChatBody() {
     else { setShowMentionPicker(false); setMentionQuery(''); }
   }
 
-  async function handleMentionSelect(item: PendingMention) {
-    setShowMentionPicker(false);
-    let data = item.data;
-    if (item.type === 'flow') {
-      try { data = await window.warroom?.storage.read(`flow_${item.id}`); } catch {}
-    } else if (item.type === 'speechdoc' && item.data?.filePath) {
-      // Extract actual doc text so the recipient can read it, not just a local file path
-      try {
-        const res = await (window.warroom as any)?.speechdoc?.extract(item.data.filePath);
-        if (res?.ok) data = { filePath: item.data.filePath, full: res.data.full, tokenSaving: res.data.tokenSaving };
-      } catch {}
-    }
-    setPendingMentions((prev) => prev.find((p) => p.id === item.id) ? prev : [...prev, { ...item, data }]);
+  const [oversized, setOversized] = useState<{ item: PendingMention; data: any; sizeBytes: number } | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summarizeError, setSummarizeError] = useState('');
+
+  function insertMentionText(item: PendingMention) {
     const cursor = textareaRef.current?.selectionStart ?? composerText.length;
     const replaced = composerText.slice(0, cursor).replace(/@\w*$/, `@${item.name.replace(/\s/g, '_')} `);
     setComposerText(replaced + composerText.slice(cursor));
     setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
-  function openAttachPicker() {
-    setShowAttachMenu((v) => !v);
-    setShowMentionPicker(false);
+  function addMention(item: PendingMention, data: any) {
+    setPendingMentions((prev) => prev.find((p) => p.id === item.id) ? prev : [...prev, { ...item, data }]);
+    insertMentionText(item);
   }
 
-  function openMentionPicker() {
-    setShowAttachMenu(false);
-    setShowMentionPicker(true);
-    setMentionQuery('');
-    setTimeout(() => textareaRef.current?.focus(), 0);
+  async function handleMentionSelect(item: PendingMention) {
+    setShowMentionPicker(false);
+    let data = item.data;
+    if (item.type === 'flow') {
+      try { data = await window.warroom?.storage.read(`flow_${item.id}`); } catch {}
+      const sizeBytes = new Blob([JSON.stringify(data ?? {})]).size;
+      if (sizeBytes > MAX_ATTACHMENT_BYTES) { setOversized({ item, data, sizeBytes }); return; }
+    } else if (item.type === 'speechdoc' && item.data?.filePath) {
+      // Extract actual doc text so the recipient can read it, not just a local file path
+      try {
+        const [extractRes, bytesRes] = await Promise.all([
+          (window.warroom as any)?.speechdoc?.extract(item.data.filePath),
+          window.warroom.fs.readFileBytes(item.data.filePath),
+        ]);
+        if (extractRes?.ok) data = { filePath: item.data.filePath, full: extractRes.data.full, tokenSaving: extractRes.data.tokenSaving };
+        const sizeBytes = bytesRes?.ok && bytesRes.base64 ? base64SizeBytes(bytesRes.base64) : 0;
+        if (sizeBytes > MAX_ATTACHMENT_BYTES) { setOversized({ item, data, sizeBytes }); return; }
+      } catch {}
+    }
+    addMention(item, data);
+  }
+
+  function cancelOversized() { setOversized(null); setSummarizeError(''); }
+
+  function sendOversizedNameOnly() {
+    if (!oversized) return;
+    const { item, sizeBytes } = oversized;
+    addMention(item, { oversized: true, sizeBytes, filePath: item.data?.filePath });
+    setOversized(null);
+  }
+
+  async function summarizeOversized() {
+    if (!oversized || oversized.item.type !== 'speechdoc') return;
+    setSummarizing(true); setSummarizeError('');
+    try {
+      const text = oversized.data?.full || oversized.data?.tokenSaving || '';
+      const res = await (window.warroom as any)?.speechdoc?.summarizeForAttachment(text, oversized.item.name);
+      if (!res?.ok) throw new Error(res?.error ?? 'Summarization failed');
+      addMention(oversized.item, { summarized: true, summary: res.data, sizeBytes: oversized.sizeBytes, filePath: oversized.item.data?.filePath });
+      setOversized(null);
+    } catch (e: any) {
+      setSummarizeError(e?.message ?? 'Failed to summarize');
+    } finally {
+      setSummarizing(false);
+    }
   }
 
   async function compressImage(src: string): Promise<string> {
@@ -404,21 +498,6 @@ function ChatBody() {
     const compressed = await compressImage(src);
     const item: PendingMention = { type: 'image', id: crypto.randomUUID(), name, data: { src: compressed } };
     setPendingMentions((prev) => [...prev, item]);
-  }
-
-  async function handleImageFromFile() {
-    setShowAttachMenu(false);
-    try {
-      const path = await window.warroom?.dialog.openFile(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-      if (!path) return;
-      const result = await window.warroom?.fs.readFileBytes(path);
-      if (!result?.ok || !result.base64) return;
-      const ext = path.split('.').pop()?.toLowerCase() ?? 'png';
-      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png';
-      const src = `data:${mime};base64,${result.base64}`;
-      const name = path.split(/[\\/]/).pop() ?? 'image';
-      await addImageAttachment(src, name);
-    } catch {}
   }
 
   async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -518,42 +597,76 @@ function ChatBody() {
   async function sendMessage() {
     const content = composerText.trim() || pendingMentions.map((m) => `@${m.name.replace(/\s/g, '_')}`).join(' ');
     if (!content || !currentUser || !currentTeam) return;
-    setSending(true); setError('');
+
+    // Optimistic: show the message as sent immediately, roll back on failure.
+    const tempId = `tmp-${crypto.randomUUID()}`;
+    const savedText = composerText, savedMentions = pendingMentions, savedReply = replyingTo;
+    const optimistic = {
+      id: tempId, team_id: currentTeam.id, sender_id: currentUser.id, sender_name: currentUser.displayName,
+      content, created_at: new Date().toISOString(),
+      attachments: savedMentions.filter((m) => m.type !== 'member').map((m) => ({ id: m.id, type: m.type, name: m.name, data: m.data ?? {} })),
+      reply_to_id: savedReply?.id, reply_to_sender_name: savedReply?.senderName, reply_to_content: savedReply?.content,
+    } as any;
+    setMessages((prev) => [...prev, optimistic]);
+    setComposerText(''); setPendingMentions([]); setReplyingTo(null); setError('');
+    setSending(true);
     try {
-      const plainAtts = pendingMentions
+      const plainAtts = savedMentions
         .filter((m) => m.type !== 'member')
         .map((m) => {
-          // Strip local file path — it's meaningless to the recipient
+          // Strip local file path — it's meaningless to the recipient. Oversized/
+          // summarized placeholders (see OversizedFilePopup) carry no full/tokenSaving
+          // text at all, just the marker + summary.
           const data = m.type === 'speechdoc'
-            ? { full: m.data?.full ?? '', tokenSaving: m.data?.tokenSaving ?? '' }
+            ? (m.data?.oversized
+                ? { oversized: true, sizeBytes: m.data.sizeBytes }
+                : m.data?.summarized
+                  ? { summarized: true, summary: m.data.summary, sizeBytes: m.data.sizeBytes }
+                  : { full: m.data?.full ?? '', tokenSaving: m.data?.tokenSaving ?? '' })
             : (m.data ?? {});
           return { id: m.id, type: m.type, name: m.name, data };
         });
       // Encrypt content + attachment data before it ever leaves the client.
       const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
       const { content: encContent, attachments: encAtts } = await encryptOutgoing(key, content, plainAtts);
-      const replyToContent = replyingTo ? await encryptText(key, replyingTo.content) : undefined;
+      const replyToContent = savedReply ? await encryptText(key, savedReply.content) : undefined;
       const res = await window.warroom.chat.sendMessage({
         teamId: currentTeam.id, senderId: currentUser.id, senderName: currentUser.displayName,
         content: encContent,
         attachments: encAtts,
-        replyToId: replyingTo?.id,
-        replyToSenderName: replyingTo?.senderName,
+        replyToId: savedReply?.id,
+        replyToSenderName: savedReply?.senderName,
         replyToContent,
       });
       if (!res.ok) throw new Error(res.error);
-      setComposerText(''); setPendingMentions([]); setReplyingTo(null);
+      // Real row arrives via the realtime subscription (fires for the sender's
+      // own inserts too) — drop the optimistic placeholder so it isn't duplicated.
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      // A speechdoc attachment sent with a real local path gets the same
+      // auto-forward-to-Team-Files + live-watch treatment as a manual upload —
+      // but only when the full content was actually sent. An oversized
+      // attachment (name-only or AI-summarized, see OversizedFilePopup) has no
+      // full bytes to forward and stays chat-only.
+      for (const m of savedMentions) {
+        if (m.type === 'speechdoc' && m.data?.filePath && !m.data?.oversized && !m.data?.summarized) {
+          forwardSpeechdocToTeamFiles(currentTeam, currentUser, m.data.filePath, m.name).catch(() => {});
+        }
+      }
     } catch (e: any) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setComposerText(savedText); setPendingMentions(savedMentions); setReplyingTo(savedReply);
       setError(e?.message ?? 'Failed to send');
     } finally {
       setSending(false);
     }
   }
 
+  const hasContent = !!composerText.trim() || pendingMentions.length > 0;
+
   return (
-    <div className="flex flex-col h-full">
+    <div ref={panelRef} className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto scroll-thin px-3 py-2.5 space-y-1.5">
         {loading
           ? <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading messages…</div>
           : messages.length === 0
@@ -598,7 +711,19 @@ function ChatBody() {
       </div>
 
       {/* Composer */}
-      <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-3 space-y-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+      <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--border-side)' }}>
+        {oversized && (
+          <OversizedFilePopup
+            fileName={oversized.item.name}
+            sizeBytes={oversized.sizeBytes}
+            allowSummarize={oversized.item.type === 'speechdoc'}
+            summarizing={summarizing}
+            error={summarizeError}
+            onSummarize={summarizeOversized}
+            onSendNameOnly={sendOversizedNameOnly}
+            onCancel={cancelOversized}
+          />
+        )}
         {replyingTo && (
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
             <ReplyIcon />
@@ -623,7 +748,9 @@ function ChatBody() {
                     : <span className="text-base leading-none shrink-0">{icon}</span>}
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>{m.name}</div>
-                    <div className="text-[10px] capitalize mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>{m.type}</div>
+                    <div className="text-[10px] capitalize mt-0.5" style={{ color: m.data?.oversized || m.data?.summarized ? '#d97706' : 'var(--nav-inactive-color)' }}>
+                      {m.data?.oversized ? 'Too large — name only' : m.data?.summarized ? 'AI summary (too large for full content)' : m.type}
+                    </div>
                   </div>
                   <button onClick={() => setPendingMentions((p) => p.filter((x) => x.id !== m.id))}
                     style={{ background: 'transparent', border: 'none', color: 'var(--nav-inactive-color)', cursor: 'pointer' }}>×</button>
@@ -637,65 +764,51 @@ function ChatBody() {
           {showMentionPicker && (
             <MentionPicker query={mentionQuery} onSelect={handleMentionSelect} onClose={() => setShowMentionPicker(false)} />
           )}
-          {showAttachMenu && (
-            <div ref={attachMenuRef}
-              className="absolute bottom-full left-0 mb-1 rounded-md shadow-lg overflow-hidden z-50"
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', minWidth: 180 }}>
-              <AttachMenuItem icon="🔖" label="Cases, flows & more" onClick={openMentionPicker} />
-              <AttachMenuItem icon="🖼" label="Attachment" onClick={handleImageFromFile} />
-              <div className="px-3 py-1.5 text-[10px]" style={{ color: 'var(--nav-inactive-color)', borderTop: '1px solid var(--border-side)' }}>
-                Tip: paste an image from clipboard
-              </div>
-            </div>
-          )}
           <textarea ref={textareaRef} className="input w-full resize-none text-sm" rows={2}
-            placeholder="Message… or @ to mention"
+            placeholder="@ to attach or mention"
+            style={{ paddingRight: 40, paddingBottom: 34 }}
             value={composerText} onChange={handleComposerChange}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-              if (e.key === 'Escape') { setShowMentionPicker(false); setShowAttachMenu(false); if (!showMentionPicker && !showAttachMenu) setReplyingTo(null); }
+              if (e.key === 'Escape') { setShowMentionPicker(false); if (!showMentionPicker) setReplyingTo(null); }
             }} />
-        </div>
-        <div className="flex items-center gap-2">
-          <IconBtn title="Attach" onClick={openAttachPicker}>
-            <PlusIcon />
-          </IconBtn>
-          <style>{`@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:0.35}}`}</style>
-          <button
-            title={isRecording ? 'Stop dictation' : dictationStatus === 'transcribing' ? 'Transcribing…' : 'Dictate'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={isRecording ? stopDictation : dictationStatus === 'idle' ? startDictation : undefined}
-            disabled={dictationStatus === 'transcribing'}
-            className="w-6 h-6 flex items-center justify-center rounded-md transition"
-            style={{
-              background: isRecording ? 'rgba(239,68,68,0.1)' : 'transparent',
-              border: isRecording ? '1.5px solid #ef4444' : '1.5px solid transparent',
-              cursor: dictationStatus === 'transcribing' ? 'default' : 'pointer',
-              color: isRecording ? '#ef4444' : dictationStatus === 'transcribing' ? '#4285F4' : 'var(--nav-inactive-color)',
-              animation: isRecording || dictationStatus === 'transcribing' ? 'mic-pulse 1.2s ease-in-out infinite' : undefined,
-            }}
-            onMouseEnter={(e) => { if (!isRecording && dictationStatus === 'idle') { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; } }}
-            onMouseLeave={(e) => { if (!isRecording && dictationStatus === 'idle') { (e.currentTarget as HTMLElement).style.background = 'transparent'; } }}
-          >
-            <MicIcon size={14} />
-          </button>
-          <button className="btn-primary ml-auto text-xs px-3 py-1" onClick={sendMessage}
-            disabled={sending || (!composerText.trim() && pendingMentions.length === 0)}>
-            {sending ? '…' : 'Send'}
-          </button>
+          <div className="absolute bottom-1.5 right-1.5">
+            <SendDictateButton
+              hasContent={hasContent} sending={sending} isRecording={isRecording} dictationStatus={dictationStatus}
+              onSend={sendMessage} onStartDictation={startDictation} onStopDictation={stopDictation}
+              variant="solid" size={26}
+            />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── DM list ──────────────────────────────────────────────────────────────────
+// Mirrors the manual "+ Add file" upload path in TeamFiles.tsx so a speechdoc
+// attached straight to a chat message (not via the Team Files tab) still ends
+// up in Team Files and gets the same local-file auto-update watch — see the
+// Chat() top-level effect that listens for 'chat:localTeamFileChanged'. Only
+// fires for team-room sends; DMs/group DMs intentionally have no Files list.
+async function forwardSpeechdocToTeamFiles(currentTeam: any, currentUser: any, filePath: string, filename: string) {
+  const bytesRes = await window.warroom.fs.readFileBytes(filePath);
+  if (!bytesRes.ok || !bytesRes.base64) return;
+  const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+  const [encName, encData] = await Promise.all([
+    encryptText(key, filename),
+    encryptText(key, bytesRes.base64),
+  ]);
+  const res = await window.warroom.teamFiles.upload({
+    teamId: currentTeam.id, uploaderId: currentUser.id, uploaderName: currentUser.displayName,
+    name: encName, dataB64: encData,
+  });
+  if (res.ok && res.data) await window.warroom.teamFiles.watchLocal(res.data.id, filePath);
+}
 
-// Extra recipient found via email lookup (not necessarily a team member)
-interface EmailLookupResult { userId: string; displayName: string; email: string; }
+// ─── All chats (team room + DMs + group DMs) ───────────────────────────────────
 
-function DMList({ onOpenDM }: { onOpenDM: (ch: DMChannel) => void }) {
+function AllChatsList({ onOpenTeam, onOpenDM }: { onOpenTeam: () => void; onOpenDM: (ch: DMChannel) => void }) {
   const { currentTeam, currentUser, teamMembers } = useApp();
   const [channels, setChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -780,22 +893,43 @@ function DMList({ onOpenDM }: { onOpenDM: (ch: DMChannel) => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-2">
-        {loading ? (
-          <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
-        ) : channels.length === 0 && !showNewDM ? (
-          <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>No DMs yet</div>
-        ) : channels.map((ch) => (
-          <button key={ch.id} className="w-full text-left px-3 py-2.5 rounded-lg transition"
+        {currentTeam && !showNewDM && (
+          <button className="w-full text-left px-3 py-2.5 rounded-lg transition flex items-center gap-2.5"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-card)'; }}
-            onClick={() => onOpenDM(ch)}>
-            <div className="text-xs font-semibold truncate">{ch.name ?? dmChannelTitle(ch, currentUser?.id)}</div>
-            <div className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-              {ch.members.length} member{ch.members.length !== 1 ? 's' : ''}
+            onClick={onOpenTeam}>
+            <ChatAvatar spec={{ kind: 'team', name: currentTeam.name }} size={26} />
+            <div className="min-w-0">
+              <div className="text-xs font-semibold truncate">{currentTeam.name}</div>
+              <div className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>Team room</div>
             </div>
           </button>
-        ))}
+        )}
+        {loading ? (
+          <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
+        ) : channels.map((ch) => {
+          const others = ch.members.filter((m) => m.user_id !== currentUser?.id);
+          const name = ch.name ?? (others.length ? others.map((m) => m.display_name).join(', ') : ch.members[0]?.display_name ?? 'DM');
+          const spec: AvatarSpec = ch.members.length > 2
+            ? { kind: 'group', members: ch.members.map((m) => ({ id: m.user_id, name: m.display_name })) }
+            : { kind: 'dm', id: (others[0] ?? ch.members[0])?.user_id ?? ch.id, name };
+          return (
+            <button key={ch.id} className="w-full text-left px-3 py-2.5 rounded-lg transition flex items-center gap-2.5"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-card)'; }}
+              onClick={() => onOpenDM(ch)}>
+              <ChatAvatar spec={spec} size={26} />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold truncate">{name}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+                  {ch.members.length} member{ch.members.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+            </button>
+          );
+        })}
 
         {showNewDM && (
           <div className="rounded-lg p-3 space-y-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}>
@@ -881,9 +1015,11 @@ function DMList({ onOpenDM }: { onOpenDM: (ch: DMChannel) => void }) {
   );
 }
 
+interface EmailLookupResult { userId: string; displayName: string; email: string; }
+
 // ─── DM body ──────────────────────────────────────────────────────────────────
 
-function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () => void }) {
+function DMBody({ channel }: { channel: DMChannel }) {
   const { currentUser, currentTeam, teamMembers } = useApp();
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -892,8 +1028,14 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
   const [error, setError] = useState('');
   const [showAddMember, setShowAddMember] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [dictationStatus, setDictationStatus] = useState<'idle' | 'transcribing'>('idle');
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useAutoGrowTextarea(textareaRef, panelRef, composerText);
 
   useEffect(() => {
     loadMessages();
@@ -951,22 +1093,69 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
     setTimeout(() => { el.style.backgroundColor = ''; }, 900);
   }
 
+  async function startDictation() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : 'audio/webm';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (chunks.length === 0) { setIsRecording(false); return; }
+        setIsRecording(false);
+        setDictationStatus('transcribing');
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        const buf = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        const geminiMime = recorder.mimeType.split(';')[0] || 'audio/webm';
+        try {
+          const res = await (window.warroom as any)?.dictation?.transcribe(btoa(bin), geminiMime);
+          if (res?.ok && res.data) setComposerText((prev) => (prev ? prev + ' ' : '') + res.data.trim());
+        } catch {}
+        setDictationStatus('idle');
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setIsRecording(true);
+    } catch { setIsRecording(false); }
+  }
+
+  function stopDictation() {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+    recorderRef.current = null;
+  }
+
   async function send() {
     if (!composerText.trim() || !currentUser || !currentTeam) return;
-    setSending(true); setError('');
+    const tempId = `tmp-${crypto.randomUUID()}`;
+    const savedText = composerText, savedReply = replyingTo;
+    const optimistic = {
+      id: tempId, dm_channel_id: channel.id, sender_id: currentUser.id, sender_name: currentUser.displayName,
+      content: savedText.trim(), created_at: new Date().toISOString(),
+      reply_to_id: savedReply?.id, reply_to_sender_name: savedReply?.senderName, reply_to_content: savedReply?.content,
+    } as any;
+    setMessages((prev) => [...prev, optimistic]);
+    setComposerText(''); setReplyingTo(null); setError('');
+    setSending(true);
     try {
       const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
-      const replyToContent = replyingTo ? await encryptText(key, replyingTo.content) : undefined;
+      const replyToContent = savedReply ? await encryptText(key, savedReply.content) : undefined;
       const res = await window.warroom.chat.sendDMMessage({
         dmChannelId: channel.id, senderId: currentUser.id,
-        senderName: currentUser.displayName, content: await encryptText(key, composerText.trim()),
-        replyToId: replyingTo?.id,
-        replyToSenderName: replyingTo?.senderName,
+        senderName: currentUser.displayName, content: await encryptText(key, savedText.trim()),
+        replyToId: savedReply?.id,
+        replyToSenderName: savedReply?.senderName,
         replyToContent,
       });
       if (!res.ok) throw new Error(res.error);
-      setComposerText(''); setReplyingTo(null);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } catch (e: any) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setComposerText(savedText); setReplyingTo(savedReply);
       setError(e?.message ?? 'Failed to send');
     } finally {
       setSending(false);
@@ -997,8 +1186,10 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
     setShowAddMember(false);
   }
 
+  const hasContent = !!composerText.trim();
+
   return (
-    <div className="flex flex-col h-full">
+    <div ref={panelRef} className="flex flex-col h-full">
       {/* Member pills */}
       <div className="flex flex-wrap gap-1 px-3 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
         {channel.members.map((m) => (
@@ -1030,7 +1221,7 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto scroll-thin px-3 py-2.5 space-y-1.5">
         {loading
           ? <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
           : messages.length === 0
@@ -1071,7 +1262,7 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 px-3 pt-2 pb-3 space-y-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+      <div className="shrink-0 px-3 pt-2 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--border-side)' }}>
         {replyingTo && (
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
             <ReplyIcon />
@@ -1084,19 +1275,23 @@ function DMBody({ channel, onAddMember }: { channel: DMChannel; onAddMember: () 
           </div>
         )}
         {error && <p className="text-xs text-red-500">{error}</p>}
-        <textarea ref={textareaRef} className="input w-full resize-none text-sm" rows={2}
-          placeholder="Message…"
-          value={composerText}
-          onChange={(e) => setComposerText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-            if (e.key === 'Escape') setReplyingTo(null);
-          }} />
-        <div className="flex justify-end">
-          <button className="btn-primary text-xs px-3 py-1" onClick={send}
-            disabled={sending || !composerText.trim()}>
-            {sending ? '…' : 'Send'}
-          </button>
+        <div className="relative">
+          <textarea ref={textareaRef} className="input w-full resize-none text-sm" rows={2}
+            placeholder="Message…"
+            style={{ paddingRight: 40, paddingBottom: 34 }}
+            value={composerText}
+            onChange={(e) => setComposerText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+              if (e.key === 'Escape') setReplyingTo(null);
+            }} />
+          <div className="absolute bottom-1.5 right-1.5">
+            <SendDictateButton
+              hasContent={hasContent} sending={sending} isRecording={isRecording} dictationStatus={dictationStatus}
+              onSend={send} onStartDictation={startDictation} onStopDictation={stopDictation}
+              variant="solid" size={26}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1135,12 +1330,6 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
     await window.warroom.storage.write('flows_index', newIndex);
     await window.warroom.storage.write(`flow_data_${newId}`, att.data ?? {});
     setView({ kind: 'flow', flowId: newId });
-  }
-
-  async function viewSpeechDoc(att: any) {
-    if (!att.data?.base64 || !att.data?.filename) return;
-    const res = await window.warroom.fs.writeTempFile(att.data.base64, att.data.filename);
-    if (res?.ok && res.path) setView({ kind: 'speech-doc', docPath: res.path } as any);
   }
 
   async function importCase(att: any) {
@@ -1183,7 +1372,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
   return (
     <div
       id={`msg-${m.id}`}
-      className={`flex flex-col gap-1 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
+      className={`flex flex-col gap-0.5 rounded-lg ${isSelf ? 'items-end' : 'items-start'}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -1205,7 +1394,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
       )}
 
       {/* Bubble */}
-      <div className="w-fit max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed"
+      <div className="w-fit max-w-[85%] px-2.5 py-1.5 rounded-xl text-[13px] leading-snug"
         style={isSelf
           ? { background: '#0077ed', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
           : { background: 'var(--bg-card)', color: 'var(--ink)', border: '1px solid var(--border-side)', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
@@ -1229,7 +1418,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
       )}
 
       {/* Footer: edit/delete (own) + timestamp — buttons always in DOM to prevent layout shift */}
-      <div className={`flex items-center h-5 gap-1 px-0.5 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex items-center h-4 gap-0.5 px-0.5 -mt-0.5 ${isSelf ? 'justify-end' : 'justify-start'}`}>
         {isSelf && (
           <>
             <button
@@ -1311,10 +1500,10 @@ const TYPE_ICONS: Record<string, string> = {
 
 function DateSeparator({ date }: { date: string }) {
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="flex items-center gap-2 py-0.5">
       <div className="flex-1 h-px" style={{ background: 'var(--border-side)' }} />
       <span
-        className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0"
+        className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
         style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}
       >
         {date}
@@ -1335,21 +1524,6 @@ function formatDateLabel(isoString: string): string {
   return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function AttachMenuItem({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button
-      className="w-full text-left px-3 py-2 flex items-center gap-2.5 text-xs transition"
-      style={{ color: 'var(--ink)', background: 'transparent' }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      onClick={onClick}
-    >
-      <span className="text-base leading-none">{icon}</span>
-      <span>{label}</span>
-    </button>
-  );
-}
-
 function IconBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button title={title} onClick={onClick}
@@ -1362,9 +1536,6 @@ function IconBtn({ title, onClick, children }: { title: string; onClick: () => v
   );
 }
 
-function PlusIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
-}
 function DMIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 9h8M8 13h5" /><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" /></svg>;
 }
@@ -1377,9 +1548,6 @@ function SettingsIcon() {
 function SignOutIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>;
 }
-function CloseIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>;
-}
 function DMPencilIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 }
@@ -1389,4 +1557,3 @@ function DMTrashIcon() {
 function ReplyIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
 }
-

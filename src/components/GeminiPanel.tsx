@@ -6,6 +6,8 @@ import { linkifyText } from '../lib/linkify';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS, makeDefaultData } from './FlowView';
 import { readFlowPrefs } from '../lib/flowPrefs';
 import type { View } from '../store/appStore';
+import SendDictateButton from './SendDictateButton';
+import { useAutoGrowTextarea } from '../hooks/useAutoGrowTextarea';
 
 // Flow cells are stored as HTML (rich text). Strip tags for AI-readable plain text.
 function stripCellHtml(s: string): string {
@@ -416,14 +418,15 @@ function renderMarkdown(text: string, onNav?: NavFn): React.ReactNode[] {
       continue;
     }
 
-    // ── Heading (# ## ###) ────────────────────────────────────────────────
+    // ── Heading (# Title / ## Header 1 / ### Header 2) ─────────────────────
     const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
     if (headingMatch) {
-      const level = headingMatch[1].length;
+      const level = headingMatch[1].length; // 1 = Title, 2 = Header 1, 3 = Header 2
       const headingStyle: React.CSSProperties = {
-        fontWeight: 700,
-        margin: '0.6em 0 0.2em',
-        fontSize: level === 1 ? 14 : level === 2 ? 13 : 12,
+        fontWeight: level === 3 ? 600 : 700,
+        margin: level === 1 ? '0.7em 0 0.3em' : '0.6em 0 0.2em',
+        fontSize: level === 1 ? 16 : level === 2 ? 14 : 13,
+        lineHeight: 1.3,
         color: 'var(--ink)',
       };
       nodes.push(<div key={blockKey++} style={headingStyle}>{renderInline(headingMatch[2], onNav)}</div>);
@@ -978,20 +981,6 @@ function SlashCommandPicker({
   );
 }
 
-// ─── Attach menu item ─────────────────────────────────────────────────────────
-
-function AttachMenuItem({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button className="w-full text-left px-3 py-2 flex items-center gap-2 text-xs transition"
-      style={{ color: 'var(--ink)', background: 'transparent' }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      onClick={onClick}>
-      <span className="text-sm">{icon}</span>{label}
-    </button>
-  );
-}
-
 // ─── Conversation list ────────────────────────────────────────────────────────
 
 interface Conversation {
@@ -1379,7 +1368,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const [showSlashPicker, setShowSlashPicker] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
   const [availableSkills, setAvailableSkills] = useState<{ name: string; source: string }[]>([]);
-  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -1496,22 +1484,24 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const cancelledStepIds = useRef<Set<string>>(new Set());
   const onCancelStepRef = useRef<((stepId: string) => void) | null>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [history]);
+  useAutoGrowTextarea(textareaRef, panelRef, composerText);
 
 
   useEffect(() => {
-    if (!showMentionPicker && !showAttachMenu && !showSlashPicker) return;
+    if (!showMentionPicker && !showSlashPicker) return;
     function onMouseDown(e: MouseEvent) {
       if (composerRef.current && !composerRef.current.contains(e.target as Node)) {
-        setShowMentionPicker(false); setShowAttachMenu(false); setShowSlashPicker(false);
+        setShowMentionPicker(false); setShowSlashPicker(false);
       }
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [showMentionPicker, showAttachMenu, showSlashPicker]);
+  }, [showMentionPicker, showSlashPicker]);
 
   function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
@@ -2780,7 +2770,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={panelRef} className="flex flex-col h-full">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-3">
         {history.length === 0 ? (
@@ -3071,7 +3061,22 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>{m.name}</div>
                   {m.type === 'speechdoc' && (m.data?.full || m.data?.tokenSaving) ? (
-                    <div className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: tokenSaving ? '#4285F4' : 'var(--nav-inactive-color)' }}>
+                    <button
+                      onClick={() => setTokenSaving((v) => !v)}
+                      title="Send only underlined text, card cites, and headings — skip small non-underlined body text. Reduces tokens sent to the model."
+                      className="text-[10px] mt-0.5 flex items-center gap-1 transition"
+                      style={{ color: tokenSaving ? '#4285F4' : 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-sm flex items-center justify-center shrink-0"
+                        style={{ border: `1.5px solid ${tokenSaving ? '#4285F4' : 'var(--border-med)'}`, background: tokenSaving ? '#4285F4' : 'transparent' }}
+                      >
+                        {tokenSaving && (
+                          <svg width="7" height="7" viewBox="0 0 10 10" fill="none">
+                            <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </span>
                       {tokenSaving
                         ? (() => {
                             const filteredTokens = Math.round((m.data.tokenSaving?.length ?? 0) / 4);
@@ -3082,7 +3087,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                             return `Filtered · ~${filteredTokens.toLocaleString()} tokens${saved !== null && saved > 0 ? ` · ${saved}% saved` : ''}`;
                           })()
                         : `Full · ~${Math.round((m.data.full?.length ?? 0) / 4).toLocaleString()} tokens`}
-                    </div>
+                    </button>
                   ) : (
                     <div className="text-[10px] capitalize mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>{m.type}</div>
                   )}
@@ -3111,103 +3116,24 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               onClose={() => setShowSlashPicker(false)}
             />
           )}
-          {showAttachMenu && (
-            <div className="absolute bottom-full left-0 mb-1 rounded-md shadow-lg overflow-hidden z-50"
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', minWidth: 180 }}>
-              <AttachMenuItem icon="📁" label="Cases" onClick={() => {
-                setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
-                setTimeout(() => textareaRef.current?.focus(), 0);
-              }} />
-              <AttachMenuItem icon="📋" label="Flows" onClick={() => {
-                setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
-                setTimeout(() => textareaRef.current?.focus(), 0);
-              }} />
-              <AttachMenuItem icon="📝" label="Speech docs" onClick={() => {
-                setShowAttachMenu(false); setShowMentionPicker(true); setMentionQuery('');
-                setTimeout(() => textareaRef.current?.focus(), 0);
-              }} />
-              {pendingMentions.some((m) => m.type === 'speechdoc') && (
-                <div style={{ borderTop: '1px solid var(--border-side)' }}>
-                  <button
-                    className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 text-xs transition"
-                    style={{ color: 'var(--ink)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                    onClick={() => setTokenSaving((v) => !v)}
-                    title="Send only underlined text, card cites, and headings — skip small non-underlined body text. Reduces tokens sent to the model."
-                  >
-                    <span>Token saving</span>
-                    <span
-                      className="w-3.5 h-3.5 rounded-sm flex items-center justify-center shrink-0"
-                      style={{ border: `1.5px solid ${tokenSaving ? '#4285F4' : 'var(--border-med)'}`, background: tokenSaving ? '#4285F4' : 'transparent' }}
-                    >
-                      {tokenSaving && (
-                        <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                          <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </span>
-                  </button>
-                </div>
-              )}
-              <div className="px-3 py-1.5 text-[10px]"
-                style={{ color: 'var(--nav-inactive-color)', borderTop: '1px solid var(--border-side)' }}>
-                Tip: paste an image from clipboard
-              </div>
-            </div>
-          )}
           <textarea ref={textareaRef} className="input w-full resize-none text-sm" rows={2}
-            placeholder="Ask Warroom AI… @ to attach · / for skills"
+            placeholder="Ask Warroom AI… @ to attach or mention · / for skills"
+            style={{ paddingRight: 40, paddingBottom: 34 }}
             value={composerText} onChange={handleComposerChange}
-            onFocus={() => setShowAttachMenu(false)}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               if (e.key === 'Escape') {
-                if (showMentionPicker || showAttachMenu || showSlashPicker) {
-                  setShowMentionPicker(false); setShowAttachMenu(false); setShowSlashPicker(false);
+                if (showMentionPicker || showSlashPicker) {
+                  setShowMentionPicker(false); setShowSlashPicker(false);
                 } else {
                   setReplyingTo(null);
                 }
               }
             }} />
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Attach button */}
-          <button
-            title="Attach"
-            onClick={() => { setShowAttachMenu((v) => !v); setShowMentionPicker(false); }}
-            className="w-6 h-6 flex items-center justify-center rounded-md transition"
-            style={{ color: 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-          {/* Mic / dictation button */}
-          <style>{`@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:0.35}}`}</style>
-          <button
-            title={isRecording ? 'Stop dictation' : dictationStatus === 'transcribing' ? 'Transcribing…' : 'Dictate'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={isRecording ? stopDictation : dictationStatus === 'idle' ? startDictation : undefined}
-            disabled={dictationStatus === 'transcribing'}
-            className="w-6 h-6 flex items-center justify-center rounded-md transition"
-            style={{
-              background: isRecording ? 'rgba(239,68,68,0.1)' : 'transparent',
-              border: isRecording ? '1.5px solid #ef4444' : '1.5px solid transparent',
-              cursor: dictationStatus === 'transcribing' ? 'default' : 'pointer',
-              color: isRecording ? '#ef4444' : dictationStatus === 'transcribing' ? '#4285F4' : 'var(--nav-inactive-color)',
-              animation: isRecording || dictationStatus === 'transcribing' ? 'mic-pulse 1.2s ease-in-out infinite' : undefined,
-            }}
-            onMouseEnter={(e) => { if (!isRecording && dictationStatus === 'idle') { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; } }}
-            onMouseLeave={(e) => { if (!isRecording && dictationStatus === 'idle') { (e.currentTarget as HTMLElement).style.background = 'transparent'; } }}
-          >
-            <MicIcon size={14} />
-          </button>
+        <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-2 pointer-events-none">
           {/* Model picker */}
-          <div className="relative ml-auto mr-1" ref={modelPickerRef}>
+          <div className="relative pointer-events-auto" ref={modelPickerRef}>
             <button
               onClick={() => setShowModelPicker((v) => !v)}
               title="Switch model"
@@ -3221,7 +3147,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = showModelPicker ? 'var(--nav-hover-bg)' : 'transparent'; }}
             >
               <AIProviderIcon provider={apiProvider} size={10} />
-              <span>{modelOpts.find((o) => o.value === activeModel)?.label ?? activeModel}</span>
+              <span>Model</span>
               <svg width="7" height="7" viewBox="0 0 8 8" fill="none"><path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
             {showModelPicker && (
@@ -3262,21 +3188,17 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               </div>
             )}
           </div>
-          {/* Send button with gradient */}
-          <button
-            className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg font-medium transition"
-            style={{
-              background: streaming ? 'var(--bg-card)' : 'linear-gradient(135deg,#4285F4,#9168c0)',
-              color: streaming ? 'var(--nav-inactive-color)' : '#fff',
-              border: 'none', cursor: streaming ? 'not-allowed' : 'pointer', opacity: streaming ? 0.7 : 1,
-            }}
-            onClick={() => send()}
-            disabled={streaming || (!composerText.trim() && pendingMentions.length === 0)}
-          >
-            {streaming ? '…' : <><AIProviderIcon provider={apiProvider} size={11} color="#fff" />&nbsp;Send</>}
-          </button>
+          <div className="pointer-events-auto">
+            <SendDictateButton
+              hasContent={!!composerText.trim() || pendingMentions.length > 0}
+              sending={streaming} isRecording={isRecording} dictationStatus={dictationStatus}
+              onSend={() => send()} onStartDictation={startDictation} onStopDictation={stopDictation}
+              variant="gradient" size={26}
+            />
+          </div>
         </div>
       </div>
     </div>
+  </div>
   );
 }

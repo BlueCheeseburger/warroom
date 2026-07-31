@@ -39,6 +39,10 @@ const SETTINGS_LOCALSTORAGE_KEYS = [
   'warroom-sb-collapsed',
   'warroom-chat-width',
   'warroom-gemini-width',
+  'warroom-files-bar-style',
+  'warroom-quick-chat-enabled',
+  'warroom-quick-chat-pins',
+  'warroom-quick-chat-bindings',
 ];
 
 interface SettingsExportFile {

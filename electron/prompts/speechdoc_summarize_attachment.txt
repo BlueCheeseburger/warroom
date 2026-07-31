@@ -1,0 +1,4 @@
+{{CX_SKILL_BLOCK}}The speech document "{{FILE_NAME}}" is too large to send to a teammate in full, so it needs to be summarized in its place. Go through it part by part, in document order (pocket/speech label, then hat/advantage or off-case position, then block, then each card within it), and for every card give: the tagline's claim, the cite (author/date/publication if present), and the core warrant of what's underlined/highlighted — skip small, non-underlined filler text. For bare analytic tags with no card under them, just restate the claim. Preserve the document's structure with clear section headers so a debater reading only this summary understands what every part of the document argues and could flow it, without needing the original file.
+
+Document text:
+{{DOC_TEXT}}

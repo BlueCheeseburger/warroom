@@ -318,6 +318,8 @@ drop policy if exists "dm_add_members" on dm_channel_members;
 create policy "dm_add_members" on dm_channel_members for insert with check (
   exists (select 1 from dm_channels where id = dm_channel_id and is_team_member(team_id))
 );
+drop policy if exists "dm_members_can_leave" on dm_channel_members;
+create policy "dm_members_can_leave" on dm_channel_members for delete using (user_id = auth.uid());
 drop policy if exists "dm_read_messages" on dm_messages;
 create policy "dm_read_messages" on dm_messages for select using (is_dm_member(dm_channel_id));
 drop policy if exists "dm_send_messages" on dm_messages;
@@ -851,9 +853,17 @@ create table if not exists team_files (
   uploader_id uuid references auth.users(id),
   uploader_name text not null,
   name text not null,        -- encrypted
-  data_b64 text not null,    -- encrypted (base64 of raw file bytes)
+  data_b64 text not null,    -- encrypted (base64 of raw file bytes) — cleared on remove, or
+                              -- empty from upload if the source file was over the 2MB cap
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  -- "Remove" (uploader only) clears data_b64 but keeps the row — name, uploader,
+  -- and dates stay visible to the team as a record that a file used to be here.
+  removed boolean not null default false,
+  -- Set instead of data_b64 when the source file was over the 2MB cap and the
+  -- uploader chose "Summarize with Warroom AI" (see OversizedFilePopup.tsx).
+  -- Encrypted like name/data_b64.
+  summary_text text
 );
 
 create index if not exists team_files_team_idx on team_files(team_id, updated_at desc);

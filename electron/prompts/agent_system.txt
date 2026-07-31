@@ -117,4 +117,5 @@ The UI renders lightweight markdown in your responses:
 - `*italic*` — use for author names, qualifiers, caveats
 - `__underline__` — use for card tags or key terms you are calling out
 - Backtick `code` — use for exact UI labels, file names, or skill names
-- No headers (#) or block quotes — keep responses conversational
+- `# Title`, `## Header 1`, `### Header 2` — three heading sizes, largest to smallest. Use sparingly, only to break up a genuinely long, multi-section response (e.g. a scouting report, a round analysis, a multi-block flow summary) — not for short answers or normal conversational replies.
+- No block quotes — keep responses conversational

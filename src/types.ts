@@ -521,6 +521,7 @@ declare global {
         getDMMessages: (dmChannelId: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
         sendDMMessage: (payload: any) => Promise<{ ok: boolean; data?: any; error?: string }>;
         addDMMember: (dmChannelId: string, userId: string, displayName: string) => Promise<{ ok: boolean; error?: string }>;
+        leaveDM: (dmChannelId: string, userId: string) => Promise<{ ok: boolean; error?: string }>;
         subscribeDM: (dmChannelId: string) => Promise<void>;
         unsubscribeDM: () => Promise<void>;
         onNewDMMessage: (cb: (msg: any) => void) => () => void;
@@ -531,8 +532,9 @@ declare global {
       };
       teamFiles: {
         getAll: (teamId: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
-        upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) => Promise<{ ok: boolean; data?: any; error?: string }>;
+        upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string; summaryText?: string }) => Promise<{ ok: boolean; data?: any; error?: string }>;
         updateContent: (fileId: string, dataB64: string) => Promise<{ ok: boolean; error?: string }>;
+        removeContent: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
         delete: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
         subscribe: (teamId: string) => Promise<void>;
         unsubscribe: () => Promise<void>;
@@ -691,6 +693,8 @@ export interface TeamFile {
   data_b64: string;
   created_at: string;
   updated_at: string;
+  removed: boolean;
+  summary_text: string | null;
 }
 
 // Item queued for attachment when user picks a mention

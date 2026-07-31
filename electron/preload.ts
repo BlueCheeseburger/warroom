@@ -162,6 +162,7 @@ const api = {
     extract: (filePath: string) => ipcRenderer.invoke('speechdoc:extract', filePath),
     extractBlocks: (filePath: string) => ipcRenderer.invoke('speechdoc:extractBlocks', filePath),
     clearCache: (filePath?: string) => ipcRenderer.invoke('speechdoc:clearCache', filePath),
+    summarizeForAttachment: (docText: string, fileName: string) => ipcRenderer.invoke('speechdoc:summarizeForAttachment', docText, fileName),
     headingStyles: (base64: string) => ipcRenderer.invoke('speechdoc:headingStyles', base64),
   },
   dictation: {
@@ -322,6 +323,7 @@ const api = {
     sendDMMessage: (payload: any) => ipcRenderer.invoke('chat:sendDMMessage', payload),
     addDMMember: (dmChannelId: string, userId: string, displayName: string) =>
       ipcRenderer.invoke('chat:addDMMember', dmChannelId, userId, displayName),
+    leaveDM: (dmChannelId: string, userId: string) => ipcRenderer.invoke('chat:leaveDM', dmChannelId, userId),
     subscribeDM: (dmChannelId: string) => ipcRenderer.invoke('chat:subscribeDM', dmChannelId),
     unsubscribeDM: () => ipcRenderer.invoke('chat:unsubscribeDM'),
     onNewDMMessage: (cb: (msg: any) => void) => {
@@ -336,9 +338,10 @@ const api = {
   // team_files table + handlers in main.ts for the full design.
   teamFiles: {
     getAll: (teamId: string) => ipcRenderer.invoke('chat:getTeamFiles', teamId),
-    upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) =>
+    upload: (payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string; summaryText?: string }) =>
       ipcRenderer.invoke('chat:uploadTeamFile', payload),
     updateContent: (fileId: string, dataB64: string) => ipcRenderer.invoke('chat:updateTeamFileContent', fileId, dataB64),
+    removeContent: (fileId: string) => ipcRenderer.invoke('chat:removeTeamFileContent', fileId),
     delete: (fileId: string) => ipcRenderer.invoke('chat:deleteTeamFile', fileId),
     subscribe: (teamId: string) => ipcRenderer.invoke('chat:subscribeTeamFiles', teamId),
     unsubscribe: () => ipcRenderer.invoke('chat:unsubscribeTeamFiles'),

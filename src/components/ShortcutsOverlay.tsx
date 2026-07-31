@@ -35,7 +35,7 @@ const MOD = isMac ? '⌘' : 'Ctrl';
 interface Shortcut { id?: string; keys: string[]; label: string; }
 interface Group { title: string; shortcuts: Shortcut[]; }
 
-const GROUPS: Group[] = [
+export const GROUPS: Group[] = [
   {
     title: 'Global',
     shortcuts: [

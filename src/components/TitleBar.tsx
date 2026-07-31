@@ -3,6 +3,63 @@ import { useApp, Theme, DebateEvent } from '../store/appStore';
 import { AIProviderIcon } from './GeminiPanel';
 import { CoinFace, CoinIcon } from './Coin';
 import { useMenuA11y } from '../hooks/useMenuA11y';
+import { ChatAvatar } from './Avatar';
+import {
+  QuickChatPin, getQuickChatPins, isQuickChatEnabled, onChatPrefsChange,
+  readQuickChatBinding, specForQuickChatPin, eventMatchesQuickChatBinding,
+} from '../lib/chatPrefs';
+
+function QuickChatBar() {
+  const { setChatOpen, setPendingChatTarget } = useApp();
+  const [enabled, setEnabled] = useState(false);
+  const [pins, setPins] = useState<QuickChatPin[]>([]);
+
+  useEffect(() => {
+    function load() { setEnabled(isQuickChatEnabled()); setPins(getQuickChatPins()); }
+    load();
+    return onChatPrefsChange(load);
+  }, []);
+
+  function open(pin: QuickChatPin) {
+    setChatOpen(true);
+    setPendingChatTarget(pin.kind === 'team' ? { kind: 'team' } : { kind: 'dm', channelId: pin.id });
+  }
+
+  useEffect(() => {
+    if (!enabled || pins.length === 0) return;
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(input|textarea)$/i.test(target.tagName)) return;
+      for (const pin of pins) {
+        if (!pin.shortcutId) continue;
+        const binding = readQuickChatBinding(pin.shortcutId);
+        if (binding && eventMatchesQuickChatBinding(e, binding)) { e.preventDefault(); open(pin); return; }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [enabled, pins]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!enabled || pins.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1 mr-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      {pins.map((pin) => (
+        <button
+          key={pin.id}
+          title={pin.name}
+          onClick={() => open(pin)}
+          className="w-6 h-6 flex items-center justify-center rounded-md transition"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          <ChatAvatar spec={specForQuickChatPin(pin)} size={20} />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 

@@ -18,6 +18,7 @@ export default function RoomSettings({ onClose }: Props) {
   const isOwner = currentUser?.id === currentTeam?.owner_id;
   const noOwner = currentTeam?.owner_id === null || currentTeam?.owner_id === undefined;
   const [claiming, setClaiming] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -50,6 +51,21 @@ export default function RoomSettings({ onClose }: Props) {
     if (res.ok) setCurrentTeam(res.data as any);
     else setError(res.error ?? 'Failed to claim ownership');
     setClaiming(false);
+  }
+
+  async function handleLeave() {
+    if (!currentTeam || !currentUser) return;
+    setLeaving(true);
+    const res = await window.warroom.chat.kickMember(currentTeam.id, currentUser.id);
+    if (res.ok) {
+      setCurrentTeam(null);
+      setTeamMembers([]);
+      try { localStorage.removeItem('warroom-chat-team'); } catch {}
+      onClose();
+    } else {
+      setError(res.error ?? 'Failed to leave');
+      setLeaving(false);
+    }
   }
 
   async function handleKick(userId: string) {
@@ -161,6 +177,18 @@ export default function RoomSettings({ onClose }: Props) {
           <p className="text-[10px] mt-1" style={{ color: 'var(--nav-inactive-color)' }}>
             Share this code so teammates can join with "Join team"
           </p>
+        </div>
+
+        {/* Leave room */}
+        <div>
+          <button
+            className="text-xs px-3 py-1.5 rounded-lg"
+            style={{ background: 'transparent', border: '1px solid #b3261e', color: '#b3261e', cursor: leaving ? 'default' : 'pointer' }}
+            onClick={handleLeave}
+            disabled={leaving}
+          >
+            {leaving ? 'Leaving…' : 'Leave room'}
+          </button>
         </div>
       </div>
     </div>

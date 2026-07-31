@@ -6014,6 +6014,18 @@ const AGENT_TOOLS = [{
 
 // AGENT_TITLE_SUFFIX is now loaded at runtime from electron/prompts/agent_title_suffix.txt via renderPrompt('agent_title_suffix', {}).
 
+// When wantTitle is set, every provider (not just Gemini) gets the same
+// agent_title_suffix instruction telling the model to prefix its first reply
+// with <title>...</title>. Every provider branch must strip that tag back out
+// before the text reaches the UI, or the literal tag leaks into the chat.
+function extractEmbeddedTitle(raw: string, wantTitle: boolean): { text: string; title?: string } {
+  if (!wantTitle) return { text: raw };
+  const m = raw.match(/^<title>(.*?)<\/title>\r?\n?\r?\n?/);
+  if (!m) return { text: raw };
+  const title = m[1].trim().replace(/^["'`*\s]+|["'`*.,!?\s]+$/g, '').slice(0, 50);
+  return { text: raw.slice(m[0].length), title };
+}
+
 // ─── Gemini request/response logger ──────────────────────────────────────────
 // Appends one entry per agent turn to warroom/gemini.log in userData.
 // Logs the full outbound payload (system prompt + messages) and the raw response.
@@ -6122,14 +6134,8 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
         return sbOk({ type: 'tool_calls', calls: fnCalls.map((p: any) => ({ name: p.functionCall.name as string, args: p.functionCall.args as Record<string, any> })), modelContent: candidate.content });
       }
       const raw = parts.map((p: any) => p.text ?? '').join('');
-      if (wantTitle) {
-        const m = raw.match(/^<title>(.*?)<\/title>\r?\n?\r?\n?/);
-        if (m) {
-          const title = m[1].trim().replace(/^["'`*\s]+|["'`*.,!?\s]+$/g, '').slice(0, 50);
-          return sbOk({ type: 'text', text: raw.slice(m[0].length), title, modelContent: candidate.content });
-        }
-      }
-      return sbOk({ type: 'text', text: raw, modelContent: candidate.content });
+      const { text, title } = extractEmbeddedTitle(raw, !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent: candidate.content });
     }
 
     // ── OpenAI path ──────────────────────────────────────────────────────────
@@ -6159,8 +6165,8 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
       if (msg?.tool_calls?.length > 0) {
         return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
       }
-      const raw = msg?.content ?? '';
-      return sbOk({ type: 'text', text: raw, modelContent });
+      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent });
     }
 
     // ── LM Studio path (local, OpenAI-compatible) ────────────────────────────
@@ -6196,7 +6202,8 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
       const modelContent = openAIMsgToGeminiContent(msg);
       const toolCalls = readLmStudioToolCalls(data);
       if (toolCalls.length > 0) return sbOk({ type: 'tool_calls', calls: toolCalls, modelContent });
-      return sbOk({ type: 'text', text: msg?.content ?? '', modelContent });
+      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent });
     }
 
     // ── Grok path (OpenAI-compatible) ────────────────────────────────────────
@@ -6226,8 +6233,8 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
       if (msg?.tool_calls?.length > 0) {
         return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
       }
-      const raw = msg?.content ?? '';
-      return sbOk({ type: 'text', text: raw, modelContent });
+      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent });
     }
 
     // ── Anthropic path ───────────────────────────────────────────────────────
@@ -6258,7 +6265,8 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
         return sbOk({ type: 'tool_calls', calls: toolUses.map((tu: any) => ({ name: tu.name, args: tu.input ?? {} })), modelContent });
       }
       const raw = content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('');
-      return sbOk({ type: 'text', text: raw, modelContent });
+      const { text, title } = extractEmbeddedTitle(raw, !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent });
     }
   } catch (e: any) {
     return sbErr(e.message);
@@ -6345,6 +6353,15 @@ ipcMain.handle('chat:sendDMMessage', async (_e, payload: { dmChannelId: string; 
   } catch (e) { return sbErr(e); }
 });
 
+ipcMain.handle('chat:leaveDM', async (_e, dmChannelId: string, userId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('dm_channel_members').delete().eq('dm_channel_id', dmChannelId).eq('user_id', userId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
 ipcMain.handle('chat:addDMMember', async (_e, dmChannelId: string, userId: string, displayName: string) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
@@ -6384,6 +6401,27 @@ ipcMain.handle('chat:unsubscribeDM', async () => {
 // works while that uploader's Warroom app is running — other members just see
 // `updated_at` move and re-open the file to get the latest version.
 
+// ─── Oversized attachment summarization ────────────────────────────────────────
+// Speech docs / flows over the 2MB attachment cap (see MAX_ATTACHMENT_BYTES in
+// src/lib/fileSizeGate.ts) can't be sent in full. This produces a part-by-part
+// summary (cx_debate skill injected so it reads the doc the way a debater would)
+// that stands in for the real content wherever the attachment is opened. Takes
+// already-extracted text (renderer calls speechdoc:extract first) rather than a
+// file path, so it works for both the chat composer and Team Files uploads
+// without duplicating the docx-parsing logic that already lives in speechdoc:extract.
+ipcMain.handle('speechdoc:summarizeForAttachment', async (_e, docText: string, fileName: string) => {
+  try {
+    const cxSkill = (await readSkill('cx_debate')) ?? '';
+    const prompt = await renderPrompt('speechdoc_summarize_attachment', {
+      CX_SKILL_BLOCK: cxSkill ? `Reference — cross-ex / debate document knowledge:\n${cxSkill}\n\n---\n\n` : '',
+      FILE_NAME: fileName,
+      DOC_TEXT: docText.slice(0, 400000),
+    });
+    const raw = await withDelayedRetry(() => callAI(prompt, 'best', { maxOutputTokens: 32768 }));
+    return sbOk(raw);
+  } catch (e) { return sbErr(e); }
+});
+
 let teamFilesChannel: any = null;
 
 ipcMain.handle('chat:getTeamFiles', async (_e, teamId: string) => {
@@ -6395,12 +6433,12 @@ ipcMain.handle('chat:getTeamFiles', async (_e, teamId: string) => {
   } catch (e) { return sbErr(e); }
 });
 
-ipcMain.handle('chat:uploadTeamFile', async (_e, payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string }) => {
+ipcMain.handle('chat:uploadTeamFile', async (_e, payload: { teamId: string; uploaderId: string; uploaderName: string; name: string; dataB64: string; summaryText?: string }) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
     const { data, error } = await sb.from('team_files').insert({
       team_id: payload.teamId, uploader_id: payload.uploaderId, uploader_name: payload.uploaderName,
-      name: payload.name, data_b64: payload.dataB64,
+      name: payload.name, data_b64: payload.dataB64, summary_text: payload.summaryText ?? null,
     }).select().single();
     if (error) return sbErr(error);
     return sbOk(data);
@@ -6411,6 +6449,19 @@ ipcMain.handle('chat:updateTeamFileContent', async (_e, fileId: string, dataB64:
   if (!sb) return sbErr('Supabase not configured');
   try {
     const { error } = await sb.from('team_files').update({ data_b64: dataB64, updated_at: new Date().toISOString() }).eq('id', fileId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// "Remove" (uploader only) — clears the file content but keeps the row, so
+// name/uploader/dates stay visible as a record. Distinct from deleteTeamFile
+// (full row delete), which nothing in the UI currently calls.
+ipcMain.handle('chat:removeTeamFileContent', async (_e, fileId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    await unwatchLocalTeamFile(fileId); // no-op on devices not watching this file
+    const { error } = await sb.from('team_files').update({ data_b64: '', removed: true, updated_at: new Date().toISOString() }).eq('id', fileId);
     if (error) return sbErr(error);
     return sbOk(null);
   } catch (e) { return sbErr(e); }

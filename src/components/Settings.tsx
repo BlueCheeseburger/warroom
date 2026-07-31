@@ -4,6 +4,11 @@ import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
 import { exportSettings, importSettings } from '../utils/settingsExport';
+import {
+  FilesBarStyle, getFilesBarStyle, setFilesBarStyle,
+  isQuickChatEnabled, setQuickChatEnabled, getQuickChatPins,
+} from '../lib/chatPrefs';
+import QuickChatPicker from './QuickChatPicker';
 
 type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
@@ -379,6 +384,9 @@ export default function Settings() {
     cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
   } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [filesBarStyle, setFilesBarStyleLocal] = useState<FilesBarStyle>(getFilesBarStyle());
+  const [quickChatEnabled, setQuickChatEnabledLocal] = useState(isQuickChatEnabled());
+  const [showQuickChatPicker, setShowQuickChatPicker] = useState(false);
   const [settingsExportStatus, setSettingsExportStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
   const [settingsExportMsg, setSettingsExportMsg] = useState('');
   const [settingsImportStatus, setSettingsImportStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
@@ -2238,8 +2246,9 @@ export default function Settings() {
             { label: 'Shared attachment data (cases, blocks, flows, opponents, tournaments, speech docs)', tag: 'encrypted' },
             { label: 'Quoted reply snippets', tag: 'encrypted' },
             { label: 'Team Files — file names & content', tag: 'encrypted' },
+            { label: 'Team Files — AI-generated summary (oversized files)', tag: 'encrypted' },
             { label: 'Sender names, timestamps & attachment labels', tag: 'plaintext' },
-            { label: 'Team Files — uploader names & modified time', tag: 'plaintext' },
+            { label: 'Team Files — uploader names, modified time & removed flag', tag: 'plaintext' },
             { label: 'User accounts & team membership', tag: 'plaintext' },
           ].map(({ label, tag }) => (
             <div key={label} className="flex items-center gap-2">
@@ -2389,6 +2398,59 @@ export default function Settings() {
                 <p className="text-xs text-ink/50">Not signed in to chat. Open the chat panel to sign in.</p>
               )}
             </div>
+
+            {/* Files display (team rooms) */}
+            <div className="glass-card rounded-sm p-4">
+              <div className="label mb-1">Team files display</div>
+              <p className="text-xs text-ink/50 mb-3">How to reach a team room's Files list.</p>
+              <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
+                {([['split', 'Chat / Files bar'], ['icon', 'Files icon']] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    onClick={() => { setFilesBarStyle(v); setFilesBarStyleLocal(v); }}
+                    className="px-3 py-1 text-xs rounded-md transition-all"
+                    style={filesBarStyle === v
+                      ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
+                      : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick chat */}
+            <div className="glass-card rounded-sm p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="label mb-1">Quick chat</div>
+                  <p className="text-xs text-ink/50">Pin team rooms and DMs to the top bar for one-click access.</p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={quickChatEnabled}
+                  onClick={() => {
+                    const next = !quickChatEnabled;
+                    setQuickChatEnabled(next);
+                    setQuickChatEnabledLocal(next);
+                    if (next) setShowQuickChatPicker(true);
+                  }}
+                  className="relative shrink-0 transition-colors"
+                  style={{ width: 34, height: 20, borderRadius: 10, background: quickChatEnabled ? 'var(--accent)' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 2, left: quickChatEnabled ? 16 : 2, width: 16, height: 16,
+                    borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+                  }} />
+                </button>
+              </div>
+              {quickChatEnabled && (
+                <button className="btn text-xs px-2.5 py-1 mt-3" onClick={() => setShowQuickChatPicker(true)}>
+                  {getQuickChatPins().length > 0 ? 'Edit pins…' : 'Choose pins…'}
+                </button>
+              )}
+            </div>
+            {showQuickChatPicker && <QuickChatPicker onClose={() => setShowQuickChatPicker(false)} />}
 
             {/* Sharing */}
             <div className="glass-card rounded-sm p-4">
