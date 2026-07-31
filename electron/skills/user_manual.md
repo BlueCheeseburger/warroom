@@ -92,6 +92,8 @@ There's a **＋** button next to **Cards** in the sidebar (just like the one nex
 
 Notes: HTML keeps images, PDF is text-only. Scanned/image-only PDFs have no selectable text to cut. Neon green highlight counts as "read aloud" everywhere in Warroom, alongside yellow and cyan. This needs a working AI key (Settings → API Keys).
 
+By default, step 2's short cite for a source published this year uses month-day (`Guitierrez 7-31`) rather than the two-digit year — switch that to always use the year (`Guitierrez 26`) in Settings → General → **Current-year short cite**. Sources from a past year always use the two-digit year either way.
+
 ---
 
 ## Opponents
@@ -595,6 +597,7 @@ Gear icon at bottom of sidebar.
 |---------|-------------|
 | Debate event | HS Policy, HS LD, HS PF, College Policy (NDT/CEDA), College LD (NFA-LD) |
 | Card staleness | How many years old a card can be before it's flagged outdated everywhere (default 4) |
+| Current-year short cite | Whether the AI card cutter writes a current-year source as month-day (`Brady 3-15`, the default) or two-digit year (`Brady 26`) — see "Cut a card with Warroom AI" above |
 | Reduce motion | Turns off transitions and animations across the app |
 | Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
 | Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |

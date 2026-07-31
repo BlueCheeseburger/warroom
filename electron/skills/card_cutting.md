@@ -24,6 +24,7 @@ Pattern: `Lastname YY, [credentials]. [Full First Names], [Full Date]. "[Title].
 - 3+ authors: `Smith et al. 24`
 - **Current year (2026): use month-day instead of year** → `Brady 3-15` (for March 15, 2026)
 - **Past years: two-digit** → `Brady 25`
+- This is the default. The Card Cutter's AI step can be switched to always use the two-digit year (even for current-year sources) via Settings → General → "Current-year short cite" — when that's set, use `Brady 26` style year-round instead.
 
 ### After the short cite
 Full author credentials/title → Full first names → Full date (Month Day, Year) → Article title in quotes → URL in brackets. No period after the URL bracket.

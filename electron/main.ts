@@ -2177,6 +2177,22 @@ function parseJsonLoose(raw: string): any {
 }
 
 // ─── Card cutter (guided cut from a PDF or a saved web page) ────────────────────
+// The short-cite convention for a current-year source is a house-style choice,
+// not a fixed rule — some teams write "Brady 3-15" (month-day), others prefer
+// "Brady 26" (two-digit year) year-round for consistency across their whole
+// case. Settings → General exposes `citeYearFormat` ('month-day' | 'year',
+// default 'month-day' to match the long-standing built-in behavior); past-year
+// sources are always the two-digit year regardless, since there's no ambiguity
+// to resolve there.
+async function citeYearRuleText(): Promise<string> {
+  const s = await readJson('app_settings').catch(() => null) as any;
+  const fmt = s?.citeYearFormat === 'year' ? 'year' : 'month-day';
+  if (fmt === 'year') {
+    return 'Current-year sources use a two-digit year short cite (e.g. "Brady 26"), same as past years — do NOT use a month-day short cite even for current-year sources.';
+  }
+  return 'Current-year sources use a month-day short cite (e.g. "Brady 3-15"); past years use a two-digit year.';
+}
+
 // STEP 1: read the source. For HTML we parse with cheerio to pull verbatim body
 // paragraphs + article images (alt text preferred, ads/logos filtered). For PDF we
 // extract text only (no images). Warroom AI then identifies the cite, the real
@@ -2293,6 +2309,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     CURRENT_YEAR: String(today.getFullYear()),
     META_URL_OR_NOTE: metaUrl || '(none — omit the URL bracket)',
     CREDENTIALS_INSTRUCTION: credentialsInstruction,
+    CITE_YEAR_RULE: await citeYearRuleText(),
     PARAGRAPHS: numbered,
     IMAGES: imgList,
   });

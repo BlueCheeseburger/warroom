@@ -509,6 +509,16 @@ export default function Settings() {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, [key]: val });
   }
+  // Card Cutter's current-year short-cite style — main-process state (read by
+  // electron/main.ts's cutter_read_source prompt), not localStorage, for the
+  // same reason as the notify categories above. Default 'month-day' matches
+  // the card_cutting skill's long-standing built-in convention.
+  const [citeYearFormat, setCiteYearFormatState] = useState<'month-day' | 'year'>('month-day');
+  async function setCiteYearFormat(val: 'month-day' | 'year') {
+    setCiteYearFormatState(val);
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, citeYearFormat: val });
+  }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
   // no main-process/IPC need). Default ON: dark-mode users still read the
   // actual doc page as light "paper" while the rest of the app stays dark.
@@ -689,6 +699,7 @@ export default function Settings() {
         notifyJudges:    (s as any)?.notifyJudges    !== false,
         notifyOpponents: (s as any)?.notifyOpponents !== false,
       });
+      setCiteYearFormatState((s as any)?.citeYearFormat === 'year' ? 'year' : 'month-day');
       const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
       const provider: AIProvider = (s as any)?.apiProvider ?? 'gemini';
@@ -1185,6 +1196,33 @@ export default function Settings() {
               if (Number.isFinite(n)) setCardOutdatedYears(n);
             }}
           />
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Current-year short cite</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              How the AI card cutter writes the short cite for a source published this year — e.g.
+              "Guitierrez 7-31" vs "Guitierrez 26". Past-year sources always use the two-digit year either way.
+            </p>
+          </div>
+          <div className="flex rounded-lg p-0.5 ml-4 shrink-0" style={{ background: 'var(--mode-toggle-bg)' }}>
+            {([
+              { value: 'month-day', label: 'Month-day' },
+              { value: 'year',      label: 'Year' },
+            ] as const).map((o) => (
+              <button
+                key={o.value}
+                onClick={() => setCiteYearFormat(o.value)}
+                className="px-3 py-1 text-xs rounded-md transition-all"
+                style={citeYearFormat === o.value
+                  ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
+                  : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>

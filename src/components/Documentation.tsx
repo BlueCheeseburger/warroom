@@ -2041,6 +2041,18 @@ export default function Documentation() {
                 </span>
               </div>
               <div>
+                <span className="font-semibold text-ink">General — current-year short cite</span>
+                <span className="ml-2 text-ink/60">
+                  Whether the Card Cutter's AI "read source" step writes a current-year source's short
+                  cite as month-day (<Code>Brady 3-15</Code>, the default) or two-digit year
+                  (<Code>Brady 26</Code>, same style as past years). Stored as <Code>citeYearFormat</Code>{' '}
+                  ('month-day' | 'year') in <Code>app_settings</Code> — main-process state, since{' '}
+                  <Code>citeYearRuleText()</Code> in <Code>main.ts</Code> reads it to build the{' '}
+                  <Code>{'{{CITE_YEAR_RULE}}'}</Code> line of the <Code>cutter_read_source</Code> prompt.
+                  Past-year sources are unaffected either way.
+                </span>
+              </div>
+              <div>
                 <span className="font-semibold text-ink">AI provider</span>
                 <span className="ml-2 text-ink/60">Gemini (default) · OpenAI · Anthropic · Grok · LM Studio (local). Persisted as <Code>apiProvider</Code>.</span>
               </div>
