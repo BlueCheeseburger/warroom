@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
-import MentionPicker from './MentionPicker';
-import { PendingMention } from '../types';
+import React from 'react';
 
 const TAG_ICONS: Record<string, string> = {
   case: '📁', flow: '⬜', opponent: '🥊', judge: '👨‍⚖️', speechdoc: '📝',
@@ -16,35 +14,21 @@ export interface DisplayTag {
   unavailable?: boolean;
 }
 
-/** Row of tag chips + an inline "+ Tag" picker. Used in opponent/judge notes
- * to attach a speech doc, flow, opponent, or judge — see SharedNotesEditor. */
+/** Read-only-capable row of tag chips. Tags are added by typing @ in the note
+ * textarea (see SharedNotesEditor) — this just displays/opens/removes them. */
 export default function NoteTagBar({
-  tags, onAdd, onOpen, onRemove, readOnly, error,
+  tags, onOpen, onRemove, readOnly, error,
 }: {
   tags: DisplayTag[];
-  onAdd?: (item: PendingMention) => void;
   onOpen: (tag: DisplayTag) => void;
   onRemove?: (id: string) => void;
   readOnly?: boolean;
   error?: string | null;
 }) {
-  const [picking, setPicking] = useState(false);
-  const [query, setQuery] = useState('');
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!picking) return;
-    function onMouseDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setPicking(false);
-    }
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [picking]);
-
-  if (tags.length === 0 && (readOnly || !onAdd)) return null;
+  if (tags.length === 0 && !error) return null;
 
   return (
-    <div ref={rootRef} className="flex flex-wrap items-center gap-1.5 relative">
+    <div className="flex flex-wrap items-center gap-1.5">
       {tags.map((t) => (
         <span key={t.id}
           className="inline-flex items-center gap-1 text-[10px] pl-1.5 pr-1 py-0.5 rounded-full"
@@ -76,37 +60,6 @@ export default function NoteTagBar({
           )}
         </span>
       ))}
-      {!readOnly && onAdd && (
-        <div className="relative">
-          <button
-            onClick={() => setPicking((v) => !v)}
-            title="Tag a speech doc, flow, opponent, or judge"
-            className="text-[10px] px-1.5 py-0.5 rounded-full transition"
-            style={{ background: 'transparent', color: 'var(--nav-inactive-color)', border: '1px dashed var(--border-subtle)' }}
-          >
-            + Tag
-          </button>
-          {picking && (
-            <div className="absolute left-0 top-full mt-1 z-50" style={{ width: 260 }}>
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search to tag…"
-                className="input w-full text-xs mb-1"
-              />
-              <div className="relative">
-                <MentionPicker
-                  query={query}
-                  onSelect={(item) => { setPicking(false); setQuery(''); onAdd(item); }}
-                  onClose={() => setPicking(false)}
-                  types={['speechdoc', 'case', 'flow', 'opponent', 'judge']}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
       {error && <span className="text-[10px] text-danger">{error}</span>}
     </div>
   );

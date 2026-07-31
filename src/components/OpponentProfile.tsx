@@ -150,10 +150,11 @@ export default function OpponentProfile() {
         {/* Debate Land stats */}
         <DebateLandSection key={opp.id} opp={opp} />
 
-        {/* Notes */}
-        <Section title="Notes">
+        {/* Notes — SharedNotesEditor renders its own "Notes" label + sharing pill,
+            so this just supplies the card framing (no duplicate title). */}
+        <div className="glass-card rounded-sm p-4">
           <NotesEditor opp={opp} />
-        </Section>
+        </div>
 
         {/* Rounds against */}
         {rounds.length > 0 && (
@@ -759,6 +760,30 @@ const DL_EVENT_LABELS: Record<DLEvent, string> = {
   ld: 'Lincoln-Douglas',
 };
 
+const DL_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h — a "no match" search result is cheap to keep, expensive to re-hit every profile view
+
+interface DLSearchCache {
+  candidates: DLCandidate[] | null;
+  error: string;
+  ts: number;
+}
+
+function dlSearchCacheKey(oppId: string, dlEvent: DLEvent): string {
+  return `warroom-dl-search-${oppId}-${dlEvent}`;
+}
+function getDlSearchCache(oppId: string, dlEvent: DLEvent): DLSearchCache | null {
+  try {
+    const raw = localStorage.getItem(dlSearchCacheKey(oppId, dlEvent));
+    if (!raw) return null;
+    const parsed: DLSearchCache = JSON.parse(raw);
+    if (Date.now() - parsed.ts > DL_SEARCH_CACHE_TTL) return null;
+    return parsed;
+  } catch { return null; }
+}
+function setDlSearchCache(oppId: string, dlEvent: DLEvent, entry: Omit<DLSearchCache, 'ts'>) {
+  try { localStorage.setItem(dlSearchCacheKey(oppId, dlEvent), JSON.stringify({ ...entry, ts: Date.now() })); } catch {}
+}
+
 function DebateLandSection({ opp }: { opp: any }) {
   const { update, event } = useApp();
   const [dlEvent, setDlEvent] = useState<DLEvent>(() => {
@@ -770,12 +795,18 @@ function DebateLandSection({ opp }: { opp: any }) {
   const [error, setError] = useState('');
   const [candidates, setCandidates] = useState<DLCandidate[] | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>(opp.teamName ?? '');
+  // Lets you reopen the search box even after stats were already saved, in case
+  // the auto-picked or manually-picked team turns out to be the wrong one.
+  const [forceSearchUI, setForceSearchUI] = useState(false);
 
   const stats: OpponentStats | undefined = opp.stats;
   const hasDLStats = stats?.source === 'debate.land';
 
   useEffect(() => {
-    if (!hasDLStats) search();
+    if (hasDLStats) return;
+    const cached = getDlSearchCache(opp.id, dlEvent);
+    if (cached) { setCandidates(cached.candidates); setError(cached.error); return; }
+    search();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -796,6 +827,7 @@ function DebateLandSection({ opp }: { opp: any }) {
           [opp.id]: { ...db.opponents[opp.id], stats: res.stats },
         },
       }));
+      setForceSearchUI(false);
     } catch (_) {
       setError('Could not load stats from Debate Land — check your connection');
     } finally {
@@ -815,7 +847,9 @@ function DebateLandSection({ opp }: { opp: any }) {
       }
       const results: DLCandidate[] = res.results ?? [];
       if (results.length === 0) {
-        setError(`No ${DL_EVENT_LABELS[dlEvent]} teams found matching "${searchQuery.trim() || opp.teamName}" — try just the school name or use fewer words`);
+        const msg = `No ${DL_EVENT_LABELS[dlEvent]} teams found matching "${searchQuery.trim() || opp.teamName}" — try just the school name or use fewer words`;
+        setError(msg);
+        setDlSearchCache(opp.id, dlEvent, { candidates: null, error: msg });
         return;
       }
       if (results.length === 1) {
@@ -823,6 +857,7 @@ function DebateLandSection({ opp }: { opp: any }) {
         return;
       }
       setCandidates(results);
+      setDlSearchCache(opp.id, dlEvent, { candidates: results, error: '' });
     } catch (_) {
       setError('Could not load stats from Debate Land — check your connection');
     } finally {
@@ -836,8 +871,9 @@ function DebateLandSection({ opp }: { opp: any }) {
 
   return (
     <Section title="Debate Land stats">
-      {/* Event selector + search input — shown when no stats loaded yet, or during disambiguation/error */}
-      {(!hasDLStats || candidates != null || error) && (
+      {/* Event selector + search input — shown when no stats loaded yet, during
+          disambiguation/error, or when the user reopened search to correct a pick */}
+      {(!hasDLStats || candidates != null || error || forceSearchUI) && (
         <div className="space-y-2 mb-3">
           <div className="flex gap-1">
             {(['policy', 'pf', 'ld'] as DLEvent[]).map((ev) => (
@@ -866,6 +902,15 @@ function DebateLandSection({ opp }: { opp: any }) {
             <button className="btn text-xs" onClick={search} disabled={loading}>
               {loading ? 'Searching…' : 'Search'}
             </button>
+            {forceSearchUI && hasDLStats && (
+              <button
+                className="text-xs text-ink/40 hover:text-ink shrink-0 self-center"
+                onClick={() => { setForceSearchUI(false); setCandidates(null); setError(''); }}
+                title="Keep the currently saved team and close search"
+              >
+                Keep current
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -919,9 +964,18 @@ function DebateLandSection({ opp }: { opp: any }) {
             <span className="text-[11px] text-ink/30">
               Updated {new Date(stats!.lastFetched).toLocaleString()}
             </span>
-            <button className="btn text-xs" onClick={search} disabled={loading}>
+            <button className="btn text-xs" onClick={search} disabled={loading} title="Re-fetch stats for this same team">
               {loading ? 'Refreshing…' : 'Refresh'}
             </button>
+            {!forceSearchUI && (
+              <button
+                className="text-xs text-ink/40 hover:text-ink"
+                onClick={() => setForceSearchUI(true)}
+                title="Not the right team? Search Debate Land again"
+              >
+                Wrong team? Search again
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -957,7 +1011,8 @@ function DebateLandSection({ opp }: { opp: any }) {
           ))}
           <button
             className="text-xs text-ink/40 hover:text-ink mt-1"
-            onClick={() => setCandidates(null)}
+            onClick={() => { setCandidates(null); if (hasDLStats) setForceSearchUI(false); }}
+            title={hasDLStats ? 'Keep the currently saved team' : 'Cancel search'}
           >
             Cancel
           </button>

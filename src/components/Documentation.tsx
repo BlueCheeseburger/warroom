@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/27/26
+          Last updated: 7/30/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -429,7 +429,7 @@ export default function Documentation() {
           <P>
             The list groups shortcuts into <strong>Global</strong> (⌘K search, ⌘/ this list, Esc),{' '}
             <strong>Find on a page</strong> (⌘F), <strong>AI panel & team chat</strong> (Enter/Shift+Enter/@),{' '}
-            <strong>Speech doc viewer</strong> (⌘⇧C toggles comments), and <strong>Flow editor</strong>{' '}
+            <strong>Speech doc viewer</strong> (⌘⌥M comments on the selection), and <strong>Flow editor</strong>{' '}
             (formatting, undo/redo, arrow-drawing, cell navigation).
             When a new global or component-level keyboard shortcut is added anywhere in the app, add it
             here too — grep for <Code>metaKey || e.ctrlKey</Code> across <Code>src/</Code> to find every
@@ -663,7 +663,14 @@ export default function Documentation() {
             </LI>
             <LI>
               <strong>Debate Land stats</strong> — career OTR, peak rank, avg speaks, win%, bids,
-              total record (via <Code>window.warroom.dl</Code> IPC)
+              total record (via <Code>window.warroom.dl</Code> IPC). Once matched, the result is
+              stored on <Code>opp.stats</Code> and never re-searched automatically; a "no team
+              matched" search result is also cached (24h, localStorage) so revisiting an
+              unmatched opponent doesn't re-hit the network every time. A <strong>Wrong team?
+              Search again</strong> link next to already-saved stats reopens the search box
+              (pre-filled, event tabs intact) without discarding the current stats until a new
+              match is actually picked — <strong>Cancel</strong>/<strong>Keep current</strong>{' '}
+              backs out without changing anything.
             </LI>
             <LI>Rounds against this opponent (linked by round ID)</LI>
           </UL>
@@ -672,13 +679,27 @@ export default function Documentation() {
             Opponents can be looked up by team name via OpenCaselist full-text search and/or
             Debate Land search. The app de-duplicates across local DB and search results.
           </P>
-          <H3>Tagging in notes</H3>
+          <H3>Notes: private + per-team panels, tagging</H3>
           <P>
-            The Notes editor on an opponent or judge profile (<Code>SharedNotesEditor</Code>) has a{' '}
-            <strong>+ Tag</strong> button that opens the same picker used for @mentions in chat,
-            letting you attach a speech doc, flow, case, opponent, or judge to that note as a small
-            clickable chip. Tagging works differently depending on whether the note is private or
-            shared with your team:
+            An opponent/judge profile's Notes section (<Code>SharedNotesEditor</Code>) is no longer a
+            single box with a visibility dropdown — it's a <strong>Private</strong> panel plus one
+            panel per team you belong to, each independently toggleable via the pill row at the top
+            (multi-team names that collide are disambiguated with a trailing invite-code fragment,
+            e.g. "JLHS Policy (a1b2)", since duplicate team names are a real possibility, not a
+            rendering bug). A panel auto-opens the first time it has content (text or a tag, checked
+            once per team via a lightweight probe on mount) and then stays open for the rest of the
+            app session — including if its content is later fully cleared — until explicitly toggled
+            closed or the app restarts (session-scoped via <Code>sessionStorage</Code>, keyed per
+            entity). Two or more open panels render side by side in a 2-column grid; a single open
+            panel takes the full width.
+          </P>
+          <P>
+            Typing <Code>@</Code> in either a private or team note textarea opens the same picker
+            used for @mentions in chat (filtered to speech doc/flow/case/opponent/judge — see below),
+            letting you attach an item to that note as a small clickable chip below the textarea.
+            There's no separate "+ Tag" button; selecting an item strips the "@query" fragment you
+            were typing (tags are structured chips, not inline text) and adds the chip. Tagging works
+            differently depending on whether the note is private or shared with your team:
           </P>
           <UL>
             <LI>
@@ -1274,11 +1295,16 @@ export default function Documentation() {
             a pane focuses it — keyboard shortcuts like <Code>⌘F</Code> apply only to the focused
             pane so three open panes don't all react to the same keypress. Each extra pane has its
             own close (×) button next to its filename. Opening a second or third pane
-            auto-collapses the left sidebar (no room for it); it re-expands once you're back down
-            to one pane — unless you manually re-expand it while comparing, in which case that
-            choice is remembered the next time you open this exact combination of docs (see below).
-            When 2+ panes are open, the Credibility and Cross-Ex buttons shrink to icon-only to save
-            room.
+            auto-collapses the left sidebar (no room for it) and closes the Warroom AI panel and
+            team chat panel if either was open, for the same reason; all three re-expand/reopen once
+            you're back down to one pane, restored to whatever they were right before comparing
+            started — unless you manually change one while comparing, in which case that choice is
+            remembered the next time you open this exact combination of docs (see below;{' '}
+            <Code>forceChatOpen</Code>/<Code>forceGeminiOpen</Code> in <Code>appStore.ts</Code> apply
+            these without recording an override, while <Code>setChatOpen</Code>/
+            <Code>setGeminiOpen</Code> — the ones every other call site uses — record one whenever a
+            multi-pane combo is active). When 2+ panes are open, the Credibility and Cross-Ex buttons
+            shrink to icon-only to save room.
           </P>
           <P>
             <strong>Resize panes.</strong> Drag the thin divider between two panes to resize them —
@@ -1297,7 +1323,8 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Compare views in the sidebar.</strong> Every saved combination also surfaces as
-            a row under <strong>Cases → Compare views</strong> (<Code>CompareViewsGroup</Code> in{' '}
+            a row right under <strong>Cases</strong>, above your regular docs and folders and set off
+            by a thin divider (<Code>CompareViewsGroup</Code> in{' '}
             <Code>Sidebar.tsx</Code>), newest first, so a multi-doc setup is something you return to
             rather than rebuild pane by pane. Clicking a row restores every pane in one go; the
             per-combo widths/outline/sidebar memory is then applied by the viewer as usual. Hovering
@@ -1347,15 +1374,20 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Comments.</strong> Select text in a doc and click the comment bubble that appears
-            to leave a note on it, Google-Docs style — visible to <strong>Team</strong> by default, or{' '}
-            <strong>Only me</strong>. The highlighted span gets a light purple wash (deliberately not
-            cyan/yellow/green, so it never reads as the document's own evidence emphasis), and
-            comments live in a right-side panel opened via the <strong>Comments</strong> toolbar
-            button — click a comment to jump to its highlight. Only the author can delete their own
-            comment. A dedicated eye-icon button (and <Code>⌘⇧C</Code> / <Code>Ctrl+Shift+C</Code>)
-            hides comments and their highlights together for a clean read, and un-hides them again.
-            Requires being signed into a team (the button and shortcut are inert without one); team
-            comments sync live to teammates viewing the same doc.
+            — or press <Code>⌘⌥M</Code> / <Code>Ctrl+Alt+M</Code>, Google Docs' own "insert comment"
+            shortcut, which fires <Code>openComposerFromSelection</Code> against the live selection
+            (<Code>selBubble</Code>) and does nothing without one — to leave a note on it,
+            Google-Docs style, visible to <strong>Team</strong> by default or <strong>Only me</strong>.
+            The highlighted span gets a light purple wash (deliberately not cyan/yellow/green, so it
+            never reads as the document's own evidence emphasis). A single plain icon-only{' '}
+            <strong>Comments</strong> toolbar button — no <Code>ai-glow-ring</Code>, since leaving a
+            comment never calls a model — toggles one combined <Code>commentsVisible</Code> boolean
+            that both opens the right-side thread panel and shows every highlight; closing it (the
+            button again, or the panel's own ×) hides both together. Clicking a comment row calls{' '}
+            <Code>scrollToComment</Code>, which scrolls to its anchored text and briefly flashes its
+            background so it's easy to spot. Only the author can delete their own comment. Requires
+            being signed into a team (the button and shortcut are inert without one); team comments
+            sync live to teammates viewing the same doc.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
