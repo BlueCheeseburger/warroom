@@ -61,9 +61,32 @@ console.log('\nresolveLmStudioConfig');
   const s = { lmstudioModel: 'default-model', lmstudioPerCallModels: { lite: 'lite-model', best: '  spaced-model  ' } };
   eq('per-call override for tier', resolveLmStudioConfig(s, 'lite').model, 'lite-model');
   eq('per-call override trimmed', resolveLmStudioConfig(s, 'best').model, 'spaced-model');
-  eq('no override for unset tier falls back to default', resolveLmStudioConfig(s, 'balanced').model, 'default-model');
   eq('no tier passed falls back to default', resolveLmStudioConfig(s).model, 'default-model');
-  eq('blank override falls back to default', resolveLmStudioConfig({ lmstudioModel: 'default-model', lmstudioPerCallModels: { lite: '   ' } }, 'lite').model, 'default-model');
+  eq('blank override falls back through chain to default', resolveLmStudioConfig({ lmstudioModel: 'default-model', lmstudioPerCallModels: { lite: '   ' } }, 'lite').model, 'default-model');
+}
+{
+  // Tier fallback chain: best -> balanced -> lite; balanced -> lite; lite -> balanced (its one exception).
+  eq('balanced missing borrows lite',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { lite: 'lite-model' } }, 'balanced').model,
+    'lite-model');
+  eq('best missing borrows balanced first',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { balanced: 'balanced-model', lite: 'lite-model' } }, 'best').model,
+    'balanced-model');
+  eq('best falls through balanced to lite when balanced unset',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { lite: 'lite-model' } }, 'best').model,
+    'lite-model');
+  eq('lite missing borrows balanced (no tier below lite)',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { balanced: 'balanced-model' } }, 'lite').model,
+    'balanced-model');
+  eq('lite missing does NOT fall to best (only borrows balanced)',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { best: 'best-model' } }, 'lite').model,
+    'default');
+  eq('own tier always wins over the fallback chain',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: { best: 'best-model', balanced: 'balanced-model', lite: 'lite-model' } }, 'best').model,
+    'best-model');
+  eq('empty chain falls all the way to default model',
+    resolveLmStudioConfig({ lmstudioModel: 'default', lmstudioPerCallModels: {} }, 'best').model,
+    'default');
 }
 {
   const c = resolveLmStudioConfig({ lmstudioOptions: '{"temperature":0.7,"ttl":60}' });

@@ -502,7 +502,12 @@ Click **Advanced** to reveal the request-options JSON, the tool-calling checkbox
   ```
 
   Context length and GPU offload aren't in here — those are set inside LM Studio when you load the model, because its API doesn't accept them.
-- **Model per AI call** — every AI call in Warroom already runs as one of three tiers (cheap/simple, normal, or deep-analysis). This box lets you point each tier at a different loaded model, e.g. a small fast model for the cheap tier and a bigger one for deep analysis. Any tier you leave out uses the **Model** picked above.
+- **Model per AI call** — every AI call in Warroom already runs as one of three tiers:
+  - `lite` — cheap/low-stakes: naming a chat, grading a cross-ex answer, summarizing a flow sheet.
+  - `balanced` — most everyday use: the Warroom AI chat itself, card extraction, Auto Flow, Round Analysis, cross-ex question/trap generation, card credibility scoring.
+  - `best` — deep analysis: Impact Calc (Outweigh game, compare docs), Impact Library drafting/review, card-cutting's AI pass, importing a flow via AI.
+
+  You don't have to fill in all three — a tier you leave blank borrows the next one down (`best` → `balanced` → `lite`), except `lite`, which has nothing below it and borrows `balanced` instead. Anything still blank after that uses the **Model** picked above. Once any tier is set here, the presets and Loaded models list above stop showing a selection, since you're picking models in this box instead.
 
 The **Save** button only reads as active (and says "Save") while something here differs from what's actually saved — once it matches, it says "Saved" and looks like the Test connection button next to it, not an orange action button.
 

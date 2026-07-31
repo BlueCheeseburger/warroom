@@ -470,6 +470,18 @@ export default function Settings() {
       return `Not valid JSON — ${e?.message ?? 'check the syntax'}`;
     }
   })();
+  // True once any tier has a real (non-blank) override — at that point the
+  // presets/Loaded models buttons above stop reflecting a "current" model,
+  // since the user is choosing per-tier models in the JSON instead.
+  const lmPerCallActive = !lmPerCallModelsError && (() => {
+    const raw = lmPerCallModels.trim();
+    if (!raw) return false;
+    try {
+      const p = JSON.parse(raw);
+      return p && typeof p === 'object' && !Array.isArray(p) &&
+        (['lite', 'balanced', 'best'] as const).some((t) => String(p[t] ?? '').trim());
+    } catch { return false; }
+  })();
 
   /** Invalid JSON in the options box is surfaced inline; main.ts also ignores it rather than failing a call. */
   const lmOptionsError = (() => {
@@ -1365,15 +1377,21 @@ export default function Settings() {
                 downloaded the model, so use <strong style={{ color: 'var(--ink)' }}>Loaded models</strong> below
                 if a preset doesn't match.
               </p>
+              {lmPerCallActive && (
+                <p className="text-[11px] mb-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-input)', color: 'var(--nav-inactive-color)', border: '1px solid var(--border-side)' }}>
+                  Nothing shown as selected below — you've set per-call model overrides under{' '}
+                  <strong style={{ color: 'var(--ink)' }}>Advanced</strong>, so this picker is just the fallback default now.
+                </p>
+              )}
               <div className="space-y-1.5">
                 {LMSTUDIO_MODEL_OPTIONS.map((o) => (
                   <div key={o.value} className="relative group">
                     <button
                       className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition border"
                       style={{
-                        background: lmModel === o.value ? 'var(--item-selected-bg)' : 'var(--bg-input)',
-                        color: lmModel === o.value ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
-                        borderColor: lmModel === o.value ? 'transparent' : 'var(--border-med)',
+                        background: !lmPerCallActive && lmModel === o.value ? 'var(--item-selected-bg)' : 'var(--bg-input)',
+                        color: !lmPerCallActive && lmModel === o.value ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
+                        borderColor: !lmPerCallActive && lmModel === o.value ? 'transparent' : 'var(--border-med)',
                       }}
                       onClick={() => pickLmModel(o.value)}
                     >
@@ -1432,9 +1450,9 @@ export default function Settings() {
                       key={id}
                       className="w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition border"
                       style={{
-                        background: lmModel === id ? 'var(--item-selected-bg)' : 'var(--bg-input)',
-                        color: lmModel === id ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
-                        borderColor: lmModel === id ? 'transparent' : 'var(--border-med)',
+                        background: !lmPerCallActive && lmModel === id ? 'var(--item-selected-bg)' : 'var(--bg-input)',
+                        color: !lmPerCallActive && lmModel === id ? 'var(--item-selected-text)' : 'rgb(var(--ink-rgb))',
+                        borderColor: !lmPerCallActive && lmModel === id ? 'transparent' : 'var(--border-med)',
                       }}
                       onClick={() => pickLmModel(id)}
                     >
@@ -1508,10 +1526,21 @@ export default function Settings() {
                   <div>
                     <div className="label mb-1">Model per AI call <span className="opacity-50 font-normal">(optional)</span></div>
                     <p className="text-xs mb-2 text-ink/50 leading-relaxed">
-                      Every AI call in Warroom runs as one of three tiers — <code>lite</code> (cheap/simple
-                      jobs like naming a chat), <code>balanced</code> (normal chat and extraction), or{' '}
-                      <code>best</code> (deep analysis). Set a different loaded model id per tier here; any
-                      tier left out uses the <strong style={{ color: 'var(--ink)' }}>Model</strong> above.
+                      Every AI call in Warroom runs as one of three tiers:
+                    </p>
+                    <ul className="text-xs mb-2 text-ink/50 leading-relaxed space-y-1 pl-4" style={{ listStyle: 'disc' }}>
+                      <li><code>lite</code> — cheap, low-stakes jobs: naming a chat, grading a single cross-ex answer, summarizing a flow sheet.</li>
+                      <li><code>balanced</code> — most everyday use: the Warroom AI chat itself, card extraction, Auto Flow, Round Analysis, cross-ex question/trap generation, card credibility scoring.</li>
+                      <li><code>best</code> — deep analysis: Impact Calc (Outweigh game, compare docs), Impact Library drafting/review, card-cutting's AI pass, importing a flow via AI.</li>
+                    </ul>
+                    <p className="text-xs mb-2 text-ink/50 leading-relaxed">
+                      Set a different loaded model id per tier below. You don't have to fill in all three —
+                      a missing tier borrows the next one down (<code>best</code> → <code>balanced</code> →{' '}
+                      <code>lite</code>), except <code>lite</code> itself, which has nothing below it and
+                      borrows <code>balanced</code> instead. Any tier that's still empty after that uses the{' '}
+                      <strong style={{ color: 'var(--ink)' }}>Model</strong> picked above. When any tier is
+                      set here, the presets and Loaded models list above stop showing a selection — you're
+                      choosing models in this box now, not up there.
                     </p>
                     <textarea
                       className="input w-full font-mono text-xs"

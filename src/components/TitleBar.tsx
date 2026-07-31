@@ -304,7 +304,7 @@ function SpeechTimer() {
             background: dropdownOpen ? 'var(--nav-hover-bg)' : 'transparent',
             color: 'var(--titlebar-label)',
             fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            border: 'none', cursor: 'pointer', width: 108, ...nd,
+            border: 'none', cursor: 'pointer', width: 142, ...nd,
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
           onMouseLeave={(e) => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}

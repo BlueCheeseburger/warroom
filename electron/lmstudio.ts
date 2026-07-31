@@ -64,6 +64,22 @@ export interface LmStudioConfig {
  * every call site. Falls back to `lmstudioModel` when no override is set for
  * that tier, same as when `tier` is omitted entirely.
  */
+/**
+ * A tier missing its own override borrows from the next tier down in quality
+ * (best -> balanced -> lite) rather than falling straight to the default
+ * model — so setting only `best` still gives `balanced`/`lite` calls
+ * *something* better than the bare default if the user only bothered to
+ * configure one "good" model. `lite` has nothing below it, so it borrows
+ * `balanced` instead (the one exception the Settings UI calls out explicitly).
+ * If the whole chain comes up empty, resolveLmStudioConfig falls back to
+ * `lmstudioModel` (or LMSTUDIO_DEFAULT_MODEL) same as having no overrides at all.
+ */
+const TIER_FALLBACK_CHAIN: Record<'lite' | 'balanced' | 'best', ('lite' | 'balanced' | 'best')[]> = {
+  best: ['balanced', 'lite'],
+  balanced: ['lite'],
+  lite: ['balanced'],
+};
+
 export function resolveLmStudioConfig(settings: any, tier?: 'lite' | 'balanced' | 'best'): LmStudioConfig {
   let options: Record<string, any> = {};
   const rawOpts = settings?.lmstudioOptions;
@@ -77,7 +93,18 @@ export function resolveLmStudioConfig(settings: any, tier?: 'lite' | 'balanced' 
   }
   const defaultModel = String(settings?.lmstudioModel ?? '').trim() || LMSTUDIO_DEFAULT_MODEL;
   const perCall = settings?.lmstudioPerCallModels;
-  const override = tier && perCall && typeof perCall === 'object' ? String(perCall[tier] ?? '').trim() : '';
+  const at = (t: 'lite' | 'balanced' | 'best'): string =>
+    perCall && typeof perCall === 'object' ? String(perCall[t] ?? '').trim() : '';
+  let override = '';
+  if (tier) {
+    override = at(tier);
+    if (!override) {
+      for (const fallback of TIER_FALLBACK_CHAIN[tier]) {
+        override = at(fallback);
+        if (override) break;
+      }
+    }
+  }
   return {
     baseUrl: normalizeLmStudioUrl(settings?.lmstudioBaseUrl),
     model: override || defaultModel,
