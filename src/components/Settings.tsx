@@ -228,30 +228,31 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
 // the top of the viewport via IntersectionObserver, so it also works as a
 // passive "where am I" indicator while scrolling, not just a click target.
 
-// `keywords` widen what the search box (below) matches beyond the visible
-// label — e.g. typing "dark mode" should find Appearance, "rebind" should
-// find Keyboard Shortcuts, even though neither word is in the label itself.
-const SETTINGS_NAV: { id: string; label: string; keywords?: string }[] = [
-  { id: 'settings-appearance',      label: 'Appearance', keywords: 'theme dark mode light mode color' },
-  { id: 'settings-speechdocs',      label: 'Speech docs & cases', keywords: 'margin zoom outline focus mode reading' },
-  { id: 'settings-general',         label: 'General', keywords: 'card staleness outdated reduce motion skip delete confirmations notifications timer warning cite dictation offline whisper voice transcribe' },
-  { id: 'settings-event',           label: 'Debate event', keywords: 'hs policy ld pf ndt ceda' },
-  { id: 'settings-apikey',          label: 'AI API key', keywords: 'gemini openai anthropic grok lm studio model tier' },
-  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom', keywords: 'disclosure login credentials' },
-  { id: 'settings-gdrive',          label: 'Google Drive', keywords: 'oauth client id secret' },
-  { id: 'settings-flow',            label: 'Flow', keywords: 'colors aff neg column' },
-  { id: 'settings-autoflow-style',  label: 'Auto Flow style', keywords: 'tag style autoflow' },
-  { id: 'settings-storage',         label: 'Storage', keywords: 'backup data folder' },
+const SETTINGS_NAV: { id: string; label: string }[] = [
+  { id: 'settings-appearance',      label: 'Appearance' },
+  { id: 'settings-speechdocs',      label: 'Speech docs & cases' },
+  { id: 'settings-general',         label: 'General' },
+  { id: 'settings-event',           label: 'Debate event' },
+  { id: 'settings-apikey',          label: 'AI API key' },
+  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
+  { id: 'settings-gdrive',          label: 'Google Drive' },
+  { id: 'settings-flow',            label: 'Flow' },
+  { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
+  { id: 'settings-storage',         label: 'Storage' },
   { id: 'settings-documentation',   label: 'Documentation' },
-  { id: 'settings-usermanual',      label: 'User Manual', keywords: 'help' },
-  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts', keywords: 'rebind disable keybinding hotkey' },
-  { id: 'settings-importexport',    label: 'Import / Export', keywords: 'backup transfer another device' },
-  { id: 'settings-more',            label: 'More settings', keywords: 'account sign out sharing setup wizard' },
+  { id: 'settings-usermanual',      label: 'User Manual' },
+  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
+  { id: 'settings-importexport',    label: 'Import / Export' },
+  { id: 'settings-more',            label: 'More settings' },
 ];
 
 function SettingsOutline() {
   const [active, setActive] = useState(SETTINGS_NAV[0].id);
   const [query, setQuery] = useState('');
+  // Bumped whenever any settings content could have changed shape (loaded
+  // async, a collapsible opened, a toggle changed) so the search below
+  // re-reads fresh DOM text instead of a stale snapshot.
+  const [, bumpSearchIndex] = useState(0);
 
   useEffect(() => {
     const els = SETTINGS_NAV
@@ -268,12 +269,26 @@ function SettingsOutline() {
       { rootMargin: '-88px 0px -65% 0px', threshold: 0 },
     );
     els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+
+    // Settings sections re-render constantly (toggles, async-loaded values,
+    // the LM Studio Advanced panel opening/closing) — rather than hand-
+    // maintain a keyword list that inevitably drifts from what's actually on
+    // the page, re-index on every DOM mutation inside the settings column so
+    // the filter box always searches the words that are really there right now.
+    const mutObserver = new MutationObserver(() => bumpSearchIndex((n) => n + 1));
+    const root = els[0].closest('.max-w-2xl') ?? els[0].parentElement;
+    if (root) mutObserver.observe(root, { childList: true, subtree: true, characterData: true });
+
+    return () => { observer.disconnect(); mutObserver.disconnect(); };
   }, []);
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? SETTINGS_NAV.filter((s) => (s.label + ' ' + (s.keywords ?? '')).toLowerCase().includes(q))
+    ? SETTINGS_NAV.filter((s) => {
+        if (s.label.toLowerCase().includes(q)) return true;
+        const text = document.getElementById(s.id)?.textContent ?? '';
+        return text.toLowerCase().includes(q);
+      })
     : SETTINGS_NAV;
 
   return (

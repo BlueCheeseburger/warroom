@@ -2192,13 +2192,16 @@ export default function Documentation() {
           <H2>Settings</H2>
           <P>
             The left outline nav (<Code>SettingsOutline</Code> in <Code>Settings.tsx</Code>) has a
-            filter box above the section list — it matches each section's label plus a hand-maintained{' '}
-            <Code>keywords</Code> string (e.g. "rebind" finds Keyboard Shortcuts, "dark mode" finds
-            Appearance) so a term that isn't in the visible label still finds the right section. A
-            handful of sections with genuinely resettable state (Appearance, Speech docs & cases,
-            General, Flow, Auto Flow style) show a small "Reset to defaults" link once anything in
-            that section differs from its default — sections without a real single "default" (API
-            keys, credentials, the debate event picker) don't get one.
+            filter box above the section list — it matches each section's label plus that section's
+            actual rendered text (<Code>textContent</Code>), so it's a genuine full-text search over
+            whatever's really on the page rather than a hand-maintained keyword list that would drift
+            out of sync. A <Code>MutationObserver</Code> on the settings column keeps that search fresh
+            as toggles fire and values load in — though a collapsed section's hidden content (like the
+            LM Studio Advanced panel while closed) isn't searchable until it's actually open, since it
+            isn't in the DOM yet. A handful of sections with genuinely resettable state (Appearance,
+            Speech docs & cases, General, Flow, Auto Flow style) show a small "Reset to defaults" link
+            once anything in that section differs from its default — sections without a real single
+            "default" (API keys, credentials, the debate event picker) don't get one.
           </P>
           <Card>
             <div className="space-y-2.5 text-sm">
