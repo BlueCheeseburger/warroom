@@ -392,7 +392,12 @@ function TeamPanel({
       {(sharedTags.some((t) => t.note_user_id === currentUser?.id) || pendingTags.length > 0 || tagError) && (
         <NoteTagBar
           tags={[
-            ...sharedTags.filter((t) => t.note_user_id === currentUser?.id).map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name })),
+            ...sharedTags.filter((t) => t.note_user_id === currentUser?.id).map((t): DisplayTag => ({
+              id: t.id, type: t.type, name: t.name,
+              warning: t.type === 'case' && t.data?.kind === 'unavailable'
+                ? "Won't be reachable by teammates — this case wasn't imported from OpenCaselist"
+                : undefined,
+            })),
             ...pendingTags.map((t): DisplayTag => ({ id: t.id, type: t.type, name: t.name, pending: true })),
           ]}
           onRemove={handleRemoveSharedTag}

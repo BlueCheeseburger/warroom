@@ -9,6 +9,7 @@ import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeVi
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
+import TaggedInIndicator from './TaggedInIndicator';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -4288,6 +4289,16 @@ function DocPaneViewer({
               checkResult={ocCheckResult}
               onCheck={checkOcChanges}
             />
+          )}
+          {isOc && ocCase ? (
+            <TaggedInIndicator
+              type="case"
+              localRefId={ocCase.id}
+              matchKey="url"
+              matchValue={(ocCase as any).ocSource.url}
+            />
+          ) : (
+            filePath && <TaggedInIndicator type="speechdoc" localRefId={filePath} />
           )}
           {ocPreview && (
             <button

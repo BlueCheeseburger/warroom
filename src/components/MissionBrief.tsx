@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../store/appStore';
-import { Block, Round } from '../types';
+import { Block, Round, ChatTeam } from '../types';
 import { Dots, LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
+import { fetchAllTagsForEntity, openForwardTag, computeOpponentStableId, ForwardTag } from '../lib/noteTags';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -32,6 +33,7 @@ export default function MissionBrief() {
               <MissionBriefAI round={round} opponent={opponent} />
               <OpponentCard round={round} opponent={opponent} />
               <JudgePanel round={round} />
+              <TaggedItemsCard round={round} opponent={opponent} />
               <SuggestedBlocks round={round} opponent={opponent} />
               <Checklist round={round} opponent={opponent} />
             </>
@@ -46,6 +48,81 @@ export default function MissionBrief() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Tagged items (opponent + judge notes) ─────────────────────────────────────
+
+const TAGGED_ITEM_ICONS: Record<string, string> = {
+  case: '📁', flow: '⬜', opponent: '🥊', judge: '👨‍⚖️', speechdoc: '📝',
+};
+
+function TaggedItemsCard({ round, opponent }: { round: Round; opponent?: any }) {
+  const { db, currentUser, currentTeam, flowsIndex, setFlowsIndex, event, setView } = useApp();
+  const judge = round.judgeId ? db.judges?.[round.judgeId] : undefined;
+  const [teams, setTeams] = useState<ChatTeam[]>(() => (currentTeam ? [currentTeam] : []));
+  const [oppTags, setOppTags] = useState<ForwardTag[]>([]);
+  const [judgeTags, setJudgeTags] = useState<ForwardTag[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    window.warroom.chat.getTeams(currentUser.id).then((res) => {
+      if (!cancelled && res.ok && res.data?.length) setTeams(res.data);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (opponent) {
+        const entityId = computeOpponentStableId(opponent);
+        const tags = await fetchAllTagsForEntity({ entityType: 'opponent', entityId, localTags: opponent.noteTags ?? [], teams });
+        if (!cancelled) setOppTags(tags);
+      } else if (!cancelled) setOppTags([]);
+      if (judge) {
+        const tags = await fetchAllTagsForEntity({ entityType: 'judge', entityId: judge.personId, localTags: judge.noteTags ?? [], teams });
+        if (!cancelled) setJudgeTags(tags);
+      } else if (!cancelled) setJudgeTags([]);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opponent?.id, judge?.id, teams.map((t) => t.id).join(',')]);
+
+  const allTags = [
+    ...oppTags.map((t) => ({ ...t, from: 'opponent' as const })),
+    ...judgeTags.map((t) => ({ ...t, from: 'judge' as const })),
+  ];
+  if (allTags.length === 0) return null;
+
+  async function openTag(tag: ForwardTag) {
+    setError(null);
+    const err = await openForwardTag(tag, { db, flowsIndex, setFlowsIndex, event, setView, currentUserId: currentUser?.id });
+    if (err) setError(err);
+  }
+
+  return (
+    <div className="glass-card rounded-sm p-4">
+      <div className="label mb-2">Tagged items</div>
+      <div className="flex flex-wrap gap-1.5">
+        {allTags.map((t) => (
+          <button
+            key={`${t.from}-${t.id}`}
+            onClick={() => openTag(t)}
+            className="text-[11px] px-2 py-1 rounded-md flex items-center gap-1 transition"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--ink-color)' }}
+            title={`Open "${t.name}" — tagged in ${t.from === 'opponent' ? "the opponent's" : "the judge's"} ${t.source} notes`}
+          >
+            <span>{TAGGED_ITEM_ICONS[t.type] ?? '📎'}</span>
+            <span className="truncate max-w-[140px]">{t.name}</span>
+          </button>
+        ))}
+      </div>
+      {error && <div className="text-xs text-danger mt-1.5">{error}</div>}
     </div>
   );
 }

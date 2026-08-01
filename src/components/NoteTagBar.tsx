@@ -12,6 +12,8 @@ export interface DisplayTag {
   pending?: boolean;
   /** Exists but this device/user can't open it (e.g. a teammate's local-only case). */
   unavailable?: boolean;
+  /** Shown to the TAGGER themself (not a viewer) — e.g. "won't be reachable by teammates". */
+  warning?: string;
 }
 
 /** Read-only-capable row of tag chips. Tags are added by typing @ in the note
@@ -35,16 +37,16 @@ export default function NoteTagBar({
           style={{
             background: 'var(--bg-card)',
             color: t.unavailable ? 'var(--nav-inactive-color)' : 'var(--ink-color)',
-            border: '1px solid var(--border-side)',
+            border: t.warning ? '1px solid #d97706' : '1px solid var(--border-side)',
             opacity: t.pending ? 0.6 : 1,
           }}
         >
-          <span style={{ fontSize: 10 }}>{TAG_ICONS[t.type] ?? '📎'}</span>
+          <span style={{ fontSize: 10 }}>{t.warning ? '⚠️' : TAG_ICONS[t.type] ?? '📎'}</span>
           <button
             className="truncate max-w-[120px]"
             style={{ cursor: t.pending ? 'default' : 'pointer' }}
             disabled={t.pending}
-            title={t.pending ? 'Uploading…' : t.unavailable ? `${t.name} — not available on your device yet` : `Open ${t.name}`}
+            title={t.pending ? 'Uploading…' : t.warning ? t.warning : t.unavailable ? `${t.name} — not available on your device yet` : `Open ${t.name}`}
             onClick={() => !t.pending && onOpen(t)}
           >
             {t.pending ? 'Uploading…' : t.name}

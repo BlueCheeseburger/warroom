@@ -5524,15 +5524,15 @@ ipcMain.handle('notes:upsert', async (_e, payload: {
 // note_entity_id, note_user_id) instead of a chat message, so a tag is visible
 // to teammates the next time they open that opponent/judge's notes.
 ipcMain.handle('notes:attachTag', async (_e, payload: {
-  teamId: string; entityType: string; entityId: string;
+  teamId: string; entityType: string; entityId: string; entityName?: string;
   userId: string; userName: string;
   type: string; name: string; data: any;
 }) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
-    const { teamId, entityType, entityId, userId, userName, type, name, data } = payload;
+    const { teamId, entityType, entityId, entityName, userId, userName, type, name, data } = payload;
     const { data: row, error } = await sb.from('message_attachments').insert({
-      team_id: teamId, note_entity_type: entityType, note_entity_id: entityId,
+      team_id: teamId, note_entity_type: entityType, note_entity_id: entityId, note_entity_name: entityName ?? null,
       note_user_id: userId, note_user_name: userName,
       type, name, data: data ?? {},
     }).select().single();
@@ -5560,6 +5560,27 @@ ipcMain.handle('notes:removeTag', async (_e, attachmentId: string) => {
     const { error } = await sb.from('message_attachments').delete().eq('id', attachmentId);
     if (error) return sbErr(error);
     return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// Reverse lookup: "who has THIS flow/case/doc tagged in their notes?" — used by
+// FlowView/SpeechDocViewer to show a "Tagged in: ..." indicator. matchKey is
+// whitelisted (never interpolated from arbitrary user input) since it becomes
+// part of a JSON-path filter expression, not a parameterized value.
+const NOTES_TAG_MATCH_KEYS = ['localRefId', 'url', 'teamFileId'] as const;
+ipcMain.handle('notes:findTagsByRef', async (_e, payload: {
+  teamId: string; type: string; matchKey: typeof NOTES_TAG_MATCH_KEYS[number]; matchValue: string;
+}) => {
+  if (!sb) return sbErr('Supabase not configured');
+  if (!NOTES_TAG_MATCH_KEYS.includes(payload.matchKey)) return sbErr('Invalid match key');
+  try {
+    const { teamId, type, matchKey, matchValue } = payload;
+    const { data, error } = await sb.from('message_attachments')
+      .select('id, note_entity_type, note_entity_id, note_entity_name, note_user_name, data, created_at')
+      .eq('team_id', teamId).eq('type', type).not('note_entity_type', 'is', null)
+      .filter(`data->>${matchKey}`, 'eq', matchValue);
+    if (error) return sbErr(error);
+    return sbOk(data ?? []);
   } catch (e) { return sbErr(e); }
 });
 

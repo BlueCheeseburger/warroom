@@ -185,6 +185,17 @@ export interface NoteTagRow {
   created_at?: string;
 }
 
+/** A reverse-lookup match — "who has this flow/case/doc tagged" — from notes.findTagsByRef. */
+export interface NoteTagRefMatch {
+  id: string;
+  note_entity_type: 'opponent' | 'judge';
+  note_entity_id: string;
+  note_entity_name: string | null;
+  note_user_name: string;
+  data: any;
+  created_at?: string;
+}
+
 export interface JudgeRound {
   tournament: string; date: string; level: string;
   event: string; round: string; aff: string; neg: string;
@@ -604,9 +615,10 @@ declare global {
       notes: {
         get: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: SharedNote[]; error?: string }>;
         upsert: (p: { teamId: string; entityType: string; entityId: string; entityName: string; userId: string; userName: string; content: string }) => Promise<{ ok: boolean; error?: string }>;
-        attachTag: (p: { teamId: string; entityType: string; entityId: string; userId: string; userName: string; type: string; name: string; data: any }) => Promise<{ ok: boolean; data?: NoteTagRow; error?: string }>;
+        attachTag: (p: { teamId: string; entityType: string; entityId: string; entityName?: string; userId: string; userName: string; type: string; name: string; data: any }) => Promise<{ ok: boolean; data?: NoteTagRow; error?: string }>;
         getTags: (p: { teamId: string; entityType: string; entityId: string }) => Promise<{ ok: boolean; data?: NoteTagRow[]; error?: string }>;
         removeTag: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;
+        findTagsByRef: (p: { teamId: string; type: string; matchKey: 'localRefId' | 'url' | 'teamFileId'; matchValue: string }) => Promise<{ ok: boolean; data?: NoteTagRefMatch[]; error?: string }>;
       };
       platform: string;
       setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => Promise<boolean>;

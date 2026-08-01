@@ -734,7 +734,32 @@ export default function Documentation() {
               tag references that entry, so a teammate opening the tag gets a real, openable copy of
               the doc.
             </LI>
+            <LI>
+              <strong>Unreachable-tag warning</strong> — a case tag you added that isn't
+              OpenCaselist-imported (<Code>data.kind === 'unavailable'</Code>) has no way to reach a
+              teammate's device, so it's shown to <em>you</em>, the tagger, with an amber border and a
+              ⚠️ icon in place of the type icon, tooltip explaining why — not just to a teammate who
+              clicks it and hits a dead end.
+            </LI>
           </UL>
+          <H3>Reverse lookup: "Tagged in"</H3>
+          <P>
+            A flow's toolbar and a speech doc/OpenCaselist-imported case's toolbar (<Code>TaggedInIndicator.tsx</Code>)
+            show a small "🏷 Tagged in N" pill when at least one opponent/judge note (private or
+            shared, across every team) has that exact item tagged. Click it for a dropdown listing
+            each match with its source ("Private" or a team name); clicking a match navigates to that
+            opponent/judge if you have a matching local record, or shows disabled/greyed if you don't.
+            Matching uses a stable identity per item type: a flow by its own id (works across the live
+            realtime-synced case since teammates on a shared flow have the same id), an
+            OpenCaselist-imported case/doc by its source URL, and a plain local speech doc only against
+            your own private tags (there's no portable identity for a bare local file, so shared
+            matches aren't attempted). The shared-side query is a new IPC handler,{' '}
+            <Code>notes:findTagsByRef</Code>, filtering <Code>message_attachments</Code> by a
+            whitelisted JSON-path key (<Code>localRefId</Code>/<Code>url</Code>/<Code>teamFileId</Code>)
+            — never arbitrary user input — plus a new <Code>note_entity_name</Code> column so a match
+            can show a friendly name even when the viewer has no matching local opponent/judge record
+            to resolve <Code>note_entity_id</Code> against.
+          </P>
         </section>
 
         {/* ── Tournaments & Rounds ───────────────────────────────────── */}
@@ -770,6 +795,17 @@ export default function Documentation() {
             It can be accessed by clicking a round in the tournament view. Its AI-generated briefing
             (situation, opponent intel, judge notes, game plan, watch out for) is powered by{' '}
             <Code>ai:missionBrief</Code>. <PromptLink name="mission_brief" />
+          </P>
+          <P>
+            A <strong>Tagged items</strong> card (<Code>TaggedItemsCard</Code> in{' '}
+            <Code>MissionBrief.tsx</Code>) surfaces everything tagged in this round's opponent and
+            judge notes — private and every shared team, via <Code>fetchAllTagsForEntity</Code> from{' '}
+            <Code>src/lib/noteTags.ts</Code> — as clickable chips, read-only. It's the forward
+            counterpart to the "Tagged in" reverse lookup on flows/docs (see the Opponents section):
+            instead of asking "who tagged this item", it asks "what did this opponent/judge tag",
+            which is exactly what's useful at the moment you're prepping a specific round. Clicking a
+            chip opens the target the same way a tag click does anywhere else (<Code>openForwardTag</Code>).
+            The card renders nothing if there are no tags for either the opponent or the judge.
           </P>
           <P>
             Pasting or dropping a Tabroom pairing email screenshot auto-fills a round's fields via

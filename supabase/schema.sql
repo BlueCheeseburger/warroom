@@ -835,6 +835,12 @@ drop policy if exists "note_owner_can_delete_attachments" on message_attachments
 create policy "note_owner_can_delete_attachments" on message_attachments
   for delete using (note_entity_type is not null and note_user_id = auth.uid());
 
+-- ─── Migration: friendly entity name on note tags ──────────────────────────────
+-- Lets a reverse-lookup ("who has this flow/doc tagged?") show a friendly entity
+-- name without needing the viewer to already have a matching local opponent/judge
+-- record to resolve note_entity_id against.
+alter table message_attachments add column if not exists note_entity_name text;
+
 -- ─── Team Files ────────────────────────────────────────────────────────────────
 -- A per-team file library, separate from the chat message stream. Each row is one
 -- uploaded document. `name` and `data_b64` (the raw file bytes, base64-encoded)

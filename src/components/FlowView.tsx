@@ -13,6 +13,7 @@ import {
 import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
 import { flushCellsIntoSheets } from '../lib/flowCellFlush';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
+import TaggedInIndicator from './TaggedInIndicator';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
 const FIND_HL = 'flow-find';
@@ -1824,6 +1825,8 @@ export default function FlowView() {
             <SmallBtn label="Con First" active={pfOrder === 'con-first'} onClick={() => changePfOrder('con-first')} />
           </div>
         )}
+
+        {flowId && <TaggedInIndicator type="flow" localRefId={flowId} matchKey="localRefId" matchValue={flowId} />}
 
         <div className="flex-1" />
 
