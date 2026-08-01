@@ -12,6 +12,7 @@ import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from
 import TaggedInIndicator from './TaggedInIndicator';
 import MentionPicker from './MentionPicker';
 import type { PendingMention } from '../types';
+import { useDragActive } from '../hooks/useDragActive';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -2989,6 +2990,7 @@ function DocPaneViewer({
   const [ocChecking, setOcChecking] = useState(false);
   const [ocCheckResult, setOcCheckResult] = useState<'changed' | 'up-to-date' | null>(null);
   const [step, setStep] = useState<Step>('idle');
+  const { dragActive, setDragActive, dragHandlers } = useDragActive();
   const [cxOpen, setCxOpen] = useState(false);
   const [flowSendOpen, setFlowSendOpen] = useState(false);
   const [error, setError] = useState('');
@@ -4433,10 +4435,17 @@ function DocPaneViewer({
           </button>
         )}
         <div
-          className="flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
+          className="flex flex-col items-center justify-center p-6 text-center border-2 rounded-sm cursor-pointer transition"
+          style={{
+            borderStyle: 'dashed',
+            borderColor: dragActive ? 'var(--accent)' : 'var(--border-med)',
+            background: dragActive ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+          }}
           onClick={pickFile}
+          {...dragHandlers}
           onDrop={async (e) => {
             e.preventDefault();
+            setDragActive(false);
             const files = Array.from(e.dataTransfer.files);
             if (files.length === 0) return;
             const paths = await window.warroom.dialog.resolveDroppedFiles(files, ['docx']);
@@ -4444,9 +4453,10 @@ function DocPaneViewer({
             setError('Those files could not be opened — speech docs must be .docx.');
             setStep('error');
           }}
-          onDragOver={(e) => e.preventDefault()}
         >
-          <div className="text-sm font-medium text-ink/60 mb-2">Drop speech docs here (.docx)</div>
+          <div className="text-sm font-medium text-ink/60 mb-2">
+            {dragActive ? 'Drop to add' : 'Drop speech docs here (.docx)'}
+          </div>
           <div className="text-xs text-ink/40">drop several at once, or click to open file picker</div>
           <button
             onClick={(e) => { e.stopPropagation(); pickFolder(); }}

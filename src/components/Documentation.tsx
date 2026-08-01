@@ -319,6 +319,12 @@ export default function Documentation() {
             in <Code>App.tsx</Code>. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews)
             are always mounted but hidden so they don't reload on navigation.
           </P>
+          <P>
+            When the sidebar is collapsed to icons only, right-click <strong>Cases</strong> for a new
+            case (opens a blank speech doc) or right-click <strong>Flow</strong> for a new flow — the
+            same actions the expanded sidebar's <Code>+</Code> buttons trigger, so collapsing the
+            sidebar doesn't lose the shortcut.
+          </P>
           <H3>Views</H3>
           <UL>
             <LI><Code>home</Code> — Dashboard with stats, live/upcoming tournament card, recent cases</LI>
@@ -963,6 +969,24 @@ export default function Documentation() {
             sidebar still shows the same folders as an expandable tree — same store, so both views stay
             in step.
           </P>
+          <P>
+            <strong>Default order.</strong> New flows appear newest-created-first, same as Cases —
+            <Code>FlowMeta</Code> carries a <Code>createdAt</Code> timestamp set at every creation site,
+            and both the grid and the sidebar tree seed it into the shared folder order the same way
+            Cases does. Drag a tile onto another to reorder; that sticks until rearranged again. Flows
+            created before this field existed fall back to their position in the flows index.
+          </P>
+          <P>
+            <strong>Multi-select and bulk actions.</strong> Cmd/Ctrl+click a flow tile to select several
+            at once — a bar appears with <strong>Move to</strong> and <strong>Delete</strong>, same
+            component the Cases grid uses. Deleting (single tile or bulk) is undoable via the usual
+            bottom-left toast.
+          </P>
+          <P>
+            <strong>Tile preview.</strong> Each tile's mini flow-grid glyph reflects whether that flow
+            actually has content in its first few columns yet, instead of always drawing the same fixed
+            decoration.
+          </P>
           <H3>Importing a flow</H3>
           <P>
             An <strong>import button</strong> sits next to the <Code>+</Code> in the sidebar's Flow
@@ -1317,6 +1341,14 @@ export default function Documentation() {
             <Code>File</Code> objects (a renderer cannot forge one carrying an arbitrary path), a
             drag-drop is a valid trust anchor and <Code>fs:trustDropped</Code> persists those paths
             the same way dialog picks are trusted.
+          </P>
+          <P>
+            <strong>Drop zone feedback.</strong> One of the app's three file-drop targets — this one,
+            Auto Flow, and AnalyzeRound's supplementary-docs zone — all share <Code>useDragActive()</Code>{' '}
+            for the drag-over reaction (accent border + tinted background while a file's dragged over).
+            After a drop, this zone unmounts in favor of <Code>LoadingPanel</Code>, same as Auto Flow's
+            own loading screen; AnalyzeRound's zone stays mounted through the read instead, so it shows
+            a <Code>ProgressBar</Code> in place of the drop prompt while busy.
           </P>
           <P>
             <strong>Import a whole folder.</strong> <Code>dialog:openFolderOfDocx</Code> opens a

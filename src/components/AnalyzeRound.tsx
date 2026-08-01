@@ -5,6 +5,8 @@ import AIQuestionPrompt from './AIQuestionPrompt';
 import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { htmlToText } from '../lib/cellHtml';
+import { useDragActive } from '../hooks/useDragActive';
+import ProgressBar from './ProgressBar';
 
 type Step = 'setup' | 'analyzing' | 'question' | 'result';
 
@@ -204,6 +206,7 @@ export default function AnalyzeRound({
   const [docs, setDocs] = useState<UploadedDoc[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const { dragActive, setDragActive, dragHandlers } = useDragActive();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -380,23 +383,39 @@ export default function AnalyzeRound({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs text-ink/55 font-medium">Supplementary docs <span className="text-ink/35 font-normal">(optional)</span></label>
-                  {docsLoading && <span className="text-[11px] text-ink/40">Reading…</span>}
                 </div>
                 <div
-                  className="flex flex-col items-center justify-center py-5 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
+                  className="flex flex-col items-center justify-center py-5 text-center border-2 rounded-sm cursor-pointer transition"
+                  style={{
+                    borderStyle: 'dashed',
+                    borderColor: dragActive ? 'var(--accent)' : 'var(--border-med)',
+                    background: dragActive ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                  }}
                   onClick={pickDocs}
+                  {...dragHandlers}
                   onDrop={async (e) => {
                     e.preventDefault();
+                    setDragActive(false);
                     const files = Array.from(e.dataTransfer.files);
                     if (files.length === 0) return;
                     const paths = await window.warroom.dialog.resolveDroppedFiles(files, ['docx']);
                     if (paths.length > 0) await addDocs(paths);
                     else setError('Those files could not be opened — supplementary docs must be .docx.');
                   }}
-                  onDragOver={(e) => e.preventDefault()}
                 >
-                  <div className="text-xs font-medium text-ink/60">Drop case docs / blocks here (.docx)</div>
-                  <div className="text-[11px] text-ink/40 mt-0.5">or click to choose files — several at once is fine</div>
+                  {docsLoading ? (
+                    <div className="w-full max-w-[220px] space-y-1.5">
+                      <div className="text-xs font-medium text-ink/60">Reading…</div>
+                      <ProgressBar />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-xs font-medium text-ink/60">
+                        {dragActive ? 'Drop to add' : 'Drop case docs / blocks here (.docx)'}
+                      </div>
+                      <div className="text-[11px] text-ink/40 mt-0.5">or click to choose files — several at once is fine</div>
+                    </>
+                  )}
                 </div>
                 {docs.length > 0 && (
                   <div className="space-y-1">

@@ -5,6 +5,7 @@ import AIQuestionPrompt from './AIQuestionPrompt';
 import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { escapeHtml } from '../lib/cellHtml';
+import { useDragActive } from '../hooks/useDragActive';
 import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
 import {
@@ -140,6 +141,7 @@ function buildCellHtml(tag: string, cite: string, summary?: string): string {
 export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const { event, flowsIndex, setFlowsIndex, setView } = useApp();
   const [step, setStep] = useState<Step>('upload');
+  const { dragActive, setDragActive, dragHandlers } = useDragActive();
   const [error, setError] = useState('');
 
   const [docs, setDocs] = useState<DocResult[]>([]);
@@ -611,6 +613,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           id: flowId,
           name: firstName || `Auto Flow ${flowsIndex.length + 1}`,
           event: targetCtx.event,
+          createdAt: new Date().toISOString(),
         };
         const newIndex = [...flowsIndex, meta];
         setFlowsIndex(newIndex);
@@ -662,19 +665,27 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                 right column and sheet of a flow.
               </p>
               <div
-                className="flex flex-col items-center justify-center p-10 text-center border-2 border-dashed border-line rounded-sm cursor-pointer hover:border-ink/30 transition"
+                className="flex flex-col items-center justify-center p-10 text-center border-2 rounded-sm cursor-pointer transition"
+                style={{
+                  borderStyle: 'dashed',
+                  borderColor: dragActive ? 'var(--accent)' : 'var(--border-med)',
+                  background: dragActive ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                }}
                 onClick={pickFiles}
+                {...dragHandlers}
                 onDrop={async (e) => {
                   e.preventDefault();
+                  setDragActive(false);
                   const files = Array.from(e.dataTransfer.files);
                   if (files.length === 0) return;
                   const paths = await window.warroom.dialog.resolveDroppedFiles(files, ['docx']);
                   if (paths.length > 0) { await extractAll(paths); return; }
                   setError('Those files could not be opened — Auto Flow only reads .docx speech docs.');
                 }}
-                onDragOver={(e) => e.preventDefault()}
               >
-                <div className="text-sm font-medium text-ink/60 mb-2">Drop speech docs here (.docx)</div>
+                <div className="text-sm font-medium text-ink/60 mb-2">
+                  {dragActive ? 'Drop to add' : 'Drop speech docs here (.docx)'}
+                </div>
                 <div className="text-xs text-ink/40">drop several at once, or click to open the file picker</div>
               </div>
             </div>
