@@ -16,7 +16,7 @@ import {
 } from '../utils/flowFolders';
 import { buildCaseItems, CaseItem, deleteCaseAndBlocks } from '../utils/caseItems';
 import {
-  comboKeyFor, saveComboLayout, listComboViews, deleteComboView, pruneComboViews,
+  comboKeyFor, saveComboLayout, listComboViews, deleteComboView, pruneComboViews, renameComboView,
   COMBO_LAYOUTS_CHANGED, SavedComboView,
 } from '../utils/docComboLayout';
 
@@ -1938,47 +1938,92 @@ function CompareViewsGroup({ items }: { items: CaseItem[] }) {
     <div className="mb-1 pb-1" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
       {views.map((v) => {
         const names = v.paths.map((p) => (nameFor.get(p) ?? p.split(/[/\\]/).pop() ?? p).replace(/\.docx$/i, ''));
-        const label = names.join('  ·  ');
+        const autoLabel = names.join('  ·  ');
+        const label = v.customName || autoLabel;
         const active = currentPaths === v.key;
         return (
-          <div key={v.key} className="group relative flex items-center">
-            <button
-              onClick={() => openCombo(v.paths)}
-              title={names.join('  ·  ')}
-              className="flex-1 flex items-center gap-1.5 min-w-0 text-left text-[12.5px] rounded-md px-2 py-1 transition"
-              style={{
-                background: active ? 'var(--nav-active-bg)' : 'transparent',
-                color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
-                border: 'none', cursor: 'pointer',
-              }}
-              onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-              onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              <span className="shrink-0 opacity-70"><IcoCompareView /></span>
-              <span className="truncate">{label}</span>
-              <span className="shrink-0 text-[10px] tabular-nums opacity-60">{v.paths.length}</span>
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const { key, ...snapshot } = v; // `key` is the map key, not part of the value
-                deleteComboView(key);
-                pushUndoToast(
-                  `Deleted compare view '${label}'`,
-                  () => saveComboLayout(key, snapshot),
-                );
-              }}
-              title="Remove compare view"
-              className="absolute right-1 flex items-center justify-center w-5 h-5 rounded opacity-0 group-hover:opacity-100 transition"
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
-            >
-              <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <path d="M4 4l10 10M14 4L4 14" />
-              </svg>
-            </button>
-          </div>
+          <CompareViewRow
+            key={v.key} view={v} label={label} autoLabel={autoLabel} fullNames={names.join('  ·  ')}
+            active={active}
+            onOpen={() => openCombo(v.paths)}
+            onDelete={() => {
+              const { key, ...snapshot } = v; // `key` is the map key, not part of the value
+              deleteComboView(key);
+              pushUndoToast(`Deleted compare view '${label}'`, () => saveComboLayout(key, snapshot));
+            }}
+          />
         );
       })}
+    </div>
+  );
+}
+
+function CompareViewRow({ view, label, autoLabel, fullNames, active, onOpen, onDelete }: {
+  view: SavedComboView; label: string; autoLabel: string; fullNames: string; active: boolean;
+  onOpen: () => void; onDelete: () => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+  }, [renaming]);
+
+  function startRename() {
+    setRenameValue(label);
+    setRenaming(true);
+  }
+  function commitRename() {
+    renameComboView(view.key, renameValue === autoLabel ? '' : renameValue);
+    setRenaming(false);
+  }
+
+  if (renaming) {
+    return (
+      <div className="relative flex items-center px-2 py-1">
+        <input
+          ref={inputRef} value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
+          className="w-full text-[12.5px] rounded-md px-1.5 py-0.5 outline-none"
+          style={{ background: 'var(--nav-active-bg)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-subtle)' }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative flex items-center">
+      <button
+        onClick={onOpen}
+        onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
+        title={label === autoLabel ? fullNames : `${label}\n${fullNames}`}
+        className="flex-1 flex items-center gap-1.5 min-w-0 text-left text-[12.5px] rounded-md px-2 py-1 transition"
+        style={{
+          background: active ? 'var(--nav-active-bg)' : 'transparent',
+          color: active ? 'rgb(var(--ink-rgb))' : 'var(--nav-inactive-color)',
+          border: 'none', cursor: 'pointer',
+        }}
+        onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+        onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        <span className="shrink-0 opacity-70"><IcoCompareView /></span>
+        <span className="truncate">{label}</span>
+        <span className="shrink-0 text-[10px] tabular-nums opacity-60">{view.paths.length}</span>
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="Remove compare view"
+        className="absolute right-1 flex items-center justify-center w-5 h-5 rounded opacity-0 group-hover:opacity-100 transition"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+      >
+        <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M4 4l10 10M14 4L4 14" />
+        </svg>
+      </button>
     </div>
   );
 }

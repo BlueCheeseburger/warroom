@@ -909,15 +909,21 @@ create table if not exists doc_comments (
   user_id uuid references auth.users(id) not null,
   user_name text not null,
   visibility text not null default 'team' check (visibility in ('team', 'private')),
-  anchor_text text not null,          -- the exact highlighted text; also the re-find fallback
+  anchor_kind text not null default 'text' check (anchor_kind in ('text', 'card')), -- 'card' spans a whole evidence card (tag through cite end), not just a text selection
+  anchor_text text not null,          -- the exact highlighted text (or the card's tag, for anchor_kind='card'); also the re-find fallback
   anchor_para_index int not null,     -- index into containerRef's querySelectorAll('p') at comment time
   anchor_occurrence int not null default 0, -- which Nth match of anchor_text, for repeated phrases
   body text not null,
+  parent_id uuid references doc_comments(id) on delete cascade, -- null = top-level comment; set = a reply in that comment's thread
+  resolved boolean not null default false,
+  resolved_at timestamptz,
+  resolved_by_name text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
 create index if not exists doc_comments_doc_idx on doc_comments(team_id, doc_key);
+create index if not exists doc_comments_parent_idx on doc_comments(parent_id);
 
 alter table doc_comments enable row level security;
 
@@ -941,3 +947,33 @@ create policy "update_own_doc_comments" on doc_comments
 drop policy if exists "delete_own_doc_comments" on doc_comments;
 create policy "delete_own_doc_comments" on doc_comments
   for delete using (user_id = auth.uid());
+
+-- Resolving is a team action, not an authorship one (anyone in the doc can
+-- mark a thread handled, same as Google Docs) — the update policy above is
+-- author-only, so this runs as a security-definer RPC instead of widening
+-- that policy, and only ever touches the three resolve-related columns.
+create or replace function resolve_doc_comment(p_comment_id uuid, p_resolved boolean, p_resolved_by_name text)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_team_id uuid;
+begin
+  select team_id into v_team_id from public.doc_comments where id = p_comment_id;
+  if v_team_id is null then
+    raise exception 'comment not found';
+  end if;
+  if not public.is_team_member(v_team_id) then
+    raise exception 'not a team member';
+  end if;
+  update public.doc_comments set
+    resolved = p_resolved,
+    resolved_at = case when p_resolved then now() else null end,
+    resolved_by_name = case when p_resolved then p_resolved_by_name else null end
+  where id = p_comment_id;
+end;
+$$;
+
+revoke execute on function resolve_doc_comment(uuid, boolean, text) from public;
+grant execute on function resolve_doc_comment(uuid, boolean, text) to authenticated;

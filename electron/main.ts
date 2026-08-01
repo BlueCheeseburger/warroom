@@ -6536,16 +6536,17 @@ ipcMain.handle('docComments:get', async (_e, teamId: string, docKey: string) => 
 
 ipcMain.handle('docComments:add', async (_e, payload: {
   teamId: string; docKey: string; docName: string; userId: string; userName: string;
-  visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
-  body: string;
+  visibility: 'team' | 'private'; anchorKind?: 'text' | 'card'; anchorText: string;
+  anchorParaIndex: number; anchorOccurrence: number; body: string; parentId?: string | null;
 }) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
     const { data, error } = await sb.from('doc_comments').insert({
       team_id: payload.teamId, doc_key: payload.docKey, doc_name: payload.docName,
       user_id: payload.userId, user_name: payload.userName, visibility: payload.visibility,
-      anchor_text: payload.anchorText, anchor_para_index: payload.anchorParaIndex,
-      anchor_occurrence: payload.anchorOccurrence, body: payload.body,
+      anchor_kind: payload.anchorKind ?? 'text', anchor_text: payload.anchorText,
+      anchor_para_index: payload.anchorParaIndex, anchor_occurrence: payload.anchorOccurrence,
+      body: payload.body, parent_id: payload.parentId ?? null,
     }).select().single();
     if (error) return sbErr(error);
     return sbOk(data);
@@ -6556,6 +6557,20 @@ ipcMain.handle('docComments:delete', async (_e, commentId: string) => {
   if (!sb) return sbErr('Supabase not configured');
   try {
     const { error } = await sb.from('doc_comments').delete().eq('id', commentId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// Resolving is a team action (any member, not just the author) so it goes
+// through the security-definer RPC rather than a plain row update, which the
+// update_own_doc_comments RLS policy would reject for anyone but the author.
+ipcMain.handle('docComments:resolve', async (_e, commentId: string, resolved: boolean, resolvedByName: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.rpc('resolve_doc_comment', {
+      p_comment_id: commentId, p_resolved: resolved, p_resolved_by_name: resolvedByName,
+    });
     if (error) return sbErr(error);
     return sbOk(null);
   } catch (e) { return sbErr(e); }

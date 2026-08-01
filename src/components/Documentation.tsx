@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 7/31/26
+          Last updated: 8/1/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1384,7 +1384,10 @@ export default function Documentation() {
             that doc alone — <Code>setView</Code>/<Code>goBack</Code>/<Code>goForward</Code> clear{' '}
             <Code>extraDocPanes</Code>, so a compare layout is never a state you get stuck in. Rows are labelled from the live Cases list, so renaming a doc renames it
             here too, and <Code>pruneComboViews</Code> drops any view referencing a deleted doc
-            (guarded so an empty or partial recents read can't wipe the list).
+            (guarded so an empty or partial recents read can't wipe the list). Double-click a row to
+            give the whole view a custom name (<Code>renameComboView</Code>) — an empty name or
+            retyping the auto label clears it back to the auto-generated one; the row's tooltip
+            always shows the full joined doc names underneath so a renamed view stays identifiable.
           </P>
           <P>
             <strong>Toolbar overflow menu.</strong> With 2+ panes open there isn't room for a full
@@ -1427,16 +1430,38 @@ export default function Documentation() {
             shortcut, which fires <Code>openComposerFromSelection</Code> against the live selection
             (<Code>selBubble</Code>) and does nothing without one — to leave a note on it,
             Google-Docs style, visible to <strong>Team</strong> by default or <strong>Only me</strong>.
-            The highlighted span gets a light purple wash (deliberately not cyan/yellow/green, so it
-            never reads as the document's own evidence emphasis). A single plain icon-only{' '}
-            <strong>Comments</strong> toolbar button — no <Code>ai-glow-ring</Code>, since leaving a
-            comment never calls a model — toggles one combined <Code>commentsVisible</Code> boolean
-            that both opens the right-side thread panel and shows every highlight; closing it (the
-            button again, or the panel's own ×) hides both together. Clicking a comment row calls{' '}
+            Hovering a card's tag paragraph instead reveals a small margin comment icon (
+            <Code>openComposerFromCard</Code>) that anchors the whole card — tag through cite end,
+            via <Code>anchor_kind: 'card'</Code> — without selecting any text first. The highlighted
+            span gets a light purple wash (deliberately not cyan/yellow/green, so it never reads as
+            the document's own evidence emphasis). A single plain icon-only <strong>Comments</strong>{' '}
+            toolbar button — no <Code>ai-glow-ring</Code>, since leaving a comment never calls a
+            model — toggles one combined <Code>commentsVisible</Code> boolean that both opens the
+            right-side thread panel and shows every highlight; closing it (the button again, or the
+            panel's own ×) hides both together. Clicking a comment row calls{' '}
             <Code>scrollToComment</Code>, which scrolls to its anchored text and briefly flashes its
-            background so it's easy to spot. Only the author can delete their own comment. Requires
-            being signed into a team (the button and shortcut are inert without one); team comments
-            sync live to teammates viewing the same doc.
+            background so it's easy to spot; a reply resolves to its thread root's anchor first,
+            since replies carry no anchor of their own.
+          </P>
+          <P>
+            <strong>Reply threads, resolve/reopen, and mentions.</strong> Reply inline under any
+            comment (its own <Code>MentionableTextarea</Code> box, collapsed "N replies" by default)
+            — a reply is just another <Code>doc_comments</Code> row with <Code>parent_id</Code> set,
+            inheriting its root's anchor. Any team member can mark a thread{' '}
+            <strong>resolved</strong> (a checkmark on hover), not only its author — since RLS only
+            lets the author edit a row directly, this goes through the{' '}
+            <Code>resolve_doc_comment</Code> security-definer RPC instead. Resolved threads dim to
+            65% opacity, drop out of the highlighted-text set, and collapse into a "N resolved"
+            disclosure at the bottom of the panel; reopening un-resolves them. Type <Code>@</Code> in
+            any comment or reply box to bring up the same <Code>MentionPicker</Code> Chat.tsx's
+            composer uses, restricted to <Code>types=['member']</Code> — mentions render as a bolded,
+            blue-tinted chip (<Code>renderCommentBody</Code>) parsed from the plain{' '}
+            <Code>@Name_With_Underscore</Code> text at display time, same convention chat mentions
+            already use, just with a visual chip chat doesn't have. Only the author can delete their
+            own comment (which cascades to its replies via the schema's{' '}
+            <Code>on delete cascade</Code>). All of it requires being signed into a team (the button
+            and shortcut are inert without one); team comments, replies, and resolutions sync live to
+            teammates viewing the same doc.
           </P>
           <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}

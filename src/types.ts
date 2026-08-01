@@ -565,10 +565,11 @@ declare global {
         get: (teamId: string, docKey: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
         add: (payload: {
           teamId: string; docKey: string; docName: string; userId: string; userName: string;
-          visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
-          body: string;
+          visibility: 'team' | 'private'; anchorKind?: 'text' | 'card'; anchorText: string;
+          anchorParaIndex: number; anchorOccurrence: number; body: string; parentId?: string | null;
         }) => Promise<{ ok: boolean; data?: any; error?: string }>;
         delete: (commentId: string) => Promise<{ ok: boolean; error?: string }>;
+        resolve: (commentId: string, resolved: boolean, resolvedByName: string) => Promise<{ ok: boolean; error?: string }>;
         subscribe: (teamId: string) => Promise<void>;
         unsubscribe: () => Promise<void>;
         onChange: (cb: (p: { eventType: string; row: any }) => void) => () => void;

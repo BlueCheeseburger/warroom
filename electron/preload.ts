@@ -367,10 +367,12 @@ const api = {
     get: (teamId: string, docKey: string) => ipcRenderer.invoke('docComments:get', teamId, docKey),
     add: (payload: {
       teamId: string; docKey: string; docName: string; userId: string; userName: string;
-      visibility: 'team' | 'private'; anchorText: string; anchorParaIndex: number; anchorOccurrence: number;
-      body: string;
+      visibility: 'team' | 'private'; anchorKind?: 'text' | 'card'; anchorText: string;
+      anchorParaIndex: number; anchorOccurrence: number; body: string; parentId?: string | null;
     }) => ipcRenderer.invoke('docComments:add', payload),
     delete: (commentId: string) => ipcRenderer.invoke('docComments:delete', commentId),
+    resolve: (commentId: string, resolved: boolean, resolvedByName: string) =>
+      ipcRenderer.invoke('docComments:resolve', commentId, resolved, resolvedByName),
     subscribe: (teamId: string) => ipcRenderer.invoke('docComments:subscribe', teamId),
     unsubscribe: () => ipcRenderer.invoke('docComments:unsubscribe'),
     onChange: (cb: (p: { eventType: string; row: any }) => void) => {

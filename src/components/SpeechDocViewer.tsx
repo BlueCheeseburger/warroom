@@ -10,6 +10,8 @@ import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
 import TaggedInIndicator from './TaggedInIndicator';
+import MentionPicker from './MentionPicker';
+import type { PendingMention } from '../types';
 
 type Step = 'idle' | 'loading' | 'viewing' | 'error';
 
@@ -1382,12 +1384,40 @@ interface DocComment {
   user_id: string;
   user_name: string;
   visibility: 'team' | 'private';
+  anchor_kind: 'text' | 'card';
   anchor_text: string;
   anchor_para_index: number;
   anchor_occurrence: number;
   body: string;
+  parent_id: string | null;
+  resolved: boolean;
+  resolved_at: string | null;
+  resolved_by_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// A comment being composed anchors either to a text selection ('text') or to
+// a whole card ('card', from hovering its tag paragraph — see the margin
+// comment-icon affordance). Both carry a live DOM reference plus the popover
+// position and quote preview; only the anchor source differs.
+type PendingCommentAnchor =
+  | { kind: 'text'; range: Range; x: number; y: number; quote: string }
+  | { kind: 'card'; tagEl: Element; x: number; y: number; quote: string };
+
+/** Splits `body` on `@Name_With_Underscores` tokens that match a real team
+ *  member, for rendering as a highlighted mention chip — same insertion
+ *  convention Chat.tsx's composer already uses (`@${name.replace(/\s/g,'_')} `). */
+function renderCommentBody(body: string, members: { display_name: string }[]): React.ReactNode[] {
+  if (members.length === 0) return [body];
+  const names = new Set(members.map((m) => m.display_name.replace(/\s/g, '_')));
+  const parts = body.split(/(@\w+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('@') && names.has(part.slice(1))) {
+      return <span key={i} style={{ color: '#4285F4', fontWeight: 600 }}>{part.replace(/_/g, ' ')}</span>;
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
 }
 
 /** Index of the (0-based) `n`th occurrence of `needle` in `haystack`, or -1. */
@@ -1453,14 +1483,43 @@ function closestParagraphIndex(node: Node, paras: Element[]): number {
 }
 
 /**
- * Resolves a saved comment back to a live Range in the currently-rendered doc.
- * Tries the recorded paragraph index first (the fast, common case where
- * nothing has changed); falls back to a whole-document search for the
- * anchor text if that paragraph no longer contains it — e.g. the underlying
- * file was re-imported with different content. A drifted anchor still lands
- * on *a* matching occurrence rather than silently vanishing.
+ * A whole-card Range: from a card's tag paragraph through the last paragraph
+ * of its cite, using the exact same "walk siblings until the next heading"
+ * rule `buildCards`/`computeHighlightWarnings` use to define a card's extent
+ * — so a card-anchored comment's highlight covers precisely the card the
+ * Credibility panel would score, not an arbitrary guess at its boundaries.
  */
-function resolveCommentAnchor(paras: Element[], c: DocComment): Range | null {
+function cardRangeFromTagEl(tagEl: Element, headingClasses?: HeadingClasses): Range {
+  let lastEl: Element = tagEl;
+  let sib = tagEl.nextElementSibling;
+  while (sib) {
+    if (headingLevelOf(sib, headingClasses) > 0) break;
+    lastEl = sib;
+    sib = sib.nextElementSibling;
+  }
+  const r = document.createRange();
+  r.setStartBefore(tagEl);
+  r.setEndAfter(lastEl);
+  return r;
+}
+
+/**
+ * Resolves a saved comment back to a live Range in the currently-rendered doc.
+ * Card-anchored comments (`anchor_kind: 'card'`) match by tag text — the same
+ * identity `buildCards`/`hashCards` use for score-cache continuity, since
+ * docx-preview assigns no stable per-render id — then span the whole card.
+ * Text-anchored comments try the recorded paragraph index first (the fast,
+ * common case where nothing has changed); falling back to a whole-document
+ * search for the anchor text if that paragraph no longer contains it — e.g.
+ * the underlying file was re-imported with different content. A drifted
+ * anchor still lands on *a* matching occurrence rather than silently
+ * vanishing.
+ */
+function resolveCommentAnchor(paras: Element[], c: DocComment, headingClasses?: HeadingClasses): Range | null {
+  if (c.anchor_kind === 'card') {
+    const tagEl = paras.find((p) => (p.textContent ?? '').replace(/\s+/g, ' ').trim() === c.anchor_text);
+    return tagEl ? cardRangeFromTagEl(tagEl, headingClasses) : null;
+  }
   const tryParagraph = (p: Element | undefined): Range | null => {
     if (!p) return null;
     const text = p.textContent ?? '';
@@ -1844,14 +1903,68 @@ function relativeTime(iso: string): string {
   return day < 7 ? `${day}d ago` : new Date(iso).toLocaleDateString();
 }
 
-function CommentsPanel({ comments, currentUserId, onScrollTo, onDelete, onClose }: {
+// Textarea with the same @-mention convention Chat.tsx's composer uses
+// (restricted to team members here — a comment isn't the place to attach a
+// case or a flow). Shared between the new-comment composer and every reply
+// row so the picker only has to be wired up once.
+function MentionableTextarea({ value, onChange, placeholder, autoFocus, onKeyDown, rows = 3 }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void; rows?: number;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [query, setQuery] = useState('');
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    onChange(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const match = val.slice(0, cursor).match(/@(\w*)$/);
+    if (match) { setShowPicker(true); setQuery(match[1]); } else { setShowPicker(false); setQuery(''); }
+  }
+  function handleSelect(item: PendingMention) {
+    setShowPicker(false);
+    const cursor = ref.current?.selectionStart ?? value.length;
+    const replaced = value.slice(0, cursor).replace(/@\w*$/, `@${item.name.replace(/\s/g, '_')} `);
+    onChange(replaced + value.slice(cursor));
+    setTimeout(() => ref.current?.focus(), 0);
+  }
+  return (
+    <div className="relative">
+      <textarea
+        ref={ref} value={value} onChange={handleChange} placeholder={placeholder}
+        autoFocus={autoFocus} rows={rows}
+        onKeyDown={(e) => { if (e.key === 'Escape') setShowPicker(false); onKeyDown?.(e); }}
+        className="w-full resize-none rounded-md px-2 py-1.5 text-[12px] outline-none"
+        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'rgb(var(--ink-rgb))' }}
+      />
+      {showPicker && <MentionPicker query={query} types={['member']} onSelect={handleSelect} onClose={() => setShowPicker(false)} />}
+    </div>
+  );
+}
+
+function CommentsPanel({ comments, currentUserId, teamMembers, onScrollTo, onDelete, onReply, onResolve, onClose }: {
   comments: DocComment[];
   currentUserId: string | undefined;
+  teamMembers: { display_name: string }[];
   onScrollTo: (id: string) => void;
   onDelete: (id: string) => void;
+  onReply: (parent: DocComment, body: string, visibility: 'team' | 'private') => Promise<void>;
+  onResolve: (comment: DocComment, resolved: boolean) => void;
   onClose: () => void;
 }) {
-  const sorted = [...comments].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const roots = comments.filter((c) => !c.parent_id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const repliesByParent = new Map<string, DocComment[]>();
+  for (const c of comments) {
+    if (!c.parent_id) continue;
+    const arr = repliesByParent.get(c.parent_id) ?? [];
+    arr.push(c);
+    repliesByParent.set(c.parent_id, arr);
+  }
+  for (const arr of repliesByParent.values()) arr.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const open = roots.filter((c) => !c.resolved);
+  const resolved = roots.filter((c) => c.resolved);
+  const [showResolved, setShowResolved] = useState(false);
+
   return (
     <div className="shrink-0 flex flex-col h-full" style={{ width: 'min(300px, 85%)', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
       <div className="flex items-center gap-2 px-3.5 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
@@ -1859,60 +1972,188 @@ function CommentsPanel({ comments, currentUserId, onScrollTo, onDelete, onClose 
         <div className="flex flex-col min-w-0 flex-1">
           <span className="text-[12.5px] font-semibold leading-tight truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>Comments</span>
           <span className="text-[10px] leading-tight" style={{ color: 'var(--nav-inactive-color)' }}>
-            {sorted.length} comment{sorted.length === 1 ? '' : 's'}
+            {open.length} open{resolved.length ? ` · ${resolved.length} resolved` : ''}
           </span>
         </div>
         <IconBtn icon={<IcoClose />} label="Close" onClick={onClose} tooltipAlign="right" />
       </div>
 
       <div className="flex-1 overflow-y-auto scroll-thin px-2.5 py-2.5 space-y-2">
-        {sorted.length === 0 && (
+        {roots.length === 0 && (
           <div className="px-1 py-3 text-[12px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-            No comments yet. Select text in the doc and click the comment bubble that appears to leave one.
+            No comments yet. Select text (or hover a card and click its margin icon) and click the comment bubble that appears to leave one.
           </div>
         )}
-        {sorted.map((c) => (
-          <div
-            key={c.id}
-            className="group rounded-lg p-2.5 cursor-pointer transition"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
-            onClick={() => onScrollTo(c.id)}
-          >
-            <div
-              className="text-[10.5px] leading-snug mb-1.5 pl-1.5 line-clamp-2"
-              style={{ color: 'var(--nav-inactive-color)', borderLeft: '2px solid rgba(147,51,234,0.5)' }}
+        {open.map((c) => (
+          <CommentThread
+            key={c.id} root={c} replies={repliesByParent.get(c.id) ?? []}
+            currentUserId={currentUserId} teamMembers={teamMembers}
+            onScrollTo={onScrollTo} onDelete={onDelete} onReply={onReply} onResolve={onResolve}
+          />
+        ))}
+        {resolved.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowResolved((v) => !v)}
+              className="w-full flex items-center gap-1.5 px-1 py-1.5 text-[11px] font-medium"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
             >
-              "{c.anchor_text}"
-            </div>
-            <div className="flex items-start gap-1.5">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[11.5px] font-semibold truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>{c.user_name}</span>
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{relativeTime(c.created_at)}</span>
-                  {c.visibility === 'private' && (
-                    <span className="text-[9.5px] shrink-0 px-1 py-px rounded" style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-nest)' }} title="Only visible to you">
-                      only me
-                    </span>
-                  )}
-                </div>
-                <div className="text-[12px] leading-snug whitespace-pre-wrap" style={{ color: 'rgb(var(--ink-rgb))' }}>{c.body}</div>
+              <span style={{ transform: showResolved ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+              {resolved.length} resolved
+            </button>
+            {showResolved && (
+              <div className="space-y-2 mt-1">
+                {resolved.map((c) => (
+                  <CommentThread
+                    key={c.id} root={c} replies={repliesByParent.get(c.id) ?? []}
+                    currentUserId={currentUserId} teamMembers={teamMembers}
+                    onScrollTo={onScrollTo} onDelete={onDelete} onReply={onReply} onResolve={onResolve}
+                  />
+                ))}
               </div>
-              {c.user_id === currentUserId && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                  title="Delete comment"
-                  className="shrink-0 flex items-center justify-center w-5 h-5 rounded opacity-0 group-hover:opacity-100 transition"
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <path d="M4 4l10 10M14 4L4 14" />
-                  </svg>
-                </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommentThread({ root, replies, currentUserId, teamMembers, onScrollTo, onDelete, onReply, onResolve }: {
+  root: DocComment;
+  replies: DocComment[];
+  currentUserId: string | undefined;
+  teamMembers: { display_name: string }[];
+  onScrollTo: (id: string) => void;
+  onDelete: (id: string) => void;
+  onReply: (parent: DocComment, body: string, visibility: 'team' | 'private') => Promise<void>;
+  onResolve: (comment: DocComment, resolved: boolean) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [showReplyBox, setShowReplyBox] = useState(false);
+  const [replyBody, setReplyBody] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  async function submitReply() {
+    if (!replyBody.trim() || posting) return;
+    setPosting(true);
+    try {
+      await onReply(root, replyBody.trim(), 'team');
+      setReplyBody('');
+      setShowReplyBox(false);
+      setExpanded(true);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg overflow-hidden transition" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', opacity: root.resolved ? 0.65 : 1 }}>
+      <div className="group p-2.5 cursor-pointer" onClick={() => onScrollTo(root.id)}>
+        <div
+          className="text-[10.5px] leading-snug mb-1.5 pl-1.5 line-clamp-2"
+          style={{ color: 'var(--nav-inactive-color)', borderLeft: '2px solid rgba(147,51,234,0.5)' }}
+        >
+          {root.anchor_kind === 'card' ? `Card — "${root.anchor_text}"` : `"${root.anchor_text}"`}
+        </div>
+        <div className="flex items-start gap-1.5">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="text-[11.5px] font-semibold truncate" style={{ color: 'rgb(var(--ink-rgb))' }}>{root.user_name}</span>
+              <span className="text-[10px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{relativeTime(root.created_at)}</span>
+              {root.visibility === 'private' && (
+                <span className="text-[9.5px] shrink-0 px-1 py-px rounded" style={{ color: 'var(--nav-inactive-color)', background: 'var(--bg-nest)' }} title="Only visible to you">
+                  only me
+                </span>
               )}
             </div>
+            <div className="text-[12px] leading-snug whitespace-pre-wrap" style={{ color: 'rgb(var(--ink-rgb))' }}>{renderCommentBody(root.body, teamMembers)}</div>
+            {root.resolved && root.resolved_by_name && (
+              <div className="text-[10px] mt-1" style={{ color: 'var(--nav-inactive-color)' }}>Resolved by {root.resolved_by_name}</div>
+            )}
           </div>
-        ))}
+          <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+            <button
+              onClick={(e) => { e.stopPropagation(); onResolve(root, !root.resolved); }}
+              title={root.resolved ? 'Reopen' : 'Resolve'}
+              className="flex items-center justify-center w-5 h-5 rounded"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: root.resolved ? '#34a853' : 'var(--nav-inactive-color)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3.5 9.5l3.5 3.5 7-8" />
+              </svg>
+            </button>
+            {root.user_id === currentUserId && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(root.id); }}
+                title="Delete comment"
+                className="flex items-center justify-center w-5 h-5 rounded"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+              >
+                <svg width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M4 4l10 10M14 4L4 14" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
+
+      {replies.length > 0 && !expanded && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full text-left px-2.5 py-1.5 text-[11px]"
+          style={{ background: 'transparent', border: 'none', borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+        >
+          {replies.length} repl{replies.length === 1 ? 'y' : 'ies'}
+        </button>
+      )}
+      {expanded && replies.map((r) => (
+        <div key={r.id} className="px-2.5 py-1.5 pl-5" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="text-[11px] font-semibold" style={{ color: 'rgb(var(--ink-rgb))' }}>{r.user_name}</span>
+            <span className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>{relativeTime(r.created_at)}</span>
+          </div>
+          <div className="text-[11.5px] leading-snug whitespace-pre-wrap" style={{ color: 'rgb(var(--ink-rgb))' }}>{renderCommentBody(r.body, teamMembers)}</div>
+        </div>
+      ))}
+
+      {showReplyBox ? (
+        <div className="p-2 space-y-1.5" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+          <MentionableTextarea
+            value={replyBody} onChange={setReplyBody} placeholder="Reply…" rows={2} autoFocus
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitReply(); }
+              if (e.key === 'Escape') setShowReplyBox(false);
+            }}
+          />
+          <div className="flex items-center justify-end gap-1.5">
+            <button
+              onClick={() => setShowReplyBox(false)}
+              className="px-2 py-1 rounded text-[11px] font-medium"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submitReply}
+              disabled={posting || !replyBody.trim()}
+              className="px-2.5 py-1 rounded text-[11px] font-semibold"
+              style={{ background: '#4285F4', color: '#fff', border: 'none', cursor: posting || !replyBody.trim() ? 'default' : 'pointer', opacity: posting || !replyBody.trim() ? 0.6 : 1 }}
+            >
+              {posting ? 'Posting…' : 'Reply'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowReplyBox(true); }}
+          className="w-full text-left px-2.5 py-1.5 text-[11px]"
+          style={{ background: 'transparent', border: 'none', borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+        >
+          Reply
+        </button>
+      )}
     </div>
   );
 }
@@ -2716,7 +2957,7 @@ function DocPaneViewer({
   paneIndex = 0, paneDocPath, onPaneDocPathChange, focused = true, onFocusPane, onCloseExtraPane, onAddPane, canAddPane,
   outlineOpen: outlineOpenProp, onOutlineOpenChange, toolbarCompact = false,
 }: DocPaneProps) {
-  const { setBusy, view, setView, event, flowsIndex, db, update, currentUser, currentTeam } = useApp();
+  const { setBusy, view, setView, event, flowsIndex, db, update, currentUser, currentTeam, teamMembers } = useApp();
   // Folder-of-docx import files every doc it finds into a new Warroom folder
   // named after the OS folder it came from — aliased to avoid colliding with
   // useApp()'s own `update` above, which mutates the db, not folder assignments.
@@ -2892,7 +3133,8 @@ function DocPaneViewer({
   const [commentsVisible, setCommentsVisible] = useState(
     () => localStorage.getItem('warroom-doc-comments-visible') !== 'false'
   );
-  const [pendingComment, setPendingComment] = useState<{ range: Range; x: number; y: number; quote: string } | null>(null);
+  const [pendingComment, setPendingComment] = useState<PendingCommentAnchor | null>(null);
+  const [hoveredCardTag, setHoveredCardTag] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [composerVisibility, setComposerVisibility] = useState<'team' | 'private'>('team');
   const [composerBody, setComposerBody] = useState('');
   const [composerPosting, setComposerPosting] = useState(false);
@@ -3454,14 +3696,27 @@ function DocPaneViewer({
     const H = (window as any)?.Highlight;
     if (step !== 'viewing' || !cont || !reg || !H) return;
     const paras = Array.from(cont.querySelectorAll('p'));
+    // Ranges are kept for every top-level comment (resolved or not) so
+    // clicking any comment row — including a resolved one — can still scroll
+    // to it; only unresolved ones are actually painted into the highlight
+    // registry below. Replies have no anchor of their own (see scrollToComment).
     const ranges = new Map<string, Range>();
     for (const c of comments) {
-      const r = resolveCommentAnchor(paras, c);
+      if (c.parent_id) continue;
+      const r = resolveCommentAnchor(paras, c, headingClassesRef.current);
       if (r) ranges.set(c.id, r);
     }
     commentRangesRef.current = ranges;
-    if (commentsVisible && ranges.size) reg.set(COMMENT_HL, new H(...ranges.values()));
-    else reg.delete(COMMENT_HL);
+    if (commentsVisible) {
+      const painted = comments
+        .filter((c) => !c.parent_id && !c.resolved)
+        .map((c) => ranges.get(c.id))
+        .filter((r): r is Range => !!r);
+      if (painted.length) reg.set(COMMENT_HL, new H(...painted));
+      else reg.delete(COMMENT_HL);
+    } else {
+      reg.delete(COMMENT_HL);
+    }
   }, [comments, step, commentsVisible]);
 
   // Inject the comment-highlight style once — a light, deliberately distinct
@@ -3499,7 +3754,12 @@ function DocPaneViewer({
   }, [focused, step, currentTeam, selBubble, commentsVisible]);
 
   const scrollToComment = useCallback((id: string) => {
-    const r = commentRangesRef.current.get(id);
+    // A reply has no anchor of its own — it scrolls to whatever its
+    // top-level parent is anchored to, same as clicking anywhere in a
+    // Google Docs thread jumps to the thread's one highlighted span.
+    const target = comments.find((c) => c.id === id);
+    const anchorId = target?.parent_id ?? id;
+    const r = commentRangesRef.current.get(anchorId);
     if (!r) return;
     const el = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : (r.startContainer as Element)) as HTMLElement | null;
     if (!el) return;
@@ -3512,14 +3772,61 @@ function DocPaneViewer({
       el.style.backgroundColor = prevBg;
       window.setTimeout(() => { el.style.transition = prevTrans; }, 300);
     }, 650);
-  }, []);
+  }, [comments]);
+
+  // Reveals a small margin comment-icon whenever the pointer is over a card's
+  // tag paragraph (`[data-cred-id]`, set by buildCards on every doc load,
+  // Credibility panel open or not) — the intuitive entry point for "comment
+  // on this whole card" that needs no manual selection first. A short delay
+  // before clearing lets the pointer travel from the tag to the floating
+  // button itself without the button vanishing first (same gap problem the
+  // ⋯ overflow menu solves the same way).
+  const cardHoverTimeoutRef = useRef<number | null>(null);
+  function cancelCardHoverClear() {
+    if (cardHoverTimeoutRef.current) { window.clearTimeout(cardHoverTimeoutRef.current); cardHoverTimeoutRef.current = null; }
+  }
+  function clearCardHoverSoon() {
+    cancelCardHoverClear();
+    cardHoverTimeoutRef.current = window.setTimeout(() => setHoveredCardTag(null), 200);
+  }
+  useEffect(() => {
+    const cont = containerRef.current;
+    if (!cont || step !== 'viewing' || !currentTeam || !commentsVisible) { setHoveredCardTag(null); return; }
+    function onOver(e: MouseEvent) {
+      const target = (e.target as Element)?.closest?.('[data-cred-id]');
+      if (!target) return;
+      cancelCardHoverClear();
+      setHoveredCardTag({ id: target.getAttribute('data-cred-id')!, rect: target.getBoundingClientRect() });
+    }
+    cont.addEventListener('mouseover', onOver);
+    cont.addEventListener('mouseout', clearCardHoverSoon);
+    return () => {
+      cont.removeEventListener('mouseover', onOver);
+      cont.removeEventListener('mouseout', clearCardHoverSoon);
+      cancelCardHoverClear();
+    };
+  }, [step, currentTeam, commentsVisible]);
 
   function openComposerFromSelection() {
     if (!selBubble) return;
-    setPendingComment({ range: selBubble.range, x: selBubble.x, y: selBubble.y, quote: selBubble.range.toString() });
+    setPendingComment({ kind: 'text', range: selBubble.range, x: selBubble.x, y: selBubble.y, quote: selBubble.range.toString() });
     setComposerVisibility('team');
     setComposerBody('');
     setSelBubble(null);
+  }
+
+  // Entry point for "comment on a whole card" — no selection required. The
+  // margin icon that appears on hovering a card's tag paragraph calls this
+  // directly with that paragraph element; the composer then anchors to the
+  // whole card (tag through cite end) instead of a text range.
+  function openComposerFromCard(tagEl: Element) {
+    const quote = (tagEl.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (!quote) return;
+    const rect = tagEl.getBoundingClientRect();
+    setPendingComment({ kind: 'card', tagEl, x: rect.right, y: rect.top, quote });
+    setComposerVisibility('team');
+    setComposerBody('');
+    setHoveredCardTag(null);
   }
 
   async function postComment() {
@@ -3527,20 +3834,33 @@ function DocPaneViewer({
     if (!pendingComment || !currentTeam || !currentUser || !composerBody.trim() || !cont) return;
     setComposerPosting(true);
     try {
-      const { range, quote } = pendingComment;
       const paras = Array.from(cont.querySelectorAll('p'));
-      const paraIndex = closestParagraphIndex(range.startContainer, paras);
-      if (paraIndex === -1) return;
-      const paraEl = paras[paraIndex];
-      const paraText = paraEl.textContent ?? '';
-      const startOffset = textOffsetWithinParagraph(paraEl, range.startContainer, range.startOffset);
-      const occurrence = countOccurrences(paraText.slice(0, startOffset), quote);
+      let anchorKind: 'text' | 'card';
+      let anchorText: string;
+      let anchorParaIndex: number;
+      let anchorOccurrence: number;
+      if (pendingComment.kind === 'card') {
+        anchorKind = 'card';
+        anchorText = pendingComment.quote;
+        anchorParaIndex = paras.indexOf(pendingComment.tagEl as HTMLParagraphElement);
+        anchorOccurrence = 0;
+      } else {
+        anchorKind = 'text';
+        const { range, quote } = pendingComment;
+        const paraIndex = closestParagraphIndex(range.startContainer, paras);
+        if (paraIndex === -1) return;
+        const paraEl = paras[paraIndex];
+        const paraText = paraEl.textContent ?? '';
+        const startOffset = textOffsetWithinParagraph(paraEl, range.startContainer, range.startOffset);
+        anchorText = quote;
+        anchorParaIndex = paraIndex;
+        anchorOccurrence = countOccurrences(paraText.slice(0, startOffset), quote);
+      }
       const res = await window.warroom.docComments.add({
         teamId: currentTeam.id, docKey, docName: fileName,
         userId: currentUser.id, userName: currentUser.displayName,
-        visibility: composerVisibility, anchorText: quote,
-        anchorParaIndex: paraIndex, anchorOccurrence: occurrence,
-        body: composerBody.trim(),
+        visibility: composerVisibility, anchorKind, anchorText,
+        anchorParaIndex, anchorOccurrence, body: composerBody.trim(),
       });
       if (res.ok && res.data) setComments((prev) => [...prev, res.data]);
       setPendingComment(null);
@@ -3550,8 +3870,31 @@ function DocPaneViewer({
     }
   }
 
+  async function postReply(parent: DocComment, body: string, visibility: 'team' | 'private') {
+    if (!currentTeam || !currentUser) return;
+    const res = await window.warroom.docComments.add({
+      teamId: currentTeam.id, docKey, docName: fileName,
+      userId: currentUser.id, userName: currentUser.displayName,
+      visibility, anchorKind: parent.anchor_kind, anchorText: parent.anchor_text,
+      anchorParaIndex: parent.anchor_para_index, anchorOccurrence: parent.anchor_occurrence,
+      body, parentId: parent.id,
+    });
+    if (res.ok && res.data) setComments((prev) => [...prev, res.data]);
+  }
+
+  // Any team member can resolve/reopen a thread, not just its author — see
+  // resolve_doc_comment in supabase/schema.sql, called instead of a plain row
+  // update since RLS only lets the author update a comment's own row.
+  async function resolveComment(comment: DocComment, resolved: boolean) {
+    if (!currentUser) return;
+    setComments((prev) => prev.map((c) => (c.id === comment.id
+      ? { ...c, resolved, resolved_at: resolved ? new Date().toISOString() : null, resolved_by_name: resolved ? currentUser.displayName : null }
+      : c)));
+    await window.warroom.docComments.resolve(comment.id, resolved, currentUser.displayName);
+  }
+
   async function deleteComment(id: string) {
-    setComments((prev) => prev.filter((c) => c.id !== id)); // optimistic
+    setComments((prev) => prev.filter((c) => c.id !== id && c.parent_id !== id)); // optimistic — cascades to replies too
     await window.warroom.docComments.delete(id);
   }
 
@@ -4449,21 +4792,21 @@ function DocPaneViewer({
             className="text-[11px] leading-snug mb-2 pl-2 line-clamp-3"
             style={{ color: 'var(--nav-inactive-color)', borderLeft: '2px solid rgba(147,51,234,0.5)' }}
           >
-            "{pendingComment.quote}"
+            {pendingComment.kind === 'card' ? `Card — "${pendingComment.quote}"` : `"${pendingComment.quote}"`}
           </div>
-          <textarea
-            autoFocus
-            value={composerBody}
-            onChange={(e) => setComposerBody(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { e.preventDefault(); setPendingComment(null); }
-              else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); postComment(); }
-            }}
-            placeholder="Comment…"
-            rows={3}
-            className="w-full text-[12.5px] rounded-lg px-2 py-1.5 outline-none resize-none mb-2"
-            style={{ background: 'var(--bg-input)', color: 'rgb(var(--ink-rgb))', border: '1px solid var(--border-med)' }}
-          />
+          <div className="mb-2">
+            <MentionableTextarea
+              value={composerBody}
+              onChange={setComposerBody}
+              placeholder="Comment…"
+              rows={3}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setPendingComment(null); }
+                else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); postComment(); }
+              }}
+            />
+          </div>
           <div className="flex items-center justify-between gap-2">
             <div className="flex rounded-lg p-0.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
               {([
@@ -4735,6 +5078,26 @@ function DocPaneViewer({
               <IcoComment />
             </button>
           )}
+          {hoveredCardTag && currentTeam && commentsVisible && (
+            <button
+              className="fixed z-40 flex items-center justify-center rounded-full transition"
+              style={{
+                left: hoveredCardTag.rect.right + 6, top: hoveredCardTag.rect.top - 2, width: 22, height: 22,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                boxShadow: 'var(--shadow-elevated)', color: 'var(--nav-inactive-color)', cursor: 'pointer',
+              }}
+              title="Comment on this card"
+              onMouseEnter={cancelCardHoverClear}
+              onMouseLeave={clearCardHoverSoon}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const el = containerRef.current?.querySelector(`[data-cred-id="${hoveredCardTag.id}"]`);
+                if (el) openComposerFromCard(el);
+              }}
+            >
+              <IcoComment />
+            </button>
+          )}
         </div>
         {cxOpen && step === 'viewing' && (
           <CrossExPanel
@@ -4762,8 +5125,11 @@ function DocPaneViewer({
           <CommentsPanel
             comments={comments}
             currentUserId={currentUser?.id}
+            teamMembers={teamMembers}
             onScrollTo={scrollToComment}
             onDelete={deleteComment}
+            onReply={postReply}
+            onResolve={resolveComment}
             onClose={toggleCommentsVisible}
           />
         )}

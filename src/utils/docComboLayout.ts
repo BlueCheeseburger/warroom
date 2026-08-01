@@ -21,6 +21,7 @@ export interface ComboLayout {
   geminiOpen?: boolean; // same override, for the Warroom AI side panel
   paths?: string[]; // the doc paths this combo is made of, in pane order — lets the sidebar re-open it
   savedAt?: string; // ISO timestamp of when this combo was last open, for newest-first listing
+  customName?: string; // user-given name (double-click to rename in the sidebar); absent = auto label from doc names
 }
 
 /** One saved compare view, as the sidebar lists it. */
@@ -127,6 +128,13 @@ export function listComboViews(): SavedComboView[] {
     .filter(([, v]) => Array.isArray(v.paths) && v.paths.length >= 2)
     .map(([key, v]) => ({ ...v, key, paths: v.paths as string[] }))
     .sort((a, b) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''));
+}
+
+/** Sets (or clears, with an empty/whitespace-only name) this combo's custom
+ *  display name. Clearing falls back to the auto-generated joined-names label. */
+export function renameComboView(key: string, name: string) {
+  const trimmed = name.trim();
+  saveComboLayout(key, { customName: trimmed || undefined });
 }
 
 export function deleteComboView(key: string) {
