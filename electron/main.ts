@@ -5729,73 +5729,6 @@ ipcMain.handle('chat:getDMChannels', async (_e, teamId: string) => {
   } catch (e) { return sbErr(e); }
 });
 
-// ─── Gemini chat (streaming) ──────────────────────────────────────────────────
-
-interface GeminiPart  { text?: string; inlineData?: { mimeType: string; data: string } }
-interface GeminiMsg   { role: 'user' | 'model'; parts: GeminiPart[] }
-
-ipcMain.handle('chat:geminiSend', async (_e, messages: GeminiMsg[], systemText?: string) => {
-  const apiKey = await getSecure('gemini');
-  if (!apiKey) return sbErr('No Gemini API key – add it in Settings → AI.');
-  try {
-    const modelId = await getGeminiModelId();
-    const body: any = {
-      contents: messages,
-      generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
-    };
-    if (systemText) body.system_instruction = { parts: [{ text: systemText }] };
-
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`, {
-      method: 'POST',
-      headers: geminiHeaders(apiKey),
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => String(res.status));
-      mainWin?.webContents.send('chat:geminiError', errText);
-      return sbErr(`Gemini ${res.status}: ${errText}`);
-    }
-
-    // Use async iteration — works reliably in Electron/Node.js (getReader() is browser-only)
-    const dec = new TextDecoder();
-    let fullText = '';
-    let buf = '';
-
-    for await (const raw_chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      buf += dec.decode(raw_chunk, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const raw = line.slice(6).trim();
-        if (!raw || raw === '[DONE]') continue;
-        try {
-          const json = JSON.parse(raw);
-          const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-          if (text) { fullText += text; mainWin?.webContents.send('chat:geminiChunk', text); }
-        } catch {}
-      }
-    }
-    // Flush any remaining buffer
-    if (buf) {
-      const raw = buf.startsWith('data: ') ? buf.slice(6).trim() : '';
-      if (raw && raw !== '[DONE]') {
-        try {
-          const json = JSON.parse(raw);
-          const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-          if (text) { fullText += text; mainWin?.webContents.send('chat:geminiChunk', text); }
-        } catch {}
-      }
-    }
-    mainWin?.webContents.send('chat:geminiDone');
-    return sbOk(fullText);
-  } catch (e: any) {
-    mainWin?.webContents.send('chat:geminiError', e.message);
-    return sbErr(e.message);
-  }
-});
-
 // ─── Gemini agent turn (tool-calling, non-streaming) ─────────────────────────
 
 // AGENT_SYSTEM is now loaded at runtime from electron/prompts/agent_system.txt via renderPrompt('agent_system', {}).
@@ -7284,31 +7217,18 @@ function fireTopicNotification(eventType: 'pf' | 'ld', resolution: string) {
 }
 
 async function generateTopicBrief(eventType: 'pf' | 'ld', resolution: string): Promise<void> {
-  const apiKey = await getSecure('gemini').catch(() => null);
-  if (!apiKey) return;
-
   const label = eventType === 'pf' ? 'Public Forum' : 'Lincoln-Douglas';
 
   const prompt = await renderPrompt('topic_brief', { TOPIC_LABEL: label, RESOLUTION: resolution });
 
   try {
-    const briefModelId = await getGeminiModelId();
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${briefModelId}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 1500 },
-        }),
-      }
-    );
-    const data = await res.json() as any;
-    const brief = data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+    // Routed through callAI (like every other AI feature) rather than a
+    // hardcoded Gemini fetch — this is what actually makes it work for
+    // LM Studio/OpenAI/Anthropic/Grok users, not just whoever has a Gemini
+    // key. Failure here is swallowed on purpose: this is a silent background
+    // job that fires when a new topic drops, not a user-initiated action
+    // with somewhere to surface an error toast.
+    const brief = await callAI(prompt, 'balanced', { maxOutputTokens: 1500 });
     if (!brief) return;
 
     const stored = await getStoredTopics();

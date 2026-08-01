@@ -291,23 +291,6 @@ const api = {
     kickMember: (teamId: string, userId: string) => ipcRenderer.invoke('chat:kickMember', teamId, userId),
     renameTeam: (teamId: string, name: string) => ipcRenderer.invoke('chat:renameTeam', teamId, name),
     claimOwnership: (teamId: string) => ipcRenderer.invoke('chat:claimOwnership', teamId),
-    geminiSend: (messages: any[], systemText?: string) =>
-      ipcRenderer.invoke('chat:geminiSend', messages, systemText),
-    onGeminiChunk: (cb: (text: string) => void) => {
-      const handler = (_e: any, text: string) => cb(text);
-      ipcRenderer.on('chat:geminiChunk', handler);
-      return () => ipcRenderer.removeListener('chat:geminiChunk', handler);
-    },
-    onGeminiDone: (cb: () => void) => {
-      const handler = () => cb();
-      ipcRenderer.once('chat:geminiDone', handler);
-      return () => ipcRenderer.removeListener('chat:geminiDone', handler);
-    },
-    onGeminiError: (cb: (err: string) => void) => {
-      const handler = (_e: any, err: string) => cb(err);
-      ipcRenderer.once('chat:geminiError', handler);
-      return () => ipcRenderer.removeListener('chat:geminiError', handler);
-    },
     generateGeminiTitle: (messages: any[]) => ipcRenderer.invoke('chat:generateGeminiTitle', messages),
     editMessage: (messageId: string, content: string) => ipcRenderer.invoke('chat:editMessage', messageId, content),
     deleteMessage: (messageId: string) => ipcRenderer.invoke('chat:deleteMessage', messageId),

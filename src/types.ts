@@ -525,10 +525,6 @@ declare global {
         kickMember: (teamId: string, userId: string) => Promise<{ ok: boolean; error?: string }>;
         renameTeam: (teamId: string, name: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
         claimOwnership: (teamId: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
-        geminiSend: (messages: any[], systemText?: string) => Promise<{ ok: boolean; data?: string; error?: string }>;
-        onGeminiChunk: (cb: (text: string) => void) => () => void;
-        onGeminiDone: (cb: () => void) => () => void;
-        onGeminiError: (cb: (err: string) => void) => () => void;
         generateGeminiTitle: (messages: any[]) => Promise<{ ok: boolean; data?: string; error?: string }>;
         geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string) => Promise<{ ok: boolean; data?: { type: 'text' | 'tool_call'; text?: string; title?: string; name?: string; args?: Record<string, any>; modelContent?: any }; error?: string }>;
         lookupUserByEmail: (email: string) => Promise<{ ok: boolean; data?: { userId: string; displayName: string } | null; error?: string }>;
