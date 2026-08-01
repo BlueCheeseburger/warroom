@@ -234,7 +234,7 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
 const SETTINGS_NAV: { id: string; label: string; keywords?: string }[] = [
   { id: 'settings-appearance',      label: 'Appearance', keywords: 'theme dark mode light mode color' },
   { id: 'settings-speechdocs',      label: 'Speech docs & cases', keywords: 'margin zoom outline focus mode reading' },
-  { id: 'settings-general',         label: 'General', keywords: 'card staleness outdated reduce motion skip delete confirmations notifications timer warning cite' },
+  { id: 'settings-general',         label: 'General', keywords: 'card staleness outdated reduce motion skip delete confirmations notifications timer warning cite dictation offline whisper voice transcribe' },
   { id: 'settings-event',           label: 'Debate event', keywords: 'hs policy ld pf ndt ceda' },
   { id: 'settings-apikey',          label: 'AI API key', keywords: 'gemini openai anthropic grok lm studio model tier' },
   { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom', keywords: 'disclosure login credentials' },
@@ -570,6 +570,41 @@ export default function Settings() {
     setSkipDeleteConfirm(false);
     (Object.keys(notifySettings) as NotifyKey[]).forEach((k) => setNotifySetting(k, true));
   }
+  // Offline dictation (Beta) — a local Whisper model via @huggingface/transformers,
+  // main-process state (electron/offlineWhisper.ts) since that's where the model
+  // actually lives and runs. Not part of resetGeneralSettings: a ~40-80MB model
+  // download shouldn't get silently undone by a "reset to defaults" click.
+  const [dictationUseOffline, setDictationUseOfflineState] = useState(false);
+  const [offlineModelReady, setOfflineModelReady] = useState(false);
+  const [offlineDownloading, setOfflineDownloading] = useState(false);
+  const [offlineDownloadPct, setOfflineDownloadPct] = useState<number | null>(null);
+  const [offlineDownloadError, setOfflineDownloadError] = useState('');
+  async function setDictationUseOffline(val: boolean) {
+    setDictationUseOfflineState(val);
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, dictationUseOffline: val });
+  }
+  async function downloadOfflineModel() {
+    const bridge = (window.warroom as any)?.dictation;
+    if (!bridge?.downloadOfflineModel) return;
+    setOfflineDownloading(true);
+    setOfflineDownloadPct(null);
+    setOfflineDownloadError('');
+    const unsub = bridge.onOfflineModelProgress?.((p: any) => {
+      if (typeof p?.progress === 'number') setOfflineDownloadPct(Math.round(p.progress));
+    });
+    try {
+      const res = await bridge.downloadOfflineModel();
+      if (res?.ok) { setOfflineModelReady(true); setDictationUseOffline(true); }
+      else setOfflineDownloadError(res?.error ?? 'Download failed.');
+    } catch (e: any) {
+      setOfflineDownloadError(e?.message ?? 'Download failed.');
+    } finally {
+      unsub?.();
+      setOfflineDownloading(false);
+      setOfflineDownloadPct(null);
+    }
+  }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
   // no main-process/IPC need). Default ON: dark-mode users still read the
   // actual doc page as light "paper" while the rest of the app stays dark.
@@ -761,6 +796,7 @@ export default function Settings() {
         notifyOpponents: (s as any)?.notifyOpponents !== false,
       });
       setCiteYearFormatState((s as any)?.citeYearFormat === 'year' ? 'year' : 'month-day');
+      setDictationUseOfflineState(!!(s as any)?.dictationUseOffline);
       const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
       const provider: AIProvider = (s as any)?.apiProvider ?? 'gemini';
@@ -768,6 +804,9 @@ export default function Settings() {
       setApiKey(keys[provider] ?? '');
       setLoaded(true);
     });
+    (window.warroom as any)?.dictation?.offlineModelStatus?.().then((res: any) => {
+      if (res?.ok) setOfflineModelReady(!!res.ready);
+    }).catch(() => {});
   }, []);
 
   // Apply the debate event immediately on selection — updates the live store (so the
@@ -1395,6 +1434,55 @@ export default function Settings() {
             ))}
           </div>
         </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="flex items-center justify-between">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: 'var(--ink)' }}>
+                Offline dictation model
+                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--border-med)', color: 'var(--label-color)' }}>Beta</span>
+              </div>
+              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                Transcribes dictation with a small local Whisper model — no API key, no internet, works with
+                any AI provider (or none). Downloads once (~75MB) and runs on your device from then on. Beta:
+                slower and less accurate than Gemini/OpenAI, and speech recognition quality can vary by device.
+              </p>
+            </div>
+            {offlineModelReady && (
+              <button
+                onClick={() => setDictationUseOffline(!dictationUseOffline)}
+                className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+                style={{ background: dictationUseOffline ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+              >
+                <span
+                  className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                  style={{ transform: dictationUseOffline ? 'translateX(18px)' : 'translateX(2px)' }}
+                />
+              </button>
+            )}
+          </div>
+          {!offlineModelReady && (
+            <button
+              className="btn text-xs mt-2"
+              onClick={downloadOfflineModel}
+              disabled={offlineDownloading}
+            >
+              {offlineDownloading
+                ? (offlineDownloadPct !== null ? `Downloading… ${offlineDownloadPct}%` : 'Downloading…')
+                : 'Download offline model'}
+            </button>
+          )}
+          {offlineModelReady && (
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              Model downloaded and ready. {dictationUseOffline ? 'Dictation is using it now.' : 'Turn on the toggle above to use it.'}
+            </p>
+          )}
+          {offlineDownloadError && (
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger, #e5484d)' }}>{offlineDownloadError}</p>
+          )}
+        </div>
+
         {!generalSettingsAreDefault && (
           <button
             type="button"

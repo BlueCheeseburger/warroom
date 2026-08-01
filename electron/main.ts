@@ -26,8 +26,9 @@ import { extractFlowCardsFromXml, ExtractedFlowCard } from './docxFlowCards';
 import {
   LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
   buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
-  looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText, readLmStudioToolCalls,
+  looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText,
 } from './lmstudio';
+import { downloadOfflineWhisperModel, transcribeOffline, WhisperProgress } from './offlineWhisper';
 
 const isDev = !app.isPackaged;
 
@@ -892,6 +893,25 @@ async function callOpenAI(apiKey: string, prompt: string, modelId: string): Prom
   const text = data?.choices?.[0]?.message?.content;
   if (typeof text !== 'string') throw new Error('Unexpected OpenAI response shape');
   return text;
+}
+
+/** OpenAI's transcription endpoint takes a file upload (multipart/form-data),
+ *  not JSON — the one call site in this file shaped that way. */
+async function callOpenAIWhisper(apiKey: string, audioBytes: Buffer, mimeType: string): Promise<string> {
+  const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('wav') ? 'wav' : 'ogg';
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(audioBytes)], { type: mimeType }), `dictation.${ext}`);
+  form.append('model', 'whisper-1');
+  const res = await fetchWithRetry('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!res.ok) throw openaiHttpError(res.status, await res.text().catch(() => ''));
+  const data = await res.json() as any;
+  const text = data?.text;
+  if (typeof text !== 'string') throw new Error('Unexpected OpenAI transcription response shape');
+  return text.trim();
 }
 
 // ─── Anthropic ────────────────────────────────────────────────────────────────
@@ -1991,10 +2011,45 @@ ipcMain.handle('speechdoc:headingStyles', async (_e, base64: string) => {
   } catch (e: any) { return sbErr(e.message); }
 });
 
-ipcMain.handle('dictation:transcribe', async (_e, audioBase64: string, mimeType: string) => {
-  const apiKey = await getSecure('gemini');
-  if (!apiKey) return sbErr('No Gemini API key configured');
+// Dictation supports exactly three paths, each fundamentally different:
+//   - Gemini: audio sent inline as base64 to generateContent, same as before.
+//   - OpenAI: audio uploaded as a file to the Whisper transcription endpoint.
+//   - Offline (Beta): a small local Whisper model via @huggingface/transformers
+//     — see electron/offlineWhisper.ts. No provider/key needed at all.
+// Anthropic/Grok have no transcription API, cloud or otherwise, so those
+// providers get a clear error pointing at the two that do plus the offline
+// option, rather than a confusing "no Gemini key" message when the user
+// deliberately picked something else.
+const OFFLINE_MODEL_CACHE_DIR = () => join(dataDir(), 'offline-models');
+
+ipcMain.handle('dictation:transcribe', async (_e, audioBase64: string, mimeType: string, offline?: boolean) => {
   try {
+    if (offline) {
+      const bytes = Buffer.from(audioBase64, 'base64');
+      const pcm = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+      const text = await transcribeOffline(pcm, OFFLINE_MODEL_CACHE_DIR());
+      return sbOk(text);
+    }
+
+    const s = await readJson('app_settings').catch(() => null) as any;
+    const provider: string = s?.apiProvider ?? 'gemini';
+
+    if (provider === 'openai') {
+      const apiKey = await getSecure('openai_key');
+      if (!apiKey) return sbErr('No OpenAI API key configured — add it in Settings → AI.');
+      const text = await callOpenAIWhisper(apiKey, Buffer.from(audioBase64, 'base64'), mimeType);
+      return sbOk(text);
+    }
+
+    if (provider !== 'gemini') {
+      return sbErr(
+        `Dictation isn't available on ${provider === 'anthropic' ? 'Anthropic' : provider === 'grok' ? 'Grok' : 'LM Studio'} — ` +
+        'switch to Gemini or OpenAI in Settings → AI, or turn on the offline dictation model (Settings → General, Beta) to transcribe with no cloud provider at all.'
+      );
+    }
+
+    const apiKey = await getSecure('gemini');
+    if (!apiKey) return sbErr('No Gemini API key configured');
     const body = {
       contents: [{
         parts: [
@@ -2022,6 +2077,24 @@ ipcMain.handle('dictation:transcribe', async (_e, audioBase64: string, mimeType:
     return sbOk(text.trim());
   } catch (e: any) {
     return sbErr(e.message ?? 'Transcription failed');
+  }
+});
+
+ipcMain.handle('dictation:offlineModelStatus', async () => {
+  const s = await readJson('app_settings').catch(() => null) as any;
+  return { ok: true, ready: !!s?.dictationOfflineModelReady };
+});
+
+ipcMain.handle('dictation:downloadOfflineModel', async (e) => {
+  try {
+    await downloadOfflineWhisperModel(OFFLINE_MODEL_CACHE_DIR(), (p: WhisperProgress) => {
+      e.sender.send('dictation:offlineModelProgress', p);
+    });
+    const s = await readJson('app_settings').catch(() => ({})) as any;
+    await writeJson('app_settings', { ...s, dictationOfflineModelReady: true });
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
   }
 });
 

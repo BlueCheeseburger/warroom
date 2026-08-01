@@ -13,7 +13,17 @@ export default defineConfig({
         // level outside undici's own try/catch, crashing Electron on startup.
         // Marking undici external means it loads from node_modules at runtime where
         // its try/catch for ERR_UNKNOWN_BUILTIN_MODULE works correctly.
-        external: ['electron', 'ws', 'bufferutil', 'utf-8-validate', 'undici'],
+        //
+        // @huggingface/transformers (offline dictation, Beta) and its native deps
+        // (onnxruntime-node loads a platform-specific .node binary via a runtime
+        // require(); sharp has its own native bindings) can't be safely bundled by
+        // Rollup — same class of problem as undici above, just for native addons
+        // instead of a Node builtin. External here + asarUnpack in
+        // electron-builder.yml keeps them loading from a real node_modules dir.
+        external: [
+          'electron', 'ws', 'bufferutil', 'utf-8-validate', 'undici',
+          '@huggingface/transformers', 'onnxruntime-node', 'onnxruntime-web', 'sharp',
+        ],
         output: { entryFileNames: 'index.cjs', format: 'cjs' },
       }
     }

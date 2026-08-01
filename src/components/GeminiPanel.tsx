@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
 import MentionPicker from './MentionPicker';
 import { humanizeGeminiError } from '../utils/geminiError';
+import { transcribeRecording } from '../utils/dictation';
 import { linkifyText } from '../lib/linkify';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS, makeDefaultData } from './FlowView';
 import { readFlowPrefs } from '../lib/flowPrefs';
@@ -1609,17 +1610,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
         setIsRecording(false);
         setDictationStatus('transcribing');
         const blob = new Blob(chunks, { type: recorder.mimeType });
-        const buf = await blob.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let bin = '';
-        for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
-        const geminiMime = recorder.mimeType.split(';')[0] || 'audio/webm';
-        try {
-          const res = await (window.warroom as any)?.dictation?.transcribe(btoa(bin), geminiMime);
-          if (res?.ok && res.data) {
-            setComposerText((prev) => (prev ? prev + ' ' : '') + res.data.trim());
-          }
-        } catch {}
+        const text = await transcribeRecording(blob, recorder.mimeType);
+        if (text) setComposerText((prev) => (prev ? prev + ' ' : '') + text);
         setDictationStatus('idle');
       };
       recorder.start();

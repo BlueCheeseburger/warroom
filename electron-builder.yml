@@ -6,6 +6,12 @@ directories:
 files:
   - out/**
   - package.json
+# Offline dictation (Beta) uses @huggingface/transformers, which pulls in
+# onnxruntime-node — a native addon (.node binary). Native addons can't be
+# dlopen'd from inside an asar archive, so they need to be unpacked onto the
+# real filesystem at install time.
+asarUnpack:
+  - node_modules/onnxruntime-node/**
 extraResources:
   - from: electron/skills
     to: skills

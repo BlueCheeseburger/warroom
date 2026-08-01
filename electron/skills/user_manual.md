@@ -571,7 +571,7 @@ Chat icon in the title bar (click again to close it — no separate close button
 - **Invite code**: moved out of the header; it's in Room Settings (gear icon) now, alongside **Leave room**. DM/group DM settings (gear icon while in a DM) has its own **Leave conversation** button.
 - **Share attachments**: cases, blocks, flows, opponents, tournaments, speech docs — all shareable in messages. In the composer, type **@** to attach or mention anything (there's no separate attach button); pasting a copied image still works too.
 - **Sending a message**: the message appears in the thread immediately. If it fails to actually send, it's pulled back out, your text is restored to the box, and the error shows below the composer — so a slow connection never looks like it silently ate your message.
-- **Send / dictate**: one round button at the end of the composer does double duty — it's the dictation mic when the box is empty, and turns into the Send button the moment you've typed something or attached a file.
+- **Send / dictate**: one round button at the end of the composer does double duty — it's the dictation mic when the box is empty, and turns into the Send button the moment you've typed something or attached a file. Dictation works with a Gemini or OpenAI key; with Anthropic, Grok, or no key at all, turn on the offline model instead (Settings → General → "Offline dictation model") — it's Beta, so expect it to be slower and less accurate than the cloud options, but it needs no key and no internet connection once downloaded.
 - **Edit / delete**: hover your own message in a room or DM for Edit and Delete buttons
 - **Reply**: hover any message (yours or someone else's) for a Reply button — quotes that message above your new one so context is clear without starting a separate thread. Click the quoted snippet on a sent message to jump back to the original.
 - **Unread badge** shown on chat icon
@@ -629,6 +629,7 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Card staleness | How many years old a card can be before it's flagged outdated everywhere (default 4) |
 | Current-year short cite | Whether the AI card cutter writes a current-year source as month-day (`Brady 3-15`, the default) or two-digit year (`Brady 26`) — see "Cut a card with Warroom AI" above |
 | Timer warning threshold | Seconds remaining when the top-bar speech timer turns amber (default 30). It always turns red at 0:00. |
+| Offline dictation model (Beta) | Download a small local Whisper model for dictation with no API key or internet — see "Send / dictate" above |
 | Reduce motion | Turns off transitions and animations across the app |
 | Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
 | Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |

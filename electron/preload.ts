@@ -166,8 +166,15 @@ const api = {
     headingStyles: (base64: string) => ipcRenderer.invoke('speechdoc:headingStyles', base64),
   },
   dictation: {
-    transcribe: (audioBase64: string, mimeType: string) =>
-      ipcRenderer.invoke('dictation:transcribe', audioBase64, mimeType),
+    transcribe: (audioBase64: string, mimeType: string, offline?: boolean) =>
+      ipcRenderer.invoke('dictation:transcribe', audioBase64, mimeType, offline),
+    offlineModelStatus: () => ipcRenderer.invoke('dictation:offlineModelStatus'),
+    downloadOfflineModel: () => ipcRenderer.invoke('dictation:downloadOfflineModel'),
+    onOfflineModelProgress: (cb: (p: { status: string; file?: string; progress?: number; loaded?: number; total?: number }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('dictation:offlineModelProgress', handler);
+      return () => ipcRenderer.removeListener('dictation:offlineModelProgress', handler);
+    },
   },
   fs: {
     readFileBytes: (filePath: string) => ipcRenderer.invoke('fs:readFileBytes', filePath),

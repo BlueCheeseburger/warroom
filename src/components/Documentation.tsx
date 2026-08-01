@@ -2027,6 +2027,28 @@ export default function Documentation() {
             placeholder is removed and the composer text/attachments/reply are restored, with the
             real error shown inline.
           </P>
+          <H3>Dictation</H3>
+          <P>
+            All three composers call one shared helper, <Code>transcribeRecording()</Code> in{' '}
+            <Code>src/utils/dictation.ts</Code>, instead of each duplicating the record/encode/invoke
+            logic. It routes by provider: <strong>Gemini</strong> sends the recorded audio inline as
+            before; <strong>OpenAI</strong> uploads it as a file to the Whisper transcription endpoint
+            (<Code>callOpenAIWhisper()</Code>, multipart/form-data — the one call site in the app
+            shaped that way); <strong>Anthropic/Grok</strong> have no transcription API at all, so they
+            get a clear error naming the providers that do plus the offline option, rather than a
+            confusing "no Gemini key" message.
+          </P>
+          <P>
+            <strong>Offline dictation (Beta)</strong> — Settings → General → "Offline dictation model"
+            downloads a small local Whisper model (<Code>electron/offlineWhisper.ts</Code>, via{' '}
+            <Code>@huggingface/transformers</Code>, ~75MB, cached under{' '}
+            <Code>&lt;userData&gt;/warroom/offline-models</Code>) that transcribes entirely on-device —
+            no key, no network, independent of which AI provider is selected. It's slower and less
+            accurate than a hosted model, hence Beta. The renderer does the audio decoding (Web Audio
+            API's <Code>decodeAudioData</Code> + an <Code>OfflineAudioContext</Code> sized to resample
+            to 16kHz mono in one pass) before sending raw PCM over IPC, since MediaRecorder only
+            produces compressed webm/opus and the main process has no codec of its own.
+          </P>
           <H3>Avatars</H3>
           <P>
             <Code>Avatar.tsx</Code> is the shared identity icon for a team room, DM, or group DM,
@@ -2230,6 +2252,14 @@ export default function Documentation() {
                   <Code>timerWarningSecs</Code> in <Code>appStore.ts</Code> (localStorage{' '}
                   <Code>warroom-timer-warning-secs</Code>), same renderer-only pattern as{' '}
                   <Code>cardOutdatedYears</Code>. The red "overtime" state at 0:00 is fixed, not configurable.
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">General — offline dictation model</span>
+                <span className="ml-2 text-ink/60">
+                  Downloads a small local Whisper model for dictation with no API key or internet —
+                  Beta. Stored as <Code>dictationUseOffline</Code>/<Code>dictationOfflineModelReady</Code> in{' '}
+                  <Code>app_settings</Code>. See the Team Chat section's "Dictation" entry for the full mechanism.
                 </span>
               </div>
               <div>
