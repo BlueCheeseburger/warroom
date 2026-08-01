@@ -1445,8 +1445,10 @@ export default function Settings() {
               </div>
               <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
                 Transcribes dictation with a small local Whisper model — no API key, no internet, works with
-                any AI provider (or none). Downloads once (~75MB) and runs on your device from then on. Beta:
-                slower and less accurate than Gemini/OpenAI, and speech recognition quality can vary by device.
+                any AI provider (or none). Downloads once (~75MB) and runs on your device from then on. Once
+                downloaded, it's also used automatically as a silent fallback if Gemini/OpenAI dictation ever
+                fails — even while the toggle below is off. Beta: slower and less accurate than Gemini/OpenAI,
+                and speech recognition quality can vary by device.
               </p>
             </div>
             {offlineModelReady && (

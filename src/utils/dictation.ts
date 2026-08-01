@@ -11,6 +11,15 @@
 //    format the local Whisper pipeline in electron/offlineWhisper.ts accepts
 //    without needing anything beyond a raw byte reinterpretation on the
 //    other end.
+//
+// Silent fallback: when the user's actual preference is cloud (not the
+// offline toggle) and the cloud call fails for any reason — bad key, rate
+// limit, network blip, malformed response — this retries once through the
+// offline model, but only if it's already downloaded (`dictationOfflineModelReady`).
+// Never triggers a download on its own; if the model isn't there, dictation
+// just fails the way it always did. The PCM decode only happens on that
+// retry, not on every call, since cloud succeeds the overwhelming majority
+// of the time and decoding is real work not worth paying for by default.
 
 async function decodeToFloat32Mono16k(blob: Blob): Promise<Float32Array> {
   const arrayBuf = await blob.arrayBuffer();
@@ -55,28 +64,42 @@ function blobToBase64(blob: Blob): Promise<string> {
  *  three call sites' prior best-effort `catch {}` behavior) rather than
  *  throwing — dictation failing shouldn't interrupt whatever the user was
  *  doing in the composer. */
+async function transcribeOfflineFallback(blob: Blob, w: any): Promise<string | null> {
+  try {
+    const pcm = await decodeToFloat32Mono16k(blob);
+    const b64 = float32ToBase64(pcm);
+    const res = await w.dictation.transcribe(b64, 'audio/pcm-f32-16k', true);
+    return res?.ok && typeof res.data === 'string' ? res.data.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function transcribeRecording(blob: Blob, recorderMimeType: string): Promise<string | null> {
   const w = window.warroom as any;
   if (!w?.dictation?.transcribe) return null;
 
   let useOffline = false;
+  let offlineModelReady = false;
   try {
     const s = await w.storage.read('app_settings');
     useOffline = !!s?.dictationUseOffline;
+    offlineModelReady = !!s?.dictationOfflineModelReady;
   } catch { /* best effort */ }
 
+  if (useOffline) {
+    return transcribeOfflineFallback(blob, w);
+  }
+
   try {
-    if (useOffline) {
-      const pcm = await decodeToFloat32Mono16k(blob);
-      const b64 = float32ToBase64(pcm);
-      const res = await w.dictation.transcribe(b64, 'audio/pcm-f32-16k', true);
-      return res?.ok && typeof res.data === 'string' ? res.data.trim() : null;
-    }
     const b64 = await blobToBase64(blob);
     const mime = recorderMimeType.split(';')[0] || 'audio/webm';
     const res = await w.dictation.transcribe(b64, mime, false);
-    return res?.ok && typeof res.data === 'string' ? res.data.trim() : null;
-  } catch {
+    if (res?.ok && typeof res.data === 'string') return res.data.trim();
+    // Silent fallback — only if the offline model is already downloaded.
+    if (offlineModelReady) return transcribeOfflineFallback(blob, w);
     return null;
+  } catch {
+    return offlineModelReady ? transcribeOfflineFallback(blob, w) : null;
   }
 }

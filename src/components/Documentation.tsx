@@ -2049,6 +2049,15 @@ export default function Documentation() {
             to 16kHz mono in one pass) before sending raw PCM over IPC, since MediaRecorder only
             produces compressed webm/opus and the main process has no codec of its own.
           </P>
+          <P>
+            <strong>Silent fallback</strong> — once the offline model is downloaded, it's also used
+            automatically if a Gemini/OpenAI dictation call fails for any reason (bad key, rate limit,
+            network error), even while the "use offline" toggle itself is off. The PCM decode only
+            happens on that retry, not on every call, since the cloud path succeeds the vast majority
+            of the time. This never triggers a download on its own, and there's no UI signal either
+            way — consistent with every other dictation failure being swallowed silently rather than
+            interrupting the composer.
+          </P>
           <H3>Avatars</H3>
           <P>
             <Code>Avatar.tsx</Code> is the shared identity icon for a team room, DM, or group DM,
