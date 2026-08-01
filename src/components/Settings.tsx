@@ -599,12 +599,32 @@ export default function Settings() {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, dictationUseOffline: val });
   }
-  async function downloadOfflineModel() {
+  /** Same "silently does nothing" failure mode as the LM Studio bridge check
+   *  above, same fix: this API only exists on `window.warroom` once the
+   *  preload script that defines it has actually loaded, which — unlike the
+   *  renderer's own hot-reloaded code — only happens when Electron's main
+   *  process starts. A build that added this IPC surface after the app was
+   *  already running leaves the button looking dead instead of erroring. */
+  function dictationBridge() {
     const bridge = (window.warroom as any)?.dictation;
-    if (!bridge?.downloadOfflineModel) return;
+    if (!bridge?.downloadOfflineModel || !bridge?.offlineModelStatus) return null;
+    return bridge;
+  }
+  const DICTATION_NO_BRIDGE = 'Warroom needs a restart to load offline dictation (it is set up when the app starts). Quit and reopen Warroom, then try again.';
+
+  async function downloadOfflineModel() {
+    // Set the loading state before anything async, including the bridge
+    // check itself — the button's own disabled/label change is the first
+    // bit of feedback, so it must never wait on an IPC round-trip to appear.
     setOfflineDownloading(true);
     setOfflineDownloadPct(null);
     setOfflineDownloadError('');
+    const bridge = dictationBridge();
+    if (!bridge) {
+      setOfflineDownloading(false);
+      setOfflineDownloadError(DICTATION_NO_BRIDGE);
+      return;
+    }
     const unsub = bridge.onOfflineModelProgress?.((p: any) => {
       if (typeof p?.progress === 'number') setOfflineDownloadPct(Math.round(p.progress));
     });
