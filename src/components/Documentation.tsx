@@ -467,6 +467,12 @@ export default function Documentation() {
             "reset" link back to default. <Code>⌘/</Code> itself is disableable/rebindable, but Settings
             → Keyboard Shortcuts always opens this overlay directly, so it's never a dead end.
           </P>
+          <P>
+            Custom rebindings and disables travel with a full Settings export/import (Settings →
+            Import/Export Settings) — both of <Code>shortcutPrefs.ts</Code>'s localStorage keys
+            (<Code>warroom-disabled-shortcuts</Code>, <Code>warroom-shortcut-bindings</Code>) are in{' '}
+            <Code>SETTINGS_LOCALSTORAGE_KEYS</Code>, same as every other listed preference.
+          </P>
         </section>
 
         {/* ── Cases & Blocks ─────────────────────────────────────────── */}

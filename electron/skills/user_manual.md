@@ -712,7 +712,7 @@ Most of the shortcuts above (not the plain typing/navigation ones like Enter, Ta
 - **Reset one back to default**: a small "reset" link appears next to any shortcut you've customized.
 - A few multi-key groups (jumping between sheets ⌘1–9, moving a row ⌘↑/⌘↓) can be disabled but not individually rebound, since they're not a single combo.
 
-Your changes are saved on this device and apply everywhere that shortcut is used in the app.
+Your changes are saved on this device and apply everywhere that shortcut is used in the app. They also travel with a Settings export (Settings → Import/Export Settings), so reinstalling or moving to a second machine doesn't mean re-doing every rebind.
 
 ---
 
