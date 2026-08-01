@@ -105,6 +105,19 @@ export async function downloadOfflineWhisperModel(
 }
 
 /**
+ * Settings' "Uninstall" button — deletes the cached model files and drops the
+ * in-memory pipeline singleton. Clearing `transcriberPromise` matters even
+ * though a fresh app launch would do it automatically: without it, a
+ * download-uninstall-download cycle in the same running session would hand
+ * back a pipeline still pointed at files that no longer exist on disk.
+ */
+export async function removeOfflineWhisperModel(cacheDir: string): Promise<void> {
+  transcriberPromise = null;
+  const fs = await import('fs/promises');
+  await fs.rm(cacheDir, { recursive: true, force: true });
+}
+
+/**
  * Transcribes 16kHz mono PCM samples (Float32, -1..1) — the renderer decodes
  * and resamples the recorded audio to this exact format via the Web Audio
  * API before sending it over IPC, so no audio-format decoding needs to

@@ -592,6 +592,7 @@ export default function Settings() {
   const [dictationUseOffline, setDictationUseOfflineState] = useState(false);
   const [offlineModelReady, setOfflineModelReady] = useState(false);
   const [offlineDownloading, setOfflineDownloading] = useState(false);
+  const [offlineUninstalling, setOfflineUninstalling] = useState(false);
   // Aggregate percentage across every file in the model download (the model
   // is several separate files — weights, tokenizer, config — each of which
   // reports its own 0-100 independently; this is the running total across
@@ -647,6 +648,27 @@ export default function Settings() {
       setOfflineDownloading(false);
       setOfflineDownloadPct(null);
       setOfflineDownloadLabel('');
+    }
+  }
+
+  async function removeOfflineModel() {
+    if (!confirm('Remove the downloaded offline dictation model? You can download it again later.')) return;
+    setOfflineUninstalling(true);
+    setOfflineDownloadError('');
+    const bridge = dictationBridge();
+    if (!bridge?.removeOfflineModel) {
+      setOfflineUninstalling(false);
+      setOfflineDownloadError(DICTATION_NO_BRIDGE);
+      return;
+    }
+    try {
+      const res = await bridge.removeOfflineModel();
+      if (res?.ok) { setOfflineModelReady(false); setDictationUseOfflineState(false); }
+      else setOfflineDownloadError(res?.error ?? 'Could not remove the model.');
+    } catch (e: any) {
+      setOfflineDownloadError(e?.message ?? 'Could not remove the model.');
+    } finally {
+      setOfflineUninstalling(false);
     }
   }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
@@ -1536,9 +1558,23 @@ export default function Settings() {
             </>
           )}
           {offlineModelReady && (
-            <p className="text-[11px] mt-1.5" style={{ color: 'var(--nav-inactive-color)' }}>
-              Model downloaded and ready. {dictationUseOffline ? 'Dictation is using it now.' : 'Turn on the toggle above to use it.'}
-            </p>
+            <div className="flex items-center gap-3 mt-1.5">
+              <p className="text-[11px] flex-1" style={{ color: 'var(--nav-inactive-color)' }}>
+                Model downloaded and ready. {dictationUseOffline ? 'Dictation is using it now.' : 'Turn on the toggle above to use it.'}
+              </p>
+              <button
+                type="button"
+                title="Delete the downloaded model to free up space"
+                onClick={removeOfflineModel}
+                disabled={offlineUninstalling}
+                className="text-[11px] shrink-0 transition"
+                style={{ background: 'transparent', border: 'none', cursor: offlineUninstalling ? 'default' : 'pointer', color: 'var(--nav-inactive-color)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                onMouseEnter={(e) => { if (!offlineUninstalling) (e.currentTarget as HTMLElement).style.color = 'var(--danger, #e5484d)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
+              >
+                {offlineUninstalling ? 'Removing…' : 'Uninstall'}
+              </button>
+            </div>
           )}
           {offlineDownloadError && (
             <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger, #e5484d)' }}>{offlineDownloadError}</p>

@@ -28,7 +28,7 @@ import {
   buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
   looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText,
 } from './lmstudio';
-import { downloadOfflineWhisperModel, transcribeOffline, WhisperProgress } from './offlineWhisper';
+import { downloadOfflineWhisperModel, removeOfflineWhisperModel, transcribeOffline, WhisperProgress } from './offlineWhisper';
 
 const isDev = !app.isPackaged;
 
@@ -2092,6 +2092,20 @@ ipcMain.handle('dictation:downloadOfflineModel', async (e) => {
     });
     const s = await readJson('app_settings').catch(() => ({})) as any;
     await writeJson('app_settings', { ...s, dictationOfflineModelReady: true });
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+});
+
+ipcMain.handle('dictation:removeOfflineModel', async () => {
+  try {
+    await removeOfflineWhisperModel(OFFLINE_MODEL_CACHE_DIR());
+    const s = await readJson('app_settings').catch(() => ({})) as any;
+    // Also turns off "use offline" — leaving it on would mean the next
+    // dictation (or the next silent cloud-failure fallback) tries to run a
+    // pipeline against files that were just deleted.
+    await writeJson('app_settings', { ...s, dictationOfflineModelReady: false, dictationUseOffline: false });
     return { ok: true };
   } catch (err: any) {
     return { ok: false, error: err?.message ?? String(err) };

@@ -170,7 +170,8 @@ const api = {
       ipcRenderer.invoke('dictation:transcribe', audioBase64, mimeType, offline),
     offlineModelStatus: () => ipcRenderer.invoke('dictation:offlineModelStatus'),
     downloadOfflineModel: () => ipcRenderer.invoke('dictation:downloadOfflineModel'),
-    onOfflineModelProgress: (cb: (p: { status: string; file?: string; progress?: number; loaded?: number; total?: number }) => void) => {
+    removeOfflineModel: () => ipcRenderer.invoke('dictation:removeOfflineModel'),
+    onOfflineModelProgress: (cb: (p: { status: string; label?: string; overallPct?: number }) => void) => {
       const handler = (_e: any, p: any) => cb(p);
       ipcRenderer.on('dictation:offlineModelProgress', handler);
       return () => ipcRenderer.removeListener('dictation:offlineModelProgress', handler);
