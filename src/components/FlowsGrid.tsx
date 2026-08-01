@@ -15,6 +15,7 @@ import {
   moveItem,
   pruneAssignments,
   sortByOrder,
+  ensureOrderSeeded,
   moveInOrder,
   CaseFolder,
 } from '../utils/caseFolders';
@@ -24,7 +25,7 @@ import {
   FLOW_ITEM_DRAG_MIME as ITEM_MIME,
   FLOW_FOLDER_DRAG_MIME as FOLDER_MIME,
 } from '../utils/flowFolders';
-import { Crumb, FolderTile, DeleteFolderConfirm, CARD_BASE } from './CasesGrid';
+import { Crumb, FolderTile, DeleteFolderConfirm, ItemSelectionBar, CARD_BASE } from './CasesGrid';
 
 // The Flow library, mirroring the Cases grid: click "Flow" in the sidebar and you
 // get every flow and folder at once, instead of managing folders through a header
@@ -37,6 +38,26 @@ import { Crumb, FolderTile, DeleteFolderConfirm, CARD_BASE } from './CasesGrid';
 // behaviorally identical without a second copy to keep in sync.
 
 type Drag = { type: 'item'; key: string } | { type: 'folder'; id: string } | null;
+
+/**
+ * Which of the first 4 columns of a flow's first sheet have any real content —
+ * drives FlowTile's mini-grid glyph so it reflects the actual flow instead of
+ * always drawing the same decoration (see CasePreview, which does the same
+ * for Cases tiles). Cell keys are "ri-ci" (see FlowView.tsx); only the column
+ * index matters here, not the row.
+ */
+function computeColumnFill(cells: Record<string, string> | undefined): boolean[] {
+  const fill = [false, false, false, false];
+  if (!cells) return fill;
+  for (const key in cells) {
+    const val = cells[key];
+    if (!val) continue;
+    if (!val.replace(/<[^>]*>/g, '').trim()) continue;
+    const ci = parseInt(key.split('-')[1] ?? '', 10);
+    if (ci >= 0 && ci < 4) fill[ci] = true;
+  }
+  return fill;
+}
 
 export default function FlowsGrid() {
   const view = useApp((s) => s.view);
@@ -60,6 +81,45 @@ export default function FlowsGrid() {
   const [reorderTarget, setReorderTarget] = useState<{ key: string; edge: 'before' | 'after' } | null>(null);
   const [renamingFlowId, setRenamingFlowId] = useState<string | null>(null);
   const [flowNameDraft, setFlowNameDraft] = useState('');
+  const pushUndoToast = useApp((s) => s.pushUndoToast);
+
+  // Multi-select mirrors CasesGrid: Cmd/Ctrl+click toggles a tile in/out
+  // without opening it, driving the same bulk move/delete bar.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+  function clearSelection() { setSelected(new Set()); }
+
+  // Content-aware tile preview: lazily read each flow's data once to learn
+  // which of its first 4 columns actually have content. `requested` guards
+  // against re-fetching on every render — flow data doesn't need to be live,
+  // just accurate enough for a browse-time glyph.
+  const [columnFill, setColumnFill] = useState<Record<string, boolean[]>>({});
+  const requestedFill = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const toFetch = flowsIndex.filter((f) => !requestedFill.current.has(f.id));
+    if (toFetch.length === 0) return;
+    toFetch.forEach((f) => requestedFill.current.add(f.id));
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(toFetch.map(async (f) => {
+        const data = await window.warroom?.storage.read(`flow_data_${f.id}`);
+        return [f.id, computeColumnFill(data?.sheets?.[0]?.cells)] as const;
+      }));
+      if (cancelled) return;
+      setColumnFill((prev) => {
+        const next = { ...prev };
+        for (const [id, fill] of entries) next[id] = fill;
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [flowsIndex]);
 
   // Full breadcrumb per folder, for the flat "Move to" menus.
   const folderChoices = useMemo(
@@ -74,6 +134,20 @@ export default function FlowsGrid() {
     const live = new Set(flowsIndex.map((f) => itemKeyForFlow(f.id)));
     const next = pruneAssignments(folders, live);
     if (Object.keys(next.assignments).length !== Object.keys(folders.assignments).length) update(() => next);
+  }, [ready, flowsIndex, folders, update]);
+
+  // Display order = newest created first, until the user drags a tile (then
+  // that sticks) — same pattern as CasesGrid. Flows created before `createdAt`
+  // existed fall back to their position in flowsIndex (oldest→newest, since
+  // createFlow appends), zero-padded so it sorts correctly alongside real ISO
+  // timestamps the very first time this runs.
+  useEffect(() => {
+    if (!ready) return;
+    const seeded = ensureOrderSeeded(folders, flowsIndex.map((f, i) => ({
+      key: itemKeyForFlow(f.id),
+      addedAt: f.createdAt ?? String(i).padStart(8, '0'),
+    })));
+    if (seeded !== folders) update(() => seeded);
   }, [ready, flowsIndex, folders, update]);
 
   const subfolders = childFolders(folders, currentFolderId);
@@ -96,7 +170,7 @@ export default function FlowsGrid() {
 
   async function createFlow() {
     const id = crypto.randomUUID();
-    const meta: FlowMeta = { id, name: `Flow ${flowsIndex.length + 1}`, event };
+    const meta: FlowMeta = { id, name: `Flow ${flowsIndex.length + 1}`, event, createdAt: new Date().toISOString() };
     const next = [...flowsIndex, meta];
     setFlowsIndex(next);
     await window.warroom?.storage.write('flows_index', next);
@@ -105,11 +179,30 @@ export default function FlowsGrid() {
     setView({ kind: 'flow', flowId: id });
   }
 
-  async function deleteFlow(id: string) {
-    const next = flowsIndex.filter((f) => f.id !== id);
+  /** Shared by the single-tile "⋯" menu and the bulk-selection bar. Undoable, like CasesGrid's deleteItems. */
+  async function deleteFlows(ids: string[]) {
+    const idSet = new Set(ids);
+    const removed = flowsIndex.filter((f) => idSet.has(f.id));
+    if (removed.length === 0) return;
+    const dataSnapshots = await Promise.all(removed.map((f) => window.warroom?.storage.read(`flow_data_${f.id}`)));
+    const indexSnapshot = flowsIndex;
+    const next = flowsIndex.filter((f) => !idSet.has(f.id));
     setFlowsIndex(next);
     await window.warroom?.storage.write('flows_index', next);
-    window.warroom?.storage.write(`flow_data_${id}`, null as any);
+    for (const f of removed) window.warroom?.storage.write(`flow_data_${f.id}`, null as any);
+    setSelected((prev) => {
+      const n = new Set(prev);
+      for (const id of ids) n.delete(itemKeyForFlow(id));
+      return n;
+    });
+    const label = removed.length === 1 ? `Deleted "${removed[0].name}"` : `Deleted ${removed.length} flows`;
+    pushUndoToast(label, async () => {
+      for (let i = 0; i < removed.length; i++) {
+        await window.warroom?.storage.write(`flow_data_${removed[i].id}`, dataSnapshots[i] as any);
+      }
+      setFlowsIndex(indexSnapshot);
+      await window.warroom?.storage.write('flows_index', indexSnapshot);
+    });
   }
 
   async function renameFlow(id: string, name: string) {
@@ -118,6 +211,16 @@ export default function FlowsGrid() {
     const next = flowsIndex.map((f) => (f.id === id ? { ...f, name: trimmed } : f));
     setFlowsIndex(next);
     await window.warroom?.storage.write('flows_index', next);
+  }
+
+  /** Shared by the bulk-move bar and the per-tile "Move to" menu. */
+  function moveFlows(keys: string[], folderId: string | null) {
+    update((d) => keys.reduce((acc, key) => moveItem(acc, key, folderId), d));
+    setSelected((prev) => {
+      const n = new Set(prev);
+      for (const key of keys) n.delete(key);
+      return n;
+    });
   }
 
   function commitCreate() {
@@ -311,6 +414,16 @@ export default function FlowsGrid() {
           </div>
         )}
 
+        {selected.size > 0 && (
+          <ItemSelectionBar
+            count={selected.size}
+            folderChoices={folderChoices}
+            onMove={(folderId) => moveFlows([...selected], folderId)}
+            onDelete={() => deleteFlows(flowsIndex.filter((f) => selected.has(itemKeyForFlow(f.id))).map((f) => f.id))}
+            onClear={clearSelection}
+          />
+        )}
+
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="label">{searching ? 'Results' : 'Flows'}</div>
@@ -331,7 +444,9 @@ export default function FlowsGrid() {
                     key={f.key}
                     flow={f}
                     folderName={searching ? (home?.name ?? 'Flows') : undefined}
+                    columnFill={columnFill[f.id]}
                     dimmed={drag?.type === 'item' && drag.key === f.key}
+                    selected={selected.has(f.key)}
                     renaming={renamingFlowId === f.id}
                     renameDraft={flowNameDraft}
                     onRenameDraft={setFlowNameDraft}
@@ -339,10 +454,11 @@ export default function FlowsGrid() {
                     onCommitRename={() => { renameFlow(f.id, flowNameDraft); setRenamingFlowId(null); }}
                     onCancelRename={() => setRenamingFlowId(null)}
                     onOpen={() => setView({ kind: 'flow', flowId: f.id })}
-                    onDelete={() => deleteFlow(f.id)}
+                    onToggleSelect={() => toggleSelect(f.key)}
+                    onDelete={() => deleteFlows([f.id])}
                     folderChoices={folderChoices}
                     currentFolderId={homeId}
-                    onMoveTo={(folderId) => update((d) => moveItem(d, f.key, folderId))}
+                    onMoveTo={(folderId) => moveFlows([f.key], folderId)}
                     onDragStart={(e) => {
                       e.dataTransfer.setData(ITEM_MIME, f.key);
                       e.dataTransfer.effectAllowed = 'move';
@@ -376,13 +492,16 @@ export default function FlowsGrid() {
 // ─── Flow tile ────────────────────────────────────────────────────────────────
 
 function FlowTile({
-  flow, folderName, dimmed, renaming, renameDraft, onRenameDraft, onStartRename, onCommitRename, onCancelRename,
-  onOpen, onDelete, folderChoices, currentFolderId, onMoveTo,
+  flow, folderName, columnFill, dimmed, selected, renaming, renameDraft, onRenameDraft, onStartRename, onCommitRename, onCancelRename,
+  onOpen, onToggleSelect, onDelete, folderChoices, currentFolderId, onMoveTo,
   onDragStart, onDragEnd, onReorderOver, onReorderLeave, onReorderDrop, reorderEdge,
 }: {
   flow: FlowMeta & { key: string };
   folderName?: string;
+  /** Which of the first 4 columns have content — undefined while still loading. */
+  columnFill?: boolean[];
   dimmed: boolean;
+  selected: boolean;
   renaming: boolean;
   renameDraft: string;
   onRenameDraft: (v: string) => void;
@@ -390,6 +509,7 @@ function FlowTile({
   onCommitRename: () => void;
   onCancelRename: () => void;
   onOpen: () => void;
+  onToggleSelect: () => void;
   onDelete: () => void;
   folderChoices: { id: string; label: string }[];
   currentFolderId: string | null;
@@ -433,7 +553,15 @@ function FlowTile({
         role="button"
         tabIndex={0}
         draggable
-        onClick={onOpen}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleSelect();
+            return;
+          }
+          onOpen();
+        }}
         onDoubleClick={(e) => { e.stopPropagation(); onStartRename(); }}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen(true); }}
@@ -449,7 +577,7 @@ function FlowTile({
         }}
         onMouseLeave={(e) => {
           setHover(false);
-          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-subtle)';
           e.currentTarget.style.transform = '';
         }}
         title={flow.name}
@@ -457,12 +585,16 @@ function FlowTile({
         style={{
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border-subtle)',
+          boxShadow: selected ? '0 0 0 2px var(--accent)' : 'none',
           opacity: dimmed ? 0.45 : 1,
           cursor: 'pointer',
           ...CARD_BASE,
         }}
       >
-        {/* Mini flow-grid glyph — reads as "a flow" without needing a real preview. */}
+        {/* Mini flow-grid glyph — reflects which of the flow's first 4 columns
+            actually have content (see computeColumnFill above). While that's
+            still loading, `columnFill` is undefined and every bar shows, so
+            the tile doesn't flash from "full" to "empty" once data lands. */}
         <div
           className="flex items-center justify-center"
           style={{ height: 86, background: 'var(--bg-main)', borderBottom: '1px solid var(--border-subtle)' }}
@@ -473,11 +605,19 @@ function FlowTile({
             <line x1="29" y1="0.5" x2="29" y2="39.5" stroke="var(--border-med)" />
             <line x1="43.5" y1="0.5" x2="43.5" y2="39.5" stroke="var(--border-med)" />
             <line x1="0.5" y1="10.5" x2="57.5" y2="10.5" stroke="var(--border-med)" />
-            <rect x="3" y="14" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
-            <rect x="3" y="19" width="7" height="2" rx="1" fill="currentColor" opacity="0.25" />
-            <rect x="17.5" y="14" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
-            <rect x="32" y="19" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
-            <rect x="46.5" y="24" width="8" height="2" rx="1" fill="currentColor" opacity="0.25" />
+            {(columnFill?.[0] ?? true) && <>
+              <rect x="3" y="14" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
+              <rect x="3" y="19" width="7" height="2" rx="1" fill="currentColor" opacity="0.25" />
+            </>}
+            {(columnFill?.[1] ?? true) && (
+              <rect x="17.5" y="14" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
+            )}
+            {(columnFill?.[2] ?? true) && (
+              <rect x="32" y="19" width="9" height="2" rx="1" fill="currentColor" opacity="0.35" />
+            )}
+            {(columnFill?.[3] ?? true) && (
+              <rect x="46.5" y="24" width="8" height="2" rx="1" fill="currentColor" opacity="0.25" />
+            )}
           </svg>
         </div>
 

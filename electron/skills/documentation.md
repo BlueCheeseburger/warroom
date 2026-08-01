@@ -355,6 +355,12 @@ Two separate causes, both fixed:
 
 Use `IcoPx` for small boxy icons (grids, sheets, arrows) that live in the 16px header row; the 20-unit `Ico` is still right for icons rendered at their natural 20px, and for organic shapes (circles, diagonals) that antialias regardless.
 
+### Collapsed sidebar: grid navigation and right-click quick-create
+
+`CollapsedNav`'s Cases icon (`Sidebar.tsx`) always opened `{ kind: 'cases-grid' }` directly; the Flow icon used to call a `goFlow()` helper instead — open the first flow, or create one if none existed — never showing the grid. It now opens `{ kind: 'flows-grid' }`, same as Cases, and `isFlow` includes `'flows-grid'` so the icon lights up there too.
+
+`CIcon` takes an optional `onContextMenu` prop (wired with `e.preventDefault()` so the OS context menu never shows) and `contextLabel`, which folds into the button's `title` as `"<label> (right-click: <contextLabel>)"`. Cases wires it to `setView({ kind: 'speech-doc' })` (new case) and Flow wires it to `createFlow` — the same actions their expanded-sidebar `+` buttons trigger — so collapsing the sidebar doesn't lose that shortcut.
+
 ### Flow folders and the Flows grid
 
 Clicking **Flow** in the sidebar opens `FlowsGrid` (view `{ kind: 'flows-grid', folderId? }`, routed in `App.tsx`) — the flow library as a grid of folders + flow tiles, mirroring the Cases grid. Folder management lives there, not in the sidebar header: the standalone new-folder button was removed from the Flow section, matching how Cases works.
@@ -362,6 +368,18 @@ Clicking **Flow** in the sidebar opens `FlowsGrid` (view `{ kind: 'flows-grid', 
 `src/utils/flowFolders.ts` stores the same `{ folders, assignments, order }` shape as `caseFolders.ts` under its own `flow_folders` key, and reuses every pure tree helper (`childFolders`, `folderTrail`, `moveItem`, `moveInOrder`, `sortByOrder`, `deleteFolder`, `pruneAssignments`, …) — only the store (key, change event, cache, `useFlowFolders` hook) is separate. `FlowsGrid` also imports the generic folder UI (`Crumb`, `FolderTile`, `DeleteFolderConfirm`, `CARD_BASE`) directly from `CasesGrid` rather than reimplementing it, so the two libraries can't drift apart visually; only the tile itself (`FlowTile`, a mini flow-grid glyph + name + event/live line) is flow-specific.
 
 Behavior matches Cases throughout: drag-to-file (with distinct MIME types `application/x-warroom-flow-item`/`-flow-folder` so flows and cases can't be cross-filed), drag-tile-onto-tile to reorder, a right-click menu with Move to / Rename / Delete that works when the target folder is collapsed, breadcrumb navigation with folders as drop targets, search that spans **every** folder, and assignment pruning for deleted flows. A flow created while inside a folder is filed into that folder. `FlowsSection` in `Sidebar.tsx` still renders the same folders as an expandable tree (shared store, so both views update together), and its title now navigates to the grid via `onTitleClick`.
+
+### Default order: newest first, then manual
+
+`FlowMeta` (`appStore.ts`) now carries an optional `createdAt` ISO string, set at every creation site (`Sidebar.tsx`, `FlowsGrid.tsx`, `Chat.tsx`, `ChatMessage.tsx`, `AutoFlow.tsx`). Both `FlowsGrid` and `Sidebar.tsx`'s `FlowsSection` run the same `ensureOrderSeeded` effect Cases already used, keyed on `itemKeyForFlow(f.id)` — new flows are seeded into `folders.order` newest-`createdAt`-first, ahead of anything already ordered, so a manual drag-reorder is never silently undone. Flows created before this field existed have no `createdAt`; they fall back to their position in `flowsIndex` (oldest→newest, since `createFlow` appends), zero-padded so it sorts correctly the one time it's compared against real timestamps during the initial seed. `Sidebar.tsx` additionally wraps `flowsIndex` in `sortByOrder` (`orderedFlows`) before rendering the tree, so the two views always agree.
+
+### Multi-select and bulk actions on the Flows grid
+
+Mirrors Cases exactly: Cmd/Ctrl+click on a `FlowTile` toggles its key into a `Set<string>` (checked in the tile's own `onClick`, not a capture-phase intercept like Cases — there's no nested clickable inside a flow tile to protect against). `ItemSelectionBar` (previously private to `CasesGrid.tsx`) is now exported and reused as-is rather than reimplemented, so the two grids can't drift on bulk-bar behavior. Bulk delete (`deleteFlows`) is undoable via `pushUndoToast` — it snapshots each removed flow's `flow_data_<id>` before clearing it, matching `CasesGrid`'s `deleteItems`; the grid's previous single-tile `deleteFlow` had no undo, so this closes that gap for both the bulk bar and the per-tile "⋯" menu, which now both call `deleteFlows`.
+
+### Content-aware tile preview
+
+`FlowTile`'s mini flow-grid glyph used to be a fixed decoration on every tile. `FlowsGrid` now lazily reads each flow's `flow_data_<id>` once (gated by a `requestedFill` ref so it never refetches on re-render) and computes `computeColumnFill(cells)` — a `boolean[4]` for whether the first sheet's columns 0–3 have any non-empty cell content (cell keys are `"ri-ci"`; only the column index is used). `FlowTile` conditionally renders each decorative bar based on that array; while it's still loading (`columnFill` undefined), every bar shows, so a tile never flashes from "full" to "empty" once the real data lands.
 
 ### Importing a flow
 

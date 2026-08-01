@@ -6,6 +6,8 @@ Warroom is a desktop debate prep app for Policy, LD, and PF. All core data (case
 ## Navigation
 Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments, Flows, Speech doc, Chat, Find Cards (Logos), Open Evidence, Google Drive, Topics, Settings — everything is always reachable at once, there's no mode to switch. AI panel = star icon in title bar. Team chat = chat icon next to it.
 
+When the sidebar is collapsed to icons only, **right-click Cases** for a new case (blank speech doc), or **right-click Flow** for a new flow — same shortcuts the expanded sidebar's **+** buttons give you.
+
 ---
 
 ## Undo
@@ -60,6 +62,9 @@ Folders also appear in the sidebar under Cases, as a tree you can expand and col
 Hold **⌘ (or Ctrl)** and click cases or docs — in the grid or the sidebar — to select several at once. A bar appears with **Move to** (file everything selected into one folder in one go) and **Delete**.
 
 For one document at a time, **right-click** it (in the grid or the sidebar) for a menu with **Move to**, **Rename**, and **Delete** — the same menu either place.
+
+### Order
+New cases and docs appear at the top, newest first. Drag a tile onto another to place it before/after — that order sticks until you rearrange it again.
 
 ### Folders never touch your files
 A folder is just a label. Filing a document into one does **not** move it, copy it, or change it on disk — it only changes where Warroom shows it to you. That means nothing you do here can lose a document.
@@ -235,9 +240,11 @@ Click the word **Flow** in the sidebar and you get your whole flow library at on
 - **New flow / New folder**: buttons in the grid header. A flow made while you're inside a folder lands in that folder.
 - **Auto Flow**: also in the grid header, for building a flow from speech docs.
 - **File a flow**: drag its tile onto a folder — or drag it onto a folder in the sidebar tree
-- **Reorder**: drag a flow tile onto another to place it before/after
+- **Order**: new flows appear at the top, newest first. Drag a flow tile onto another to place it before/after — that sticks until you rearrange it again.
 - **Rename**: double-click a tile, or right-click → Rename
 - **Right-click a tile** for **Move to** (any folder, even a collapsed one), **Rename**, and **Delete**
+- **Select several at once**: hold **⌘ (or Ctrl)** and click flow tiles — a bar appears with **Move to** and **Delete**, same as the Cases grid
+- **Tile preview**: the mini grid on each tile reflects whether that flow actually has content yet, instead of always showing the same placeholder
 - **Open a folder**: click it; breadcrumbs at the top take you back up
 - **Search** looks across **every folder at once**, so you never need to remember where you filed a flow
 

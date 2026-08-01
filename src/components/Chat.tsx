@@ -1299,7 +1299,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
     // Live flow: join the same realtime doc instead of cloning it.
     if (att.data?.live && att.data?.flowId) {
       const id = att.data.flowId as string;
-      const meta: FlowMeta = { id, name: att.name, event: att.data?.event ?? 'policy', live: true, teamId: att.data?.teamId };
+      const meta: FlowMeta = { id, name: att.name, event: att.data?.event ?? 'policy', live: true, teamId: att.data?.teamId, createdAt: new Date().toISOString() };
       const exists = flowsIndex.some((f) => f.id === id);
       const newIndex = exists ? flowsIndex.map((f) => (f.id === id ? { ...f, ...meta } : f)) : [...flowsIndex, meta];
       setFlowsIndex(newIndex);
@@ -1309,7 +1309,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
       return;
     }
     const newId = crypto.randomUUID();
-    const meta: FlowMeta = { id: newId, name: att.name, event: att.data?.event ?? 'policy' };
+    const meta: FlowMeta = { id: newId, name: att.name, event: att.data?.event ?? 'policy', createdAt: new Date().toISOString() };
     const newIndex = [...flowsIndex, meta];
     setFlowsIndex(newIndex);
     await window.warroom.storage.write('flows_index', newIndex);

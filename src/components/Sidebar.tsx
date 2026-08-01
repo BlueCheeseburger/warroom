@@ -330,7 +330,7 @@ export default function Sidebar() {
 
   async function createFlow() {
     const id = crypto.randomUUID();
-    const meta: FlowMeta = { id, name: `Flow ${flowsIndex.length + 1}`, event };
+    const meta: FlowMeta = { id, name: `Flow ${flowsIndex.length + 1}`, event, createdAt: new Date().toISOString() };
     const newIndex = [...flowsIndex, meta];
     setFlowsIndex(newIndex);
     await window.warroom?.storage.write('flows_index', newIndex);
@@ -348,7 +348,7 @@ export default function Sidebar() {
       const data = await importFlowFromXlsx(res.base64);
       const id = crypto.randomUUID();
       const baseName = (path.split(/[\\/]/).pop() ?? 'Imported flow').replace(/\.xlsx$/i, '');
-      const meta: FlowMeta = { id, name: baseName || `Flow ${flowsIndex.length + 1}`, event: data.event };
+      const meta: FlowMeta = { id, name: baseName || `Flow ${flowsIndex.length + 1}`, event: data.event, createdAt: new Date().toISOString() };
       const newIndex = [...flowsIndex, meta];
       await window.warroom?.storage.write(`flow_data_${id}`, data);
       setFlowsIndex(newIndex);
@@ -454,7 +454,8 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
 
         <div className="w-6 my-1" style={{ borderTop: '1px solid var(--border-subtle)' }} />
 
-        <CIcon label="Cases" active={isCases} onClick={() => setView({ kind: 'cases-grid' })}>
+        <CIcon label="Cases" active={isCases} onClick={() => setView({ kind: 'cases-grid' })}
+          onContextMenu={() => setView({ kind: 'speech-doc' })} contextLabel="new case">
           <IcoCases />
         </CIcon>
 
@@ -468,7 +469,8 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
           <IcoTournament />
         </CIcon>
 
-        <CIcon label="Flow" active={isFlow} onClick={() => setView({ kind: 'flows-grid' })}>
+        <CIcon label="Flow" active={isFlow} onClick={() => setView({ kind: 'flows-grid' })}
+          onContextMenu={createFlow} contextLabel="new flow">
           <IcoFlow />
         </CIcon>
 
@@ -493,14 +495,15 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
 }
 
 /** Single icon button for collapsed sidebar */
-function CIcon({ label, active, onClick, children }: {
-  label: string; active: boolean; onClick: () => void; children: React.ReactNode;
+function CIcon({ label, active, onClick, onContextMenu, contextLabel, children }: {
+  label: string; active: boolean; onClick: () => void; onContextMenu?: () => void; contextLabel?: string; children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
     <button
-      title={label}
+      title={onContextMenu ? `${label} (right-click: ${contextLabel ?? 'new'})` : label}
       onClick={onClick}
+      onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(); } : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="flex items-center justify-center transition rounded-lg"
@@ -1298,6 +1301,18 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
     }
   }, [ready, flowsIndex, folders, update]);
 
+  // Display order = newest created first, until a drag in the Flows grid (which
+  // shares this same folders.order) reorders it — mirrors CasesSection below.
+  useEffect(() => {
+    if (!ready) return;
+    const seeded = ensureOrderSeeded(folders, flowsIndex.map((f, i) => ({
+      key: itemKeyForFlow(f.id),
+      addedAt: f.createdAt ?? String(i).padStart(8, '0'),
+    })));
+    if (seeded !== folders) update(() => seeded);
+  }, [ready, flowsIndex, folders, update]);
+  const orderedFlows = useMemo(() => sortByOrder(folders, flowsIndex.map((f) => ({ ...f, key: itemKeyForFlow(f.id) }))), [folders, flowsIndex]);
+
   function moveOptionsFor(flowId: string) {
     const key = itemKeyForFlow(flowId);
     const currentFolderId = resolveItemFolder(folders, key);
@@ -1418,7 +1433,7 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
           {open && (
             <>
               {renderFolders(f.id, depth + 1)}
-              {flowsIndex
+              {orderedFlows
                 .filter((fl) => resolveItemFolder(folders, itemKeyForFlow(fl.id)) === f.id)
                 .map((fl) => renderFlow(fl, depth + 1))}
             </>
@@ -1429,7 +1444,7 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
   }
 
   const topFolders = childFolders(folders, null);
-  const looseFlows = flowsIndex.filter((f) => resolveItemFolder(folders, itemKeyForFlow(f.id)) === null);
+  const looseFlows = orderedFlows.filter((f) => resolveItemFolder(folders, itemKeyForFlow(f.id)) === null);
   const topLit = dropId === TOP_LEVEL_DROP;
 
   return (

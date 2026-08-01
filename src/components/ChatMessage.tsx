@@ -79,7 +79,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
                     // instead of importing a frozen copy under a new id.
                     if (a.data?.live && a.data?.flowId) {
                       const id = a.data.flowId as string;
-                      const meta: FlowMeta = { id, name: a.name, event: a.data?.event ?? 'policy', live: true, teamId: a.data?.teamId };
+                      const meta: FlowMeta = { id, name: a.name, event: a.data?.event ?? 'policy', live: true, teamId: a.data?.teamId, createdAt: new Date().toISOString() };
                       const exists = flowsIndex.some((f) => f.id === id);
                       const next = exists ? flowsIndex.map((f) => (f.id === id ? { ...f, ...meta } : f)) : [...flowsIndex, meta];
                       setFlowsIndex(next);
@@ -89,7 +89,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
                       return;
                     }
                     const newId = crypto.randomUUID();
-                    const meta: FlowMeta = { id: newId, name: a.name, event: a.data?.event ?? 'policy' };
+                    const meta: FlowMeta = { id: newId, name: a.name, event: a.data?.event ?? 'policy', createdAt: new Date().toISOString() };
                     const next = [...flowsIndex, meta];
                     setFlowsIndex(next);
                     await window.warroom.storage.write('flows_index', next);

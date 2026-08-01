@@ -29,6 +29,11 @@ export interface FlowMeta {
   // the team via a Yjs doc over Supabase Realtime. teamId scopes the shared row.
   live?: boolean;
   teamId?: string;
+  // ISO timestamp set at creation — drives the Flows grid/sidebar's default
+  // "newest first" ordering (see ensureOrderSeeded in caseFolders.ts). Optional
+  // because flows created before this field existed don't have one; those fall
+  // back to their position in flowsIndex when first seeded into folders.order.
+  createdAt?: string;
 }
 
 export type View =

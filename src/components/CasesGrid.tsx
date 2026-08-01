@@ -858,7 +858,7 @@ function ItemMenu({ folderChoices, currentFolderId, onMoveTo, onRename, onDelete
 }
 
 /** Bulk-action bar shown above the grid while a multi-selection (Cmd/Ctrl+click) is active. */
-function ItemSelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
+export function ItemSelectionBar({ count, folderChoices, onMove, onDelete, onClear }: {
   count: number;
   folderChoices: { id: string; label: string }[];
   onMove: (folderId: string | null) => void;
