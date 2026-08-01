@@ -592,7 +592,13 @@ export default function Settings() {
   const [dictationUseOffline, setDictationUseOfflineState] = useState(false);
   const [offlineModelReady, setOfflineModelReady] = useState(false);
   const [offlineDownloading, setOfflineDownloading] = useState(false);
+  // Aggregate percentage across every file in the model download (the model
+  // is several separate files — weights, tokenizer, config — each of which
+  // reports its own 0-100 independently; this is the running total across
+  // all of them, not whatever the most recent file happens to report, so it
+  // doesn't visibly reset to 0 every time a new file starts).
   const [offlineDownloadPct, setOfflineDownloadPct] = useState<number | null>(null);
+  const [offlineDownloadLabel, setOfflineDownloadLabel] = useState('');
   const [offlineDownloadError, setOfflineDownloadError] = useState('');
   async function setDictationUseOffline(val: boolean) {
     setDictationUseOfflineState(val);
@@ -618,6 +624,7 @@ export default function Settings() {
     // bit of feedback, so it must never wait on an IPC round-trip to appear.
     setOfflineDownloading(true);
     setOfflineDownloadPct(null);
+    setOfflineDownloadLabel('');
     setOfflineDownloadError('');
     const bridge = dictationBridge();
     if (!bridge) {
@@ -626,7 +633,8 @@ export default function Settings() {
       return;
     }
     const unsub = bridge.onOfflineModelProgress?.((p: any) => {
-      if (typeof p?.progress === 'number') setOfflineDownloadPct(Math.round(p.progress));
+      if (typeof p?.overallPct === 'number') setOfflineDownloadPct(p.overallPct);
+      if (typeof p?.label === 'string' && p.label) setOfflineDownloadLabel(p.label);
     });
     try {
       const res = await bridge.downloadOfflineModel();
@@ -638,6 +646,7 @@ export default function Settings() {
       unsub?.();
       setOfflineDownloading(false);
       setOfflineDownloadPct(null);
+      setOfflineDownloadLabel('');
     }
   }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
@@ -1500,15 +1509,31 @@ export default function Settings() {
             )}
           </div>
           {!offlineModelReady && (
-            <button
-              className="btn text-xs mt-2"
-              onClick={downloadOfflineModel}
-              disabled={offlineDownloading}
-            >
-              {offlineDownloading
-                ? (offlineDownloadPct !== null ? `Downloading… ${offlineDownloadPct}%` : 'Downloading…')
-                : 'Download offline model'}
-            </button>
+            <>
+              <button
+                className="btn text-xs mt-2"
+                onClick={downloadOfflineModel}
+                disabled={offlineDownloading}
+              >
+                {offlineDownloading
+                  ? `Downloading ${offlineDownloadLabel || 'model'}… ${offlineDownloadPct !== null ? `${offlineDownloadPct}%` : ''}`
+                  : 'Download offline model'}
+              </button>
+              {offlineDownloading && (
+                <div className="w-full rounded-full overflow-hidden mt-1.5" style={{ height: 4, background: 'var(--border-subtle)', maxWidth: 220 }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${offlineDownloadPct ?? 0}%`,
+                      background: '#4285F4',
+                      // Indeterminate shimmer until the first file reports a real
+                      // total, so the bar reads as "working" rather than stuck at 0.
+                      ...(offlineDownloadPct === null ? { width: '30%', animation: 'wr-indeterminate 1.2s ease-in-out infinite' } : {}),
+                    }}
+                  />
+                </div>
+              )}
+            </>
           )}
           {offlineModelReady && (
             <p className="text-[11px] mt-1.5" style={{ color: 'var(--nav-inactive-color)' }}>

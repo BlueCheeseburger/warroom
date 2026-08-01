@@ -33,6 +33,14 @@
   to   { transform: translateY(0);     opacity: 1; }
 }
 
+/* Indeterminate progress-bar sweep — used wherever work is happening but no
+   real percentage is known yet (e.g. the first moment of a download before
+   any file has reported its total). */
+@keyframes wr-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(333%); }
+}
+
 /* ── Theme tokens ─────────────────────────────────────────────────────────── */
 
 /*

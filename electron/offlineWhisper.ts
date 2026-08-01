@@ -14,12 +14,62 @@
 
 const MODEL_ID = 'Xenova/whisper-tiny.en';
 
-export interface WhisperProgress {
+/** Raw shape of a single @huggingface/transformers progress_callback event —
+ *  one model download is several separate files (weights, tokenizer, config,
+ *  ...), and each file reports its OWN 0-100 independently. */
+interface RawTransformersProgress {
   status: string;
   file?: string;
+  name?: string;
   progress?: number;
   loaded?: number;
   total?: number;
+}
+
+/** What Settings actually renders: a human label for whatever's downloading
+ *  right now, and one aggregate percentage across every file seen so far
+ *  (not a per-file reset back to 0). */
+export interface WhisperProgress {
+  status: string;
+  label?: string;
+  overallPct?: number;
+}
+
+/** The model repo's files aren't named for a non-technical reader (e.g.
+ *  `onnx/decoder_model_merged_quantized.onnx`) — map the recognizable
+ *  substrings to a plain-language label instead of showing the raw filename. */
+function friendlyFileLabel(file: string): string {
+  const f = file.toLowerCase();
+  if (f.includes('encoder') && f.includes('onnx')) return 'audio encoder';
+  if (f.includes('decoder') && f.includes('onnx')) return 'text decoder';
+  if (f.includes('.onnx')) return 'model weights';
+  if (f.includes('tokenizer')) return 'tokenizer';
+  if (f.includes('vocab')) return 'vocabulary';
+  if (f.includes('preprocessor')) return 'audio preprocessor config';
+  if (f.includes('config')) return 'model config';
+  return file.split('/').pop() ?? file;
+}
+
+/** Turns per-file 0-100 events into one running "of the whole download"
+ *  percentage — sums bytes loaded/total across every file the model reports
+ *  as it goes, rather than resetting the visible number to 0 each time a new
+ *  file starts. Necessarily an approximation for the first few files (a
+ *  file's `total` isn't known until its first progress event arrives), but
+ *  converges quickly and never goes backwards in practice since files are
+ *  reported in roughly size order. */
+function makeProgressAggregator(onProgress: (p: WhisperProgress) => void) {
+  const files = new Map<string, { loaded: number; total: number }>();
+  return (raw: RawTransformersProgress) => {
+    const file = raw.file ?? raw.name;
+    if (file && typeof raw.total === 'number' && typeof raw.loaded === 'number') {
+      files.set(file, { loaded: raw.loaded, total: raw.total });
+    }
+    let loadedSum = 0;
+    let totalSum = 0;
+    for (const f of files.values()) { loadedSum += f.loaded; totalSum += f.total; }
+    const overallPct = totalSum > 0 ? Math.min(100, Math.round((loadedSum / totalSum) * 100)) : undefined;
+    onProgress({ status: raw.status, label: file ? friendlyFileLabel(file) : undefined, overallPct });
+  };
 }
 
 let transcriberPromise: Promise<any> | null = null;
@@ -39,7 +89,7 @@ async function getTranscriber(cacheDir: string, onProgress?: (p: WhisperProgress
       // instead of having to probe some shared external cache location.
       env.cacheDir = cacheDir;
       return pipeline('automatic-speech-recognition', MODEL_ID, {
-        progress_callback: onProgress,
+        progress_callback: onProgress ? makeProgressAggregator(onProgress) : undefined,
       });
     })();
   }
