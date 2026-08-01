@@ -24,6 +24,7 @@ const SETTINGS_LOCALSTORAGE_KEYS = [
   'warroom-direction',
   'warroom-danger-highlight',
   'warroom-card-outdated-years',
+  'warroom-timer-warning-secs',
   'warroom-reduce-motion',
   'warroom-skip-delete-confirm',
   'warroom-event',

@@ -150,6 +150,11 @@ export interface Tournament {
   tabroom_id?: string;
   tabroom_event_id?: string;
   tabroomEntryCode?: string; // e.g. "Emery BL" — used by the Tabroom monitor
+  /** Per-speech-label second overrides for the title bar timer while viewing
+   *  this tournament (or one of its rounds) — off-the-clock/non-standard
+   *  formats. Keyed by the speech label shown in the timer (e.g. "Constructive",
+   *  "1AR"); a label with no entry here just uses the normal default. */
+  customSpeechTimes?: Record<string, number>;
 }
 
 export interface SharedNote {

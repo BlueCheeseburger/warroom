@@ -2,6 +2,96 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp, useDangerBtnClass, DebateEvent } from '../store/appStore';
 import { DB, Opponent, Round, Side, Tournament } from '../types';
 import { TrashIcon, Dots } from './Spinner';
+import { getSlots, TIMER_LEVEL_KEY, PolicyLevel } from './TitleBar';
+
+// ─── Custom speech times ────────────────────────────────────────────────────
+// Off-the-clock/non-standard tournaments sometimes run different speech
+// lengths than the app's built-in defaults. This lets a debater override any
+// individual speech's length just for this tournament — the title bar timer
+// picks it up automatically while viewing this tournament or one of its
+// rounds (see the `activeTournament` lookup in TitleBar.tsx's SpeechTimer).
+function CustomSpeechTimesEditor({ tournament, event, update }: {
+  tournament: Tournament; event: DebateEvent; update: UpdateFn;
+}) {
+  const [open, setOpen] = useState(false);
+  const level = ((localStorage.getItem(TIMER_LEVEL_KEY) as PolicyLevel) ?? 'hs');
+  const slots = getSlots(event, level);
+  const overrides = tournament.customSpeechTimes ?? {};
+  const hasOverrides = Object.keys(overrides).length > 0;
+
+  function setOverride(label: string, secs: number | null) {
+    update((db) => {
+      const t = db.tournaments[tournament.id];
+      if (!t) return db;
+      const next = { ...(t.customSpeechTimes ?? {}) };
+      if (secs === null || !Number.isFinite(secs) || secs <= 0) delete next[label];
+      else next[label] = Math.round(secs);
+      return { ...db, tournaments: { ...db.tournaments, [tournament.id]: { ...t, customSpeechTimes: next } } };
+    });
+  }
+
+  function resetAll() {
+    update((db) => {
+      const t = db.tournaments[tournament.id];
+      if (!t) return db;
+      const { customSpeechTimes, ...rest } = t;
+      return { ...db, tournaments: { ...db.tournaments, [tournament.id]: rest as Tournament } };
+    });
+  }
+
+  return (
+    <div className="glass-card rounded-sm p-4">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs font-medium transition w-full text-left"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }}
+      >
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease', flexShrink: 0 }}>
+          <polyline points="4 2 8 6 4 10" />
+        </svg>
+        Custom speech times{hasOverrides ? ` (${Object.keys(overrides).length} set)` : ''}
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] text-ink/50 leading-relaxed">
+            Overrides the top-bar timer's speech lengths while you're viewing this tournament
+            (or one of its rounds). Leave a field blank to use the normal default.
+          </p>
+          {slots.map((s) => (
+            <div key={s.label} className="flex items-center justify-between gap-3">
+              <span className="text-xs text-ink/70">{s.label}</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={1}
+                  className="input w-16 text-center text-xs"
+                  placeholder={String(s.secs)}
+                  value={overrides[s.label] ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setOverride(s.label, raw === '' ? null : Number(raw));
+                  }}
+                />
+                <span className="text-[10px] text-ink/30">sec</span>
+              </div>
+            </div>
+          ))}
+          {hasOverrides && (
+            <button
+              onClick={resetAll}
+              className="text-[11px] transition"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)' }}
+            >
+              Reset all to default
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function seasonYearSuffix(): string {
   const now = new Date();
@@ -118,7 +208,7 @@ function researchOpponentInto(id: string, name: string, event: DebateEvent, upda
 }
 
 export default function TournamentView() {
-  const { db, update, setView, view, pushUndoToast, skipDeleteConfirm } = useApp();
+  const { db, update, setView, view, pushUndoToast, skipDeleteConfirm, event } = useApp();
   const dangerCls = useDangerBtnClass();
   if (view.kind !== 'tournament') return null;
   const t = db.tournaments[view.tournamentId];
@@ -184,6 +274,8 @@ export default function TournamentView() {
       </div>
 
       <div className="flex-1 overflow-y-auto scroll-thin p-6 space-y-6 max-w-4xl">
+        <CustomSpeechTimesEditor tournament={t} event={event} update={update} />
+
         {/* Round table */}
         <div>
           <div className="flex items-center justify-between mb-2">

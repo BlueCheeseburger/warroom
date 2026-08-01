@@ -746,6 +746,15 @@ export default function Documentation() {
             Tabroom tournament ID + event ID for monitor integration. An entry code
             (e.g. <Code>Emery BL</Code>) is also stored and used by the live monitor.
           </P>
+          <P>
+            <strong>Custom speech times</strong> — a collapsed-by-default section at the top of the
+            tournament page lets you override any individual speech's length (<Code>Tournament.customSpeechTimes</Code>,
+            label → seconds) for off-the-clock/non-standard formats. While you're viewing that tournament
+            or one of its rounds, the title bar's speech timer (<Code>TitleBar.tsx</Code>'s{' '}
+            <Code>SpeechTimer</Code>) resolves the active tournament from the current view and applies any
+            overrides on top of the normal <Code>getSlots(event, level)</Code> defaults, matched by label.
+            Anywhere else in the app, the timer is unaffected.
+          </P>
           <H3>Rounds</H3>
           <P>
             Each round within a tournament records: round number, side (aff/neg), opponent,
@@ -2141,6 +2150,15 @@ export default function Documentation() {
                   <Code>citeYearRuleText()</Code> in <Code>main.ts</Code> reads it to build the{' '}
                   <Code>{'{{CITE_YEAR_RULE}}'}</Code> line of the <Code>cutter_read_source</Code> prompt.
                   Past-year sources are unaffected either way.
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">General — timer warning threshold</span>
+                <span className="ml-2 text-ink/60">
+                  Seconds remaining when the top-bar speech timer turns amber (default 30). Stored as{' '}
+                  <Code>timerWarningSecs</Code> in <Code>appStore.ts</Code> (localStorage{' '}
+                  <Code>warroom-timer-warning-secs</Code>), same renderer-only pattern as{' '}
+                  <Code>cardOutdatedYears</Code>. The red "overtime" state at 0:00 is fixed, not configurable.
                 </span>
               </div>
               <div>

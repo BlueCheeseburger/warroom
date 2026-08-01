@@ -382,6 +382,7 @@ export default function Settings() {
     currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission,
     setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme, setShortcutsOpen,
     cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
+    timerWarningSecs, setTimerWarningSecs,
   } = useApp();
   const [moreOpen, setMoreOpen] = useState(false);
   const [filesBarStyle, setFilesBarStyleLocal] = useState<FilesBarStyle>(getFilesBarStyle());
@@ -1230,6 +1231,29 @@ export default function Settings() {
                 {o.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Timer warning threshold</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Seconds remaining when the top-bar speech timer turns amber. It always turns red at 0:00.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 ml-4 shrink-0">
+            <input
+              type="number"
+              min={1}
+              max={999}
+              className="input w-16 text-center"
+              value={timerWarningSecs}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n)) setTimerWarningSecs(n);
+              }}
+            />
+            <span className="text-xs text-ink/40">sec</span>
           </div>
         </div>
 

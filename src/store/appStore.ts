@@ -11,6 +11,7 @@ export type DebateEvent = 'policy' | 'pf' | 'ld';
 export type DangerHighlight = 'hover' | 'always';
 
 export const CARD_OUTDATED_YEARS_DEFAULT = 4;
+export const TIMER_WARNING_SECS_DEFAULT = 30;
 
 // Maps the full app_settings value (from onboarding) to a DebateEvent.
 export function mapSettingsEvent(e: string): DebateEvent {
@@ -88,6 +89,11 @@ interface AppState {
   // those deletes all show an Undo toast. Renderer-only, like theme/direction.
   skipDeleteConfirm: boolean;
   setSkipDeleteConfirm: (v: boolean) => void;
+  // Seconds remaining at which the title bar's speech timer turns amber
+  // ("running low"). Renderer-only, like theme/direction. Zero always turns
+  // it red regardless of this — that's "time's up," not a configurable warning.
+  timerWarningSecs: number;
+  setTimerWarningSecs: (n: number) => void;
   // Speech doc viewer side-by-side compare panes. Pane 0 is always the main
   // doc tracked by `view` (kind:'speech-doc'); these are the two *extra*
   // panes a user can open alongside it for side-by-side reading. Transient
@@ -210,6 +216,15 @@ export const useApp = create<AppState>((set, get) => ({
   setReduceMotion: (v) => { localStorage.setItem('warroom-reduce-motion', String(v)); set({ reduceMotion: v }); },
   skipDeleteConfirm: localStorage.getItem('warroom-skip-delete-confirm') === 'true',
   setSkipDeleteConfirm: (v) => { localStorage.setItem('warroom-skip-delete-confirm', String(v)); set({ skipDeleteConfirm: v }); },
+  timerWarningSecs: (() => {
+    const v = parseInt(localStorage.getItem('warroom-timer-warning-secs') ?? '', 10);
+    return Number.isFinite(v) && v > 0 ? v : TIMER_WARNING_SECS_DEFAULT;
+  })(),
+  setTimerWarningSecs: (n) => {
+    const v = Number.isFinite(n) && n > 0 ? Math.round(n) : TIMER_WARNING_SECS_DEFAULT;
+    localStorage.setItem('warroom-timer-warning-secs', String(v));
+    set({ timerWarningSecs: v });
+  },
   extraDocPanes: [undefined, undefined],
   setExtraDocPane: (slot, docPath) => set((s) => {
     const next: [string | undefined, string | undefined] = [...s.extraDocPanes];

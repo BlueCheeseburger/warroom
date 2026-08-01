@@ -123,7 +123,12 @@ An opponent or judge's Notes section shows a row of pills at the top — **Priva
 - **Private notes**: the tag stays on your device only, pointing at your local copy — nothing is uploaded.
 - **Shared (team) notes**: the tag is uploaded to your team, so it's there next time a teammate opens that opponent/judge. Tagging an OpenCaselist-imported case is instant since it's already fetchable by link. If a tagged flow isn't in your app yet, opening the chip imports a copy for you. If a tagged opponent/judge isn't in your list yet, opening the chip takes you to Scouting so you can search for them.
 - **Tagging a local speech doc**: if that exact file is already in your team's **Team Files**, it's reused automatically. Otherwise it's added to Team Files automatically too, no prompt — so it's browsable there as well, not just via this tag.
+- A tag with an amber border and a ⚠️ icon means it won't be reachable by teammates (a non-OpenCaselist case tag has no way to point at anything on their device) — this shows on your own copy of the tag, so you know before anyone hits a dead end.
 - Tags don't update live — like the shared notes themselves, a teammate sees your new tag the next time they open that opponent/judge, not instantly.
+
+### Finding what's tagged
+- **"Tagged in" (on a flow, speech doc, or OpenCaselist case)**: a small **🏷 Tagged in N** pill appears in the toolbar if any opponent/judge note has that exact item tagged. Click it to see who — private notes and every team you're on — and click a name to jump to their profile (if you have a matching local record; otherwise it's just shown, not clickable).
+- **"Tagged items" (on a round's Mission Brief)**: the reverse — a card listing everything tagged on that round's opponent and judge, across private and shared notes. Click any chip to open it, same as clicking the tag directly in Notes.
 
 ---
 
@@ -132,9 +137,10 @@ An opponent or judge's Notes section shows a row of pills at the top — **Priva
 - **Add tournament**: Tournaments → "+ New tournament"
 - **Add round**: open tournament → "+ Add round"
 - **Round fields**: number, side (Aff/Neg), opponent, room, time, result (W/L/pending), judge, paradigm, notes
-- **Mission Brief**: click any round → pre-round prep screen with opponent disclosures, judge paradigm, AI block suggestions, notes editor
+- **Mission Brief**: click any round → pre-round prep screen with opponent disclosures, judge paradigm, AI block suggestions, notes editor, and a **Tagged items** card showing everything tagged on that opponent/judge's notes
 - **"Generate briefing"**: creates an AI-generated strategic prep document for that round
 - Ask me: "Look up [tournament name]" — I'll search Tabroom and save it to your app automatically
+- **Custom speech times**: open a tournament → "Custom speech times" (collapsed by default) to override any individual speech's length just for that tournament — useful for off-the-clock/non-standard formats. Leave a field blank to keep the normal default. While you're viewing that tournament (or one of its rounds), the top-bar timer automatically uses these instead of the built-in lengths; anywhere else in the app it's back to normal.
 
 ---
 
@@ -618,6 +624,7 @@ Gear icon at bottom of sidebar.
 | Debate event | HS Policy, HS LD, HS PF, College Policy (NDT/CEDA), College LD (NFA-LD) |
 | Card staleness | How many years old a card can be before it's flagged outdated everywhere (default 4) |
 | Current-year short cite | Whether the AI card cutter writes a current-year source as month-day (`Brady 3-15`, the default) or two-digit year (`Brady 26`) — see "Cut a card with Warroom AI" above |
+| Timer warning threshold | Seconds remaining when the top-bar speech timer turns amber (default 30). It always turns red at 0:00. |
 | Reduce motion | Turns off transitions and animations across the app |
 | Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
 | Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |

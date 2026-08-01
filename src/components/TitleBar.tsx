@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp, Theme, DebateEvent } from '../store/appStore';
 import { AIProviderIcon } from './GeminiPanel';
 import { CoinFace, CoinIcon } from './Coin';
@@ -63,10 +63,10 @@ function QuickChatBar() {
 
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
-const TIMER_LEVEL_KEY = 'warroom-timer-level';
+export const TIMER_LEVEL_KEY = 'warroom-timer-level';
 
-interface SpeechSlot { label: string; secs: number; }
-type PolicyLevel = 'hs' | 'clg';
+export interface SpeechSlot { label: string; secs: number; }
+export type PolicyLevel = 'hs' | 'clg';
 
 const SLOTS: Record<'policy-hs' | 'policy-clg' | 'pf' | 'ld', SpeechSlot[]> = {
   'policy-hs': [
@@ -97,7 +97,7 @@ const SLOTS: Record<'policy-hs' | 'policy-clg' | 'pf' | 'ld', SpeechSlot[]> = {
   ],
 };
 
-function getSlots(event: DebateEvent, level: PolicyLevel): SpeechSlot[] {
+export function getSlots(event: DebateEvent, level: PolicyLevel): SpeechSlot[] {
   if (event === 'policy') return level === 'clg' ? SLOTS['policy-clg'] : SLOTS['policy-hs'];
   if (event === 'pf') return SLOTS['pf'];
   return SLOTS['ld'];
@@ -112,10 +112,22 @@ function fmt(secs: number): string {
 // ─── SpeechTimer ──────────────────────────────────────────────────────────────
 
 function SpeechTimer() {
-  const { event } = useApp();
+  const { event, timerWarningSecs, view, db } = useApp();
   const [level, setLevel] = useState<PolicyLevel>(
     () => (localStorage.getItem(TIMER_LEVEL_KEY) as PolicyLevel) ?? 'hs',
   );
+
+  // Non-standard/off-the-clock tournaments can override individual speech
+  // lengths (Settings for this live on the Tournament itself, edited from
+  // TournamentView) — apply them only while actually viewing that tournament
+  // or one of its rounds, so switching to unrelated prep silently goes back
+  // to the normal defaults instead of a stale override following you around.
+  const activeTournament = view.kind === 'tournament'
+    ? db.tournaments[view.tournamentId]
+    : view.kind === 'round'
+    ? db.tournaments[db.rounds[view.roundId]?.tournamentId ?? '']
+    : undefined;
+  const customTimes = activeTournament?.customSpeechTimes;
   const [slotIdx, setSlotIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
@@ -126,7 +138,20 @@ function SpeechTimer() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  const slots = getSlots(event, level);
+  const baseSlots = getSlots(event, level);
+  // Memoized so `slots` keeps a stable reference across renders when there's
+  // no override (or the override didn't change) — the handleControl effect
+  // below depends on [slots] and assumes that stability (see its comment).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const slots = useMemo(() => (
+    customTimes
+      ? baseSlots.map((s) => (
+          Number.isFinite(customTimes[s.label]) && customTimes[s.label] > 0
+            ? { ...s, secs: Math.round(customTimes[s.label]) }
+            : s
+        ))
+      : baseSlots
+  ), [baseSlots, JSON.stringify(customTimes)]);
   const safeIdx = Math.min(slotIdx, slots.length - 1);
   const slot = slots[safeIdx];
   const display = timeLeft ?? slot.secs;
@@ -318,7 +343,7 @@ function SpeechTimer() {
 
 
   const overtime = display === 0;
-  const urgent = display <= 30 && display > 0;
+  const urgent = display <= timerWarningSecs && display > 0;
   const timeColor = overtime
     ? '#ef4444'
     : urgent ? '#f59e0b'
