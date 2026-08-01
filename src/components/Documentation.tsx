@@ -2134,6 +2134,16 @@ export default function Documentation() {
         {/* ── Settings ──────────────────────────────────────────────── */}
         <section id="doc-settings">
           <H2>Settings</H2>
+          <P>
+            The left outline nav (<Code>SettingsOutline</Code> in <Code>Settings.tsx</Code>) has a
+            filter box above the section list — it matches each section's label plus a hand-maintained{' '}
+            <Code>keywords</Code> string (e.g. "rebind" finds Keyboard Shortcuts, "dark mode" finds
+            Appearance) so a term that isn't in the visible label still finds the right section. A
+            handful of sections with genuinely resettable state (Appearance, Speech docs & cases,
+            General, Flow, Auto Flow style) show a small "Reset to defaults" link once anything in
+            that section differs from its default — sections without a real single "default" (API
+            keys, credentials, the debate event picker) don't get one.
+          </P>
           <Card>
             <div className="space-y-2.5 text-sm">
               <div>

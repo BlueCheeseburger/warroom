@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useApp, mapSettingsEvent, Direction, Theme } from '../store/appStore';
+import { useApp, mapSettingsEvent, Direction, Theme, CARD_OUTDATED_YEARS_DEFAULT, TIMER_WARNING_SECS_DEFAULT } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
@@ -228,26 +228,30 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
 // the top of the viewport via IntersectionObserver, so it also works as a
 // passive "where am I" indicator while scrolling, not just a click target.
 
-const SETTINGS_NAV: { id: string; label: string }[] = [
-  { id: 'settings-appearance',      label: 'Appearance' },
-  { id: 'settings-speechdocs',      label: 'Speech docs & cases' },
-  { id: 'settings-general',         label: 'General' },
-  { id: 'settings-event',           label: 'Debate event' },
-  { id: 'settings-apikey',          label: 'AI API key' },
-  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
-  { id: 'settings-gdrive',          label: 'Google Drive' },
-  { id: 'settings-flow',            label: 'Flow' },
-  { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
-  { id: 'settings-storage',         label: 'Storage' },
+// `keywords` widen what the search box (below) matches beyond the visible
+// label — e.g. typing "dark mode" should find Appearance, "rebind" should
+// find Keyboard Shortcuts, even though neither word is in the label itself.
+const SETTINGS_NAV: { id: string; label: string; keywords?: string }[] = [
+  { id: 'settings-appearance',      label: 'Appearance', keywords: 'theme dark mode light mode color' },
+  { id: 'settings-speechdocs',      label: 'Speech docs & cases', keywords: 'margin zoom outline focus mode reading' },
+  { id: 'settings-general',         label: 'General', keywords: 'card staleness outdated reduce motion skip delete confirmations notifications timer warning cite' },
+  { id: 'settings-event',           label: 'Debate event', keywords: 'hs policy ld pf ndt ceda' },
+  { id: 'settings-apikey',          label: 'AI API key', keywords: 'gemini openai anthropic grok lm studio model tier' },
+  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom', keywords: 'disclosure login credentials' },
+  { id: 'settings-gdrive',          label: 'Google Drive', keywords: 'oauth client id secret' },
+  { id: 'settings-flow',            label: 'Flow', keywords: 'colors aff neg column' },
+  { id: 'settings-autoflow-style',  label: 'Auto Flow style', keywords: 'tag style autoflow' },
+  { id: 'settings-storage',         label: 'Storage', keywords: 'backup data folder' },
   { id: 'settings-documentation',   label: 'Documentation' },
-  { id: 'settings-usermanual',      label: 'User Manual' },
-  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
-  { id: 'settings-importexport',    label: 'Import / Export' },
-  { id: 'settings-more',            label: 'More settings' },
+  { id: 'settings-usermanual',      label: 'User Manual', keywords: 'help' },
+  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts', keywords: 'rebind disable keybinding hotkey' },
+  { id: 'settings-importexport',    label: 'Import / Export', keywords: 'backup transfer another device' },
+  { id: 'settings-more',            label: 'More settings', keywords: 'account sign out sharing setup wizard' },
 ];
 
 function SettingsOutline() {
   const [active, setActive] = useState(SETTINGS_NAV[0].id);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     const els = SETTINGS_NAV
@@ -267,28 +271,52 @@ function SettingsOutline() {
     return () => observer.disconnect();
   }, []);
 
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? SETTINGS_NAV.filter((s) => (s.label + ' ' + (s.keywords ?? '')).toLowerCase().includes(q))
+    : SETTINGS_NAV;
+
   return (
     <nav className="hidden lg:block shrink-0 sticky self-start" style={{ width: 172, top: 24 }}>
-      {SETTINGS_NAV.map((s) => {
-        const isActive = active === s.id;
-        return (
-          <button
-            key={s.id}
-            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="w-full text-left px-2.5 py-1.5 rounded-md text-xs transition truncate block"
-            style={{
-              background: isActive ? 'var(--nav-active-bg)' : 'transparent',
-              color: isActive ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
-              fontWeight: isActive ? 600 : 400,
-              border: 'none', cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
-            onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            {s.label}
-          </button>
-        );
-      })}
+      <div className="relative mb-1.5">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter settings…"
+          className="input w-full text-xs"
+          style={{ paddingLeft: 24 }}
+        />
+        <svg width="11" height="11" viewBox="0 0 20 20" fill="none"
+          stroke="var(--nav-inactive-color)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+          style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+          <circle cx="8.5" cy="8.5" r="5" />
+          <path d="M12.5 12.5L17 17" />
+        </svg>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="text-[11px] px-2.5 py-2" style={{ color: 'var(--nav-inactive-color)' }}>No matches</p>
+      ) : (
+        filtered.map((s) => {
+          const isActive = active === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="w-full text-left px-2.5 py-1.5 rounded-md text-xs transition truncate block"
+              style={{
+                background: isActive ? 'var(--nav-active-bg)' : 'transparent',
+                color: isActive ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)',
+                fontWeight: isActive ? 600 : 400,
+                border: 'none', cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+              onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              {s.label}
+            </button>
+          );
+        })
+      )}
     </nav>
   );
 }
@@ -528,6 +556,20 @@ export default function Settings() {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, citeYearFormat: val });
   }
+  const generalSettingsAreDefault =
+    cardOutdatedYears === CARD_OUTDATED_YEARS_DEFAULT &&
+    citeYearFormat === 'month-day' &&
+    timerWarningSecs === TIMER_WARNING_SECS_DEFAULT &&
+    !reduceMotion && !skipDeleteConfirm &&
+    Object.values(notifySettings).every(Boolean);
+  async function resetGeneralSettings() {
+    setCardOutdatedYears(CARD_OUTDATED_YEARS_DEFAULT);
+    setCiteYearFormat('month-day');
+    setTimerWarningSecs(TIMER_WARNING_SECS_DEFAULT);
+    setReduceMotion(false);
+    setSkipDeleteConfirm(false);
+    (Object.keys(notifySettings) as NotifyKey[]).forEach((k) => setNotifySetting(k, true));
+  }
   // Speech doc reading pref (renderer-only display setting, like flow colors —
   // no main-process/IPC need). Default ON: dark-mode users still read the
   // actual doc page as light "paper" while the rest of the app stays dark.
@@ -590,6 +632,16 @@ export default function Settings() {
     localStorage.setItem('warroom-doc-outline-layout', val);
     setDocOutlineLayoutState(val);
     window.dispatchEvent(new CustomEvent('warroom-doc-outline-layout-changed', { detail: { method: val } }));
+  }
+  const speechDocSettingsAreDefault =
+    docLightInDark && docMarginPct === 50 && docZoomPct === 100 && !docAutoOutline && !docStartFocus && docOutlineLayout === 'space';
+  function resetSpeechDocSettings() {
+    setDocLightInDark(true);
+    setDocMarginPct(50);
+    setDocZoomPct(100);
+    setDocAutoOutline(false);
+    setDocStartFocus(false);
+    setDocOutlineLayout('space');
   }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
@@ -1045,6 +1097,16 @@ export default function Settings() {
             ))}
           </div>
         </div>
+        {(direction !== 'calm' || theme !== 'system') && (
+          <button
+            type="button"
+            title="Reset theme and mode to default"
+            onClick={() => { setDirection('calm'); setTheme('system'); }}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
+          >
+            Reset to defaults
+          </button>
+        )}
       </div>
 
       {/* Speech docs & cases */}
@@ -1181,6 +1243,16 @@ export default function Settings() {
             ))}
           </div>
         </div>
+        {!speechDocSettingsAreDefault && (
+          <button
+            type="button"
+            title="Reset speech doc settings to default"
+            onClick={resetSpeechDocSettings}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
+          >
+            Reset to defaults
+          </button>
+        )}
       </div>
 
       {/* General */}
@@ -1323,6 +1395,16 @@ export default function Settings() {
             ))}
           </div>
         </div>
+        {!generalSettingsAreDefault && (
+          <button
+            type="button"
+            title="Reset General settings to default"
+            onClick={resetGeneralSettings}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
+          >
+            Reset to defaults
+          </button>
+        )}
       </div>
 
       {/* Event */}

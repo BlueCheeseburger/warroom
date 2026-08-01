@@ -617,7 +617,7 @@ Topics screen (sidebar or Settings).
 ---
 
 ## Settings
-Gear icon at bottom of sidebar.
+Gear icon at bottom of sidebar. A list of section jump-links runs down the left side — type in the filter box above it to narrow that list down live. A handful of sections (Appearance, Speech docs & cases, General, Flow, Auto Flow style) show a small "Reset to defaults" link once you've changed something in them.
 
 | Setting | Description |
 |---------|-------------|

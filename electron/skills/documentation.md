@@ -902,6 +902,8 @@ Google Drive lets you browse your Drive files in-app and open Word docs or sprea
 
 ## Settings
 
+The left outline nav (`SettingsOutline` in `Settings.tsx`) has a live filter box above the section list — it matches each entry's `label` plus a hand-maintained `keywords` string (e.g. typing "rebind" finds Keyboard Shortcuts, "dark mode" finds Appearance) so search isn't limited to words that literally appear in the label. Five sections with genuinely resettable state (Appearance, Speech docs & cases, General, Flow, Auto Flow style) show a "Reset to defaults" text link, conditionally rendered only once something in that section differs from its default (`generalSettingsAreDefault`/`speechDocSettingsAreDefault`/etc.) — sections without one real "default" (API keys, credentials, the debate event picker) don't get a reset.
+
 | Setting | Description |
 |---------|-------------|
 | Debate event | HS Policy · HS LD · HS PF · College Policy (NDT/CEDA) · College LD (NFA-LD) |
