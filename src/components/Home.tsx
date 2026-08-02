@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
-import { Case, Round, Side, Tournament } from '../types';
+import { Round, Tournament } from '../types';
 import { GeminiIcon } from './GeminiPanel';
 import { useMenuA11y } from '../hooks/useMenuA11y';
 
@@ -448,9 +448,6 @@ function CasesPanel() {
   const { db, update, setView, pushUndoToast } = useApp();
   const cases = Object.values(db.cases);
   const [speechDocs, setSpeechDocs] = useState<RecentDoc[]>(getSpeechDocs);
-  const [name, setName] = useState('');
-  const [side, setSide] = useState<Side>('aff');
-  const [creating, setCreating] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -486,16 +483,6 @@ function CasesPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speechDocs.map(d => d.path).join(',')]);
 
-  async function create() {
-    if (!name.trim()) return;
-    const id = crypto.randomUUID();
-    const c: Case = { id, name: name.trim(), side, blocks: [] };
-    await update((db) => ({ ...db, cases: { ...db.cases, [id]: c } }));
-    setName('');
-    setCreating(false);
-    setView({ kind: 'case', caseId: id });
-  }
-
   async function renameCase(id: string, newName: string) {
     if (!newName.trim()) { setRenamingId(null); return; }
     await update((db) => ({
@@ -519,28 +506,7 @@ function CasesPanel() {
     <div className="glass-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="label">Cases</div>
-        <button className="btn text-[11px]" onClick={() => setCreating((v) => !v)}>
-          {creating ? 'Cancel' : '+ New case'}
-        </button>
       </div>
-
-      {creating && (
-        <div className="flex gap-2 mb-3">
-          <input
-            autoFocus
-            className="input flex-1 text-xs"
-            placeholder="Case name…"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') create(); if (e.key === 'Escape') setCreating(false); }}
-          />
-          <select className="input text-xs" value={side} onChange={(e) => setSide(e.target.value as Side)}>
-            <option value="aff">Aff</option>
-            <option value="neg">Neg</option>
-          </select>
-          <button className="btn-primary text-xs" onClick={create}>Create</button>
-        </div>
-      )}
 
       {cases.length === 0 && speechDocs.length === 0 ? (
         <div className="text-sm italic text-ink/35 py-2">No cases yet.</div>
