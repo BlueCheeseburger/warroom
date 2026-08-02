@@ -247,13 +247,63 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-more',            label: 'More settings' },
 ];
 
+// Matches painted via the CSS Custom Highlight API (CSS.highlights + Highlight
+// + Range) — same mechanism as useInPageFind.tsx and FlowView's find — so
+// highlighting never touches the settings DOM (no risk of tripping the
+// MutationObserver below into an infinite re-highlight loop, and it works over
+// arbitrary rendered JSX without every section needing a highlight-aware
+// text renderer).
+const SETTINGS_SEARCH_HL = 'wr-settings-search';
+const SETTINGS_SEARCH_MATCH_CAP = 2000;
+
+function buildSettingsSearchRanges(root: HTMLElement, query: string): Range[] {
+  const q = query.toLowerCase();
+  const out: Range[] = [];
+  if (!q) return out;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(n: Node) {
+      return (n as Text).parentElement ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue ?? '';
+    const lower = text.toLowerCase();
+    let from = 0;
+    let i = lower.indexOf(q, from);
+    while (i !== -1) {
+      const r = document.createRange();
+      r.setStart(node, i);
+      r.setEnd(node, i + q.length);
+      out.push(r);
+      if (out.length >= SETTINGS_SEARCH_MATCH_CAP) return out;
+      from = i + q.length;
+      i = lower.indexOf(q, from);
+    }
+  }
+  return out;
+}
+
+function paintSettingsSearch(ranges: Range[]) {
+  const reg = (CSS as any)?.highlights;
+  const H = (window as any)?.Highlight;
+  if (!reg || !H) return;
+  reg.delete(SETTINGS_SEARCH_HL);
+  if (ranges.length) reg.set(SETTINGS_SEARCH_HL, new H(...ranges));
+}
+
+function clearSettingsSearchHighlights() {
+  const reg = (CSS as any)?.highlights;
+  if (reg) reg.delete(SETTINGS_SEARCH_HL);
+}
+
 function SettingsOutline() {
   const [active, setActive] = useState(SETTINGS_NAV[0].id);
   const [query, setQuery] = useState('');
   // Bumped whenever any settings content could have changed shape (loaded
   // async, a collapsible opened, a toggle changed) so the search below
   // re-reads fresh DOM text instead of a stale snapshot.
-  const [, bumpSearchIndex] = useState(0);
+  const [searchIndex, bumpSearchIndex] = useState(0);
 
   useEffect(() => {
     const els = SETTINGS_NAV
@@ -292,13 +342,33 @@ function SettingsOutline() {
       })
     : SETTINGS_NAV;
 
+  // Paint matches for whatever's currently typed. Re-runs on every DOM
+  // mutation too (searchIndex) so highlights stay put as toggles/async values
+  // change the very text being searched. Debounced like useInPageFind's find
+  // bar so fast typing doesn't re-walk the whole settings DOM per keystroke.
+  useEffect(() => {
+    if (!q) { clearSettingsSearchHighlights(); return; }
+    const els = SETTINGS_NAV
+      .map((s) => document.getElementById(s.id))
+      .filter((el): el is HTMLElement => !!el);
+    if (els.length === 0) { clearSettingsSearchHighlights(); return; }
+    const root = (els[0].closest('.max-w-2xl') as HTMLElement | null) ?? els[0].parentElement;
+    if (!root) { clearSettingsSearchHighlights(); return; }
+    const t = window.setTimeout(() => {
+      paintSettingsSearch(buildSettingsSearchRanges(root, q));
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [q, searchIndex]);
+
+  useEffect(() => () => clearSettingsSearchHighlights(), []);
+
   return (
     <nav className="hidden lg:block shrink-0 sticky self-start" style={{ width: 172, top: 24 }}>
       <div className="relative mb-1.5">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter settings…"
+          placeholder="Search settings…"
           className="input w-full text-xs"
           style={{ paddingLeft: 24 }}
         />
