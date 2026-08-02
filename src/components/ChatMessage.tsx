@@ -10,9 +10,11 @@ interface Props {
   onDelete: (id: string) => void;
   onReply: () => void;
   onQuoteClick: (id: string) => void;
+  onPin: () => void;
+  isPinned: boolean;
 }
 
-export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply, onQuoteClick }: Props) {
+export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply, onQuoteClick, onPin, isPinned }: Props) {
   const { setView, update, flowsIndex, setFlowsIndex } = useApp();
   const [hovered, setHovered] = React.useState(false);
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -162,6 +164,18 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
             ><TrashIcon /></button>
           </>
         )}
+        <button
+          onClick={onPin}
+          title={isPinned ? 'Unpin' : 'Pin'}
+          className="w-5 h-5 flex items-center justify-center rounded transition"
+          style={{
+            color: isPinned ? '#d97706' : 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+            cursor: hovered || isPinned ? 'pointer' : 'default',
+            opacity: hovered || isPinned ? 1 : 0, pointerEvents: hovered || isPinned ? 'auto' : 'none',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#d97706'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = isPinned ? '#d97706' : 'var(--nav-inactive-color)'; }}
+        ><PinIcon /></button>
         <button
           onClick={onReply}
           title="Reply"
@@ -480,6 +494,15 @@ function ReplyIcon() {
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="9 17 4 12 9 7" />
       <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+    </svg>
+  );
+}
+
+export function PinIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="17" x2="12" y2="22" />
+      <path d="M5 17h14l-1.4-1.4A2 2 0 0 1 17 14.2V9a5 5 0 0 0-10 0v5.2a2 2 0 0 1-.6 1.4L5 17z" />
     </svg>
   );
 }

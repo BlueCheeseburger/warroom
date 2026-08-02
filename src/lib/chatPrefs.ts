@@ -104,3 +104,41 @@ export function eventMatchesQuickChatBinding(e: KeyEventLike, b: KeyBinding): bo
   const mod = e.metaKey || e.ctrlKey;
   return mod === b.mod && e.shiftKey === b.shift && e.altKey === b.alt && e.key.toLowerCase() === b.key.toLowerCase();
 }
+
+// ─── Per-chat desktop notification level ───────────────────────────────────────
+// 'team' for the team room, else the dm_channel_id — same id scheme as Quick Chat
+// pins. Personal display preference, so it's local-only (not synced to Supabase).
+
+export type ChatNotifLevel = 'all' | 'mentions' | 'none';
+const NOTIF_LEVELS_KEY = 'warroom-chat-notif-levels';
+
+function readNotifLevels(): Record<string, ChatNotifLevel> {
+  try { return JSON.parse(localStorage.getItem(NOTIF_LEVELS_KEY) ?? '{}'); } catch { return {}; }
+}
+export function getChatNotifLevel(chatId: string): ChatNotifLevel {
+  return readNotifLevels()[chatId] ?? 'all';
+}
+export function setChatNotifLevel(chatId: string, level: ChatNotifLevel) {
+  const all = readNotifLevels();
+  all[chatId] = level;
+  try { localStorage.setItem(NOTIF_LEVELS_KEY, JSON.stringify(all)); } catch {}
+  notify();
+}
+
+// ─── Presence helpers ───────────────────────────────────────────────────────
+// presenceState is one array per connected client (Supabase auto-assigns the
+// outer key) — these flatten/query it so components don't need to know that shape.
+
+export interface PresenceEntry { userId: string; displayName: string; typing: string | null }
+
+export function presenceList(state: Record<string, PresenceEntry[]>): PresenceEntry[] {
+  return Object.values(state).flat();
+}
+export function isUserOnline(state: Record<string, PresenceEntry[]>, userId: string): boolean {
+  return presenceList(state).some((p) => p.userId === userId);
+}
+export function typingDisplayNamesFor(state: Record<string, PresenceEntry[]>, scopeKey: string, excludeUserId?: string): string[] {
+  return presenceList(state)
+    .filter((p) => p.typing === scopeKey && p.userId !== excludeUserId)
+    .map((p) => p.displayName);
+}

@@ -977,3 +977,51 @@ $$;
 
 revoke execute on function resolve_doc_comment(uuid, boolean, text) from public;
 grant execute on function resolve_doc_comment(uuid, boolean, text) to authenticated;
+
+-- ─── Pinned messages ────────────────────────────────────────────────────────
+-- Pinning a team-room or DM message snapshots sender + content (encrypted, same
+-- convention as reply_to_content) so a pin survives the original being edited
+-- or deleted. Exactly one of team_id/dm_channel_id is set, matching the scope
+-- of the message that was pinned.
+create table if not exists pinned_messages (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid references teams(id) on delete cascade,
+  dm_channel_id uuid references dm_channels(id) on delete cascade,
+  message_id uuid,           -- soft link only, for scroll-to-original; may be gone
+  sender_name text not null,
+  content text not null,     -- encrypted
+  pinned_by_id uuid references auth.users(id),
+  pinned_by_name text not null,
+  created_at timestamptz default now(),
+  constraint pinned_messages_scope check ((team_id is not null) <> (dm_channel_id is not null))
+);
+
+create index if not exists pinned_messages_team_idx on pinned_messages(team_id, created_at desc);
+create index if not exists pinned_messages_dm_idx on pinned_messages(dm_channel_id, created_at desc);
+
+alter table pinned_messages enable row level security;
+
+drop policy if exists "pinned_messages_select" on pinned_messages;
+create policy "pinned_messages_select" on pinned_messages
+  for select using (
+    (team_id is not null and is_team_member(team_id))
+    or (dm_channel_id is not null and is_dm_member(dm_channel_id))
+  );
+
+drop policy if exists "pinned_messages_insert" on pinned_messages;
+create policy "pinned_messages_insert" on pinned_messages
+  for insert with check (
+    pinned_by_id = auth.uid() and (
+      (team_id is not null and is_team_member(team_id))
+      or (dm_channel_id is not null and is_dm_member(dm_channel_id))
+    )
+  );
+
+-- Any member can unpin (shared pin board), same as any member being able to see
+-- pins — not restricted to whoever originally pinned it.
+drop policy if exists "pinned_messages_delete" on pinned_messages;
+create policy "pinned_messages_delete" on pinned_messages
+  for delete using (
+    (team_id is not null and is_team_member(team_id))
+    or (dm_channel_id is not null and is_dm_member(dm_channel_id))
+  );

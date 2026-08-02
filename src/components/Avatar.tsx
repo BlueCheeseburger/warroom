@@ -33,23 +33,41 @@ export type AvatarSpec =
   | { kind: 'dm'; id: string; name: string }
   | { kind: 'group'; members: { id: string; name: string }[] };
 
-export function ChatAvatar({ spec, size = 28, title }: { spec: AvatarSpec; size?: number; title?: string }) {
+// `online` draws a small green dot over the bottom-right corner — used
+// wherever presence is available (see chatPrefs.ts's isUserOnline/presenceList).
+// Left undefined where presence isn't tracked (e.g. a group DM's own aggregate
+// identity has no single online state).
+export function ChatAvatar({ spec, size = 28, title, online }: { spec: AvatarSpec; size?: number; title?: string; online?: boolean }) {
   const fontSize = Math.max(9, Math.round(size * 0.38));
+  const dotSize = Math.max(7, Math.round(size * 0.3));
+
+  const dot = online !== undefined && (
+    <span
+      aria-hidden
+      style={{
+        position: 'absolute', bottom: -1, right: -1, width: dotSize, height: dotSize, borderRadius: '50%',
+        background: online ? '#22c55e' : 'var(--nav-inactive-color)',
+        border: '2px solid var(--bg-main)', boxSizing: 'content-box',
+      }}
+    />
+  );
 
   if (spec.kind === 'team') {
     return (
-      <div title={title} className="flex items-center justify-center font-bold shrink-0"
+      <div title={title} className="relative flex items-center justify-center font-bold shrink-0"
         style={{ width: size, height: size, borderRadius: size * 0.28, background: 'var(--accent)', color: '#fff', fontSize }}>
         {initialsOf(spec.name)}
+        {dot}
       </div>
     );
   }
 
   if (spec.kind === 'dm') {
     return (
-      <div title={title} className="flex items-center justify-center font-bold shrink-0"
+      <div title={title} className="relative flex items-center justify-center font-bold shrink-0"
         style={{ width: size, height: size, borderRadius: '50%', background: paletteColorFor(spec.id), color: '#fff', fontSize }}>
         {initialsOf(spec.name)}
+        {dot}
       </div>
     );
   }
@@ -59,14 +77,16 @@ export function ChatAvatar({ spec, size = 28, title }: { spec: AvatarSpec; size?
   while (quads.length < 4) quads.push(quads[quads.length - 1] ?? { id: 'x', name: '?' });
   const quadFontSize = Math.max(7, Math.round(size * 0.24));
   return (
-    <div title={title} className="grid shrink-0 overflow-hidden"
-      style={{ width: size, height: size, borderRadius: '50%', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' }}>
-      {quads.map((m, i) => (
-        <div key={i} className="flex items-center justify-center font-bold"
-          style={{ background: paletteColorFor(m.id), color: '#fff', fontSize: quadFontSize }}>
-          {initialsOf(m.name)[0]}
-        </div>
-      ))}
+    <div title={title} className="relative shrink-0" style={{ width: size, height: size }}>
+      <div className="grid overflow-hidden" style={{ width: size, height: size, borderRadius: '50%', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' }}>
+        {quads.map((m, i) => (
+          <div key={i} className="flex items-center justify-center font-bold"
+            style={{ background: paletteColorFor(m.id), color: '#fff', fontSize: quadFontSize }}>
+            {initialsOf(m.name)[0]}
+          </div>
+        ))}
+      </div>
+      {dot}
     </div>
   );
 }

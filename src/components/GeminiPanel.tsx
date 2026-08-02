@@ -583,6 +583,10 @@ interface ToolStep {
   tool: ToolName;
   label: string;
   status: 'running' | 'done' | 'error' | 'cancelled';
+  // Populated once the call resolves — lets the transparency toggle show
+  // exactly what was sent to the tool and what it returned.
+  args?: Record<string, any>;
+  result?: string;
 }
 
 interface GeminiMsg {
@@ -608,6 +612,31 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const [hoveredStepId, setHoveredStepId] = React.useState<string | null>(null);
+  const [detailStepId, setDetailStepId] = React.useState<string | null>(null);
+
+  // Transparency toggle — click a completed step to see exactly what was sent
+  // to the tool and what it returned. Only meaningful once args/result exist
+  // (populated when the call resolves), so it's a no-op while still running.
+  function StepDetail({ step }: { step: ToolStep }) {
+    if (detailStepId !== step.id || (!step.args && !step.result)) return null;
+    return (
+      <div
+        className="mt-1 mb-1.5 rounded-md text-[10px] leading-relaxed"
+        style={{ background: 'var(--bg-main)', border: '1px solid var(--border-side)', padding: '6px 8px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+      >
+        {step.args && Object.keys(step.args).length > 0 && (
+          <div style={{ marginBottom: step.result ? 4 : 0 }}>
+            <span style={{ opacity: 0.5 }}>args: </span>{JSON.stringify(step.args)}
+          </div>
+        )}
+        {step.result && (
+          <div>
+            <span style={{ opacity: 0.5 }}>result: </span>{step.result.length > 800 ? step.result.slice(0, 800) + '…' : step.result}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const checkIcon = () => (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -768,24 +797,40 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
       {skillSteps.length > 0 && (
         <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-1.5">
           {skillSteps.map((step) => (
-            <div key={step.id} className="flex items-center gap-1 py-0.5" style={{
-              color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
-              opacity: step.status === 'error' ? 0.7 : 1,
-            }}>
-              {bookIcon(step.status === 'error' ? '#ef4444' : '#4285F4')}
-              <span style={{ fontSize: 10 }}>{step.label}</span>
+            <div key={step.id}>
+              <div
+                className="flex items-center gap-1 py-0.5"
+                style={{
+                  color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
+                  opacity: step.status === 'error' ? 0.7 : 1,
+                  cursor: (step.args || step.result) ? 'pointer' : undefined,
+                }}
+                onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
+              >
+                {bookIcon(step.status === 'error' ? '#ef4444' : '#4285F4')}
+                <span style={{ fontSize: 10 }}>{step.label}</span>
+              </div>
+              <StepDetail step={step} />
             </div>
           ))}
         </div>
       )}
       {/* App action steps (navigation / flow editing) — inline lines */}
       {actionSteps.map((step) => (
-        <div key={step.id} className="flex items-center gap-1.5 py-0.5" style={{
-          color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
-          opacity: step.status === 'error' ? 0.7 : 1,
-        }}>
-          {step.status === 'error' ? xIcon() : actionIcon(step.tool, '#8b5cf6')}
-          <span>{step.label}</span>
+        <div key={step.id}>
+          <div
+            className="flex items-center gap-1.5 py-0.5"
+            style={{
+              color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
+              opacity: step.status === 'error' ? 0.7 : 1,
+              cursor: (step.args || step.result) ? 'pointer' : undefined,
+            }}
+            onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
+          >
+            {step.status === 'error' ? xIcon() : actionIcon(step.tool, '#8b5cf6')}
+            <span>{step.label}</span>
+          </div>
+          <StepDetail step={step} />
         </div>
       ))}
       {/* Search steps — collapsible pill */}
@@ -808,13 +853,21 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
           {expanded && (
             <div className="pl-3 mb-1 space-y-0.5">
               {searchSteps.map((step) => (
-                <div key={step.id} className="flex items-center gap-1.5 py-0.5" style={{
-                  color: 'var(--nav-inactive-color)', opacity: step.status === 'cancelled' ? 0.45 : 1,
-                }}>
-                  {step.status === 'error' ? xIcon() : step.status === 'cancelled' ? xIcon('#6b7280') : checkIcon()}
-                  <span style={{ textDecoration: step.status === 'cancelled' ? 'line-through' : undefined }}>
-                    {step.label}
-                  </span>
+                <div key={step.id}>
+                  <div
+                    className="flex items-center gap-1.5 py-0.5"
+                    style={{
+                      color: 'var(--nav-inactive-color)', opacity: step.status === 'cancelled' ? 0.45 : 1,
+                      cursor: (step.args || step.result) ? 'pointer' : undefined,
+                    }}
+                    onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
+                  >
+                    {step.status === 'error' ? xIcon() : step.status === 'cancelled' ? xIcon('#6b7280') : checkIcon()}
+                    <span style={{ textDecoration: step.status === 'cancelled' ? 'line-through' : undefined }}>
+                      {step.label}
+                    </span>
+                  </div>
+                  <StepDetail step={step} />
                 </div>
               ))}
             </div>
@@ -823,9 +876,16 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
       )}
       {/* Save steps */}
       {saveSteps.map((step) => (
-        <div key={step.id} className="flex items-center gap-1.5 py-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
-          <span>{step.tool === 'save_tournament_to_app' ? '🏆' : step.tool === 'write_skill' ? '📖' : '📚'}</span>
-          <span>{step.label}</span>
+        <div key={step.id}>
+          <div
+            className="flex items-center gap-1.5 py-0.5"
+            style={{ color: 'var(--nav-inactive-color)', cursor: (step.args || step.result) ? 'pointer' : undefined }}
+            onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
+          >
+            <span>{step.tool === 'save_tournament_to_app' ? '🏆' : step.tool === 'write_skill' ? '📖' : '📚'}</span>
+            <span>{step.label}</span>
+          </div>
+          <StepDetail step={step} />
         </div>
       ))}
     </div>
@@ -1381,6 +1441,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
   /** LM Studio's model is a free-text local id, shown read-only here — it's set in Settings. */
   const [lmModel, setLmModel] = useState('');
   const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
+  const apiProviderRef = useRef<AIProvider>('gemini');
+  apiProviderRef.current = apiProvider;
   const [hasApiKey, setHasApiKey] = useState(true);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
@@ -1395,21 +1457,37 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       .catch(() => {});
   }, []);
 
+  // Per-provider token-saving preference, keyed by provider so switching providers
+  // doesn't clobber a preference you set for a different one. Falls back to the
+  // legacy single `tokenSavingDefault` flag (pre-dates this map) for gemini only,
+  // so existing installs keep their current behavior until they explicitly toggle.
+  function tokenSavingFor(s: any, provider: AIProvider): boolean {
+    const byProvider = s?.tokenSavingByProvider?.[provider];
+    if (byProvider !== undefined) return !!byProvider;
+    if (provider === 'gemini') {
+      return s?.tokenSavingDefault !== undefined ? !!s.tokenSavingDefault : s?.geminiModel === 'flash-lite';
+    }
+    return false;
+  }
+
+  async function persistTokenSaving(provider: AIProvider, value: boolean) {
+    const s = await window.warroom?.storage.read('app_settings').catch(() => ({})) as any ?? {};
+    const tokenSavingByProvider = { ...(s.tokenSavingByProvider ?? {}), [provider]: value };
+    await window.warroom?.storage.write('app_settings', { ...s, tokenSavingByProvider });
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { tokenSavingByProvider } }));
+  }
+
   // Load token saving default and model from settings on mount, keep in sync
   useEffect(() => {
     async function loadSettings() {
       const s = await window.warroom?.storage.read('app_settings').catch(() => null) as any;
-      if (s?.tokenSavingDefault !== undefined) {
-        setTokenSaving(!!s.tokenSavingDefault);
-      } else {
-        setTokenSaving(s?.geminiModel === 'flash-lite');
-      }
+      const provider: AIProvider = s?.apiProvider ?? 'gemini';
+      setTokenSaving(tokenSavingFor(s, provider));
       if (s?.geminiModel) setGeminiModel(s.geminiModel);
       if (s?.openaiModel) setOpenaiModel(s.openaiModel);
       if (s?.anthropicModel) setAnthropicModel(s.anthropicModel);
       if (s?.grokModel) setGrokModel(s.grokModel);
       if (s?.lmstudioModel) setLmModel(s.lmstudioModel);
-      const provider: AIProvider = s?.apiProvider ?? 'gemini';
       setApiProvider(provider);
       // Check the current provider is usable (LM Studio needs no key — see helper)
       setHasApiKey(await providerIsConfigured(provider));
@@ -1418,7 +1496,11 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
     async function onSettingsChange(e: Event) {
       const detail = (e as CustomEvent).detail;
-      if (detail?.tokenSavingDefault !== undefined) setTokenSaving(!!detail.tokenSavingDefault);
+      if (detail?.tokenSavingByProvider !== undefined) {
+        setTokenSaving(!!detail.tokenSavingByProvider[apiProviderRef.current]);
+      } else if (detail?.tokenSavingDefault !== undefined) {
+        setTokenSaving(!!detail.tokenSavingDefault);
+      }
       if (detail?.geminiModel !== undefined) setGeminiModel(detail.geminiModel);
       if (detail?.openaiModel !== undefined) setOpenaiModel(detail.openaiModel);
       if (detail?.anthropicModel !== undefined) setAnthropicModel(detail.anthropicModel);
@@ -1428,6 +1510,9 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
         const newProvider: AIProvider = detail.apiProvider;
         setApiProvider(newProvider);
         setHasApiKey(await providerIsConfigured(newProvider));
+        // Restore this provider's own remembered token-saving preference.
+        const s = await window.warroom?.storage.read('app_settings').catch(() => null) as any;
+        setTokenSaving(tokenSavingFor(s, newProvider));
       }
       // If an API key was saved, re-check hasApiKey
       if (detail?.apiKeySaved) {
@@ -1458,8 +1543,9 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       setGeminiModel(value);
       const isLite = value === 'flash-lite';
       setTokenSaving(isLite);
-      await window.warroom?.storage.write('app_settings', { ...s, geminiModel: value, tokenSavingDefault: isLite });
-      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { geminiModel: value, tokenSavingDefault: isLite } }));
+      const tokenSavingByProvider = { ...((s as any).tokenSavingByProvider ?? {}), gemini: isLite };
+      await window.warroom?.storage.write('app_settings', { ...s, geminiModel: value, tokenSavingDefault: isLite, tokenSavingByProvider });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { geminiModel: value, tokenSavingDefault: isLite, tokenSavingByProvider } }));
     } else if (apiProvider === 'openai') {
       setOpenaiModel(value);
       await window.warroom?.storage.write('app_settings', { ...s, openaiModel: value });
@@ -1754,7 +1840,21 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
       let embeddedTitle = '';
       let producedText = false;
       for (let turn = 0; turn < MAX_TURNS; turn++) {
-        const res = await window.warroom.chat.geminiAgentTurn(agentMsgs, useEmbeddedTitle, userContext || undefined);
+        // Stream this turn's text deltas straight into the message bubble as they
+        // arrive, across every provider — the main process does the SSE parsing,
+        // this just renders whatever text comes in. Reset per turn: a tool-calling
+        // turn's streamed text (if any preamble) shouldn't bleed into the next turn.
+        let streamedText = '';
+        const unsubscribe = window.warroom.chat.onAgentStreamChunk(modelId, (delta) => {
+          streamedText += delta;
+          syncSteps(steps, { text: streamedText });
+        });
+        let res;
+        try {
+          res = await window.warroom.chat.geminiAgentTurn(agentMsgs, useEmbeddedTitle, userContext || undefined, modelId);
+        } finally {
+          unsubscribe();
+        }
         if (!res.ok) throw new Error(res.error ?? 'Agent error');
 
         // Mark attachment reading steps done once Gemini first responds
@@ -1779,9 +1879,8 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
         agentMsgs = [...agentMsgs, result.modelContent]; // append model's functionCall turn
 
         // Helper: execute a single named tool call, returns { name, functionResult }
-        const executeCall = async (name: string, args: Record<string, any>): Promise<{ name: string; functionResult: string }> => {
+        const executeCall = async (name: string, args: Record<string, any>, stepId: string): Promise<{ name: string; functionResult: string }> => {
           if (name === 'search_logos') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'search_logos', label: `Searching Logos for "${args.query}"`, status: 'running' }];
             syncSteps(steps);
             let toolResult = '';
@@ -1808,7 +1907,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             return { name, functionResult: toolResult };
 
           } else if (name === 'search_openevidence') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'search_openevidence', label: `Searching Open Ev for "${args.query}"`, status: 'running' }];
             syncSteps(steps);
             let toolResult = '';
@@ -1835,7 +1933,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             return { name, functionResult: toolResult };
 
           } else if (name === 'save_card_to_library') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'save_card_to_library', label: `Saving "${args.tag}" to library…`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -1873,7 +1970,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
           } else if (name === 'get_skill') {
             const skillName = (args.skill_name ?? 'unknown').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60);
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'get_skill', label: `Loading skill: ${skillName}`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -1893,7 +1989,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'fetch_article') {
-            const stepId = crypto.randomUUID();
             let domain = args.url ?? '';
             try { domain = new URL(args.url).hostname.replace(/^www\./, ''); } catch {}
             steps = [...steps, { id: stepId, tool: 'fetch_article', label: `Reading article: ${domain}`, status: 'running' }];
@@ -1920,7 +2015,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'search_tabroom_tournament') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'search_tabroom_tournament', label: `Searching Tabroom for "${args.name}"`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -1948,7 +2042,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'get_tournament_details') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'get_tournament_details', label: `Fetching tournament details (ID ${args.tabroom_id})`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -1975,7 +2068,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'save_tournament_to_app') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'save_tournament_to_app', label: `Saving tournament (ID ${args.tabroom_id}) to app…`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2015,10 +2107,24 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'search_judge') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'search_judge', label: `Looking up paradigm for "${args.name}"`, status: 'running' }];
             syncSteps(steps);
+            const formatRecord = (record: any[]) => record.length > 0
+              ? '\n\nTournament History (most recent first):\n' +
+                record.slice(0, 40).map((r: any) =>
+                  `- ${r.tournament} (${r.date}) — ${r.event}, ${r.round}: ${r.aff} vs ${r.neg}${r.vote ? `, voted ${r.vote}` : ''}`
+                ).join('\n')
+              : '\n\nNo judging record found on Tabroom.';
             try {
+              const cachedJudge: any = fuzzyFind(Object.values(db.judges ?? {}), args.name, (x: any) => x.name);
+              if (cachedJudge?.paradigmFetchedAt && !args.refresh) {
+                steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
+                syncSteps(steps);
+                const recordText = formatRecord(cachedJudge.record ?? []);
+                if (!cachedJudge.paradigm) return { name, functionResult: `Found ${cachedJudge.name} on Tabroom (ID ${cachedJudge.personId}; cached ${cachedJudge.paradigmFetchedAt}) but they haven't written a paradigm yet.${recordText}` };
+                return { name, functionResult: `Paradigm for ${cachedJudge.name} (Tabroom ID ${cachedJudge.personId}; cached ${cachedJudge.paradigmFetchedAt}):\n\n${cachedJudge.paradigm}${recordText}` };
+              }
+
               const res = await window.warroom.tabroom.fetchParadigmByName(args.name);
               if (cancelledStepIds.current.has(stepId)) {
                 steps = steps.map((s) => s.id === stepId ? { ...s, status: 'cancelled' } : s);
@@ -2030,16 +2136,33 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                 syncSteps(steps);
                 return { name, functionResult: res.error ?? `No Tabroom profile found for "${args.name}".` };
               }
+
+              // Persist so the next lookup is instant — update the matched saved judge
+              // (by name, or by personId if this name wasn't previously saved under an
+              // exact match) or create a new judge record.
+              const now = new Date().toISOString();
+              await update((db) => {
+                const existing: any = cachedJudge ?? Object.values(db.judges ?? {}).find((j: any) => j.personId === res.personId);
+                const id = existing?.id ?? crypto.randomUUID();
+                const judge = {
+                  ...existing,
+                  id,
+                  personId: res.personId ?? existing?.personId ?? '',
+                  name: existing?.name ?? args.name,
+                  institution: existing?.institution ?? '',
+                  paradigm: res.paradigm ?? null,
+                  record: res.record ?? [],
+                  notes: existing?.notes ?? '',
+                  tabroomUrl: existing?.tabroomUrl ?? `https://www.tabroom.com/index/paradigm.mhtml?judge_person_id=${res.personId}`,
+                  savedAt: existing?.savedAt ?? now,
+                  paradigmFetchedAt: now,
+                };
+                return { ...db, judges: { ...(db.judges ?? {}), [id]: judge } };
+              });
+
               steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
               syncSteps(steps);
-              // Format tournament history record
-              const record: any[] = res.record ?? [];
-              const recordText = record.length > 0
-                ? '\n\nTournament History (most recent first):\n' +
-                  record.slice(0, 40).map((r: any) =>
-                    `- ${r.tournament} (${r.date}) — ${r.event}, ${r.round}: ${r.aff} vs ${r.neg}${r.vote ? `, voted ${r.vote}` : ''}`
-                  ).join('\n')
-                : '\n\nNo judging record found on Tabroom.';
+              const recordText = formatRecord(res.record ?? []);
               if (!res.paradigm) return { name, functionResult: `Found ${args.name} on Tabroom (ID ${res.personId}) but they haven't written a paradigm yet.${recordText}` };
               return { name, functionResult: `Paradigm for ${args.name} (Tabroom ID ${res.personId}):\n\n${res.paradigm}${recordText}` };
             } catch (e: any) {
@@ -2049,7 +2172,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'scout_opponent') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'scout_opponent', label: `Scouting "${args.name}"`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2167,7 +2289,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             const skillName   = (args.skill_name ?? '').trim();
             const content     = args.content ?? '';
             const description = args.description ?? '';
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'write_skill', label: `Saving skill: ${skillName}`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2189,7 +2310,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           } else if (name === 'navigate_app') {
             const dest = String(args.destination ?? '').trim().toLowerCase();
             const target = String(args.target_name ?? '').trim();
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'navigate_app', label: `Navigating to ${dest}${target ? ` "${target}"` : ''}…`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2237,7 +2357,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'list_flows') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'list_flows', label: 'Listing flows', status: 'running' }];
             syncSteps(steps);
             steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
@@ -2248,7 +2367,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
           } else if (name === 'read_flow') {
             const q = String(args.flow ?? '').trim();
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'read_flow', label: `Reading flow "${q}"`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2283,7 +2401,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'get_case_synopses') {
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'get_case_synopses', label: 'Loading case synopses', status: 'running' }];
             syncSteps(steps);
             const query = String(args.name ?? '').trim().toLowerCase();
@@ -2322,7 +2439,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           } else if (name === 'read_speech_doc') {
             const normDocQuery = (s: string) => s.trim().toLowerCase().replace(/\.docx$/i, '').replace(/[_\s]+/g, ' ');
             const query = normDocQuery(String(args.name ?? ''));
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'read_speech_doc', label: `Reading "${args.name}"`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2352,7 +2468,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
 
           } else if (name === 'control_timer') {
             const action = String(args.action ?? '').trim();
-            const stepId = crypto.randomUUID();
             const actionLabels: Record<string, string> = {
               start: 'Starting timer', pause: 'Pausing timer', reset: 'Resetting timer',
               toggle: 'Toggling timer', select: `Selecting "${args.speech}"`,
@@ -2381,7 +2496,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           } else if (name === 'compare_impacts') {
             const docAName = String(args.doc_a ?? '').trim();
             const docBName = String(args.doc_b ?? '').trim();
-            const stepId = crypto.randomUUID();
             steps = [...steps, { id: stepId, tool: 'compare_impacts', label: `Comparing impacts: "${docAName}" vs "${docBName}"`, status: 'running' }];
             syncSteps(steps);
             try {
@@ -2536,7 +2650,6 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
             }
 
           } else if (name === 'search_warroom') {
-            const stepId = crypto.randomUUID();
             const q = String(args.query ?? '').trim().toLowerCase();
             steps = [...steps, { id: stepId, tool: 'search_warroom', label: `Searching Warroom for "${args.query}"`, status: 'running' }];
             syncSteps(steps);
@@ -2638,8 +2751,17 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
           }
         };
 
-        // Run all tool calls in parallel, collect all responses
-        const responses = await Promise.all(calls.map(({ name, args }) => executeCall(name, args)));
+        // Run all tool calls in parallel, collect all responses. Each call gets its
+        // own stepId generated here (not inside executeCall) so the result can be
+        // attached back to the exact right step afterward — safe even when several
+        // calls to the same tool run concurrently.
+        const responses = await Promise.all(calls.map(async ({ name, args }) => {
+          const stepId = crypto.randomUUID();
+          const r = await executeCall(name, args, stepId);
+          steps = steps.map((s) => s.id === stepId ? { ...s, args, result: r.functionResult } : s);
+          syncSteps(steps);
+          return r;
+        }));
 
         // Send all function responses back in one user turn (required by Gemini API)
         agentMsgs = [...agentMsgs, {
@@ -3054,7 +3176,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
                   <div className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>{m.name}</div>
                   {m.type === 'speechdoc' && (m.data?.full || m.data?.tokenSaving) ? (
                     <button
-                      onClick={() => setTokenSaving((v) => !v)}
+                      onClick={() => setTokenSaving((v) => { const next = !v; persistTokenSaving(apiProvider, next); return next; })}
                       title="Send only underlined text, card cites, and headings — skip small non-underlined body text. Reduces tokens sent to the model."
                       className="text-[10px] mt-0.5 flex items-center gap-1 transition"
                       style={{ color: tokenSaving ? '#4285F4' : 'var(--nav-inactive-color)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}

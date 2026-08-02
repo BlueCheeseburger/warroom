@@ -526,7 +526,8 @@ declare global {
         renameTeam: (teamId: string, name: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
         claimOwnership: (teamId: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
         generateGeminiTitle: (messages: any[]) => Promise<{ ok: boolean; data?: string; error?: string }>;
-        geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string) => Promise<{ ok: boolean; data?: { type: 'text' | 'tool_call'; text?: string; title?: string; name?: string; args?: Record<string, any>; modelContent?: any }; error?: string }>;
+        geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string, requestId?: string) => Promise<{ ok: boolean; data?: { type: 'text' | 'tool_call'; text?: string; title?: string; name?: string; args?: Record<string, any>; modelContent?: any }; error?: string }>;
+        onAgentStreamChunk: (requestId: string, cb: (delta: string) => void) => () => void;
         lookupUserByEmail: (email: string) => Promise<{ ok: boolean; data?: { userId: string; displayName: string } | null; error?: string }>;
         getDMChannels: (teamId: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
         createDM: (teamId: string, members: { userId: string; displayName: string }[], name?: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
@@ -541,6 +542,25 @@ declare global {
         deleteMessage: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
         editDMMessage: (messageId: string, content: string) => Promise<{ ok: boolean; error?: string }>;
         deleteDMMessage: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
+        subscribeAllDMs: (teamId: string) => Promise<{ ok: boolean; error?: string }>;
+        unsubscribeAllDMs: () => Promise<{ ok: boolean; error?: string }>;
+        onAnyDMMessage: (cb: (msg: any) => void) => () => void;
+        showNotification: (opts: { title: string; body: string; targetKind: 'team' | 'dm'; channelId?: string }) => Promise<{ ok: boolean; error?: string }>;
+        onNotificationClicked: (cb: (t: { kind: 'team' | 'dm'; channelId?: string }) => void) => () => void;
+      };
+      pins: {
+        getAll: (scope: { teamId?: string; dmChannelId?: string }) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
+        pin: (payload: { teamId?: string; dmChannelId?: string; messageId: string; senderName: string; content: string; pinnedById: string; pinnedByName: string }) => Promise<{ ok: boolean; data?: any; error?: string }>;
+        unpin: (pinId: string) => Promise<{ ok: boolean; error?: string }>;
+        subscribe: (scope: { teamId?: string; dmChannelId?: string }) => Promise<{ ok: boolean; error?: string }>;
+        unsubscribe: (scope: { teamId?: string; dmChannelId?: string }) => Promise<{ ok: boolean; error?: string }>;
+        onChange: (cb: (p: { eventType: string; row: any }) => void) => () => void;
+      };
+      presence: {
+        join: (teamId: string) => Promise<{ ok: boolean; error?: string }>;
+        leave: () => Promise<{ ok: boolean; error?: string }>;
+        track: (meta: { userId: string; displayName: string; typing: string | null }) => Promise<{ ok: boolean; error?: string }>;
+        onSync: (cb: (state: Record<string, any[]>) => void) => () => void;
       };
       teamFiles: {
         getAll: (teamId: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;
@@ -709,6 +729,18 @@ export interface TeamFile {
   updated_at: string;
   removed: boolean;
   summary_text: string | null;
+}
+
+export interface PinnedMessage {
+  id: string;
+  team_id: string | null;
+  dm_channel_id: string | null;
+  message_id: string | null;
+  sender_name: string;
+  content: string;
+  pinned_by_id: string;
+  pinned_by_name: string;
+  created_at: string;
 }
 
 // Item queued for attachment when user picks a mention

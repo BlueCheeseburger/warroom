@@ -125,6 +125,8 @@ export function buildLmStudioChatBody(
     tools?: any[] | null;
     temperature?: number;
     maxTokens?: number;
+    /** LM Studio streams by default in some clients — explicit false unless the caller opts in. */
+    stream?: boolean;
   },
 ): string {
   const withTools = !!(args.tools && args.tools.length > 0);
@@ -134,9 +136,7 @@ export function buildLmStudioChatBody(
     ...(withTools ? { tools: args.tools, tool_choice: 'auto' } : {}),
     temperature: args.temperature ?? 0.1,
     max_tokens: args.maxTokens ?? 8192,
-    // Warroom reads whole responses rather than streaming them, and LM Studio
-    // streams by default in some clients — pin it off explicitly.
-    stream: false,
+    stream: !!args.stream,
     ...cfg.options,
   });
 }

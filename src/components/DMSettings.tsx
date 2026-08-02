@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/appStore';
 import { DMChannel } from '../types';
+import NotifLevelPicker from './NotifLevelPicker';
 
 interface Props {
   channel: DMChannel;
@@ -47,6 +48,8 @@ export default function DMSettings({ channel, onClose, onLeft }: Props) {
             ))}
           </div>
         </div>
+
+        <NotifLevelPicker chatId={channel.id} />
 
         {error && <p className="text-xs text-red-500">{error}</p>}
 

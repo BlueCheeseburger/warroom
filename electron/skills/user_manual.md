@@ -608,6 +608,15 @@ Speech docs and flows over 2MB can't be sent or uploaded whole. You'll get a cho
 ### Quick Chat
 Off by default (Settings → Chat → "Quick chat"). Turning it on opens a picker where you choose which team room, DMs, and group DMs to pin — each pin shows as its identity icon in the title bar, just left of the main chat icon, and jumps straight to that conversation when clicked. You can also give any pin a keyboard shortcut; the app checks it against every other shortcut in the app (and every other pin) and won't let two collide — if you pick one that's taken, it offers to rebind whichever one you want to change, right there.
 
+### Pinned messages
+Every team room, DM, and group DM has a **Pins** tab (next to Chat, and Files for team rooms). Hover any message and click the pin icon to add it to the board — anyone in that room/DM can pin or unpin. The Pins tab shows who pinned it and when, and a "Jump to message" link that scrolls back to the original in the chat.
+
+### Notifications per chat
+Room/DM Settings (gear icon) has a **Notifications** section for that specific chat: **All messages**, **Mentions & replies only**, or **Nothing**. Each room and DM is independent — mute a noisy group chat while keeping notifications on everywhere else.
+
+### Who's online, who's typing
+A small dot on someone's DM icon in All Chats shows green when they're online. While someone's typing in a room or DM you're viewing, a small "so-and-so is typing…" note appears above the message box.
+
 ---
 
 ## Google Drive

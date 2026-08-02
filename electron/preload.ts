@@ -304,7 +304,17 @@ const api = {
     deleteMessage: (messageId: string) => ipcRenderer.invoke('chat:deleteMessage', messageId),
     editDMMessage: (messageId: string, content: string) => ipcRenderer.invoke('chat:editDMMessage', messageId, content),
     deleteDMMessage: (messageId: string) => ipcRenderer.invoke('chat:deleteDMMessage', messageId),
-    geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string) => ipcRenderer.invoke('chat:geminiAgentTurn', messages, wantTitle, userContext),
+    geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string, requestId?: string) =>
+      ipcRenderer.invoke('chat:geminiAgentTurn', messages, wantTitle, userContext, requestId),
+    // Streamed text deltas for an in-flight geminiAgentTurn call, scoped by requestId
+    // so unrelated turns (or a stale listener from a previous turn) never cross-talk.
+    onAgentStreamChunk: (requestId: string, cb: (delta: string) => void) => {
+      const handler = (_e: any, payload: { requestId: string; delta: string }) => {
+        if (payload?.requestId === requestId) cb(payload.delta);
+      };
+      ipcRenderer.on('chat:agentStreamChunk', handler);
+      return () => ipcRenderer.removeListener('chat:agentStreamChunk', handler);
+    },
     lookupUserByEmail: (email: string) => ipcRenderer.invoke('chat:lookupUserByEmail', email),
     // DMs
     getDMChannels: (teamId: string) => ipcRenderer.invoke('chat:getDMChannels', teamId),
@@ -322,6 +332,43 @@ const api = {
       ipcRenderer.on('chat:newDMMessage', handler);
       // Remove only THIS listener, not every listener on the channel.
       return () => ipcRenderer.removeListener('chat:newDMMessage', handler);
+    },
+    subscribeAllDMs: (teamId: string) => ipcRenderer.invoke('chat:subscribeAllDMs', teamId),
+    unsubscribeAllDMs: () => ipcRenderer.invoke('chat:unsubscribeAllDMs'),
+    onAnyDMMessage: (cb: (msg: any) => void) => {
+      const handler = (_e: any, msg: any) => cb(msg);
+      ipcRenderer.on('chat:anyDMMessage', handler);
+      return () => ipcRenderer.removeListener('chat:anyDMMessage', handler);
+    },
+    showNotification: (opts: { title: string; body: string; targetKind: 'team' | 'dm'; channelId?: string }) =>
+      ipcRenderer.invoke('chat:showNotification', opts),
+    onNotificationClicked: (cb: (t: { kind: 'team' | 'dm'; channelId?: string }) => void) => {
+      const handler = (_e: any, t: any) => cb(t);
+      ipcRenderer.on('chat:notificationClicked', handler);
+      return () => ipcRenderer.removeListener('chat:notificationClicked', handler);
+    },
+  },
+  pins: {
+    getAll: (scope: { teamId?: string; dmChannelId?: string }) => ipcRenderer.invoke('chat:getPins', scope),
+    pin: (payload: { teamId?: string; dmChannelId?: string; messageId: string; senderName: string; content: string; pinnedById: string; pinnedByName: string }) =>
+      ipcRenderer.invoke('chat:pinMessage', payload),
+    unpin: (pinId: string) => ipcRenderer.invoke('chat:unpinMessage', pinId),
+    subscribe: (scope: { teamId?: string; dmChannelId?: string }) => ipcRenderer.invoke('chat:subscribePins', scope),
+    unsubscribe: (scope: { teamId?: string; dmChannelId?: string }) => ipcRenderer.invoke('chat:unsubscribePins', scope),
+    onChange: (cb: (p: { eventType: string; row: any }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('chat:pinsChange', handler);
+      return () => ipcRenderer.removeListener('chat:pinsChange', handler);
+    },
+  },
+  presence: {
+    join: (teamId: string) => ipcRenderer.invoke('chat:joinPresence', teamId),
+    leave: () => ipcRenderer.invoke('chat:leavePresence'),
+    track: (meta: { userId: string; displayName: string; typing: string | null }) => ipcRenderer.invoke('chat:trackPresence', meta),
+    onSync: (cb: (state: Record<string, any[]>) => void) => {
+      const handler = (_e: any, state: any) => cb(state);
+      ipcRenderer.on('chat:presenceSync', handler);
+      return () => ipcRenderer.removeListener('chat:presenceSync', handler);
     },
   },
   // Per-team file library, separate from the message stream. name/dataB64 are

@@ -9,5 +9,7 @@ dist-electron/
 secure_*.json
 index.cjs
 CLAUDE.md
+AGENTS.md
+agnets.md
 .claude/settings.local.json
 .claude/worktrees/

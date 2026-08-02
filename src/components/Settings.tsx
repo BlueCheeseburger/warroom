@@ -2539,8 +2539,11 @@ export default function Settings() {
             { label: 'Quoted reply snippets', tag: 'encrypted' },
             { label: 'Team Files — file names & content', tag: 'encrypted' },
             { label: 'Team Files — AI-generated summary (oversized files)', tag: 'encrypted' },
+            { label: 'Pinned message snapshots (sender + content)', tag: 'encrypted' },
             { label: 'Sender names, timestamps & attachment labels', tag: 'plaintext' },
             { label: 'Team Files — uploader names, modified time & removed flag', tag: 'plaintext' },
+            { label: 'Pinned-by name & pin timestamp', tag: 'plaintext' },
+            { label: 'Online/typing presence (display name only, no message content)', tag: 'plaintext' },
             { label: 'User accounts & team membership', tag: 'plaintext' },
           ].map(({ label, tag }) => (
             <div key={label} className="flex items-center gap-2">

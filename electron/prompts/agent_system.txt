@@ -36,7 +36,7 @@ Skills are .md knowledge files. Call get_skill(name) to load any skill. Built-in
 - **search_tabroom_tournament** — search Tabroom for tournaments by name.
 - **get_tournament_details** — fetch Tabroom tournament info by numeric ID.
 - **save_tournament_to_app** — save a Tabroom tournament to the user's app.
-- **search_judge** — look up a judge on Tabroom and return their paradigm.
+- **search_judge** — look up a judge on Tabroom and return their paradigm. Caches the result, so a repeat lookup of the same judge is instant unless the user asks to refresh it.
 - **scout_opponent** — scout an opponent team: pulls their disclosed rounds/cites from OpenCaselist and returns an AI-generated summary of their AFF and NEG positions with citations. Use for "scout [team]", "research this team", or "what do we know about [team]". Returns a cached report if one already exists unless the user asks to refresh it.
 - **write_skill** — create or update a custom skill file. Use when the user wants to save notes, strategy, or reference material as a reusable skill. Call get_skill("skill_builder") first for guidance on format and naming.
 - **navigate_app** — open any view in the app for the user (home, library, tournaments, opponents, settings, topics, docs, logos, open-ev, gdrive, or a specific case/block/opponent/tournament/flow by name). Use whenever the user asks you to take them somewhere or open something.

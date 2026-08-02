@@ -5907,10 +5907,13 @@ const AGENT_TOOLS = [{
     },
     {
       name: 'search_judge',
-      description: "Look up a judge on Tabroom by name and return their judging paradigm. Use when the user asks about a judge's preferences, paradigm, how to win in front of them, or what they look for in a round.",
+      description: "Look up a judge on Tabroom by name and return their judging paradigm. Use when the user asks about a judge's preferences, paradigm, how to win in front of them, or what they look for in a round. If this judge's paradigm was already looked up before, returns the cached result instantly unless refresh is true.",
       parameters: {
         type: 'OBJECT',
-        properties: { name: { type: 'STRING', description: 'Judge full name or partial name' } },
+        properties: {
+          name: { type: 'STRING', description: 'Judge full name or partial name' },
+          refresh: { type: 'BOOLEAN', description: 'Set true to re-fetch from Tabroom even if a cached paradigm already exists. Defaults to false.' },
+        },
         required: ['name'],
       },
     },
@@ -6101,7 +6104,111 @@ async function logGeminiTurn(
   }
 }
 
-ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: boolean, userContext?: string) => {
+// Splits a streamed HTTP body into raw SSE lines. Works for every provider here —
+// Gemini (alt=sse), OpenAI/Grok/LM Studio (OpenAI-compatible), and Anthropic all
+// emit newline-delimited `data: {...}` (and for Anthropic, `event: ...`) lines.
+async function* sseLines(body: AsyncIterable<Uint8Array>): AsyncGenerator<string> {
+  const dec = new TextDecoder();
+  let buf = '';
+  for await (const chunk of body) {
+    buf += dec.decode(chunk, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) yield line;
+  }
+  if (buf) yield buf;
+}
+
+// Sends one streamed text delta to the renderer, scoped by requestId so the
+// listener there only reacts to the turn it's actually waiting on.
+function emitStreamChunk(event: Electron.IpcMainInvokeEvent, requestId: string | undefined, delta: string) {
+  if (!requestId || !delta) return;
+  event.sender.send('chat:agentStreamChunk', { requestId, delta });
+}
+
+// Reads an OpenAI-compatible chat-completions SSE stream (OpenAI, Grok, LM Studio
+// all use this format) to completion, calling onText for each content delta as it
+// arrives. Tool-call deltas arrive fragmented by index — arguments are string
+// fragments that must be concatenated, not parsed until the stream ends.
+async function readOpenAICompatStream(
+  body: AsyncIterable<Uint8Array>,
+  onText: (delta: string) => void,
+): Promise<{ content: string | null; tool_calls: { id: string; type: 'function'; function: { name: string; arguments: string } }[] }> {
+  let content = '';
+  const toolCalls: Record<number, { id?: string; name: string; arguments: string }> = {};
+  for await (const line of sseLines(body)) {
+    if (!line.startsWith('data: ')) continue;
+    const raw = line.slice(6).trim();
+    if (!raw || raw === '[DONE]') continue;
+    try {
+      const json = JSON.parse(raw);
+      const delta = json?.choices?.[0]?.delta;
+      if (typeof delta?.content === 'string' && delta.content) {
+        content += delta.content;
+        onText(delta.content);
+      }
+      for (const tc of delta?.tool_calls ?? []) {
+        const idx = tc.index ?? 0;
+        const acc = (toolCalls[idx] ??= { id: undefined, name: '', arguments: '' });
+        if (tc.id) acc.id = tc.id;
+        if (tc.function?.name) acc.name += tc.function.name;
+        if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+      }
+    } catch { /* partial/non-JSON line — skip */ }
+  }
+  return {
+    content: content || null,
+    tool_calls: Object.entries(toolCalls)
+      .filter(([, tc]) => tc.name)
+      .map(([idx, tc]) => ({
+        id: tc.id ?? `call_${idx}`,
+        type: 'function' as const,
+        function: { name: tc.name, arguments: tc.arguments || '{}' },
+      })),
+  };
+}
+
+// Reads an Anthropic Messages-API SSE stream to completion, calling onText for
+// each text delta as it arrives. Anthropic streams content blocks by index —
+// a block is either type "text" (accumulating text_delta) or "tool_use"
+// (accumulating input_json_delta as a raw string, parsed only once complete).
+// The `event:` line is redundant with `data.type`, so only `data:` is parsed.
+async function readAnthropicStream(
+  body: AsyncIterable<Uint8Array>,
+  onText: (delta: string) => void,
+): Promise<{ type: string; text?: string; id?: string; name?: string; input?: any }[]> {
+  const blocks: Record<number, { type: 'text' | 'tool_use'; text: string; id?: string; name?: string; jsonAccum: string }> = {};
+  for await (const line of sseLines(body)) {
+    if (!line.startsWith('data: ')) continue;
+    const raw = line.slice(6).trim();
+    if (!raw) continue;
+    try {
+      const json = JSON.parse(raw);
+      if (json.type === 'content_block_start') {
+        const cb = json.content_block ?? {};
+        blocks[json.index] = { type: cb.type === 'tool_use' ? 'tool_use' : 'text', text: cb.text ?? '', id: cb.id, name: cb.name, jsonAccum: '' };
+      } else if (json.type === 'content_block_delta') {
+        const block = blocks[json.index];
+        if (!block) continue;
+        if (json.delta?.type === 'text_delta' && typeof json.delta.text === 'string') {
+          block.text += json.delta.text;
+          onText(json.delta.text);
+        } else if (json.delta?.type === 'input_json_delta' && typeof json.delta.partial_json === 'string') {
+          block.jsonAccum += json.delta.partial_json;
+        }
+      }
+      // content_block_stop / message_delta / message_stop carry no data this needs.
+    } catch { /* partial/non-JSON line — skip */ }
+  }
+  // Object.values on numeric-string keys iterates in ascending numeric order,
+  // which matches Anthropic's content_block index order.
+  return Object.values(blocks)
+    .map((b) => b.type === 'tool_use'
+      ? { type: 'tool_use', id: b.id, name: b.name, input: (() => { try { return JSON.parse(b.jsonAccum || '{}'); } catch { return {}; } })() }
+      : { type: 'text', text: b.text });
+}
+
+ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?: boolean, userContext?: string, requestId?: string) => {
   try {
     // ── Resolve provider + model (balanced tier = never use lite for agent turns) ──
     const { provider, modelId, apiKey } = await getProviderForTask('balanced');
@@ -6149,7 +6256,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
     // ── Gemini path ──────────────────────────────────────────────────────────
     if (provider === 'gemini') {
       const res = await fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
         {
           method: 'POST',
           headers: geminiHeaders(apiKey),
@@ -6166,17 +6273,71 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
         const errText = await res.text().catch(() => String(res.status));
         return sbErr(`Gemini ${res.status}: ${errText}`);
       }
-      const data = await res.json() as any;
-      void logGeminiTurn(systemText, messages, data);
-      const candidate = data?.candidates?.[0];
-      const parts: any[] = candidate?.content?.parts ?? [];
-      const fnCalls = parts.filter((p: any) => p.functionCall);
-      if (fnCalls.length > 0) {
-        return sbOk({ type: 'tool_calls', calls: fnCalls.map((p: any) => ({ name: p.functionCall.name as string, args: p.functionCall.args as Record<string, any> })), modelContent: candidate.content });
+      const contentParts: any[] = [];
+      let textAccum = '';
+      let finishReason: string | undefined;
+      for await (const line of sseLines(res.body as unknown as AsyncIterable<Uint8Array>)) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === '[DONE]') continue;
+        try {
+          const json = JSON.parse(raw);
+          const candidate = json?.candidates?.[0];
+          finishReason = candidate?.finishReason ?? finishReason;
+          const parts: any[] = candidate?.content?.parts ?? [];
+          for (const part of parts) {
+            if (typeof part.text === 'string' && part.text) {
+              textAccum += part.text;
+              emitStreamChunk(event, requestId, part.text);
+            }
+            contentParts.push(part);
+          }
+        } catch { /* partial/non-JSON line — skip */ }
       }
-      const raw = parts.map((p: any) => p.text ?? '').join('');
-      const { text, title } = extractEmbeddedTitle(raw, !!wantTitle);
-      return sbOk({ type: 'text', text, title, modelContent: candidate.content });
+      void logGeminiTurn(systemText, messages, { candidates: [{ content: { parts: contentParts }, finishReason }] });
+
+      // MALFORMED_FUNCTION_CALL is a documented Gemini quirk that shows up specifically
+      // with streaming + function calling — the model's tool-call generation breaks
+      // down mid-stream and the API returns empty content instead of the call. It
+      // doesn't happen on the non-streaming endpoint, so fall back to that once,
+      // transparently, rather than surfacing a bogus "empty response" to the user.
+      if (contentParts.length === 0 && finishReason === 'MALFORMED_FUNCTION_CALL') {
+        const fallbackRes = await fetchWithRetry(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+          {
+            method: 'POST',
+            headers: geminiHeaders(apiKey),
+            body: JSON.stringify({
+              contents: messages,
+              tools: AGENT_TOOLS,
+              generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
+              system_instruction: { parts: [{ text: systemText }] },
+            }),
+          },
+          { timeoutMs: 45_000 }
+        );
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json() as any;
+          void logGeminiTurn(systemText, messages, fallbackData);
+          const fallbackCandidate = fallbackData?.candidates?.[0];
+          const fallbackParts: any[] = fallbackCandidate?.content?.parts ?? [];
+          const fallbackFnCalls = fallbackParts.filter((p: any) => p.functionCall);
+          if (fallbackFnCalls.length > 0) {
+            return sbOk({ type: 'tool_calls', calls: fallbackFnCalls.map((p: any) => ({ name: p.functionCall.name as string, args: p.functionCall.args as Record<string, any> })), modelContent: fallbackCandidate.content });
+          }
+          const fallbackRaw = fallbackParts.map((p: any) => p.text ?? '').join('');
+          emitStreamChunk(event, requestId, fallbackRaw);
+          const { text: fbText, title: fbTitle } = extractEmbeddedTitle(fallbackRaw, !!wantTitle);
+          return sbOk({ type: 'text', text: fbText, title: fbTitle, modelContent: fallbackCandidate.content });
+        }
+      }
+
+      const fnCalls = contentParts.filter((p: any) => p.functionCall);
+      if (fnCalls.length > 0) {
+        return sbOk({ type: 'tool_calls', calls: fnCalls.map((p: any) => ({ name: p.functionCall.name as string, args: p.functionCall.args as Record<string, any> })), modelContent: { role: 'model', parts: contentParts } });
+      }
+      const { text, title } = extractEmbeddedTitle(textAccum, !!wantTitle);
+      return sbOk({ type: 'text', text, title, modelContent: { role: 'model', parts: contentParts } });
     }
 
     // ── OpenAI path ──────────────────────────────────────────────────────────
@@ -6195,18 +6356,18 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             tool_choice: 'auto',
             temperature: 0.4,
             max_tokens: 8192,
+            stream: true,
           }),
         },
         { timeoutMs: 45_000 }
       );
       if (!res.ok) throw openaiHttpError(res.status, await res.text().catch(() => ''));
-      const data = await res.json() as any;
-      const msg = data?.choices?.[0]?.message;
+      const msg = await readOpenAICompatStream(res.body as unknown as AsyncIterable<Uint8Array>, (delta) => emitStreamChunk(event, requestId, delta));
       const modelContent = openAIMsgToGeminiContent(msg);
-      if (msg?.tool_calls?.length > 0) {
+      if (msg.tool_calls.length > 0) {
         return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
       }
-      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      const { text, title } = extractEmbeddedTitle(msg.content ?? '', !!wantTitle);
       return sbOk({ type: 'text', text, title, modelContent });
     }
 
@@ -6220,6 +6381,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
         tools: withTools ? lmTools : null,
         temperature: 0.4,
         maxTokens: 8192,
+        stream: true,
       });
 
       let res = await lmstudioPost(cfg.baseUrl, buildBody(cfg.sendTools));
@@ -6238,12 +6400,10 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
       }
       if (!res.ok) throw lmstudioHttpError(res.status, await res.text().catch(() => ''), cfg.baseUrl);
 
-      const data = await res.json() as any;
-      const msg = data?.choices?.[0]?.message;
+      const msg = await readOpenAICompatStream(res.body as unknown as AsyncIterable<Uint8Array>, (delta) => emitStreamChunk(event, requestId, delta));
       const modelContent = openAIMsgToGeminiContent(msg);
-      const toolCalls = readLmStudioToolCalls(data);
-      if (toolCalls.length > 0) return sbOk({ type: 'tool_calls', calls: toolCalls, modelContent });
-      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      if (msg.tool_calls.length > 0) return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
+      const { text, title } = extractEmbeddedTitle(msg.content ?? '', !!wantTitle);
       return sbOk({ type: 'text', text, title, modelContent });
     }
 
@@ -6263,18 +6423,18 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             tool_choice: 'auto',
             temperature: 0.4,
             max_tokens: 8192,
+            stream: true,
           }),
         },
         { timeoutMs: 45_000 }
       );
       if (!res.ok) throw grokHttpError(res.status, await res.text().catch(() => ''));
-      const data = await res.json() as any;
-      const msg = data?.choices?.[0]?.message;
+      const msg = await readOpenAICompatStream(res.body as unknown as AsyncIterable<Uint8Array>, (delta) => emitStreamChunk(event, requestId, delta));
       const modelContent = openAIMsgToGeminiContent(msg);
-      if (msg?.tool_calls?.length > 0) {
+      if (msg.tool_calls.length > 0) {
         return sbOk({ type: 'tool_calls', calls: msg.tool_calls.map((tc: any) => ({ name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })() })), modelContent });
       }
-      const { text, title } = extractEmbeddedTitle(msg?.content ?? '', !!wantTitle);
+      const { text, title } = extractEmbeddedTitle(msg.content ?? '', !!wantTitle);
       return sbOk({ type: 'text', text, title, modelContent });
     }
 
@@ -6293,13 +6453,13 @@ ipcMain.handle('chat:geminiAgentTurn', async (_e, messages: any[], wantTitle?: b
             messages: antMessages,
             tools: antTools,
             max_tokens: 8192,
+            stream: true,
           }),
         },
         { timeoutMs: 45_000 }
       );
       if (!res.ok) throw anthropicHttpError(res.status, await res.text().catch(() => ''));
-      const data = await res.json() as any;
-      const content: any[] = data?.content ?? [];
+      const content = await readAnthropicStream(res.body as unknown as AsyncIterable<Uint8Array>, (delta) => emitStreamChunk(event, requestId, delta));
       const modelContent = anthropicContentToGeminiContent(content);
       const toolUses = content.filter((c: any) => c.type === 'tool_use');
       if (toolUses.length > 0) {
@@ -6709,6 +6869,151 @@ async function restoreTeamFileWatches() {
     }
   } catch {}
 }
+
+// ─── Pinned messages ────────────────────────────────────────────────────────
+// One shared pin board per team room or per DM channel — see pinned_messages
+// in schema.sql. `content`/`sender_name` are a snapshot (encrypted client-side,
+// same convention as reply-to) so a pin survives the original message being
+// edited or deleted.
+
+ipcMain.handle('chat:getPins', async (_e, scope: { teamId?: string; dmChannelId?: string }) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    let q = sb.from('pinned_messages').select('*').order('created_at', { ascending: false });
+    q = scope.teamId ? q.eq('team_id', scope.teamId) : q.eq('dm_channel_id', scope.dmChannelId);
+    const { data, error } = await q;
+    if (error) return sbErr(error);
+    return sbOk(data ?? []);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:pinMessage', async (_e, payload: { teamId?: string; dmChannelId?: string; messageId: string; senderName: string; content: string; pinnedById: string; pinnedByName: string }) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.from('pinned_messages').insert({
+      team_id: payload.teamId ?? null, dm_channel_id: payload.dmChannelId ?? null,
+      message_id: payload.messageId, sender_name: payload.senderName, content: payload.content,
+      pinned_by_id: payload.pinnedById, pinned_by_name: payload.pinnedByName,
+    }).select().single();
+    if (error) return sbErr(error);
+    return sbOk(data);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:unpinMessage', async (_e, pinId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { error } = await sb.from('pinned_messages').delete().eq('id', pinId);
+    if (error) return sbErr(error);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// Keyed by scope (teamId or dmChannelId) rather than one shared variable —
+// unlike team_files (subscribed from exactly one place, TeamFiles.tsx), pins
+// are subscribed from both the message list (for the pin-icon highlight) and
+// the Pins tab at the same time, so two independent subscriptions must coexist.
+const pinsChannels = new Map<string, any>();
+
+ipcMain.handle('chat:subscribePins', async (_e, scope: { teamId?: string; dmChannelId?: string }) => {
+  if (!sb || !mainWin) return sbErr('Supabase not configured');
+  const key = scope.teamId ?? scope.dmChannelId!;
+  if (pinsChannels.has(key)) return sbOk(true);
+  const filter = scope.teamId ? `team_id=eq.${scope.teamId}` : `dm_channel_id=eq.${scope.dmChannelId}`;
+  const ch = sb.channel(`pins-${key}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pinned_messages', filter }, (payload: any) => {
+      mainWin?.webContents.send('chat:pinsChange', { eventType: payload.eventType, row: payload.eventType === 'DELETE' ? payload.old : payload.new });
+    })
+    .subscribe();
+  pinsChannels.set(key, ch);
+  return sbOk(true);
+});
+
+ipcMain.handle('chat:unsubscribePins', async (_e, scope: { teamId?: string; dmChannelId?: string }) => {
+  const key = scope?.teamId ?? scope?.dmChannelId;
+  const ch = key ? pinsChannels.get(key) : null;
+  if (ch) { try { await ch.unsubscribe(); } catch {} pinsChannels.delete(key!); }
+  return sbOk(true);
+});
+
+// ─── Chat desktop notifications ────────────────────────────────────────────────
+// Deliberately separate from the pairings/results/topics/judges/opponents
+// category system (NOTIF_CATEGORY_SETTINGS_KEY) — that gates a headless daemon
+// polling in the background; chat notifications are decided in the renderer
+// (per-chat notification level, see chatPrefs.ts, needs decrypted content to
+// tell a mention/reply apart from a regular message), so by the time this is
+// called the renderer has already decided a notification should fire — this
+// handler just shows it.
+ipcMain.handle('chat:showNotification', async (_e, opts: { title: string; body: string; targetKind: 'team' | 'dm'; channelId?: string }) => {
+  try {
+    if (!ElectronNotification.isSupported()) return sbOk(false);
+    const n = new ElectronNotification({ title: opts.title, body: opts.body, silent: false });
+    n.on('click', () => {
+      mainWin?.show();
+      mainWin?.focus();
+      mainWin?.webContents.send('chat:notificationClicked', { kind: opts.targetKind, channelId: opts.channelId });
+    });
+    n.show();
+    return sbOk(true);
+  } catch (e) { return sbErr(e); }
+});
+
+// ─── All-DMs message stream (for notifications only) ───────────────────────────
+// The renderer's per-DM subscription (chat:subscribeDM) only exists while that
+// specific DM is open, so it can't drive notifications for DMs the user isn't
+// currently looking at. This subscribes to every dm_messages insert with no
+// column filter — RLS (dm_read_messages -> is_dm_member) still scopes it to
+// channels this user is actually in, same as any other query.
+let allDMsChannel: any = null;
+
+ipcMain.handle('chat:subscribeAllDMs', async (_e, _teamId: string) => {
+  if (!sb || !mainWin) return sbErr('Supabase not configured');
+  if (allDMsChannel) return sbOk(true);
+  allDMsChannel = sb.channel('all-dms')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, (payload: any) => {
+      mainWin?.webContents.send('chat:anyDMMessage', payload.new);
+    })
+    .subscribe();
+  return sbOk(true);
+});
+
+ipcMain.handle('chat:unsubscribeAllDMs', async () => {
+  if (allDMsChannel) { try { await allDMsChannel.unsubscribe(); } catch {} allDMsChannel = null; }
+  return sbOk(true);
+});
+
+// ─── Presence: online + typing ─────────────────────────────────────────────────
+// A single broadcast/presence channel per team covers online status for every
+// member and typing state for the team room and every DM (the `typing` field
+// on the tracked payload is just a scope key, e.g. 'team' or a dm_channel_id —
+// no message content ever goes through this channel). Lighter-weight than the
+// live-flow channel's private+RLS setup on purpose: presence here only reveals
+// "so-and-so is online/typing", not case/flow content, so a team-scoped but
+// unauthenticated channel name is a proportionate tradeoff.
+let presenceChannel: any = null;
+
+ipcMain.handle('chat:joinPresence', async (_e, teamId: string) => {
+  if (!sb || !mainWin) return sbErr('Supabase not configured');
+  if (presenceChannel) return sbOk(true);
+  presenceChannel = sb.channel(`presence-${teamId}`);
+  presenceChannel.on('presence', { event: 'sync' }, () => {
+    mainWin?.webContents.send('chat:presenceSync', presenceChannel.presenceState());
+  });
+  await new Promise<void>((resolve) => {
+    presenceChannel.subscribe((s: string) => { if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') resolve(); });
+  });
+  return sbOk(true);
+});
+
+ipcMain.handle('chat:leavePresence', async () => {
+  if (presenceChannel) { try { await presenceChannel.unsubscribe(); } catch {} presenceChannel = null; }
+  return sbOk(true);
+});
+
+ipcMain.handle('chat:trackPresence', async (_e, meta: { userId: string; displayName: string; typing: string | null }) => {
+  if (presenceChannel) { try { await presenceChannel.track(meta); } catch {} }
+  return sbOk(true);
+});
 
 // ─── Impact Library (global shared library) — Supabase CRUD ────────────────────
 // Not team-scoped: every signed-in user reads the same pool and can contribute.

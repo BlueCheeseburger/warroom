@@ -4,24 +4,65 @@ import { useApp, FlowMeta } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { getTeamKey, encryptText, encryptOutgoing, decryptMessage } from '../lib/chatCrypto';
 import { transcribeRecording } from '../utils/dictation';
-import { ChatMessage as ChatMessageType, DMChannel, DMMessage, PendingMention } from '../types';
-import ChatMessageBubble, { AttachmentChip as ChatAttachmentChip } from './ChatMessage';
+import { ChatMessage as ChatMessageType, DMChannel, DMMessage, PendingMention, PinnedMessage } from '../types';
+import ChatMessageBubble, { AttachmentChip as ChatAttachmentChip, PinIcon } from './ChatMessage';
 import MentionPicker from './MentionPicker';
 import TeamSetup from './TeamSetup';
 import RoomSettings from './RoomSettings';
 import DMSettings from './DMSettings';
 import TeamFiles from './TeamFiles';
+import PinsPanel from './PinsPanel';
 import { ChatAvatar, AvatarSpec } from './Avatar';
 import SendDictateButton from './SendDictateButton';
 import { useAutoGrowTextarea } from '../hooks/useAutoGrowTextarea';
-import { getFilesBarStyle, onChatPrefsChange, FilesBarStyle } from '../lib/chatPrefs';
+import {
+  getFilesBarStyle, onChatPrefsChange, FilesBarStyle,
+  getChatNotifLevel, ChatNotifLevel, typingDisplayNamesFor, presenceList, isUserOnline,
+} from '../lib/chatPrefs';
 import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
 import OversizedFilePopup from './OversizedFilePopup';
 
-type ChatView = 'team' | 'dm-list' | 'files' | { kind: 'dm'; channel: DMChannel };
+type ChatView = 'team' | 'dm-list' | 'files' | 'pins' | { kind: 'dm'; channel: DMChannel };
+
+// A message is decrypted content mentioning `@DisplayName_With_Underscores` or
+// directly replying to a message you sent — used by the "mentions & replies
+// only" notification level (see chatPrefs.ts's ChatNotifLevel).
+function messageMentionsOrReplies(content: string, replyToSenderName: string | undefined, displayName: string): boolean {
+  const mentionTag = `@${displayName.replace(/\s/g, '_')}`;
+  return content.includes(mentionTag) || replyToSenderName === displayName;
+}
+
+// Tracks "typing" presence for a room/DM (scopeKey = 'team' or a dm_channel_id).
+// Call the returned function on every composer keystroke; it re-tracks 'typing'
+// at most once per keystroke burst and clears itself after 2.5s of no input.
+function useTypingTracker(scopeKey: string) {
+  const { currentUser } = useApp();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingRef = useRef(false);
+  return () => {
+    if (!currentUser) return;
+    if (!typingRef.current) {
+      typingRef.current = true;
+      window.warroom.presence.track({ userId: currentUser.id, displayName: currentUser.displayName, typing: scopeKey });
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      typingRef.current = false;
+      window.warroom.presence.track({ userId: currentUser.id, displayName: currentUser.displayName, typing: null });
+    }, 2500);
+  };
+}
+
+function TypingIndicator({ scopeKey }: { scopeKey: string }) {
+  const { presenceState, currentUser } = useApp();
+  const names = typingDisplayNamesFor(presenceState, scopeKey, currentUser?.id);
+  if (names.length === 0) return null;
+  const text = names.length === 1 ? `${names[0]} is typing…` : names.length === 2 ? `${names[0]} and ${names[1]} are typing…` : `${names.length} people are typing…`;
+  return <div className="px-3 pb-1 text-[10px] shrink-0" style={{ color: 'var(--nav-inactive-color)' }}>{text}</div>;
+}
 
 export default function Chat() {
-  const { currentUser, currentTeam, chatOpen, setCurrentUser, setCurrentTeam, setTeamMembers, pendingChatTarget, setPendingChatTarget } = useApp();
+  const { currentUser, currentTeam, chatOpen, setCurrentUser, setCurrentTeam, setTeamMembers, pendingChatTarget, setPendingChatTarget, setPresenceState } = useApp();
   const [ready, setReady] = useState(false);
   const [chatView, setChatView] = useState<ChatView>('team');
   const [showSettings, setShowSettings] = useState(false);
@@ -176,6 +217,55 @@ export default function Chat() {
     return off;
   }, [currentTeam?.id, currentTeam?.invite_code]);
 
+  // Presence: join once per team, always (not gated on chatOpen) so the online
+  // dot stays accurate even with the panel closed — same reasoning as the
+  // always-mounted unread-counting instance. Leaves on team change/sign-out.
+  useEffect(() => {
+    if (!currentTeam || !currentUser) return;
+    window.warroom.presence.join(currentTeam.id);
+    window.warroom.presence.track({ userId: currentUser.id, displayName: currentUser.displayName, typing: null });
+    const off = window.warroom.presence.onSync((state) => setPresenceState(state));
+    return () => { off(); window.warroom.presence.leave(); setPresenceState({}); };
+  }, [currentTeam?.id, currentUser?.id]);
+
+  // Desktop notifications for DMs the user isn't currently looking at — the
+  // per-open-DM subscription (DMBody) can't cover this, so this listens to
+  // every DM insert across the team (RLS still scopes it to channels the user
+  // is actually in) and decides per chatPrefs' per-chat notification level.
+  // Team-room notifications are simpler and live in ChatBody's own always-
+  // mounted subscription instead, since that one already runs regardless of view.
+  const chatViewRef = useRef(chatView);
+  chatViewRef.current = chatView;
+  useEffect(() => {
+    if (!currentTeam || !currentUser) return;
+    window.warroom.chat.subscribeAllDMs(currentTeam.id);
+    const off = window.warroom.chat.onAnyDMMessage(async (msg: any) => {
+      if (msg.sender_id === currentUser.id) return; // never notify yourself
+      const level = getChatNotifLevel(msg.dm_channel_id);
+      if (level === 'none') return;
+      const cv = chatViewRef.current;
+      const viewingThisDM = useApp.getState().chatOpen && typeof cv === 'object' && cv.kind === 'dm' && cv.channel.id === msg.dm_channel_id;
+      if (viewingThisDM) return;
+      try {
+        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const decoded = await decryptMessage(key, msg);
+        if (level === 'mentions' && !messageMentionsOrReplies(decoded.content, decoded.reply_to_sender_name, currentUser.displayName)) return;
+        window.warroom.chat.showNotification({
+          title: decoded.sender_name, body: decoded.content.slice(0, 200), targetKind: 'dm', channelId: msg.dm_channel_id,
+        });
+      } catch {}
+    });
+    return () => { off(); window.warroom.chat.unsubscribeAllDMs(); };
+  }, [currentTeam?.id, currentUser?.id]);
+
+  // A notification click (from either subscription above) should focus and
+  // jump straight to that chat, same mechanism as a Quick Chat pin.
+  useEffect(() => {
+    return window.warroom.chat.onNotificationClicked((t) => {
+      setPendingChatTarget(t.kind === 'team' ? { kind: 'team' } : { kind: 'dm', channelId: t.channelId! });
+    });
+  }, []);
+
   // Centralized sign-out: clears Supabase session, saved auto-login credentials,
   // all in-memory chat state, the cached optimistic data, and resets the view.
   async function handleSignOut() {
@@ -205,6 +295,7 @@ export default function Chat() {
         onDMSettings={() => { if (inDM) setDmSettingsFor((chatView as any).channel); }}
         onDMList={() => setChatView('dm-list')}
         onFiles={() => setChatView('files')}
+        onPins={() => setChatView('pins')}
         onSignOut={handleSignOut}
         filesBarStyle={filesBarStyle}
       />
@@ -219,7 +310,7 @@ export default function Chat() {
             onOpenDM={(ch) => setChatView({ kind: 'dm', channel: ch })}
           />
         ) : typeof chatView === 'object' && chatView.kind === 'dm' ? (
-          <DMBody channel={chatView.channel} />
+          <DMPane channel={chatView.channel} />
         ) : (
           <TeamRoomPane chatView={chatView} setChatView={setChatView} filesBarStyle={filesBarStyle} />
         )}
@@ -236,42 +327,77 @@ export default function Chat() {
   );
 }
 
-// ─── Team room pane (Chat | Files split, or Chat with a Files icon) ───────────
+// A message's DOM node (id="msg-<id>") is always present under the Chat tab —
+// used both by in-thread "jump to quoted message" and by the Pins tab's
+// "Jump to message" (which first switches tabs, then scrolls once mounted).
+function scrollToMessageEl(id: string) {
+  const el = document.getElementById(`msg-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.style.transition = 'background-color 0.3s';
+  el.style.backgroundColor = 'var(--nav-hover-bg)';
+  setTimeout(() => { el.style.backgroundColor = ''; }, 900);
+}
+
+function TabBar({ tabs, active, onSelect }: { tabs: { key: string; label: string }[]; active: string; onSelect: (k: string) => void }) {
+  return (
+    <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          className="flex-1 text-[11px] font-semibold py-1.5 transition"
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: active === t.key ? 'var(--ink)' : 'var(--nav-inactive-color)',
+            borderBottom: active === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+          }}
+          onClick={() => onSelect(t.key)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Team room pane (Chat / Files / Pins split, or Chat with icon buttons) ────
 
 function TeamRoomPane({ chatView, setChatView, filesBarStyle }: {
   chatView: ChatView; setChatView: (v: ChatView) => void; filesBarStyle: FilesBarStyle;
 }) {
-  const showingFiles = chatView === 'files';
+  const { currentTeam } = useApp();
+  const active = chatView === 'files' ? 'files' : chatView === 'pins' ? 'pins' : 'chat';
   return (
     <div className="flex flex-col h-full">
       {filesBarStyle === 'split' && (
-        <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
-          <button
-            className="flex-1 text-[11px] font-semibold py-1.5 transition"
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: !showingFiles ? 'var(--ink)' : 'var(--nav-inactive-color)',
-              borderBottom: !showingFiles ? '2px solid var(--accent)' : '2px solid transparent',
-            }}
-            onClick={() => setChatView('team')}
-          >
-            Chat
-          </button>
-          <button
-            className="flex-1 text-[11px] font-semibold py-1.5 transition"
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: showingFiles ? 'var(--ink)' : 'var(--nav-inactive-color)',
-              borderBottom: showingFiles ? '2px solid var(--accent)' : '2px solid transparent',
-            }}
-            onClick={() => setChatView('files')}
-          >
-            Files
-          </button>
-        </div>
+        <TabBar
+          tabs={[{ key: 'chat', label: 'Chat' }, { key: 'files', label: 'Files' }, { key: 'pins', label: 'Pins' }]}
+          active={active}
+          onSelect={(k) => setChatView(k === 'chat' ? 'team' : (k as ChatView))}
+        />
       )}
       <div className="flex-1 min-h-0">
-        {showingFiles ? <TeamFiles /> : <ChatBody />}
+        {active === 'files' ? <TeamFiles />
+          : active === 'pins' && currentTeam ? <PinsPanel teamId={currentTeam.id} onJumpTo={(id) => { setChatView('team'); setTimeout(() => scrollToMessageEl(id), 50); }} />
+          : <ChatBody />}
+      </div>
+    </div>
+  );
+}
+
+// ─── DM pane (Chat / Pins split — DMs have no Files list, so this always shows
+// the tab bar regardless of the team's files-bar-style setting, which only
+// governs the 3-way Chat/Files/Pins tradeoff in team rooms) ────────────────────
+
+function DMPane({ channel }: { channel: DMChannel }) {
+  const [sub, setSub] = useState<'chat' | 'pins'>('chat');
+  return (
+    <div className="flex flex-col h-full">
+      <TabBar tabs={[{ key: 'chat', label: 'Chat' }, { key: 'pins', label: 'Pins' }]} active={sub} onSelect={(k) => setSub(k as 'chat' | 'pins')} />
+      <div className="flex-1 min-h-0">
+        {sub === 'pins'
+          ? <PinsPanel dmChannelId={channel.id} onJumpTo={(id) => { setSub('chat'); setTimeout(() => scrollToMessageEl(id), 50); }} />
+          : <DMBody channel={channel} />}
       </div>
     </div>
   );
@@ -279,13 +405,14 @@ function TeamRoomPane({ chatView, setChatView, filesBarStyle }: {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function ChatHeader({ chatView, onBack, onSettings, onDMSettings, onDMList, onFiles, onSignOut, filesBarStyle }: {
+function ChatHeader({ chatView, onBack, onSettings, onDMSettings, onDMList, onFiles, onPins, onSignOut, filesBarStyle }: {
   chatView: ChatView;
   onBack: () => void;
   onSettings: () => void;
   onDMSettings: () => void;
   onDMList: () => void;
   onFiles: () => void;
+  onPins: () => void;
   onSignOut: () => void;
   filesBarStyle: FilesBarStyle;
 }) {
@@ -294,11 +421,13 @@ function ChatHeader({ chatView, onBack, onSettings, onDMSettings, onDMList, onFi
   const inDM = typeof chatView === 'object' && chatView.kind === 'dm';
   const inDMList = chatView === 'dm-list';
   const inFiles = chatView === 'files';
+  const inPins = chatView === 'pins';
   const inSubview = inDM || inDMList;
 
   let title = currentTeam ? currentTeam.name : 'Team Chat';
   if (inDMList) title = 'All Chats';
   if (inFiles) title = 'Team Files';
+  if (inPins) title = 'Pinned Messages';
   if (inDM) title = (chatView as any).channel.name ?? dmChannelTitle((chatView as any).channel);
 
   return (
@@ -322,7 +451,10 @@ function ChatHeader({ chatView, onBack, onSettings, onDMSettings, onDMList, onFi
       </div>
 
       {currentTeam && !inSubview && filesBarStyle === 'icon' && (
-        <IconBtn title="Team files" onClick={onFiles}><FilesIcon /></IconBtn>
+        <>
+          <IconBtn title="Team files" onClick={onFiles}><FilesIcon /></IconBtn>
+          <IconBtn title="Pinned messages" onClick={onPins}><PinIcon /></IconBtn>
+        </>
       )}
       {currentTeam && !inSubview && (
         <IconBtn title="All chats" onClick={onDMList}><DMIcon /></IconBtn>
@@ -354,8 +486,38 @@ function ChatBody() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const notifyTyping = useTypingTracker('team');
+
+  // messageId -> pinId, seeded once on mount. Only reflects pin/unpin actions
+  // taken from this session live (see handleTogglePin) — the Pins tab itself
+  // (PinsPanel.tsx) is the fully realtime source of truth.
+  const [pinnedMap, setPinnedMap] = useState<Map<string, string>>(new Map());
 
   useAutoGrowTextarea(textareaRef, panelRef, composerText);
+
+  useEffect(() => {
+    if (!currentTeam) return;
+    window.warroom.pins.getAll({ teamId: currentTeam.id }).then((res) => {
+      if (res.ok) setPinnedMap(new Map((res.data as PinnedMessage[]).filter((p) => p.message_id).map((p) => [p.message_id as string, p.id])));
+    });
+  }, [currentTeam?.id]);
+
+  async function handleTogglePin(m: ChatMessageType) {
+    if (!currentTeam || !currentUser) return;
+    const existingPinId = pinnedMap.get(m.id);
+    if (existingPinId) {
+      const res = await window.warroom.pins.unpin(existingPinId);
+      if (res.ok) setPinnedMap((prev) => { const next = new Map(prev); next.delete(m.id); return next; });
+      return;
+    }
+    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const [senderName, content] = await Promise.all([encryptText(key, m.sender_name), encryptText(key, m.content)]);
+    const res = await window.warroom.pins.pin({
+      teamId: currentTeam.id, messageId: m.id, senderName, content,
+      pinnedById: currentUser.id, pinnedByName: currentUser.displayName,
+    });
+    if (res.ok && res.data) setPinnedMap((prev) => new Map(prev).set(m.id, res.data.id));
+  }
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -370,8 +532,19 @@ function ChatBody() {
       setMessages((prev) => prev.find((m) => m.id === decoded.id) ? prev : [...prev, decoded]);
       // Read the live value, not the one captured when this subscription was set up
       // (the effect only re-runs on team change), so the unread badge doesn't tick up
-      // while the chat panel is actually open.
-      if (!useApp.getState().chatOpen) incrementUnread();
+      // — and no desktop notification fires — while the chat panel is actually open
+      // and showing this room (ChatBody only mounts under exactly that condition,
+      // or as the always-mounted background instance when the panel is closed).
+      if (!useApp.getState().chatOpen) {
+        incrementUnread();
+        if (decoded.sender_id !== currentUser?.id) {
+          const level = getChatNotifLevel('team');
+          const isMention = currentUser ? messageMentionsOrReplies(decoded.content, decoded.reply_to_sender_name, currentUser.displayName) : false;
+          if (level === 'all' || (level === 'mentions' && isMention)) {
+            window.warroom.chat.showNotification({ title: decoded.sender_name, body: (decoded.content ?? '').slice(0, 200), targetKind: 'team' });
+          }
+        }
+      }
     });
     return () => { off(); window.warroom.chat.unsubscribe(); };
   }, [currentTeam?.id]);
@@ -410,6 +583,7 @@ function ChatBody() {
   function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setComposerText(val);
+    notifyTyping();
     const cursor = e.target.selectionStart ?? val.length;
     const match = val.slice(0, cursor).match(/@(\w*)$/);
     if (match) { setShowMentionPicker(true); setMentionQuery(match[1]); }
@@ -693,7 +867,8 @@ function ChatBody() {
                   <ChatMessageBubble key={m.id} message={m} isSelf={m.sender_id === currentUser?.id}
                     onEdit={handleEditMessage} onDelete={handleDeleteMessage}
                     onReply={() => handleReply(m.id, m.sender_name, m.content)}
-                    onQuoteClick={scrollToMessage} />
+                    onQuoteClick={scrollToMessage}
+                    onPin={() => handleTogglePin(m)} isPinned={pinnedMap.has(m.id)} />
                 );
               }
               return nodes;
@@ -701,6 +876,7 @@ function ChatBody() {
         }
         <div ref={bottomRef} />
       </div>
+      <TypingIndicator scopeKey="team" />
 
       {/* Composer */}
       <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--border-side)' }}>
@@ -801,7 +977,7 @@ async function forwardSpeechdocToTeamFiles(currentTeam: any, currentUser: any, f
 // ─── All chats (team room + DMs + group DMs) ───────────────────────────────────
 
 function AllChatsList({ onOpenTeam, onOpenDM }: { onOpenTeam: () => void; onOpenDM: (ch: DMChannel) => void }) {
-  const { currentTeam, currentUser, teamMembers } = useApp();
+  const { currentTeam, currentUser, teamMembers, presenceState } = useApp();
   const [channels, setChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewDM, setShowNewDM] = useState(false);
@@ -903,16 +1079,18 @@ function AllChatsList({ onOpenTeam, onOpenDM }: { onOpenTeam: () => void; onOpen
         ) : channels.map((ch) => {
           const others = ch.members.filter((m) => m.user_id !== currentUser?.id);
           const name = ch.name ?? (others.length ? others.map((m) => m.display_name).join(', ') : ch.members[0]?.display_name ?? 'DM');
-          const spec: AvatarSpec = ch.members.length > 2
+          const isGroup = ch.members.length > 2;
+          const spec: AvatarSpec = isGroup
             ? { kind: 'group', members: ch.members.map((m) => ({ id: m.user_id, name: m.display_name })) }
             : { kind: 'dm', id: (others[0] ?? ch.members[0])?.user_id ?? ch.id, name };
+          const online = isGroup ? undefined : isUserOnline(presenceState, (others[0] ?? ch.members[0])?.user_id ?? '');
           return (
             <button key={ch.id} className="w-full text-left px-3 py-2.5 rounded-lg transition flex items-center gap-2.5"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-card)'; }}
               onClick={() => onOpenDM(ch)}>
-              <ChatAvatar spec={spec} size={26} />
+              <ChatAvatar spec={spec} size={26} online={online} />
               <div className="min-w-0">
                 <div className="text-xs font-semibold truncate">{name}</div>
                 <div className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
@@ -1026,8 +1204,33 @@ function DMBody({ channel }: { channel: DMChannel }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const notifyTyping = useTypingTracker(channel.id);
+  const [pinnedMap, setPinnedMap] = useState<Map<string, string>>(new Map());
 
   useAutoGrowTextarea(textareaRef, panelRef, composerText);
+
+  useEffect(() => {
+    window.warroom.pins.getAll({ dmChannelId: channel.id }).then((res) => {
+      if (res.ok) setPinnedMap(new Map((res.data as PinnedMessage[]).filter((p) => p.message_id).map((p) => [p.message_id as string, p.id])));
+    });
+  }, [channel.id]);
+
+  async function handleTogglePin(m: DMMessage) {
+    if (!currentTeam || !currentUser) return;
+    const existingPinId = pinnedMap.get(m.id);
+    if (existingPinId) {
+      const res = await window.warroom.pins.unpin(existingPinId);
+      if (res.ok) setPinnedMap((prev) => { const next = new Map(prev); next.delete(m.id); return next; });
+      return;
+    }
+    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const [senderName, content] = await Promise.all([encryptText(key, m.sender_name), encryptText(key, m.content)]);
+    const res = await window.warroom.pins.pin({
+      dmChannelId: channel.id, messageId: m.id, senderName, content,
+      pinnedById: currentUser.id, pinnedByName: currentUser.displayName,
+    });
+    if (res.ok && res.data) setPinnedMap((prev) => new Map(prev).set(m.id, res.data.id));
+  }
 
   useEffect(() => {
     loadMessages();
@@ -1237,7 +1440,8 @@ function DMBody({ channel }: { channel: DMChannel }) {
                     onEdit={(id, txt) => { setEditingId(id); setEditingText(txt); }}
                     onDelete={handleDelete}
                     onReply={() => handleReply(m.id, m.sender_name, m.content)}
-                    onQuoteClick={scrollToMessage} />
+                    onQuoteClick={scrollToMessage}
+                    onPin={() => handleTogglePin(m)} isPinned={pinnedMap.has(m.id)} />
                 );
               }
               return nodes;
@@ -1245,6 +1449,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
         }
         <div ref={bottomRef} />
       </div>
+      <TypingIndicator scopeKey={channel.id} />
 
       {/* Composer */}
       <div className="shrink-0 px-3 pt-2 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--border-side)' }}>
@@ -1265,7 +1470,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
             placeholder="Message…"
             style={{ paddingRight: 40, paddingBottom: 34 }}
             value={composerText}
-            onChange={(e) => setComposerText(e.target.value)}
+            onChange={(e) => { setComposerText(e.target.value); notifyTyping(); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               if (e.key === 'Escape') setReplyingTo(null);
@@ -1285,12 +1490,14 @@ function DMBody({ channel }: { channel: DMChannel }) {
 
 // ─── DM message bubble ────────────────────────────────────────────────────────
 
-function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuoteClick }: {
+function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuoteClick, onPin, isPinned }: {
   message: DMMessage; isSelf: boolean;
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onReply: () => void;
   onQuoteClick: (id: string) => void;
+  onPin: () => void;
+  isPinned: boolean;
 }) {
   const { flowsIndex, setFlowsIndex, update, setView } = useApp();
   const [hovered, setHovered] = React.useState(false);
@@ -1432,6 +1639,18 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
             ><DMTrashIcon /></button>
           </>
         )}
+        <button
+          onClick={onPin}
+          title={isPinned ? 'Unpin' : 'Pin'}
+          className="w-5 h-5 flex items-center justify-center rounded transition"
+          style={{
+            color: isPinned ? '#d97706' : 'var(--nav-inactive-color)', background: 'transparent', border: 'none',
+            cursor: hovered || isPinned ? 'pointer' : 'default',
+            opacity: hovered || isPinned ? 1 : 0, pointerEvents: hovered || isPinned ? 'auto' : 'none',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#d97706'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = isPinned ? '#d97706' : 'var(--nav-inactive-color)'; }}
+        ><PinIcon /></button>
         <button
           onClick={onReply}
           title="Reply"

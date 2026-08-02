@@ -152,6 +152,11 @@ interface AppState {
   // which room/DM to jump to; Chat.tsx consumes and clears it.
   pendingChatTarget: { kind: 'team' } | { kind: 'dm'; channelId: string } | null;
   setPendingChatTarget: (t: { kind: 'team' } | { kind: 'dm'; channelId: string } | null) => void;
+  // Raw Supabase presence state (one entry per connected client), keyed by
+  // Supabase's auto-assigned connection key — read via presenceList() in
+  // chatPrefs.ts rather than this shape directly.
+  presenceState: Record<string, { userId: string; displayName: string; typing: string | null }[]>;
+  setPresenceState: (s: Record<string, { userId: string; displayName: string; typing: string | null }[]>) => void;
   geminiActiveId: string | null;
   setGeminiActiveId: (id: string | null) => void;
   setCurrentUser: (user: ChatUser | null) => void;
@@ -250,6 +255,8 @@ export const useApp = create<AppState>((set, get) => ({
   chatOpen: false,
   pendingChatTarget: null,
   setPendingChatTarget: (t) => set({ pendingChatTarget: t }),
+  presenceState: {},
+  setPresenceState: (s) => set({ presenceState: s }),
   geminiOpen: false,
   geminiActiveId: null,
   impactCalcOpen: false,

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { ChatMember } from '../types';
+import NotifLevelPicker from './NotifLevelPicker';
 
 interface Props {
   onClose: () => void;
@@ -178,6 +179,8 @@ export default function RoomSettings({ onClose }: Props) {
             Share this code so teammates can join with "Join team"
           </p>
         </div>
+
+        <NotifLevelPicker chatId="team" />
 
         {/* Leave room */}
         <div>

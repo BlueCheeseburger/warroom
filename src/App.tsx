@@ -167,6 +167,8 @@ export default function App() {
       if (!stored) return;
       const newBanners: { eventType: 'pf' | 'ld'; resolution: string; period: string }[] = [];
       for (const et of ['pf', 'ld'] as const) {
+        // Only surface banners for the debater's own event
+        if (event !== et) continue;
         const data = stored[et];
         if (!data?.brief && data?.current && !data.current.includes('not found')) {
           const key = `${et}:${data.current}`;
@@ -201,7 +203,7 @@ export default function App() {
       unsubUpdated?.();
       unsubNavigate?.();
     };
-  }, [setView]);
+  }, [setView, event]);
 
   // ── Tabroom Monitor event handlers ─────────────────────────────────────────
   // NOTE: Handlers use useApp.getState() so they always read fresh Zustand state
@@ -603,54 +605,83 @@ export default function App() {
     setBanners((prev) => prev.filter((b) => `${b.eventType}:${b.resolution}` !== key));
   }
 
-  const BANNER_H = 52;
+  // Titlebar is h-9 (36px) — float banners just below it, over content, not in-flow.
+  const TITLEBAR_H = 36;
+  const BANNER_GAP = 8;
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--bg-main)' }}>
-      {/* New-topic banners — fixed at very top, push layout down */}
-      {banners.map((banner) => {
-        const key = `${banner.eventType}:${banner.resolution}`;
-        const bgColor = banner.eventType === 'pf' ? '#F59E0B' : '#EF4444';
-        return (
-          <div
-            key={key}
-            className="flex items-center px-4 cursor-pointer select-none"
-            style={{
-              backgroundColor: bgColor,
-              height: BANNER_H,
-              flexShrink: 0,
-              animation: 'slideDown 0.2s ease',
-            }}
-            onClick={() => {
-              dismissBanner(key);
-              setView({ kind: 'topics', tab: banner.eventType });
-            }}
-          >
-            <span className="relative flex h-3 w-3 mr-3 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
-            </span>
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="font-bold text-white text-sm shrink-0">
-                🔔 NEW {banner.eventType === 'pf' ? 'PF' : 'LD'} TOPIC DROPPED
-              </span>
-              <span className="text-white/90 text-xs truncate">
-                {banner.resolution}
-              </span>
-            </div>
-            <span className="text-white font-medium text-xs mr-4 whitespace-nowrap shrink-0">
-              View Details →
-            </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); dismissBanner(key); }}
-              className="text-white/80 hover:text-white text-base font-bold ml-1 shrink-0 leading-none"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-            >
-              ✕
-            </button>
-          </div>
-        );
-      })}
+      {/* New-topic banners — float below the titlebar, over content, don't affect layout */}
+      {banners.length > 0 && (
+        <div
+          className="flex flex-col gap-2"
+          style={{
+            position: 'fixed',
+            top: TITLEBAR_H + BANNER_GAP,
+            left: 12,
+            right: 12,
+            zIndex: 9998,
+            pointerEvents: 'none',
+          }}
+        >
+          {banners.map((banner) => {
+            const key = `${banner.eventType}:${banner.resolution}`;
+            const bgColor = banner.eventType === 'pf' ? '#F59E0B' : '#EF4444';
+            return (
+              <div
+                key={key}
+                className="flex items-center px-4 cursor-pointer select-none rounded-xl"
+                style={{
+                  backgroundColor: bgColor,
+                  minHeight: 52,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                  animation: 'slideDown 0.2s ease',
+                  pointerEvents: 'auto',
+                }}
+                onClick={() => {
+                  dismissBanner(key);
+                  setView({ kind: 'topics', tab: banner.eventType });
+                }}
+              >
+                <span className="relative flex h-3 w-3 mr-3 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+                </span>
+                <div className="flex-1 min-w-0 flex items-center gap-2 py-2.5">
+                  <span className="font-bold text-white text-sm shrink-0">
+                    🔔 NEW {banner.eventType === 'pf' ? 'PF' : 'LD'} TOPIC DROPPED
+                  </span>
+                  <span className="text-white/90 text-xs truncate">
+                    {banner.resolution}
+                  </span>
+                </div>
+                <span className="text-white font-medium text-xs mr-2 whitespace-nowrap shrink-0">
+                  View Details →
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); dismissBanner(key); }}
+                  title="Dismiss"
+                  className="flex items-center justify-center text-white/90 hover:text-white shrink-0 rounded-full transition"
+                  style={{
+                    background: 'rgba(255,255,255,0.16)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    width: 26,
+                    height: 26,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.3)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.16)'; }}
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <TitleBar />
       <div className="flex-1 flex min-h-0">
         <Sidebar />

@@ -44,6 +44,7 @@ const SETTINGS_LOCALSTORAGE_KEYS = [
   'warroom-quick-chat-enabled',
   'warroom-quick-chat-pins',
   'warroom-quick-chat-bindings',
+  'warroom-chat-notif-levels',
   'warroom-disabled-shortcuts',
   'warroom-shortcut-bindings',
 ];

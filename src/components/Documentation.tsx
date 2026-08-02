@@ -1990,13 +1990,20 @@ export default function Documentation() {
             <LI><Code>save_card_to_library</Code> — saves a card with full verbatim body text to the <Code>__agent_inbox__</Code> block inside the <Code>__agent__</Code> case ("Agent Saves"). Cards saved this way appear in the normal card library.</LI>
             <LI><Code>fetch_article</Code> — fetches/extracts text from a URL for cutting cards from web sources</LI>
             <LI><Code>get_skill</Code> / <Code>write_skill</Code> — load or save a skill <Code>.md</Code> file</LI>
-            <LI><Code>search_tabroom_tournament</Code> · <Code>get_tournament_details</Code> · <Code>save_tournament_to_app</Code> · <Code>search_judge</Code> — Tabroom lookups</LI>
+            <LI><Code>search_tabroom_tournament</Code> · <Code>get_tournament_details</Code> · <Code>save_tournament_to_app</Code> · <Code>search_judge</Code> — Tabroom lookups. <Code>search_judge</Code> caches the paradigm to the judge record (creating one if it doesn't exist yet), so repeat lookups of the same judge are instant unless <Code>refresh</Code> is passed.</LI>
             <LI><Code>scout_opponent</Code> — pulls an opponent's disclosed rounds/cites from OpenCaselist (if linked) and calls the same AI scouting pipeline as the opponent profile's "AI Scout" card, returning an AFF/NEG summary with citations. Caches the result to <Code>disclosures.aiScout</Code> so repeat asks are instant unless <Code>refresh</Code> is passed.</LI>
             <LI><Code>navigate_app</Code> — opens any view for the user (top-level, or a case/block/opponent/tournament/flow resolved by name)</LI>
             <LI><Code>list_flows</Code> / <Code>read_flow</Code> / <Code>edit_flow_cell</Code> — list flows, read a flow's columns + cells, and write individual cells. Edits write to <Code>flow_data_&lt;id&gt;</Code> and fire a <Code>warroom-flow-updated</Code> event so an open flow reloads live.</LI>
           </UL>
           <P>
             The agent runs a minimum of 3 searches per evidence request using varied query terms. Saved cards always use the complete verbatim card body — never a summary. The save handler validates the body is non-empty before writing to the DB.
+          </P>
+          <P>
+            Click any completed tool-call step (search, skill load, nav/flow action, or save) to expand a transparency panel showing exactly what args were sent and what the tool returned — useful for debugging why the agent did something. Collapsed by default; click again to close.
+          </P>
+          <H3>Streaming</H3>
+          <P>
+            Text responses stream in token-by-token across every provider (Gemini, OpenAI, Anthropic, Grok, LM Studio) — <Code>chat:geminiAgentTurn</Code> in <Code>electron/main.ts</Code> parses each provider's own SSE format and forwards deltas to the renderer over a <Code>chat:agentStreamChunk</Code> event scoped by a per-turn <Code>requestId</Code>, while still accumulating the full response server-side for tool-call detection and title extraction (unchanged from the pre-streaming contract). Gemini specifically has a known API quirk — <Code>MALFORMED_FUNCTION_CALL</Code> — where streamed tool-calling occasionally breaks down mid-response; when that happens the handler transparently retries that turn once on the non-streaming endpoint before giving up.
           </P>
           <H3>Chat sessions</H3>
           <P>
@@ -2191,6 +2198,60 @@ export default function Documentation() {
             <Code>QuickChatBar</Code>, just left of the main chat icon; clicking one (or firing its
             shortcut) sets <Code>appStore</Code>'s <Code>pendingChatTarget</Code>, which the
             always-mounted <Code>Chat()</Code> component consumes to jump to that room/DM.
+          </P>
+          <H3>Pinned messages</H3>
+          <P>
+            A shared pin board per team room or per DM/group DM, backed by the{' '}
+            <Code>pinned_messages</Code> table — exactly one of <Code>team_id</Code>/
+            <Code>dm_channel_id</Code> is set. Pinning snapshots <Code>sender_name</Code>/
+            <Code>content</Code> (encrypted client-side, same convention as a reply-to quote) so a
+            pin survives the original message being edited or deleted; <Code>message_id</Code> is
+            kept as a soft link purely for "Jump to message". Reached via a "Pins" tab — a 3-way
+            Chat/Files/Pins bar in team rooms (or a Pins icon alongside Files in icon mode), and an
+            always-shown 2-way Chat/Pins bar in DMs (DMs ignore the files-bar-style setting since
+            they have no Files tab to make a tradeoff against). The pin/unpin toggle lives in each
+            message's hover-action row (<Code>PinIcon</Code> in ChatMessage.tsx). Any team/DM member
+            can unpin, not just whoever pinned it — a shared board, not a personal one. Realtime
+            subscriptions are keyed per scope in a <Code>Map</Code> (<Code>pinsChannels</Code> in
+            main.ts) rather than one shared channel variable, since the message list (for the
+            pin-icon highlight) and the Pins tab can both be subscribed at once.
+          </P>
+          <H3>Per-chat desktop notifications</H3>
+          <P>
+            Each chat (team room = <Code>'team'</Code>, or a dm_channel_id) has an independent
+            notification level — All messages / Mentions &amp; replies only / Nothing — set in
+            Room/DM Settings (<Code>NotifLevelPicker.tsx</Code>) and stored in localStorage (
+            <Code>warroom-chat-notif-levels</Code>, <Code>chatPrefs.ts</Code>). Team-room
+            notifications fire from <Code>ChatBody</Code>'s existing always-mounted subscription
+            (the background instance that also drives the unread badge). DMs need a separate{' '}
+            <Code>chat:subscribeAllDMs</Code> IPC subscription (no column filter — RLS still scopes
+            it to the user's own channels) since the per-open-DM subscription only exists while that
+            DM is actually open. "Mentions &amp; replies" is decided by{' '}
+            <Code>messageMentionsOrReplies()</Code>: the decrypted content contains{' '}
+            <Code>@Display_Name</Code>, or the message directly replies to one the user sent
+            (checked via <Code>reply_to_sender_name</Code>, not a full thread trace). The renderer
+            decides whether to notify (it's the only side with the decrypted content) and calls{' '}
+            <Code>chat:showNotification</Code> just to display it — deliberately separate from the
+            daemon's category-toggle system (pairings/results/etc.), which gates a different,
+            background-polling notification path.
+          </P>
+          <H3>Presence: online status and typing</H3>
+          <P>
+            One Supabase presence channel per team (<Code>presence-&lt;teamId&gt;</Code>) covers
+            both online status for every member and typing state for the team room and every DM —
+            each client tracks <Code>{'{ userId, displayName, typing }'}</Code>, where{' '}
+            <Code>typing</Code> is a scope key (<Code>'team'</Code> or a dm_channel_id) or{' '}
+            <Code>null</Code>. No message content ever crosses this channel. Deliberately lighter
+            weight than the live-flow channel's private+RLS setup — presence here only reveals
+            "so-and-so is online/typing", so an unauthenticated but team-scoped channel name is a
+            proportionate tradeoff. <Code>useTypingTracker(scopeKey)</Code> (Chat.tsx) re-tracks on
+            each composer keystroke and clears itself after 2.5s idle. Raw presence state lives in{' '}
+            <Code>appStore</Code>'s <Code>presenceState</Code> (not chat-local) so any component —
+            the all-chats list, a message composer — can read it via <Code>chatPrefs.ts</Code>'s{' '}
+            <Code>presenceList()</Code>/<Code>isUserOnline()</Code>/<Code>typingDisplayNamesFor()</Code>{' '}
+            without prop drilling. <Code>ChatAvatar</Code>'s optional <Code>online</Code> prop draws
+            the status dot; currently wired up in the all-chats DM list (1:1 DMs only — a group DM's
+            avatar has no single online state to show).
           </P>
         </section>
 
