@@ -234,6 +234,7 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-general',         label: 'General' },
   { id: 'settings-event',           label: 'Debate event' },
   { id: 'settings-apikey',          label: 'AI API key' },
+  { id: 'settings-ai-behavior',     label: 'AI behavior' },
   { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
   { id: 'settings-gdrive',          label: 'Google Drive' },
   { id: 'settings-flow',            label: 'Flow' },
@@ -550,6 +551,7 @@ export default function Settings() {
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
+  const [autoRenameChat, setAutoRenameChat] = useState(false);
   // Background notification categories — main-process state (electron/main.ts's
   // fireNotif gate), not localStorage, since the headless daemon fires these too
   // and needs the same app_settings file the GUI reads/writes. All default ON.
@@ -841,6 +843,7 @@ export default function Settings() {
       } else {
         setTokenSavingDefault((s as any)?.geminiModel === 'flash-lite');
       }
+      setAutoRenameChat(!!(s as any)?.autoRenameChat);
       const lmBaseUrlLoaded = (s as any)?.lmstudioBaseUrl || LMSTUDIO_DEFAULT_BASE_URL;
       const lmModelLoaded = (s as any)?.lmstudioModel || LMSTUDIO_DEFAULT_MODEL;
       const lmOptionsLoaded = typeof (s as any)?.lmstudioOptions === 'string' ? (s as any).lmstudioOptions : '';
@@ -1051,6 +1054,13 @@ export default function Settings() {
     const s = await window.warroom?.storage.read('app_settings') as any ?? {};
     await window.warroom?.storage.write('app_settings', { ...s, tokenSavingDefault: val });
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { tokenSavingDefault: val } }));
+  }
+
+  async function saveAutoRenameChat(val: boolean) {
+    setAutoRenameChat(val);
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, autoRenameChat: val });
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { autoRenameChat: val } }));
   }
 
   async function saveOpenaiModel(model: string) {
@@ -2120,35 +2130,66 @@ export default function Settings() {
         )}
       </div>
 
-      {/* Token saving — provider-independent, so it lives outside every provider
-          block. It's about what Warroom SENDS (speech-doc body text), not about
-          which model receives it, and it was previously nested inside the Gemini
-          block where nobody on another provider could reach it. */}
-      {loaded && (
-        <div className="glass-card rounded-sm p-4 mb-4">
-          <div className="flex items-center justify-between">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>
-              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-                When attaching a speech doc to Warroom AI, send only underlined text, cites, and
-                headings — not small body text. Applies to every provider.
-                {apiProvider === 'gemini' && ' Auto-enabled for Flash Lite.'}
-                {apiProvider === 'lmstudio' && ' Worth leaving on for local models, which are slower and usually have a smaller context window.'}
-              </p>
+      {/* Provider-independent AI behavior toggles — kept as their own nav
+          section (rather than bare unwrapped cards) so the settings search
+          can actually find them; an unwrapped card has no settings-* id for
+          document.getElementById to match against. */}
+      <div id="settings-ai-behavior">
+        {/* Token saving — provider-independent, so it lives outside every provider
+            block. It's about what Warroom SENDS (speech-doc body text), not about
+            which model receives it, and it was previously nested inside the Gemini
+            block where nobody on another provider could reach it. */}
+        {loaded && (
+          <div className="glass-card rounded-sm p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>
+                <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                  When attaching a speech doc to Warroom AI, send only underlined text, cites, and
+                  headings — not small body text. Applies to every provider.
+                  {apiProvider === 'gemini' && ' Auto-enabled for Flash Lite.'}
+                  {apiProvider === 'lmstudio' && ' Worth leaving on for local models, which are slower and usually have a smaller context window.'}
+                </p>
+              </div>
+              <button
+                onClick={() => saveTokenSavingDefault(!tokenSavingDefault)}
+                className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+                style={{ background: tokenSavingDefault ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+              >
+                <span
+                  className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                  style={{ transform: tokenSavingDefault ? 'translateX(18px)' : 'translateX(2px)' }}
+                />
+              </button>
             </div>
-            <button
-              onClick={() => saveTokenSavingDefault(!tokenSavingDefault)}
-              className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
-              style={{ background: tokenSavingDefault ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
-            >
-              <span
-                className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
-                style={{ transform: tokenSavingDefault ? 'translateX(18px)' : 'translateX(2px)' }}
-              />
-            </button>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Auto-rename chats — off by default. Provider-independent, same reasoning
+            as token saving above: it's a behavior toggle, not tied to one provider. */}
+        {loaded && (
+          <div className="glass-card rounded-sm p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Let Warroom AI rename chats</div>
+                <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                  When on, the AI can rename a conversation's title mid-chat if the topic shifts to something the original title no longer reflects. Off by default.
+                </p>
+              </div>
+              <button
+                onClick={() => saveAutoRenameChat(!autoRenameChat)}
+                className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+                style={{ background: autoRenameChat ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+              >
+                <span
+                  className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                  style={{ transform: autoRenameChat ? 'translateX(18px)' : 'translateX(2px)' }}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* OpenCaselist */}
       <div id="settings-opencaselist" className="glass-card rounded-sm p-4 space-y-3 mb-4">
