@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
 import MentionPicker from './MentionPicker';
 import { humanizeGeminiError } from '../utils/geminiError';
@@ -583,7 +583,7 @@ interface ToolStep {
   id: string;
   tool: ToolName;
   label: string;
-  status: 'running' | 'done' | 'error' | 'cancelled';
+  status: 'running' | 'done' | 'error' | 'cancelled' | 'awaiting';
   // Populated once the call resolves — lets the transparency toggle show
   // exactly what was sent to the tool and what it returned.
   args?: Record<string, any>;
@@ -884,7 +884,13 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
             onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
           >
             <span>{step.tool === 'save_tournament_to_app' ? '🏆' : step.tool === 'write_skill' ? '📖' : '📚'}</span>
-            <span>{step.label}</span>
+            <span style={{
+              // A declined write reads as struck-through, matching cancelled steps
+              // elsewhere; one still waiting on the user is highlighted, not greyed.
+              textDecoration: step.status === 'cancelled' ? 'line-through' : undefined,
+              opacity: step.status === 'cancelled' ? 0.5 : 1,
+              color: step.status === 'awaiting' ? '#d97706' : undefined,
+            }}>{step.label}</span>
           </div>
           <StepDetail step={step} />
         </div>
@@ -1471,6 +1477,31 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; role: 'user' | 'model'; text: string } | null>(null);
   const [tokenSaving, setTokenSaving] = useState(false);
+  /**
+   * write_skill waits here for an explicit yes.
+   *
+   * Skills are re-read into the system prompt of every future session (main.ts
+   * buildCustomSkillsSuffix lists them by name), while fetch_article /
+   * search_logos / search_openevidence pull arbitrary web pages into this one.
+   * That combination lets a page the model merely *read* talk it into writing
+   * instructions that outlive the conversation. Every other tool either only
+   * reads, or writes somewhere the user can plainly see and undo; this is the
+   * one that edits what the assistant will believe next time, so it asks.
+   */
+  const [pendingSkill, setPendingSkill] = useState<{ name: string; content: string } | null>(null);
+  // Held in a ref, not in the state above, so the step-cancel path and an unmount
+  // can also settle it — an unresolved promise would wedge the tool loop forever.
+  const pendingSkillResolve = useRef<((ok: boolean) => void) | null>(null);
+
+  const resolvePendingSkill = useCallback((ok: boolean) => {
+    const fn = pendingSkillResolve.current;
+    pendingSkillResolve.current = null;
+    setPendingSkill(null);
+    fn?.(ok);
+  }, []);
+
+  // Leaving the chat mid-prompt declines rather than hanging.
+  useEffect(() => () => { pendingSkillResolve.current?.(false); pendingSkillResolve.current = null; }, []);
   const [geminiModel, setGeminiModel] = useState('flash');
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
@@ -1866,8 +1897,12 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
       ));
     onCancelStepRef.current = (stepId: string) => {
       cancelledStepIds.current.add(stepId);
+      const cancelled = steps.find((s) => s.id === stepId);
       steps = steps.map((s) => s.id === stepId ? { ...s, status: 'cancelled' } : s);
       syncSteps(steps);
+      // Cancelling the write_skill step is a decline — otherwise its approval
+      // promise never settles and the tool loop stalls.
+      if (cancelled?.tool === 'write_skill') resolvePendingSkill(false);
     };
     // Show attachment reading steps immediately
     if (attachmentReadSteps.length > 0) syncSteps(steps);
@@ -2326,7 +2361,19 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
             const skillName   = (args.skill_name ?? '').trim();
             const content     = args.content ?? '';
             const description = args.description ?? '';
-            steps = [...steps, { id: stepId, tool: 'write_skill', label: `Saving skill: ${skillName}`, status: 'running' }];
+            steps = [...steps, { id: stepId, tool: 'write_skill', label: `Save skill "${skillName}"? Waiting for you…`, status: 'awaiting' }];
+            syncSteps(steps);
+            // Blocks the tool loop until the approval card below is answered.
+            const approved = await new Promise<boolean>((resolve) => {
+              pendingSkillResolve.current = resolve;
+              setPendingSkill({ name: skillName, content });
+            });
+            if (!approved) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, label: `Declined: ${skillName}`, status: 'cancelled' } : s);
+              syncSteps(steps);
+              return { name, functionResult: `The user declined to save the skill "${skillName}". Do not retry this write or attempt to save the same content under another name; continue with the conversation instead.` };
+            }
+            steps = steps.map((s) => s.id === stepId ? { ...s, label: `Saving skill: ${skillName}`, status: 'running' } : s);
             syncSteps(steps);
             try {
               const res = await (window.warroom as any).skills.write(skillName, content);
@@ -3208,6 +3255,44 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
       {/* Composer */}
       <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-3 space-y-2"
         style={{ borderTop: '1px solid var(--border-side)' }}>
+        {/* Skill-write approval — see the pendingSkill declaration for why this gate exists. */}
+        {pendingSkill && (
+          <div className="px-2.5 py-2 rounded-lg space-y-2"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #d97706' }}>
+            <div className="flex items-center gap-1.5">
+              <span>📖</span>
+              <div className="text-[11px] font-semibold" style={{ color: 'var(--ink)' }}>
+                Save skill “{pendingSkill.name}”?
+              </div>
+            </div>
+            <div className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>
+              Warroom AI will remember this in future chats until you delete it.
+            </div>
+            <pre className="text-[10px] px-2 py-1.5 rounded max-h-32 overflow-auto whitespace-pre-wrap"
+              style={{ background: 'var(--bg-app)', border: '1px solid var(--border-subtle)', color: 'var(--ink)' }}>
+              {pendingSkill.content.slice(0, 1200)}
+              {pendingSkill.content.length > 1200 ? '\n…' : ''}
+            </pre>
+            <div className="flex items-center gap-2">
+              <button
+                className="text-[11px] px-3 py-1 rounded-lg"
+                style={{ background: '#0077ed', border: '1px solid #0077ed', color: '#fff' }}
+                onClick={() => resolvePendingSkill(true)}
+                title="Save skill"
+              >
+                Save skill
+              </button>
+              <button
+                className="text-[11px] px-3 py-1 rounded-lg"
+                style={{ background: 'transparent', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
+                onClick={() => resolvePendingSkill(false)}
+                title="Don't save"
+              >
+                Don’t save
+              </button>
+            </div>
+          </div>
+        )}
         {replyingTo && (
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0077ed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>

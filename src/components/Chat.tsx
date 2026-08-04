@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { linkifyText } from '../lib/linkify';
 import { useApp, FlowMeta } from '../store/appStore';
 import { signOut } from '../lib/supabase';
-import { getTeamKey, encryptText, encryptOutgoing, decryptMessage } from '../lib/chatCrypto';
+import { teamKeyFor, encryptText, encryptOutgoing, decryptMessage } from '../lib/chatCrypto';
 import { transcribeRecording } from '../utils/dictation';
 import { ChatMessage as ChatMessageType, DMChannel, DMMessage, PendingMention, PinnedMessage } from '../types';
 import ChatMessageBubble, { AttachmentChip as ChatAttachmentChip, PinIcon } from './ChatMessage';
@@ -210,13 +210,13 @@ export default function Chat() {
       try {
         const bytesRes = await window.warroom.teamFiles.readWatchedBytes(fileId);
         if (!bytesRes.ok || !bytesRes.data?.base64) return;
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const encData = await encryptText(key, bytesRes.data.base64);
         await window.warroom.teamFiles.updateContent(fileId, encData);
       } catch {}
     });
     return off;
-  }, [currentTeam?.id, currentTeam?.invite_code]);
+  }, [currentTeam?.id, currentTeam?.invite_code, currentTeam?.key_seed]);
 
   // Presence: join once per team, always (not gated on chatOpen) so the online
   // dot stays accurate even with the panel closed — same reasoning as the
@@ -248,7 +248,7 @@ export default function Chat() {
       const viewingThisDM = useApp.getState().chatOpen && typeof cv === 'object' && cv.kind === 'dm' && cv.channel.id === msg.dm_channel_id;
       if (viewingThisDM) return;
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const decoded = await decryptMessage(key, msg);
         if (level === 'mentions' && !messageMentionsOrReplies(decoded.content, decoded.reply_to_sender_name, currentUser.displayName)) return;
         window.warroom.chat.showNotification({
@@ -511,7 +511,7 @@ function ChatBody() {
       if (res.ok) setPinnedMap((prev) => { const next = new Map(prev); next.delete(m.id); return next; });
       return;
     }
-    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const key = await teamKeyFor(currentTeam);
     const [senderName, content] = await Promise.all([encryptText(key, m.sender_name), encryptText(key, m.content)]);
     const res = await window.warroom.pins.pin({
       teamId: currentTeam.id, messageId: m.id, senderName, content,
@@ -527,7 +527,7 @@ function ChatBody() {
     const off = window.warroom.chat.onNewMessage(async (msg: any) => {
       let decoded = msg;
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         decoded = await decryptMessage(key, msg);
       } catch {}
       setMessages((prev) => {
@@ -579,7 +579,7 @@ function ChatBody() {
     const res = await window.warroom.chat.getMessages(currentTeam.id);
     if (res.ok) {
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const decrypted = await Promise.all((res.data as any[]).map((m) => decryptMessage(key, m)));
         setMessages(decrypted as ChatMessageType[]);
         setCachedMessages('team', decrypted).catch(() => {});
@@ -756,7 +756,7 @@ function ChatBody() {
   async function submitEdit() {
     if (!editingId || !editingText.trim() || !currentTeam) { setEditingId(null); return; }
     const plain = editingText.trim();
-    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const key = await teamKeyFor(currentTeam);
     const res = await window.warroom.chat.editMessage(editingId, await encryptText(key, plain));
     if (res.ok) {
       setMessages((prev) => prev.map((m) => m.id === editingId ? { ...m, content: plain, edited: true } as any : m));
@@ -803,7 +803,7 @@ function ChatBody() {
           return { id: m.id, type: m.type, name: m.name, data };
         });
       // Encrypt content + attachment data before it ever leaves the client.
-      const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const key = await teamKeyFor(currentTeam);
       const { content: encContent, attachments: encAtts } = await encryptOutgoing(key, content, plainAtts);
       const replyToContent = savedReply ? await encryptText(key, savedReply.content) : undefined;
       const res = await window.warroom.chat.sendMessage({
@@ -972,7 +972,7 @@ function ChatBody() {
 async function forwardSpeechdocToTeamFiles(currentTeam: any, currentUser: any, filePath: string, filename: string) {
   const bytesRes = await window.warroom.fs.readFileBytes(filePath);
   if (!bytesRes.ok || !bytesRes.base64) return;
-  const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+  const key = await teamKeyFor(currentTeam);
   const [encName, encData] = await Promise.all([
     encryptText(key, filename),
     encryptText(key, bytesRes.base64),
@@ -1233,7 +1233,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
       if (res.ok) setPinnedMap((prev) => { const next = new Map(prev); next.delete(m.id); return next; });
       return;
     }
-    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const key = await teamKeyFor(currentTeam);
     const [senderName, content] = await Promise.all([encryptText(key, m.sender_name), encryptText(key, m.content)]);
     const res = await window.warroom.pins.pin({
       dmChannelId: channel.id, messageId: m.id, senderName, content,
@@ -1250,7 +1250,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
       let decoded = msg;
       try {
         if (currentTeam) {
-          const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+          const key = await teamKeyFor(currentTeam);
           decoded = await decryptMessage(key, msg);
         }
       } catch {}
@@ -1274,7 +1274,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
     if (res.ok) {
       try {
         if (currentTeam) {
-          const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+          const key = await teamKeyFor(currentTeam);
           const decrypted = await Promise.all((res.data as any[]).map((m) => decryptMessage(key, m)));
           setMessages(decrypted as DMMessage[]);
           setCachedMessages(channel.id, decrypted).catch(() => {});
@@ -1348,7 +1348,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
     setComposerText(''); setReplyingTo(null); setError('');
     setSending(true);
     try {
-      const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const key = await teamKeyFor(currentTeam);
       const replyToContent = savedReply ? await encryptText(key, savedReply.content) : undefined;
       const res = await window.warroom.chat.sendDMMessage({
         dmChannelId: channel.id, senderId: currentUser.id,
@@ -1371,7 +1371,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
   async function submitEdit() {
     if (!editingId || !editingText.trim() || !currentTeam) { setEditingId(null); return; }
     const plain = editingText.trim();
-    const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+    const key = await teamKeyFor(currentTeam);
     const res = await window.warroom.chat.editDMMessage(editingId, await encryptText(key, plain));
     if (res.ok) setMessages((prev) => prev.map((m) => m.id === editingId ? { ...m, content: plain, edited: true } as any : m));
     setEditingId(null); setEditingText('');

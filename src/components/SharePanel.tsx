@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { DMChannel, DB } from '../types';
-import { getTeamKey, encryptText, encryptAttachmentData } from '../lib/chatCrypto';
+import { teamKeyFor, encryptText, encryptAttachmentData } from '../lib/chatCrypto';
 import wordIcon from '../assets/word-icon.png';
 import excelIcon from '../assets/excel-icon.png';
 import sheetsIcon from '../assets/sheets-icon.png';
@@ -108,7 +108,7 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
     try {
       const data = await getData();
       // Encrypt content + attachment data with the team key before anything is sent.
-      const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const key = await teamKeyFor(currentTeam);
       const attachment = { type, name, data: await encryptAttachmentData(key, data ?? {}), permission };
       const sharedContent = await encryptText(key, `Shared "${name}"`);
 

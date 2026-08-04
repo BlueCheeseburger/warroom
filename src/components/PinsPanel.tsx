@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { PinnedMessage } from '../types';
-import { getTeamKey, decryptText } from '../lib/chatCrypto';
+import { teamKeyFor, decryptText } from '../lib/chatCrypto';
 
 interface DecryptedPin extends Omit<PinnedMessage, 'sender_name' | 'content'> {
   sender_name: string;
@@ -43,7 +43,7 @@ export default function PinsPanel({ teamId, dmChannelId, onJumpTo }: { teamId?: 
         return;
       }
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const decrypted: DecryptedPin = {
           ...p.row, sender_name: await decryptText(key, p.row.sender_name), content: await decryptText(key, p.row.content),
         };
@@ -64,7 +64,7 @@ export default function PinsPanel({ teamId, dmChannelId, onJumpTo }: { teamId?: 
     const res = await window.warroom.pins.getAll(scope);
     if (res.ok) {
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const decrypted = await Promise.all((res.data as PinnedMessage[]).map(async (p) => ({
           ...p, sender_name: await decryptText(key, p.sender_name), content: await decryptText(key, p.content),
         })));

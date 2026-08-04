@@ -5454,6 +5454,16 @@ ipcMain.handle('chat:signOut', async () => {
 // Sends a recovery email whose link opens the Warroom app directly — no
 // localhost or hosted web page required.  The deep link handler at the bottom
 // of this file calls verifyOtp + sends 'auth:recovery' to the renderer.
+// A recovery deep link is only honored while this is set — see handleDeepLink.
+// Any web page can navigate the OS to a warroom:// URL, so without this an
+// attacker could send a victim a recovery link minted for the *attacker's* account
+// and silently swap the victim's session over to it; everything the victim then
+// wrote (chat, flows, team data) would land in the attacker's account. Requiring
+// that this app instance just asked for a reset makes the link unusable unless the
+// user initiated the flow here.
+let pendingRecovery: { email: string; expires: number } | null = null;
+const RECOVERY_WINDOW_MS = 30 * 60_000; // 30 min — matches Supabase's link lifetime
+
 ipcMain.handle('chat:resetPassword', async (_e, email: string) => {
   if (!sb) return sbErr('Supabase not configured');
   // Most important auth limit: unthrottled, this lets anyone email-bomb any address.
@@ -5464,6 +5474,7 @@ ipcMain.handle('chat:resetPassword', async (_e, email: string) => {
       redirectTo: 'warroom://auth',
     });
     if (error) return sbErr(error);
+    pendingRecovery = { email: email.trim().toLowerCase(), expires: Date.now() + RECOVERY_WINDOW_MS };
     return sbOk(null);
   } catch (e) { return sbErr(e); }
 });
@@ -5484,11 +5495,11 @@ ipcMain.handle('chat:getTeam', async (_e, userId: string) => {
     // Use maybeSingle() instead of single() — single() throws PGRST116 on 0 rows
     // which is indistinguishable from a real error and masks the "not in a team yet"
     // case. maybeSingle() returns { data: null, error: null } for 0 rows cleanly.
-    const { data, error } = await sb.from('team_members').select('team_id, teams(id, name, invite_code, owner_id)').eq('user_id', userId).limit(1).maybeSingle();
+    const { data, error } = await sb.from('team_members').select('team_id, teams(id, name, invite_code, owner_id, key_seed)').eq('user_id', userId).limit(1).maybeSingle();
     if (error) return sbErr(error);
     if (!data?.teams) return sbOk(null);
     const t = data.teams as any;
-    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null });
+    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null, key_seed: t.key_seed ?? null });
   } catch (e) { return sbErr(e); }
 });
 
@@ -5499,14 +5510,14 @@ ipcMain.handle('chat:getTeams', async (_e, userId: string) => {
   try {
     const { data, error } = await sb
       .from('team_members')
-      .select('team_id, joined_at, teams(id, name, invite_code, owner_id)')
+      .select('team_id, joined_at, teams(id, name, invite_code, owner_id, key_seed)')
       .eq('user_id', userId)
       .order('joined_at', { ascending: true });
     if (error) return sbErr(error);
     const teams = (data ?? [])
       .map((row: any) => row.teams)
       .filter(Boolean)
-      .map((t: any) => ({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null }));
+      .map((t: any) => ({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null, key_seed: t.key_seed ?? null }));
     return sbOk(teams);
   } catch (e) { return sbErr(e); }
 });
@@ -5518,7 +5529,7 @@ ipcMain.handle('chat:createTeam', async (_e, name: string) => {
     const ownerId = session?.user?.id ?? null;
     const { data, error } = await sb.from('teams').insert({ name, owner_id: ownerId }).select().single();
     if (error) return sbErr(error);
-    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id });
+    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id, key_seed: data.key_seed ?? null });
   } catch (e) { return sbErr(e); }
 });
 
@@ -5531,7 +5542,7 @@ ipcMain.handle('chat:joinTeam', async (_e, inviteCode: string) => {
     if (error) return sbErr(error);
     const t = Array.isArray(data) ? data[0] : data;
     if (!t) return sbErr('Invalid invite code');
-    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code });
+    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code, key_seed: t.key_seed ?? null });
   } catch (e) { return sbErr(e); }
 });
 
@@ -5552,7 +5563,7 @@ ipcMain.handle('chat:joinTeamByCode', async (_e, inviteCode: string, displayName
     if (error) return sbErr(error);
     const t = Array.isArray(data) ? data[0] : data;
     if (!t) return sbErr('Invalid invite code');
-    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null });
+    return sbOk({ id: t.id, name: t.name, invite_code: t.invite_code, owner_id: t.owner_id ?? null, key_seed: t.key_seed ?? null });
   } catch (e) { return sbErr(e); }
 });
 
@@ -5773,7 +5784,7 @@ ipcMain.handle('chat:renameTeam', async (_e, teamId: string, name: string) => {
   try {
     const { data, error } = await sb.from('teams').update({ name }).eq('id', teamId).select().single();
     if (error) return sbErr(error);
-    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id });
+    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id, key_seed: data.key_seed ?? null });
   } catch (e) { return sbErr(e); }
 });
 
@@ -5789,7 +5800,20 @@ ipcMain.handle('chat:claimOwnership', async (_e, teamId: string) => {
       .select().single();
     if (error) return sbErr(error);
     if (!data) return sbErr('Team already has an owner');
-    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id });
+    return sbOk({ id: data.id, name: data.name, invite_code: data.invite_code, owner_id: data.owner_id, key_seed: data.key_seed ?? null });
+  } catch (e) { return sbErr(e); }
+});
+
+// Issue a fresh invite code, invalidating the old one for future joins. Owner-only
+// (enforced inside the RPC, not here). Existing members and all existing message
+// history are unaffected: the chat key derives from `key_seed`, which this does
+// not touch — that separation is the whole reason rotation is possible at all.
+ipcMain.handle('chat:rotateInvite', async (_e, teamId: string) => {
+  if (!sb) return sbErr('Supabase not configured');
+  try {
+    const { data, error } = await sb.rpc('rotate_team_invite', { p_team_id: teamId });
+    if (error) return sbErr(error);
+    return sbOk({ invite_code: data as string });
   } catch (e) { return sbErr(e); }
 });
 
@@ -7441,6 +7465,12 @@ ipcMain.handle('gdrive:connect', async () => {
 
   return new Promise<{ ok: boolean; error?: string }>((resolve) => {
     const state = crypto.randomBytes(16).toString('hex');
+    // PKCE (RFC 7636), required for native apps by RFC 8252. The loopback
+    // redirect is delivered over plain HTTP on a shared machine, so the auth code
+    // can be observed in transit; binding it to a verifier only this process knows
+    // means an observed code can't be exchanged for tokens by anyone else.
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
     let resolved = false;
     let port = 0;
 
@@ -7467,7 +7497,7 @@ ipcMain.handle('gdrive:connect', async () => {
         const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ code, client_id: clientId!, client_secret: clientSecret!, redirect_uri: `http://127.0.0.1:${port}/oauth2callback`, grant_type: 'authorization_code' }).toString(),
+          body: new URLSearchParams({ code, client_id: clientId!, client_secret: clientSecret!, redirect_uri: `http://127.0.0.1:${port}/oauth2callback`, grant_type: 'authorization_code', code_verifier: codeVerifier }).toString(),
         });
         const d = await tokenRes.json() as any;
         if (!d.access_token || !d.refresh_token) { done({ ok: false, error: d.error_description ?? 'No tokens' }); return; }
@@ -7486,6 +7516,8 @@ ipcMain.handle('gdrive:connect', async () => {
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('prompt', 'consent');
       authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
       shell.openExternal(authUrl.toString());
     });
 
@@ -8219,12 +8251,31 @@ async function handleDeepLink(url: string) {
     const tokenHash = parsed.searchParams.get('token_hash');
     const type = parsed.searchParams.get('type');
     if (type === 'recovery' && tokenHash && sb) {
-      const { error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
-      if (!error) {
-        // Bring window to front, then tell the renderer to show the new-password form.
-        if (mainWin) { mainWin.show(); mainWin.focus(); }
-        mainWin?.webContents.send('auth:recovery');
+      // Only redeem a token when *this* app instance asked for a reset. A deep
+      // link is web-triggerable, so an unsolicited one is either stale or an
+      // attacker trying to swap us onto an account they control.
+      if (!pendingRecovery || Date.now() > pendingRecovery.expires) {
+        pendingRecovery = null;
+        mainWin?.webContents.send('auth:recovery-rejected');
+        return;
       }
+      const { data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+      // Redeeming consumes the request either way — a token is single-use, and a
+      // failed attempt shouldn't leave the window open for a second try.
+      const expected = pendingRecovery.email;
+      pendingRecovery = null;
+      if (error) return;
+      // Belt and braces: the token must resolve to the address the user typed
+      // here, not merely to *some* valid account.
+      const gotEmail = data?.user?.email?.trim().toLowerCase();
+      if (gotEmail && gotEmail !== expected) {
+        await sb.auth.signOut().catch(() => {});
+        mainWin?.webContents.send('auth:recovery-rejected');
+        return;
+      }
+      // Bring window to front, then tell the renderer to show the new-password form.
+      if (mainWin) { mainWin.show(); mainWin.focus(); }
+      mainWin?.webContents.send('auth:recovery');
     }
   } catch {}
 }

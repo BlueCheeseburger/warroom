@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Electron's V8 needs to allocate JIT pages, which the hardened runtime
+       blocks by default. Without these two the app crashes on launch once
+       hardenedRuntime is enabled. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- onnxruntime-node (offline dictation) is an unpacked native .node addon
+       loaded at runtime from outside the signed app bundle's main executable. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Dictation records from the microphone. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- Warroom talks to Supabase, provider APIs, Tabroom, and the embedded
+       research webviews; the OAuth loopback listener needs the server bit. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+</dict>
+</plist>

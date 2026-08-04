@@ -511,6 +511,7 @@ declare global {
         resetPassword: (email: string) => Promise<{ ok: boolean; error?: string }>;
         updatePassword: (password: string) => Promise<{ ok: boolean; error?: string }>;
         onAuthRecovery: (cb: () => void) => () => void;
+        onAuthRecoveryRejected: (cb: () => void) => () => void;
         getTeam: (userId: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
         getTeams: (userId: string) => Promise<{ ok: boolean; data?: ChatTeam[]; error?: string }>;
         createTeam: (name: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
@@ -525,6 +526,7 @@ declare global {
         kickMember: (teamId: string, userId: string) => Promise<{ ok: boolean; error?: string }>;
         renameTeam: (teamId: string, name: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
         claimOwnership: (teamId: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
+        rotateInvite: (teamId: string) => Promise<{ ok: boolean; data?: { invite_code: string }; error?: string }>;
         generateGeminiTitle: (messages: any[]) => Promise<{ ok: boolean; data?: string; error?: string }>;
         geminiAgentTurn: (messages: any[], wantTitle?: boolean, userContext?: string, requestId?: string) => Promise<{ ok: boolean; data?: { type: 'text' | 'tool_call'; text?: string; title?: string; name?: string; args?: Record<string, any>; modelContent?: any }; error?: string }>;
         onAgentStreamChunk: (requestId: string, cb: (delta: string) => void) => () => void;
@@ -661,6 +663,14 @@ export interface ChatTeam {
   name: string;
   invite_code: string;
   owner_id?: string | null;
+  /**
+   * KDF input for the team's chat key — see chatCrypto. Split off from
+   * `invite_code` so the invite can be rotated without making existing history
+   * undecryptable. Optional because a team row cached before that migration
+   * won't carry it; `teamKeyFor` falls back to `invite_code`, which is exactly
+   * what those teams were backfilled with.
+   */
+  key_seed?: string | null;
 }
 
 export interface ChatMember {

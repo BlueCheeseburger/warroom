@@ -1025,3 +1025,166 @@ create policy "pinned_messages_delete" on pinned_messages
     (team_id is not null and is_team_member(team_id))
     or (dm_channel_id is not null and is_dm_member(dm_channel_id))
   );
+
+-- ─── Security hardening (audit 8/4/26) ───────────────────────────────────────
+
+-- 1. enforce_rate_limit must not be callable directly.
+--
+-- PostgREST exposes every function in `public` as an RPC endpoint. Because this
+-- one is SECURITY DEFINER and takes the action, cap, AND window as parameters,
+-- any signed-in user could call it themselves with a near-zero window — the
+-- function's first statement deletes the caller's own events older than that
+-- window, so `enforce_rate_limit('team_message', 999, interval '0')` wiped their
+-- counter and reset every limit below. The rl_check_* triggers are themselves
+-- SECURITY DEFINER (owned by postgres), so they keep calling it after the revoke.
+revoke execute on function public.enforce_rate_limit(text, int, interval) from public, anon, authenticated;
+
+-- 2. Reconcile grants that drifted from this file.
+--
+-- These functions were recreated after their original revoke lines ran, and
+-- CREATE OR REPLACE resets a function's ACL to the default (EXECUTE to PUBLIC).
+-- None were exploitable — each fails closed on `auth.uid() is null` or an
+-- is_team_member check — but they had no business being anon-reachable.
+-- Re-run these AFTER any `create or replace` of the function they name.
+revoke execute on function public.resolve_doc_comment(uuid, boolean, text) from public, anon;
+grant  execute on function public.resolve_doc_comment(uuid, boolean, text) to authenticated;
+
+revoke execute on function public.join_team_by_code(text, text, text) from public, anon;
+grant  execute on function public.join_team_by_code(text, text, text) to authenticated;
+
+-- Only ever invoked from inside impact_vote_counts_trigger (SECURITY DEFINER),
+-- never by a client — no role needs direct RPC access.
+revoke execute on function public.refresh_impact_vote_counts(uuid) from public, anon, authenticated;
+revoke execute on function public.impact_vote_counts_trigger() from public, anon, authenticated;
+revoke execute on function public.rl_check_message() from public, anon, authenticated;
+revoke execute on function public.rl_check_dm_message() from public, anon, authenticated;
+revoke execute on function public.rl_check_impact_submit() from public, anon, authenticated;
+revoke execute on function public.rl_check_impact_update() from public, anon, authenticated;
+revoke execute on function public.rl_check_impact_vote() from public, anon, authenticated;
+
+-- can_access_flow_channel is called from the realtime.messages policies, which
+-- evaluate as the *calling* role — `authenticated` must keep EXECUTE or live
+-- flowing breaks with "permission denied for function". Only anon loses it.
+revoke execute on function public.can_access_flow_channel(text) from public, anon;
+grant  execute on function public.can_access_flow_channel(text) to authenticated;
+
+-- 3. Rate-limit the email→user lookup.
+--
+-- Any signed-in user could previously probe unlimited addresses and learn which
+-- ones have Warroom accounts (plus the account's display name). It's needed for
+-- "DM someone not on your team", so it stays — but at human speed.
+create or replace function lookup_user_by_email(lookup_email text)
+returns table(user_id uuid, display_name text)
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  perform public.enforce_rate_limit('email_lookup', 30, interval '1 hour');
+  return query
+    select
+      u.id,
+      coalesce(u.raw_user_meta_data->>'display_name', split_part(u.email, '@', 1))
+    from auth.users u
+    where lower(u.email) = lower(lookup_email)
+    limit 1;
+end;
+$$;
+
+revoke execute on function public.lookup_user_by_email(text) from public, anon;
+grant  execute on function public.lookup_user_by_email(text) to authenticated;
+
+-- 4. Split the chat encryption key off the invite code.
+--
+-- The team's AES key was derived from its invite code, which meant the code
+-- could never be rotated without making all existing history undecryptable —
+-- so a leaked invite code permanently compromised the team's messages and
+-- removing a member revoked nothing. `key_seed` is now the KDF input and is
+-- never exposed to non-members or rotated; `invite_code` is only a join secret
+-- and can be rotated freely (see rotate_team_invite below).
+--
+-- Existing teams backfill key_seed = their current invite_code, so every
+-- message encrypted before this migration still decrypts to the same key.
+alter table teams add column if not exists key_seed text;
+update teams set key_seed = invite_code where key_seed is null;
+alter table teams alter column key_seed set default encode(gen_random_bytes(24), 'hex');
+alter table teams alter column key_seed set not null;
+
+-- New invite codes come from a CSPRNG. The old default, md5(random()::text),
+-- was seeded by Postgres' non-cryptographic PRNG.
+alter table teams alter column invite_code
+  set default encode(gen_random_bytes(6), 'hex');
+
+-- Both join-path helpers must return key_seed so a joining client can derive the
+-- team key. Changing a function's return type requires a drop first.
+drop function if exists public.get_team_by_invite(text);
+create function get_team_by_invite(invite text)
+returns table(id uuid, name text, invite_code text, owner_id uuid, key_seed text)
+language sql security definer
+set search_path = ''
+as $$
+  select t.id, t.name, t.invite_code, t.owner_id, t.key_seed from public.teams t
+  where t.invite_code = lower(trim(invite))
+  limit 1;
+$$;
+revoke execute on function public.get_team_by_invite(text) from public, anon;
+grant  execute on function public.get_team_by_invite(text) to authenticated;
+
+drop function if exists public.join_team_by_code(text, text, text);
+create function join_team_by_code(p_invite text, p_display_name text, p_role text)
+returns table(id uuid, name text, invite_code text, owner_id uuid, key_seed text)
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_team public.teams;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  select * into v_team from public.teams
+    where public.teams.invite_code = lower(trim(p_invite))
+    limit 1;
+  if v_team.id is null then
+    return; -- no matching team → caller surfaces "Invalid invite code"
+  end if;
+  insert into public.team_members (team_id, user_id, display_name, role)
+  values (
+    v_team.id,
+    auth.uid(),
+    coalesce(nullif(trim(p_display_name), ''), 'Member'),
+    case when p_role = 'coach' then 'coach' else 'debater' end
+  )
+  on conflict (team_id, user_id)
+  do update set display_name = excluded.display_name, role = excluded.role;
+
+  return query select v_team.id, v_team.name, v_team.invite_code, v_team.owner_id, v_team.key_seed;
+end;
+$$;
+revoke execute on function public.join_team_by_code(text, text, text) from public, anon;
+grant  execute on function public.join_team_by_code(text, text, text) to authenticated;
+
+-- 5. Owner-only invite rotation. Invalidates the old code for future joins;
+-- existing members and all existing history are unaffected because key_seed
+-- does not change.
+create or replace function rotate_team_invite(p_team_id uuid)
+returns text
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_new text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if not exists (select 1 from public.teams t where t.id = p_team_id and t.owner_id = auth.uid()) then
+    raise exception 'only the team owner can rotate the invite code';
+  end if;
+  perform public.enforce_rate_limit('invite_rotate', 10, interval '1 hour');
+  v_new := encode(gen_random_bytes(6), 'hex');
+  update public.teams set invite_code = v_new where id = p_team_id;
+  return v_new;
+end;
+$$;
+revoke execute on function public.rotate_team_invite(uuid) from public, anon;
+grant  execute on function public.rotate_team_invite(uuid) to authenticated;

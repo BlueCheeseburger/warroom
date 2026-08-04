@@ -20,6 +20,8 @@ export default function RoomSettings({ onClose }: Props) {
   const noOwner = currentTeam?.owner_id === null || currentTeam?.owner_id === undefined;
   const [claiming, setClaiming] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [confirmRotate, setConfirmRotate] = useState(false);
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -52,6 +54,19 @@ export default function RoomSettings({ onClose }: Props) {
     if (res.ok) setCurrentTeam(res.data as any);
     else setError(res.error ?? 'Failed to claim ownership');
     setClaiming(false);
+  }
+
+  async function handleRotateInvite() {
+    if (!currentTeam) return;
+    setRotating(true); setError('');
+    const res = await window.warroom.chat.rotateInvite(currentTeam.id);
+    if (res.ok && res.data) {
+      setCurrentTeam({ ...currentTeam, invite_code: res.data.invite_code });
+      setConfirmRotate(false);
+    } else {
+      setError(res.error ?? 'Failed to rotate invite code');
+    }
+    setRotating(false);
   }
 
   async function handleLeave() {
@@ -178,6 +193,42 @@ export default function RoomSettings({ onClose }: Props) {
           <p className="text-[10px] mt-1" style={{ color: 'var(--nav-inactive-color)' }}>
             Share this code so teammates can join with "Join team"
           </p>
+          {isOwner && (
+            confirmRotate ? (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>
+                  The old code stops working. Current members and message history are unaffected.
+                </span>
+                <button
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: 'transparent', border: '1px solid #b3261e', color: '#b3261e', cursor: rotating ? 'default' : 'pointer' }}
+                  onClick={handleRotateInvite}
+                  disabled={rotating}
+                  title="Confirm new code"
+                >
+                  {rotating ? 'Generating…' : 'Generate new code'}
+                </button>
+                <button
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: 'transparent', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
+                  onClick={() => setConfirmRotate(false)}
+                  disabled={rotating}
+                  title="Cancel rotation"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                className="text-xs mt-2 px-3 py-1.5 rounded-lg"
+                style={{ background: 'transparent', border: '1px solid var(--border-side)', color: 'var(--ink)' }}
+                onClick={() => setConfirmRotate(true)}
+                title="Reset invite code"
+              >
+                Reset invite code
+              </button>
+            )
+          )}
         </div>
 
         <NotifLevelPicker chatId="team" />

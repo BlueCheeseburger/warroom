@@ -93,6 +93,17 @@ export default function TeamSetup({ onDone }: Props) {
     return off;
   }, []);
 
+  // A recovery link arrived that this app never asked for — main refused to redeem
+  // it. Say so plainly instead of leaving the click looking like it did nothing.
+  React.useEffect(() => {
+    const off = window.warroom.chat.onAuthRecoveryRejected(() => {
+      setStep('forgot');
+      setResetStage('email');
+      setResetError('That password-reset link wasn’t requested from this app, or it has expired. Enter your email below to send a new one.');
+    });
+    return off;
+  }, []);
+
   async function handleSendReset() {
     if (!resetEmail.trim()) return;
     setResetLoading(true); setResetError('');

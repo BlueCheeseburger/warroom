@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { TeamFile } from '../types';
-import { getTeamKey, encryptText, decryptText } from '../lib/chatCrypto';
+import { teamKeyFor, encryptText, decryptText } from '../lib/chatCrypto';
 import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
 import OversizedFilePopup from './OversizedFilePopup';
 
@@ -57,7 +57,7 @@ export default function TeamFiles() {
         return;
       }
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const name = await decryptText(key, p.row.name);
         const summary_text = p.row.summary_text ? await decryptText(key, p.row.summary_text) : null;
         const decrypted: DecryptedFile = { ...p.row, name, summary_text };
@@ -93,7 +93,7 @@ export default function TeamFiles() {
     const res = await window.warroom.teamFiles.getAll(currentTeam.id);
     if (res.ok) {
       try {
-        const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+        const key = await teamKeyFor(currentTeam);
         const decrypted = await Promise.all((res.data as TeamFile[]).map(async (f) => ({
           ...f, name: await decryptText(key, f.name),
           summary_text: f.summary_text ? await decryptText(key, f.summary_text) : null,
@@ -130,7 +130,7 @@ export default function TeamFiles() {
     if (!currentUser || !currentTeam) return;
     setUploading(true);
     try {
-      const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const key = await teamKeyFor(currentTeam);
       const [encName, encData, encSummary] = await Promise.all([
         encryptText(key, filename),
         encryptText(key, base64),
@@ -189,7 +189,7 @@ export default function TeamFiles() {
     setOpeningId(file.id);
     setError('');
     try {
-      const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
+      const key = await teamKeyFor(currentTeam);
       const base64 = await decryptText(key, file.data_b64);
       const res = await window.warroom.fs.writeTempFile(base64, file.name);
       if (res.ok && res.path) setView({ kind: 'speech-doc', docPath: res.path } as any);

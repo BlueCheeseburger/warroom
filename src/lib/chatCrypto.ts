@@ -5,14 +5,13 @@
 // the message/attachment tables hold only ciphertext.
 //
 // THREAT MODEL — read this before trusting it with anything truly sensitive.
-// The team key is derived from the team's invite code (see below), and the invite
-// code is itself stored server-side in the `teams` table (it has to be: the server
-// matches on it at join time) and is handed to every member's client. So this is
-// NOT end-to-end / zero-knowledge encryption:
+// The team key is derived from `teams.key_seed`, which is stored server-side and
+// handed to every member's client. So this is NOT end-to-end / zero-knowledge
+// encryption:
 //   • It DOES protect message/attachment content if only those rows leak — e.g. an
 //     over-broad RLS SELECT on `messages`, or a partial dump that excludes `teams`.
 //   • It does NOT protect against a full database compromise or a malicious
-//     operator: anyone who can also read `teams.invite_code` can re-derive every
+//     operator: anyone who can also read `teams.key_seed` can re-derive every
 //     team key and decrypt everything. Treat it as defense-in-depth over RLS, not
 //     as a guarantee that the operator can't read your messages.
 //
@@ -20,15 +19,26 @@
 // ─────────
 // Every team has a single symmetric AES-GCM key, used for BOTH room messages and
 // DM messages within that team. The key is *derived* on the client from the team's
-// invite code via PBKDF2, salted with the stable team id:
+// key seed via PBKDF2, salted with the stable team id:
 //
-//     key = PBKDF2(invite_code, salt = "warroom-chat-v1:" + teamId)
+//     key = PBKDF2(key_seed, salt = "warroom-chat-v1:" + teamId)
 //
-// Any member who can join the team already knows the invite code, so every member
-// can derive the exact same key with zero key-distribution handshake. The invite
-// code is never rotated, so the key is stable for the life of the team and old
-// messages stay readable forever. The derived key itself is never transmitted —
-// but, as noted above, its input (the invite code) lives server-side.
+// `key_seed` is a server-generated random value returned to members (and to the
+// join-by-code RPC), so every member derives the same key with zero
+// key-distribution handshake, and it never changes — old messages stay readable
+// forever.
+//
+// Why key_seed is not the invite code
+// ───────────────────────────────────
+// It used to be. That coupled two things with opposite lifetimes: the invite code
+// is a *join secret* that gets pasted into group chats and should be revocable,
+// while the KDF input must never change or all history becomes undecryptable. So
+// a leaked invite code permanently compromised the team's messages, and kicking a
+// member revoked nothing. Splitting them means "Reset invite code" (RoomSettings,
+// owner-only) invalidates the old code for future joins while every existing
+// message still decrypts. Teams that predate the split were backfilled with
+// key_seed = their then-current invite_code, which is why `teamKeyFor` falls back
+// to invite_code — that fallback reproduces the original key, never a wrong one.
 //
 // Wire format
 // ───────────
@@ -92,15 +102,25 @@ async function deriveKey(teamId: string, inviteCode: string): Promise<CryptoKey>
   );
 }
 
-/** Get (and cache) the AES-GCM key for a team. */
-export function getTeamKey(teamId: string, inviteCode: string): Promise<CryptoKey> {
-  const cacheKey = teamId + '|' + inviteCode;
+/** Get (and cache) the AES-GCM key for a team, given its raw KDF seed. */
+export function getTeamKey(teamId: string, seed: string): Promise<CryptoKey> {
+  const cacheKey = teamId + '|' + seed;
   let p = keyCache.get(cacheKey);
   if (!p) {
-    p = deriveKey(teamId, inviteCode);
+    p = deriveKey(teamId, seed);
     keyCache.set(cacheKey, p);
   }
   return p;
+}
+
+/**
+ * The team key, resolved from the team record. Prefer this over calling
+ * getTeamKey with a hand-picked field: it applies the key_seed → invite_code
+ * fallback in one place, so a team row that predates the key_seed migration
+ * (or came from a stale cache) still derives the key it was encrypted with.
+ */
+export function teamKeyFor(team: { id: string; invite_code: string; key_seed?: string | null }): Promise<CryptoKey> {
+  return getTeamKey(team.id, team.key_seed || team.invite_code);
 }
 
 /** Encrypt a string. Returns the tagged wire format. */

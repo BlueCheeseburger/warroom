@@ -27,12 +27,31 @@ mac:
       arch: [arm64, x64]
   category: public.app-category.productivity
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # Code signing. Without it a downloaded build has no verifiable origin and
+  # macOS shows the "damaged / unidentified developer" scare, which trains users
+  # to right-click-Open past Gatekeeper — the exact habit that makes a tampered
+  # build easy to land.
+  #
+  # These settings only take effect when a Developer ID cert is in the keychain.
+  # With none present, electron-builder skips signing and `npm run dist` still
+  # produces a working local dmg, so this is safe to leave enabled.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Notarization runs only when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and
+  # APPLE_TEAM_ID are set in the environment; otherwise it is skipped.
+  notarize: true
 win:
   icon: resources/icon.ico
   target:
     - target: nsis
       arch: [x64]
   artifactName: ${productName}-Setup-${version}.${ext}
+  # Set CSC_LINK (path or base64 of the .pfx) and CSC_KEY_PASSWORD to sign.
+  # Unset, builds stay unsigned and SmartScreen will warn on download.
+  signingHashAlgorithms:
+    - sha256
 protocols:
   - name: Warroom
     schemes:

@@ -7,7 +7,7 @@
 
 import { ChatTeam, DB, NoteTag, NoteTagRow, NoteTagType } from '../types';
 import { FlowMeta } from '../store/appStore';
-import { getTeamKey, decryptText } from './chatCrypto';
+import { teamKeyFor, decryptText } from './chatCrypto';
 
 export function computeOpponentStableId(o: any): string {
   return o?.teamId ? String(o.teamId) : `${o?.school ?? ''}/${o?.teamName ?? ''}`.toLowerCase().replace(/\s+/g, '-');
@@ -157,7 +157,7 @@ export async function openForwardTag(tag: ForwardTag, ctx: OpenTagCtx): Promise<
       const res = await window.warroom.teamFiles.getAll(team.id);
       const fileRow = res.ok ? res.data?.find((f: any) => f.id === d.teamFileId) : null;
       if (!fileRow) return 'That file is no longer in Team Files.';
-      const key = await getTeamKey(team.id, team.invite_code);
+      const key = await teamKeyFor(team);
       const base64 = await decryptText(key, fileRow.data_b64);
       const wt = await window.warroom.fs.writeTempFile(base64, row.name);
       if (wt?.ok && wt.path) { ctx.setView({ kind: 'speech-doc', docPath: wt.path }); return null; }

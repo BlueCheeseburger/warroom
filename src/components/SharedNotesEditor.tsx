@@ -3,7 +3,7 @@ import { useApp } from '../store/appStore';
 import { SharedNote, ChatTeam, NoteTag, NoteTagRow, NoteTagType, PendingMention } from '../types';
 import NoteTagBar, { DisplayTag } from './NoteTagBar';
 import MentionPicker from './MentionPicker';
-import { getTeamKey, encryptText, decryptText } from '../lib/chatCrypto';
+import { teamKeyFor, encryptText, decryptText } from '../lib/chatCrypto';
 
 interface Props {
   /** 'opponent' or 'judge' */
@@ -205,7 +205,7 @@ function TeamPanel({
     try {
       const res = await window.warroom.teamFiles.getAll(teamId);
       if (!res.ok || !res.data) return null;
-      const key = await getTeamKey(teamId, team.invite_code);
+      const key = await teamKeyFor(team);
       for (const f of res.data) {
         const name = await decryptText(key, f.name);
         if (name !== fileName) continue;
@@ -236,7 +236,7 @@ function TeamPanel({
     const tempId = crypto.randomUUID();
     setPendingTags((prev) => [...prev, { id: tempId, type: 'speechdoc', name: fileName }]);
     try {
-      const key = await getTeamKey(teamId, team.invite_code);
+      const key = await teamKeyFor(team);
       const userName = currentUser.displayName || currentUser.email || 'Unknown';
       const [encName, encData] = await Promise.all([encryptText(key, fileName), encryptText(key, base64)]);
       const res = await window.warroom.teamFiles.upload({ teamId, uploaderId: currentUser.id, uploaderName: userName, name: encName, dataB64: encData });
@@ -308,7 +308,7 @@ function TeamPanel({
         const res = await window.warroom.teamFiles.getAll(teamId);
         const fileRow = res.ok ? res.data?.find((f: any) => f.id === d.teamFileId) : null;
         if (!fileRow) { setTagError('That file is no longer in Team Files.'); return; }
-        const key = await getTeamKey(teamId, team.invite_code);
+        const key = await teamKeyFor(team);
         const base64 = await decryptText(key, fileRow.data_b64);
         const wt = await window.warroom.fs.writeTempFile(base64, row.name);
         if (wt?.ok && wt.path) setView({ kind: 'speech-doc', docPath: wt.path });

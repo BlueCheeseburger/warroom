@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { renderAsync } from 'docx-preview';
 import { CaseItem } from '../utils/caseItems';
 import { useApp } from '../store/appStore';
+import { sanitizeDocHtml } from '../lib/docHtml';
 
 /**
  * Google-Docs-style first-page thumbnail for a case tile.
@@ -82,14 +83,14 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-/** Belt-and-braces before dangerouslySetInnerHTML. Cheap, so do it on every path. */
+/**
+ * Belt-and-braces before dangerouslySetInnerHTML. Cheap, so do it on every path
+ * — including the localStorage cache read, which is why this can't be a
+ * render-time-only concern. See lib/docHtml.ts for why it's an allowlist parse
+ * rather than the regex blacklist this used to be.
+ */
 function sanitize(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<script[^>]*>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+  return sanitizeDocHtml(html);
 }
 
 function readCache(key: string): string | null {

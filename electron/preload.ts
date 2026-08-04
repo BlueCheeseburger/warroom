@@ -278,6 +278,12 @@ const api = {
       ipcRenderer.on('auth:recovery', handler);
       return () => ipcRenderer.removeListener('auth:recovery', handler);
     },
+    /** Fires when a warroom://auth recovery link arrived that this app never asked for. */
+    onAuthRecoveryRejected: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('auth:recovery-rejected', handler);
+      return () => ipcRenderer.removeListener('auth:recovery-rejected', handler);
+    },
     getTeam: (userId: string) => ipcRenderer.invoke('chat:getTeam', userId),
     getTeams: (userId: string) => ipcRenderer.invoke('chat:getTeams', userId),
     createTeam: (name: string) => ipcRenderer.invoke('chat:createTeam', name),
@@ -299,6 +305,7 @@ const api = {
     kickMember: (teamId: string, userId: string) => ipcRenderer.invoke('chat:kickMember', teamId, userId),
     renameTeam: (teamId: string, name: string) => ipcRenderer.invoke('chat:renameTeam', teamId, name),
     claimOwnership: (teamId: string) => ipcRenderer.invoke('chat:claimOwnership', teamId),
+    rotateInvite: (teamId: string) => ipcRenderer.invoke('chat:rotateInvite', teamId),
     generateGeminiTitle: (messages: any[]) => ipcRenderer.invoke('chat:generateGeminiTitle', messages),
     editMessage: (messageId: string, content: string) => ipcRenderer.invoke('chat:editMessage', messageId, content),
     deleteMessage: (messageId: string) => ipcRenderer.invoke('chat:deleteMessage', messageId),

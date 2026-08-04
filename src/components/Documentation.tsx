@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/1/26
+          Last updated: 8/4/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1989,7 +1989,13 @@ export default function Documentation() {
             <LI><Code>search_openevidence</Code> — searches the Open Evidence Project via a second hidden webview in <Code>AgentSearchViews</Code></LI>
             <LI><Code>save_card_to_library</Code> — saves a card with full verbatim body text to the <Code>__agent_inbox__</Code> block inside the <Code>__agent__</Code> case ("Agent Saves"). Cards saved this way appear in the normal card library.</LI>
             <LI><Code>fetch_article</Code> — fetches/extracts text from a URL for cutting cards from web sources</LI>
-            <LI><Code>get_skill</Code> / <Code>write_skill</Code> — load or save a skill <Code>.md</Code> file</LI>
+            <LI><Code>get_skill</Code> / <Code>write_skill</Code> — load or save a skill <Code>.md</Code> file.
+              <Code>write_skill</Code> always asks first: a card appears above the composer showing the skill
+              name and the exact text to be saved, and the AI waits until you approve or decline. It is the
+              only tool that pauses for permission, because a saved skill is loaded into Warroom AI's context
+              in <em>future</em> chats — and tools like <Code>fetch_article</Code> pull in web pages the AI
+              reads but you may not have. Without the prompt, a page could talk the AI into writing itself
+              instructions that persist after the conversation ends. Declining tells the AI not to retry.</LI>
             <LI><Code>search_tabroom_tournament</Code> · <Code>get_tournament_details</Code> · <Code>save_tournament_to_app</Code> · <Code>search_judge</Code> — Tabroom lookups. <Code>search_judge</Code> caches the paradigm to the judge record (creating one if it doesn't exist yet), so repeat lookups of the same judge are instant unless <Code>refresh</Code> is passed.</LI>
             <LI><Code>scout_opponent</Code> — pulls an opponent's disclosed rounds/cites from OpenCaselist (if linked) and calls the same AI scouting pipeline as the opponent profile's "AI Scout" card, returning an AFF/NEG summary with citations. Caches the result to <Code>disclosures.aiScout</Code> so repeat asks are instant unless <Code>refresh</Code> is passed.</LI>
             <LI><Code>navigate_app</Code> — opens any view for the user (top-level, or a case/block/opponent/tournament/flow resolved by name)</LI>
@@ -2549,10 +2555,12 @@ export default function Documentation() {
             All team-chat and DM content is encrypted client-side before it leaves your computer.
             Message text and every shared attachment (cases, blocks, flows, opponents, tournaments,
             speech docs) are encrypted with <Code>AES-256-GCM</Code>; the cloud database only ever
-            stores ciphertext. Each team has one symmetric key, derived from the team's invite code
-            via <Code>PBKDF2</Code> (200k iterations, salted with the team id). Because every member
-            already knows the invite code, everyone derives the identical key with no key exchange,
-            and the derived key itself is never transmitted. Team Files uses the same key and
+            stores ciphertext. Each team has one symmetric key, derived from the team's
+            <Code>key_seed</Code> via <Code>PBKDF2</Code> (200k iterations, salted with the team id).
+            The seed is a server-generated random value every member receives, so everyone derives
+            the identical key with no key exchange, and the derived key itself is never transmitted.
+            It is deliberately <em>not</em> the invite code — see "Resetting the invite code" below.
+            Team Files uses the same key and
             mechanism for uploaded file names and content. Sender name, timestamps, attachment
             labels, and file uploader names stay readable for display; only the actual content
             (message text, attachment data, file bytes) is encrypted. Warroom AI does not read
@@ -2560,14 +2568,25 @@ export default function Documentation() {
           </P>
           <P>
             <strong>What this does and doesn't protect.</strong> This is <em>not</em> end-to-end /
-            zero-knowledge encryption. The key is derived from the invite code, and the invite code
-            is itself stored server-side (the server has to match on it when someone joins). So it
-            strongly protects your content if only the message rows leak — an over-broad database
-            read or a partial dump that excludes the teams table yields nothing but ciphertext — but
-            it does <em>not</em> protect against a full database compromise or a malicious operator,
-            who could re-derive the key from the stored invite code. Treat it as strong
+            zero-knowledge encryption. The key is derived from a seed that is itself stored
+            server-side. So it strongly protects your content if only the message rows leak — an
+            over-broad database read or a partial dump that excludes the teams table yields nothing
+            but ciphertext — but it does <em>not</em> protect against a full database compromise or a
+            malicious operator, who could re-derive the key from the stored seed. Treat it as strong
             defense-in-depth over the database's access controls, not as a guarantee that the
             operator can never read your messages.
+          </P>
+          <H3>Resetting the invite code</H3>
+          <P>
+            The chat key used to be derived from the invite code itself, which meant the code could
+            never be changed — rotating it would have made every existing message unreadable. That
+            left an invite code permanently equivalent to the team's encryption key, so a code
+            pasted into a group chat or shared with someone who later left the team could never be
+            taken back. The KDF input is now a separate <Code>key_seed</Code>, so a team owner can
+            hit <strong>Reset invite code</strong> in Room settings to issue a fresh code: the old
+            one immediately stops working for new joins, while current members and the entire
+            message history are unaffected. Existing teams were migrated with their seed set to
+            their then-current invite code, so nothing sent before the change became unreadable.
           </P>
           <H3>Path safety</H3>
           <P>
@@ -2588,7 +2607,17 @@ export default function Documentation() {
             throttle alone can't stop someone who extracts the key and calls Supabase directly — so
             team/DM messages and Impact Library writes (submissions, edits, votes) are additionally
             rate-limited inside Postgres itself via triggers, which enforce regardless of how the
-            request arrives.
+            request arrives. Looking up a user by email is capped at 30/hour so it can't be used to
+            enumerate which addresses have accounts.
+          </P>
+          <P>
+            The function those triggers call, <Code>enforce_rate_limit</Code>, is no longer callable
+            on its own. Every function in the database's public schema is automatically exposed as an
+            API endpoint, and this one accepted the action, cap, and time window as arguments — so a
+            signed-in user could invoke it directly with a zero-length window, which made its own
+            cleanup step delete their recorded events and reset the counter, defeating all of the
+            limits above. Permission to call it directly has been revoked; the triggers still can,
+            because they run as the database owner.
           </P>
         </section>
 
