@@ -800,6 +800,9 @@ export default function TitleBar() {
       {/* Divider */}
       <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 8px', flexShrink: 0 }} />
 
+      {/* Quick chat pins */}
+      <QuickChatBar />
+
       {/* Right: AI / chat */}
       <button
         onClick={() => setGeminiOpen(!geminiOpen)}

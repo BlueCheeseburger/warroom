@@ -685,7 +685,7 @@ export default function App() {
       <TitleBar />
       <div className="flex-1 flex min-h-0">
         <Sidebar />
-        <main className="flex-1 min-w-0 overflow-y-auto scroll-thin flex flex-col" style={{ background: 'var(--bg-main)' }}>
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden scroll-thin flex flex-col" style={{ background: 'var(--bg-main)' }}>
           <Router />
         </main>
         {/* Resize handle for the Gemini panel — only in DOM when it's open */}

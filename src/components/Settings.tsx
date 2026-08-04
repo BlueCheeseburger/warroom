@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp, mapSettingsEvent, Direction, Theme, CARD_OUTDATED_YEARS_DEFAULT, TIMER_WARNING_SECS_DEFAULT } from '../store/appStore';
 import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
 import { exportSettings, importSettings } from '../utils/settingsExport';
+import { matchesShortcut } from '../lib/shortcutPrefs';
 import {
   FilesBarStyle, getFilesBarStyle, setFilesBarStyle,
   isQuickChatEnabled, setQuickChatEnabled, getQuickChatPins, setQuickChatPins,
@@ -232,6 +233,7 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-appearance',      label: 'Appearance' },
   { id: 'settings-speechdocs',      label: 'Speech docs & cases' },
   { id: 'settings-general',         label: 'General' },
+  { id: 'settings-chat',            label: 'Chat' },
   { id: 'settings-event',           label: 'Debate event' },
   { id: 'settings-apikey',          label: 'AI API key' },
   { id: 'settings-ai-behavior',     label: 'AI behavior' },
@@ -303,6 +305,21 @@ function SettingsOutline() {
   // async, a collapsible opened, a toggle changed) so the search below
   // re-reads fresh DOM text instead of a stale snapshot.
   const [searchIndex, bumpSearchIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Cmd/Ctrl+F focuses this search box instead of doing nothing — Settings
+  // has its own search, not the app-wide find-in-page (useInPageFind), which
+  // this page never mounts.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!matchesShortcut(e, 'find-page')) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const els = SETTINGS_NAV
@@ -365,6 +382,7 @@ function SettingsOutline() {
     <nav className="hidden lg:block shrink-0 sticky self-start" style={{ width: 172, top: 24 }}>
       <div className="relative mb-1.5">
         <input
+          ref={searchInputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search settings…"
@@ -1231,24 +1249,56 @@ export default function Settings() {
   // those aren't preferences, and undoing them silently would be actively
   // harmful (locked out of AI features, re-downloading tens of MB), not a
   // convenience.
-  const settingsResetGroups: { section: string; items: string[]; apply: () => void }[] = [
+  const fmtBool = (v: boolean) => (v ? 'On' : 'Off');
+  const fmtPct = (v: number) => `${v}%`;
+  const disabledShortcutsCount = (() => {
+    try { return (JSON.parse(localStorage.getItem('warroom-disabled-shortcuts') ?? '[]') as unknown[]).length; }
+    catch { return 0; }
+  })();
+  const reboundShortcutsCount = (() => {
+    try { return Object.keys(JSON.parse(localStorage.getItem('warroom-shortcut-bindings') ?? '{}')).length; }
+    catch { return 0; }
+  })();
+  const lmCustomized =
+    lmBaseUrl.trim() !== LMSTUDIO_DEFAULT_BASE_URL || lmModel.trim() !== LMSTUDIO_DEFAULT_MODEL ||
+    lmOptions.trim() !== '' || lmTools !== true || lmPerCallModels.trim() !== '';
+
+  // Each item carries its own current + default value so the confirmation
+  // dialog can show exactly what will change (e.g. "Reduce motion: On →
+  // Off") instead of an undifferentiated list — and only items that have
+  // actually drifted from default are shown at all. `apply` stays at the
+  // group level (several fields save together as one call already) since
+  // resetting a whole group back to default is a no-op for any field in it
+  // that was already at default.
+  const settingsResetGroups: { section: string; items: { label: string; current: string; def: string }[]; apply: () => void }[] = [
     {
       section: 'Appearance',
-      items: ['Theme direction (Calm Native / Warm Paper / Sharp Editorial)', 'Light / dark / system mode', 'Danger-word highlight color'],
+      items: [
+        { label: 'Theme direction', current: THEME_OPTIONS.find((o) => o.value === direction)?.label ?? direction, def: 'Calm Native' },
+        { label: 'Light / dark / system mode', current: MODE_OPTIONS.find((o) => o.value === theme)?.label ?? theme, def: 'System' },
+        { label: 'Danger-word highlight color', current: dangerHighlight === 'always' ? 'Always' : dangerHighlight, def: 'Always' },
+      ],
       apply: () => { setDirection('calm'); setTheme('system'); setDangerHighlight('always'); },
     },
     {
       section: 'General',
       items: [
-        'Card staleness (years)', 'Current-year short cite format', 'Timer warning threshold',
-        'Reduce motion', 'Skip delete confirmations',
-        ...NOTIFY_OPTIONS.map((o) => `Notification: ${o.label}`),
+        { label: 'Card staleness (years)', current: String(cardOutdatedYears), def: String(CARD_OUTDATED_YEARS_DEFAULT) },
+        { label: 'Current-year short cite format', current: citeYearFormat === 'month-day' ? 'Month-day' : 'Year', def: 'Month-day' },
+        { label: 'Timer warning threshold', current: `${timerWarningSecs}s`, def: `${TIMER_WARNING_SECS_DEFAULT}s` },
+        { label: 'Reduce motion', current: fmtBool(reduceMotion), def: 'Off' },
+        { label: 'Skip delete confirmations', current: fmtBool(skipDeleteConfirm), def: 'Off' },
+        ...NOTIFY_OPTIONS.map((o) => ({ label: `Notification: ${o.label}`, current: fmtBool(notifySettings[o.key]), def: 'On' })),
       ],
       apply: resetGeneralSettings,
     },
     {
       section: 'Chat & collaboration',
-      items: ['Team files display', 'Quick chat (on/off + pins)', 'Default share permission'],
+      items: [
+        { label: 'Team files display', current: filesBarStyle === 'split' ? 'Chat / Files bar' : 'Files icon', def: 'Chat / Files bar' },
+        { label: 'Quick chat', current: fmtBool(quickChatEnabled), def: 'Off' },
+        { label: 'Default share permission', current: defaultSharePermission === 'edit' ? 'Can edit' : 'Can view', def: 'Can edit' },
+      ],
       apply: () => {
         setFilesBarStyle('split'); setFilesBarStyleLocal('split');
         setQuickChatEnabled(false); setQuickChatEnabledLocal(false);
@@ -1258,12 +1308,21 @@ export default function Settings() {
     },
     {
       section: 'Debate event',
-      items: ['Debate event'],
+      items: [
+        { label: 'Debate event', current: EVENT_OPTIONS.find((o) => o.value === settingsEvent)?.label ?? settingsEvent, def: 'HS Policy' },
+      ],
       apply: () => applyEvent('hspolicy'),
     },
     {
       section: 'AI API key',
-      items: ['Active AI provider', 'Gemini model', 'OpenAI model', 'Anthropic model', 'Grok model', 'LM Studio connection (URL, model, options)'],
+      items: [
+        { label: 'Active AI provider', current: apiProvider, def: 'gemini' },
+        { label: 'Gemini model', current: geminiModel, def: 'flash' },
+        { label: 'OpenAI model', current: openaiModel, def: 'gpt-4.1-mini' },
+        { label: 'Anthropic model', current: anthropicModel, def: 'claude-3-5-sonnet-20241022' },
+        { label: 'Grok model', current: grokModel, def: 'grok-3-mini' },
+        { label: 'LM Studio connection', current: lmCustomized ? 'Customized' : 'Default', def: 'Default' },
+      ],
       apply: () => {
         setApiProvider('gemini');
         saveGeminiModel('flash');
@@ -1279,33 +1338,55 @@ export default function Settings() {
     },
     {
       section: 'AI behavior',
-      items: ['Token saving by default', 'Let Warroom AI rename chats'],
+      items: [
+        { label: 'Token saving by default', current: fmtBool(tokenSavingDefault), def: 'Off' },
+        { label: 'Let Warroom AI rename chats', current: fmtBool(autoRenameChat), def: 'Off' },
+      ],
       apply: () => { saveTokenSavingDefault(false); saveAutoRenameChat(false); },
     },
     {
       section: 'Flow',
       items: [
-        'Aff / Neg flow colors', 'Default new-flow layout (Stock issues / Advantage, Pro-first / Con-first)',
-        'Default new-flow zoom', 'Default new-flow font size', 'Auto-fit columns', 'AI tab summaries',
+        { label: 'Aff flow color', current: flowAffColor, def: '#2563eb' },
+        { label: 'Neg flow color', current: flowNegColor, def: '#16a34a' },
+        { label: 'Default new-flow layout', current: flowPrefs.defaultVariant === 'advantage' ? 'Advantage' : 'Stock issues', def: 'Stock issues' },
+        { label: 'Default new-PF-flow order', current: flowPrefs.defaultPfOrder === 'con-first' ? 'Con-first' : 'Pro-first', def: 'Pro-first' },
+        { label: 'Default new-flow zoom', current: fmtPct(flowPrefs.defaultZoom), def: fmtPct(FLOW_PREFS_DEFAULTS.defaultZoom) },
+        { label: 'Default new-flow font size', current: `${flowPrefs.defaultFontSize}px`, def: `${FLOW_PREFS_DEFAULTS.defaultFontSize}px` },
+        { label: 'Auto-fit columns', current: fmtBool(flowPrefs.autoFitColumns), def: fmtBool(FLOW_PREFS_DEFAULTS.autoFitColumns) },
+        { label: 'AI tab summaries', current: fmtBool(flowPrefs.aiTabSummaries), def: fmtBool(FLOW_PREFS_DEFAULTS.aiTabSummaries) },
       ],
       apply: resetAllFlowSettings,
     },
     {
       section: 'Auto Flow style',
-      items: ['Tag bold / italic / underline', 'Tag preview color', 'Tag preview size'],
+      items: [
+        { label: 'Tag bold', current: fmtBool(autoFlowStyle.bold), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.bold) },
+        { label: 'Tag italic', current: fmtBool(autoFlowStyle.italic), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.italic) },
+        { label: 'Tag underline', current: fmtBool(autoFlowStyle.underline), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.underline) },
+        { label: 'Tag preview color', current: autoFlowStyle.color ?? 'None', def: AUTOFLOW_STYLE_DEFAULTS.color ?? 'None' },
+        { label: 'Tag preview size', current: `${autoFlowStyle.fontSize}px`, def: `${AUTOFLOW_STYLE_DEFAULTS.fontSize}px` },
+      ],
       apply: resetAutoFlowStyle,
     },
     {
       section: 'Speech docs & cases',
       items: [
-        'Light page in dark mode', 'Doc margin %', 'Doc zoom %',
-        'Auto-open outline', 'Start docs in Focus mode', 'Outline layout method',
+        { label: 'Light page in dark mode', current: fmtBool(docLightInDark), def: 'On' },
+        { label: 'Doc margin', current: fmtPct(docMarginPct), def: '50%' },
+        { label: 'Doc zoom', current: fmtPct(docZoomPct), def: '100%' },
+        { label: 'Auto-open outline', current: fmtBool(docAutoOutline), def: 'Off' },
+        { label: 'Start docs in Focus mode', current: fmtBool(docStartFocus), def: 'Off' },
+        { label: 'Outline layout method', current: docOutlineLayout === 'squish' ? 'Squish' : 'Space', def: 'Space' },
       ],
       apply: resetSpeechDocSettings,
     },
     {
       section: 'Keyboard Shortcuts',
-      items: ['Disabled shortcuts', 'Rebound shortcuts'],
+      items: [
+        { label: 'Disabled shortcuts', current: `${disabledShortcutsCount} disabled`, def: '0 disabled' },
+        { label: 'Rebound shortcuts', current: `${reboundShortcutsCount} rebound`, def: '0 rebound' },
+      ],
       apply: () => {
         localStorage.removeItem('warroom-disabled-shortcuts');
         localStorage.removeItem('warroom-shortcut-bindings');
@@ -1313,7 +1394,11 @@ export default function Settings() {
     },
     {
       section: 'Layout',
-      items: ['Sidebar collapsed state', 'Chat panel width', 'Warroom AI panel width'],
+      items: [
+        { label: 'Sidebar collapsed state', current: fmtBool(localStorage.getItem('warroom-sb-collapsed') === 'true'), def: 'Off' },
+        { label: 'Chat panel width', current: localStorage.getItem('warroom-chat-width') ? `${localStorage.getItem('warroom-chat-width')}px` : 'Default', def: 'Default' },
+        { label: 'Warroom AI panel width', current: localStorage.getItem('warroom-gemini-width') ? `${localStorage.getItem('warroom-gemini-width')}px` : 'Default', def: 'Default' },
+      ],
       apply: () => {
         localStorage.removeItem('warroom-sb-collapsed');
         localStorage.removeItem('warroom-chat-width');
@@ -1321,6 +1406,13 @@ export default function Settings() {
       },
     },
   ];
+
+  // Only groups/items that have actually drifted from default are worth
+  // showing — a "here's everything reset does" wall of unchanged settings
+  // would bury the handful that actually matter for this click.
+  const changedResetGroups = settingsResetGroups
+    .map((g) => ({ ...g, items: g.items.filter((it) => it.current !== it.def) }))
+    .filter((g) => g.items.length > 0);
 
   function resetAllSettings() {
     settingsResetGroups.forEach((g) => g.apply());
@@ -1770,17 +1862,51 @@ export default function Settings() {
           )}
         </div>
 
-        {/* Chat sign-out — moved out of the old "More settings" dropdown so it's
-            not hidden behind an extra click. */}
         <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
-          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Chat</div>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Sharing</div>
+          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            Default permission when sharing flows and cases via the Share button.
+          </p>
+          <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
+            {(['edit', 'view'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setDefaultSharePermission(p)}
+                className="px-3 py-1 text-xs rounded-md transition-all capitalize"
+                style={defaultSharePermission === p
+                  ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
+                  : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
+              >
+                {p === 'edit' ? 'Can edit (default)' : 'Can view'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!generalSettingsAreDefault && (
+          <button
+            type="button"
+            title="Reset General settings to default"
+            onClick={resetGeneralSettings}
+            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
+          >
+            Reset to defaults
+          </button>
+        )}
+      </div>
+
+      {/* Chat — its own block (was folded into General, then split back out
+          since it's a big enough surface: sign-out, team files, quick chat
+          pins) rather than another dropdown. */}
+      <div id="settings-chat" className="glass-card rounded-sm p-4 space-y-4 mb-4">
+        <div className="label mb-1">Chat</div>
+
+        <div>
           {currentUser ? (
             <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs" style={{ color: 'var(--nav-inactive-color)' }}>
-                  Signed in as {(currentUser as any).displayName ?? (currentUser as any).email ?? 'you'}
-                </p>
-              </div>
+              <p className="text-xs" style={{ color: 'var(--nav-inactive-color)' }}>
+                Signed in as {(currentUser as any).displayName ?? (currentUser as any).email ?? 'you'}
+              </p>
               <button
                 className="btn text-xs px-3 py-1.5 shrink-0"
                 style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
@@ -1863,38 +1989,6 @@ export default function Settings() {
           )}
         </div>
         {showQuickChatPicker && <QuickChatPicker onClose={() => setShowQuickChatPicker(false)} />}
-
-        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
-          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Sharing</div>
-          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-            Default permission when sharing flows and cases via the Share button.
-          </p>
-          <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
-            {(['edit', 'view'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setDefaultSharePermission(p)}
-                className="px-3 py-1 text-xs rounded-md transition-all capitalize"
-                style={defaultSharePermission === p
-                  ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
-                  : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
-              >
-                {p === 'edit' ? 'Can edit (default)' : 'Can view'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {!generalSettingsAreDefault && (
-          <button
-            type="button"
-            title="Reset General settings to default"
-            onClick={resetGeneralSettings}
-            className="text-xs text-ink/50 hover:text-ink/80 underline underline-offset-2"
-          >
-            Reset to defaults
-          </button>
-        )}
       </div>
 
       {/* Event */}
@@ -3030,23 +3124,29 @@ export default function Settings() {
             <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Reset settings to default?</h2>
               <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-                Every setting listed below will be put back to its default value. This can't be undone —
-                export your settings first if you want a way back. API keys, OpenCaselist/Tabroom login,
-                Google Drive connection, chat sign-in, and the downloaded offline dictation model are not
-                affected.
+                {changedResetGroups.length > 0
+                  ? "Only what's listed below is actually changed from default — this is what resetting will undo. Can't be undone; export your settings first if you want a way back."
+                  : 'Every setting is already at its default value — there is nothing to reset.'}
+                {' '}API keys, OpenCaselist/Tabroom login, Google Drive connection, chat sign-in, and the
+                downloaded offline dictation model are never affected.
               </p>
             </div>
             <div className="p-5 py-3 overflow-y-auto" style={{ flex: 1 }}>
-              {settingsResetGroups.map((g) => (
+              {changedResetGroups.map((g) => (
                 <div key={g.section} className="mb-3.5 last:mb-0">
                   <div className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--label-color)' }}>
                     {g.section}
                   </div>
                   <ul className="space-y-0.5">
                     {g.items.map((item) => (
-                      <li key={item} className="text-xs flex items-start gap-1.5" style={{ color: 'var(--ink)' }}>
+                      <li key={item.label} className="text-xs flex items-start gap-1.5" style={{ color: 'var(--ink)' }}>
                         <span style={{ color: 'var(--nav-inactive-color)' }}>·</span>
-                        {item}
+                        <span>
+                          {item.label}:{' '}
+                          <span style={{ color: 'var(--danger, #b3261e)' }}>{item.current}</span>
+                          {' → '}
+                          <span style={{ color: 'var(--nav-active-color)' }}>{item.def}</span>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -3062,6 +3162,7 @@ export default function Settings() {
                 className="btn text-xs px-3 py-1.5"
                 style={{ background: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)', color: '#fff' }}
                 onClick={resetAllSettings}
+                disabled={changedResetGroups.length === 0}
               >
                 Reset all settings
               </button>
