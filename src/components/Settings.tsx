@@ -6,7 +6,7 @@ import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '.
 import { exportSettings, importSettings } from '../utils/settingsExport';
 import {
   FilesBarStyle, getFilesBarStyle, setFilesBarStyle,
-  isQuickChatEnabled, setQuickChatEnabled, getQuickChatPins,
+  isQuickChatEnabled, setQuickChatEnabled, getQuickChatPins, setQuickChatPins,
 } from '../lib/chatPrefs';
 import QuickChatPicker from './QuickChatPicker';
 
@@ -243,8 +243,7 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-documentation',   label: 'Documentation' },
   { id: 'settings-usermanual',      label: 'User Manual' },
   { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
-  { id: 'settings-importexport',    label: 'Import / Export' },
-  { id: 'settings-more',            label: 'More settings' },
+  { id: 'settings-importexport',    label: 'Import, Export & Reset' },
 ];
 
 // Matches painted via the CSS Custom Highlight API (CSS.highlights + Highlight
@@ -496,9 +495,8 @@ export default function Settings() {
     currentUser, setCurrentUser, setCurrentTeam, setTeamMembers, defaultSharePermission, setDefaultSharePermission,
     setEvent, setShowOnboarding, setView, view, direction, setDirection, theme, setTheme, setShortcutsOpen,
     cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
-    timerWarningSecs, setTimerWarningSecs,
+    timerWarningSecs, setTimerWarningSecs, dangerHighlight, setDangerHighlight,
   } = useApp();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [filesBarStyle, setFilesBarStyleLocal] = useState<FilesBarStyle>(getFilesBarStyle());
   const [quickChatEnabled, setQuickChatEnabledLocal] = useState(isQuickChatEnabled());
   const [showQuickChatPicker, setShowQuickChatPicker] = useState(false);
@@ -506,6 +504,8 @@ export default function Settings() {
   const [settingsExportMsg, setSettingsExportMsg] = useState('');
   const [settingsImportStatus, setSettingsImportStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
   const [settingsImportMsg, setSettingsImportMsg] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   async function handleExportSettings() {
     setSettingsExportStatus('working'); setSettingsExportMsg('');
@@ -1221,6 +1221,115 @@ export default function Settings() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Reset all settings to default ──────────────────────────────────────────
+  // One list, grouped the same way as the outline nav, drives both the
+  // confirmation dialog (every setting name, so nothing gets wiped as a
+  // surprise) and the actual reset — each group's `apply` is the single
+  // source of truth for what "default" means there. Deliberately excludes
+  // credentials (API keys, OpenCaselist/Tabroom login, Google Drive
+  // connection, chat sign-in) and the downloaded offline Whisper model —
+  // those aren't preferences, and undoing them silently would be actively
+  // harmful (locked out of AI features, re-downloading tens of MB), not a
+  // convenience.
+  const settingsResetGroups: { section: string; items: string[]; apply: () => void }[] = [
+    {
+      section: 'Appearance',
+      items: ['Theme direction (Calm Native / Warm Paper / Sharp Editorial)', 'Light / dark / system mode', 'Danger-word highlight color'],
+      apply: () => { setDirection('calm'); setTheme('system'); setDangerHighlight('always'); },
+    },
+    {
+      section: 'General',
+      items: [
+        'Card staleness (years)', 'Current-year short cite format', 'Timer warning threshold',
+        'Reduce motion', 'Skip delete confirmations',
+        ...NOTIFY_OPTIONS.map((o) => `Notification: ${o.label}`),
+      ],
+      apply: resetGeneralSettings,
+    },
+    {
+      section: 'Chat & collaboration',
+      items: ['Team files display', 'Quick chat (on/off + pins)', 'Default share permission'],
+      apply: () => {
+        setFilesBarStyle('split'); setFilesBarStyleLocal('split');
+        setQuickChatEnabled(false); setQuickChatEnabledLocal(false);
+        setQuickChatPins([]);
+        setDefaultSharePermission('edit');
+      },
+    },
+    {
+      section: 'Debate event',
+      items: ['Debate event'],
+      apply: () => applyEvent('hspolicy'),
+    },
+    {
+      section: 'AI API key',
+      items: ['Active AI provider', 'Gemini model', 'OpenAI model', 'Anthropic model', 'Grok model', 'LM Studio connection (URL, model, options)'],
+      apply: () => {
+        setApiProvider('gemini');
+        saveGeminiModel('flash');
+        saveOpenaiModel('gpt-4.1-mini');
+        saveAnthropicModel('claude-3-5-sonnet-20241022');
+        saveGrokModel('grok-3-mini');
+        setLmBaseUrl(LMSTUDIO_DEFAULT_BASE_URL);
+        setLmModel(LMSTUDIO_DEFAULT_MODEL);
+        setLmOptions('');
+        setLmTools(true);
+        setLmPerCallModels('');
+      },
+    },
+    {
+      section: 'AI behavior',
+      items: ['Token saving by default', 'Let Warroom AI rename chats'],
+      apply: () => { saveTokenSavingDefault(false); saveAutoRenameChat(false); },
+    },
+    {
+      section: 'Flow',
+      items: [
+        'Aff / Neg flow colors', 'Default new-flow layout (Stock issues / Advantage, Pro-first / Con-first)',
+        'Default new-flow zoom', 'Default new-flow font size', 'Auto-fit columns', 'AI tab summaries',
+      ],
+      apply: resetAllFlowSettings,
+    },
+    {
+      section: 'Auto Flow style',
+      items: ['Tag bold / italic / underline', 'Tag preview color', 'Tag preview size'],
+      apply: resetAutoFlowStyle,
+    },
+    {
+      section: 'Speech docs & cases',
+      items: [
+        'Light page in dark mode', 'Doc margin %', 'Doc zoom %',
+        'Auto-open outline', 'Start docs in Focus mode', 'Outline layout method',
+      ],
+      apply: resetSpeechDocSettings,
+    },
+    {
+      section: 'Keyboard Shortcuts',
+      items: ['Disabled shortcuts', 'Rebound shortcuts'],
+      apply: () => {
+        localStorage.removeItem('warroom-disabled-shortcuts');
+        localStorage.removeItem('warroom-shortcut-bindings');
+      },
+    },
+    {
+      section: 'Layout',
+      items: ['Sidebar collapsed state', 'Chat panel width', 'Warroom AI panel width'],
+      apply: () => {
+        localStorage.removeItem('warroom-sb-collapsed');
+        localStorage.removeItem('warroom-chat-width');
+        localStorage.removeItem('warroom-gemini-width');
+      },
+    },
+  ];
+
+  function resetAllSettings() {
+    settingsResetGroups.forEach((g) => g.apply());
+    window.dispatchEvent(new CustomEvent('warroom-settings-change'));
+    setShowResetConfirm(false);
+    setResetDone(true);
+    setTimeout(() => setResetDone(false), 3000);
+  }
+
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="label mb-1">Settings</div>
@@ -1661,6 +1770,121 @@ export default function Settings() {
           )}
         </div>
 
+        {/* Chat sign-out — moved out of the old "More settings" dropdown so it's
+            not hidden behind an extra click. */}
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Chat</div>
+          {currentUser ? (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs" style={{ color: 'var(--nav-inactive-color)' }}>
+                  Signed in as {(currentUser as any).displayName ?? (currentUser as any).email ?? 'you'}
+                </p>
+              </div>
+              <button
+                className="btn text-xs px-3 py-1.5 shrink-0"
+                style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
+                onClick={async () => {
+                  try {
+                    await signOut();
+                    await window.warroom?.secure.set('chat_email', '');
+                    await window.warroom?.secure.set('chat_password', '');
+                    localStorage.removeItem('warroom-chat-user');
+                    localStorage.removeItem('warroom-chat-team');
+                  } catch {}
+                  setCurrentUser(null);
+                  setCurrentTeam(null);
+                  setTeamMembers([]);
+                }}
+              >
+                Log out of chat
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Not signed in to chat. Open the chat panel to sign in.
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Team files display</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              How to reach a team room's Files list.
+            </p>
+          </div>
+          <div className="flex rounded-lg p-0.5 ml-4 shrink-0" style={{ background: 'var(--mode-toggle-bg)' }}>
+            {([['split', 'Chat / Files bar'], ['icon', 'Files icon']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => { setFilesBarStyle(v); setFilesBarStyleLocal(v); }}
+                className="px-3 py-1 text-xs rounded-md transition-all"
+                style={filesBarStyle === v
+                  ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
+                  : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="flex items-center justify-between gap-4">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Quick chat</div>
+              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                Pin team rooms and DMs to the top bar for one-click access.
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={quickChatEnabled}
+              onClick={() => {
+                const next = !quickChatEnabled;
+                setQuickChatEnabled(next);
+                setQuickChatEnabledLocal(next);
+                if (next) setShowQuickChatPicker(true);
+              }}
+              className="relative shrink-0 transition-colors"
+              style={{ width: 34, height: 20, borderRadius: 10, background: quickChatEnabled ? 'var(--accent)' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+            >
+              <span style={{
+                position: 'absolute', top: 2, left: quickChatEnabled ? 16 : 2, width: 16, height: 16,
+                borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+              }} />
+            </button>
+          </div>
+          {quickChatEnabled && (
+            <button className="btn text-xs px-2.5 py-1 mt-3" onClick={() => setShowQuickChatPicker(true)}>
+              {getQuickChatPins().length > 0 ? 'Edit pins…' : 'Choose pins…'}
+            </button>
+          )}
+        </div>
+        {showQuickChatPicker && <QuickChatPicker onClose={() => setShowQuickChatPicker(false)} />}
+
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Sharing</div>
+          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            Default permission when sharing flows and cases via the Share button.
+          </p>
+          <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
+            {(['edit', 'view'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setDefaultSharePermission(p)}
+                className="px-3 py-1 text-xs rounded-md transition-all capitalize"
+                style={defaultSharePermission === p
+                  ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
+                  : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
+              >
+                {p === 'edit' ? 'Can edit (default)' : 'Can view'}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {!generalSettingsAreDefault && (
           <button
             type="button"
@@ -1703,6 +1927,23 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Setup wizard — moved out of the old "More settings" dropdown; lives
+            here since re-running it mainly reconfigures the event above. */}
+        <div className="flex items-center justify-between gap-4 pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Setup wizard</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Re-run the onboarding flow to update your event, credentials, or API key.
+            </p>
+          </div>
+          <button
+            className="btn shrink-0"
+            onClick={() => setShowOnboarding(true)}
+          >
+            Restart setup
+          </button>
         </div>
       </div>
 
@@ -2728,7 +2969,7 @@ export default function Settings() {
 
       {/* Import / Export Settings */}
       <div id="settings-importexport" className="glass-card rounded-sm p-4 mb-4">
-        <div className="label mb-1">Import / Export Settings</div>
+        <div className="label mb-1">Import, Export & Reset Settings</div>
         <p className="text-xs text-ink/50 mb-3">
           Save your preferences (debate event, AI provider/model, theme, notifications, and more) to a
           file, or load them on another device. <strong>API keys and passwords are never included</strong> —
@@ -2751,154 +2992,83 @@ export default function Settings() {
         {settingsImportStatus === 'done' && (
           <p className="text-xs mt-2" style={{ color: 'var(--nav-inactive-color)' }}>{settingsImportMsg}</p>
         )}
-      </div>
 
-      {/* More settings */}
-      <div id="settings-more" className="mb-4">
-        <button
-          className="flex items-center gap-2 w-full px-1 py-1.5 text-xs font-medium transition"
-          style={{ color: 'var(--nav-inactive-color)', background: 'none', border: 'none', cursor: 'pointer' }}
-          onClick={() => setMoreOpen((o) => !o)}
-        >
-          <svg
-            width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ transform: moreOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+        <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Reset everything</div>
+          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            Put every setting on this page back to its default. API keys, OpenCaselist/Tabroom login, Google
+            Drive connection, chat sign-in, and the downloaded offline dictation model are never touched.
+          </p>
+          <button
+            type="button"
+            className="btn text-xs px-3 py-1.5"
+            style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
+            onClick={() => setShowResetConfirm(true)}
           >
-            <path d="M7 5l5 5-5 5" />
-          </svg>
-          More settings
-        </button>
-
-        {moreOpen && (
-          <div className="mt-2 space-y-4">
-            {/* Chat / sign out */}
-            <div className="glass-card rounded-sm p-4">
-              <div className="label mb-1">Chat</div>
-              {currentUser ? (
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-ink">{(currentUser as any).displayName ?? (currentUser as any).email ?? 'Signed in'}</p>
-                    <p className="text-xs text-ink/40 mt-0.5">Signed in to team chat</p>
-                  </div>
-                  <button
-                    className="btn text-xs px-3 py-1.5"
-                    style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
-                    onClick={async () => {
-                      try {
-                        await signOut();
-                        await window.warroom?.secure.set('chat_email', '');
-                        await window.warroom?.secure.set('chat_password', '');
-                        localStorage.removeItem('warroom-chat-user');
-                        localStorage.removeItem('warroom-chat-team');
-                      } catch {}
-                      setCurrentUser(null);
-                      setCurrentTeam(null);
-                      setTeamMembers([]);
-                    }}
-                  >
-                    Log out of chat
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-ink/50">Not signed in to chat. Open the chat panel to sign in.</p>
-              )}
-            </div>
-
-            {/* Files display (team rooms) */}
-            <div className="glass-card rounded-sm p-4">
-              <div className="label mb-1">Team files display</div>
-              <p className="text-xs text-ink/50 mb-3">How to reach a team room's Files list.</p>
-              <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
-                {([['split', 'Chat / Files bar'], ['icon', 'Files icon']] as const).map(([v, label]) => (
-                  <button
-                    key={v}
-                    onClick={() => { setFilesBarStyle(v); setFilesBarStyleLocal(v); }}
-                    className="px-3 py-1 text-xs rounded-md transition-all"
-                    style={filesBarStyle === v
-                      ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
-                      : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick chat */}
-            <div className="glass-card rounded-sm p-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="label mb-1">Quick chat</div>
-                  <p className="text-xs text-ink/50">Pin team rooms and DMs to the top bar for one-click access.</p>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={quickChatEnabled}
-                  onClick={() => {
-                    const next = !quickChatEnabled;
-                    setQuickChatEnabled(next);
-                    setQuickChatEnabledLocal(next);
-                    if (next) setShowQuickChatPicker(true);
-                  }}
-                  className="relative shrink-0 transition-colors"
-                  style={{ width: 34, height: 20, borderRadius: 10, background: quickChatEnabled ? 'var(--accent)' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
-                >
-                  <span style={{
-                    position: 'absolute', top: 2, left: quickChatEnabled ? 16 : 2, width: 16, height: 16,
-                    borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
-                  }} />
-                </button>
-              </div>
-              {quickChatEnabled && (
-                <button className="btn text-xs px-2.5 py-1 mt-3" onClick={() => setShowQuickChatPicker(true)}>
-                  {getQuickChatPins().length > 0 ? 'Edit pins…' : 'Choose pins…'}
-                </button>
-              )}
-            </div>
-            {showQuickChatPicker && <QuickChatPicker onClose={() => setShowQuickChatPicker(false)} />}
-
-            {/* Sharing */}
-            <div className="glass-card rounded-sm p-4">
-              <div className="label mb-1">Sharing</div>
-              <p className="text-xs text-ink/50 mb-3">
-                Default permission when sharing flows and cases via the Share button.
-              </p>
-              <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
-                {(['edit', 'view'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setDefaultSharePermission(p)}
-                    className="px-3 py-1 text-xs rounded-md transition-all capitalize"
-                    style={defaultSharePermission === p
-                      ? { background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', fontWeight: 600 }
-                      : { background: 'transparent', color: 'var(--nav-inactive-color)' }}
-                  >
-                    {p === 'edit' ? 'Can edit (default)' : 'Can view'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Setup wizard */}
-            <div className="glass-card rounded-sm p-4 flex items-center justify-between gap-4">
-              <div>
-                <div className="label mb-1">Setup wizard</div>
-                <p className="text-xs text-ink/50">Re-run the onboarding flow to update your event, credentials, or API key.</p>
-              </div>
-              <button
-                className="btn shrink-0"
-                onClick={() => setShowOnboarding(true)}
-              >
-                Restart setup
-              </button>
-            </div>
-          </div>
-        )}
+            Reset settings to default…
+          </button>
+          {resetDone && (
+            <p className="text-xs mt-2" style={{ color: 'var(--nav-inactive-color)' }}>All settings reset to default ✓</p>
+          )}
+        </div>
       </div>
 
         </div>
       </div>
+
+      {showResetConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowResetConfirm(false)}
+        >
+          <div
+            className="rounded-xl shadow-2xl w-full flex flex-col"
+            style={{ background: 'var(--bg-elevated)', maxWidth: 520, maxHeight: '85vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Reset settings to default?</h2>
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                Every setting listed below will be put back to its default value. This can't be undone —
+                export your settings first if you want a way back. API keys, OpenCaselist/Tabroom login,
+                Google Drive connection, chat sign-in, and the downloaded offline dictation model are not
+                affected.
+              </p>
+            </div>
+            <div className="p-5 py-3 overflow-y-auto" style={{ flex: 1 }}>
+              {settingsResetGroups.map((g) => (
+                <div key={g.section} className="mb-3.5 last:mb-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--label-color)' }}>
+                    {g.section}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {g.items.map((item) => (
+                      <li key={item} className="text-xs flex items-start gap-1.5" style={{ color: 'var(--ink)' }}>
+                        <span style={{ color: 'var(--nav-inactive-color)' }}>·</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="p-5 pt-3 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid var(--border-side)' }}>
+              <button type="button" className="btn text-xs px-3 py-1.5" onClick={() => setShowResetConfirm(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn text-xs px-3 py-1.5"
+                style={{ background: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)', color: '#fff' }}
+                onClick={resetAllSettings}
+              >
+                Reset all settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
