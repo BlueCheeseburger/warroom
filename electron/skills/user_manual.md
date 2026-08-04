@@ -547,6 +547,7 @@ Star icon in the title bar.
 
 - **New chat**: pencil icon in panel header
 - **Switch chats**: list icon in panel header
+- **Rename a chat**: click its title in the panel header to edit it. Once you rename a chat yourself, the title is locked — it'll never be overwritten by the auto-title or by the AI (see below).
 - **Attach context**: type `@` in the message box → select case/block/flow/opponent/image. Or use `+` button for .docx or image files.
 - **Token saving**: strips body text from speech doc attachments to save cost. Toggle in attach menu or Settings.
 - **Models**: Flash Lite (cheapest), Flash (default), 3.5 Flash (best quality). Change in Settings → Gemini Model.
@@ -557,6 +558,7 @@ Star icon in the title bar.
 - **Navigation**: ask the AI to take you anywhere — "open my Spending DA case", "go to settings", "show my tournaments". It opens the view for you.
 - **Flow editing**: ask the AI to fill in or edit a flow — "add the perm to my Round 3 flow under 2AC", "put 'extend impact' in 2NR row 4". It can read your flow's columns/rows and write to specific cells. If the flow is open, edits appear live.
 - **Opponent scouting**: ask "scout [team name]" and it pulls their disclosed rounds/cites from OpenCaselist (if the team is linked) and returns an AFF/NEG summary with citations — the same report you'd get from the "Scout" button on an opponent profile. Repeat asks return the cached report instantly; say "refresh" or "rescout" to regenerate it.
+- **Auto-rename**: off by default. Turn on "Let Warroom AI rename chats" in Settings to let it rename a chat's title if the topic genuinely shifts to something the title no longer reflects. It uses this sparingly and will never touch a chat you've renamed yourself.
 
 ### AI Prompts
 Every question or task Warroom sends to the AI — card cutting, scouting reports, mission briefs, cross-ex questions, card credibility, impact calc, the Outweigh game, and more — is built from an editable prompt file, not baked into the app. Throughout the Documentation page you'll find "View/edit this prompt" links next to each AI feature; clicking one opens that prompt in a plain text editor. Change the wording and save — your edit is used the very next time that feature runs, with no restart needed. If you want to go back to the original wording, just delete your edited copy.
@@ -616,6 +618,9 @@ Room/DM Settings (gear icon) has a **Notifications** section for that specific c
 
 ### Who's online, who's typing
 A small dot on someone's DM icon in All Chats shows green when they're online. While someone's typing in a room or DM you're viewing, a small "so-and-so is typing…" note appears above the message box.
+
+### Faster reopening
+Your 5 most recently opened chats show their last 50 messages instantly when you reopen them, while Warroom checks for anything new in the background — no more blank "Loading messages…" for a chat you were just in.
 
 ---
 

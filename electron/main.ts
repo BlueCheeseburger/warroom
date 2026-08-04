@@ -6053,6 +6053,17 @@ const AGENT_TOOLS = [{
         required: ['query'],
       },
     },
+    {
+      name: 'rename_chat',
+      description: "Rename the current chat's title. Only available when the user has enabled 'Let Warroom AI rename chats' in Settings. Use VERY sparingly — only when the conversation's topic has genuinely and substantially shifted away from what the current title describes (e.g. a chat titled 'Impact Calc Basics' moves into scouting an opponent). Never use it on the first exchange (the chat is auto-titled already) or for a minor tangent. If the tool result says the title is locked, the user manually renamed this chat — do not call it again this conversation.",
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING', description: 'New chat title — short, 2-6 words, no punctuation at the end.' },
+        },
+        required: ['title'],
+      },
+    },
   ],
 }];
 
@@ -6219,6 +6230,12 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
       readJson('app_settings').catch(() => null),
     ]);
 
+    // rename_chat is off by default (Settings → "Let Warroom AI rename chats") —
+    // don't even offer the tool to the model unless the user opted in.
+    const activeTools = appSettings?.autoRenameChat
+      ? AGENT_TOOLS
+      : [{ functionDeclarations: AGENT_TOOLS[0].functionDeclarations.filter((d) => d.name !== 'rename_chat') }];
+
     const rawEvent: string | undefined = appSettings?.debateEvent;
     // Map the stored event key to a human label and which topic(s) to show
     type EventInfo = { label: string; topics: string[] };
@@ -6262,7 +6279,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
           headers: geminiHeaders(apiKey),
           body: JSON.stringify({
             contents: messages,
-            tools: AGENT_TOOLS,
+            tools: activeTools,
             generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
             system_instruction: { parts: [{ text: systemText }] },
           }),
@@ -6309,7 +6326,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
             headers: geminiHeaders(apiKey),
             body: JSON.stringify({
               contents: messages,
-              tools: AGENT_TOOLS,
+              tools: activeTools,
               generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
               system_instruction: { parts: [{ text: systemText }] },
             }),
@@ -6343,7 +6360,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
     // ── OpenAI path ──────────────────────────────────────────────────────────
     if (provider === 'openai') {
       const { msgs: oaiMessages } = geminiMsgsToOpenAI(messages);
-      const oaiTools = geminiToolsToOpenAI(AGENT_TOOLS);
+      const oaiTools = geminiToolsToOpenAI(activeTools);
       const res = await fetchWithRetry(
         'https://api.openai.com/v1/chat/completions',
         {
@@ -6375,7 +6392,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
     if (provider === 'lmstudio') {
       const cfg = await lmstudioConfig();
       const { msgs: lmMessages } = geminiMsgsToOpenAI(messages);
-      const lmTools = geminiToolsToOpenAI(AGENT_TOOLS);
+      const lmTools = geminiToolsToOpenAI(activeTools);
       const buildBody = (withTools: boolean) => buildLmStudioChatBody(cfg, {
         messages: [{ role: 'system', content: systemText }, ...lmMessages],
         tools: withTools ? lmTools : null,
@@ -6410,7 +6427,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
     // ── Grok path (OpenAI-compatible) ────────────────────────────────────────
     if (provider === 'grok') {
       const { msgs: grokMessages } = geminiMsgsToOpenAI(messages);
-      const grokTools = geminiToolsToOpenAI(AGENT_TOOLS);
+      const grokTools = geminiToolsToOpenAI(activeTools);
       const res = await fetchWithRetry(
         'https://api.x.ai/v1/chat/completions',
         {
@@ -6441,7 +6458,7 @@ ipcMain.handle('chat:geminiAgentTurn', async (event, messages: any[], wantTitle?
     // ── Anthropic path ───────────────────────────────────────────────────────
     {
       const antMessages = geminiMsgsToAnthropic(messages);
-      const antTools = geminiToolsToAnthropic(AGENT_TOOLS);
+      const antTools = geminiToolsToAnthropic(activeTools);
       const res = await fetchWithRetry(
         'https://api.anthropic.com/v1/messages',
         {

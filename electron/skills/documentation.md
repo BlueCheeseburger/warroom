@@ -854,6 +854,7 @@ Warroom AI can call the following tools during a conversation:
 - `navigate_app` — opens any view for the user (top-level views, or a case/block/opponent/tournament/flow resolved by name)
 - `list_flows` / `read_flow` — list flow sheets and read a flow's columns + filled cells
 - `edit_flow_cell` — writes a single cell in a flow sheet (by flow name, column header, 1-based row). Writes to `flow_data_<id>` storage and dispatches a `warroom-flow-updated` event so an open FlowView reloads live.
+- `rename_chat` — renames the current chat's title. Off by default (Settings → "Let Warroom AI rename chats") — filtered out of the tools array server-side in `chat:geminiAgentTurn` when the setting is off, so the model is never even offered it. Prompt guidance is conservative: only on a genuine topic shift, never on the first exchange. Blocked once the user manually renames the chat (`titleSetByUser` flag on the conversation).
 
 The agent runs 3–5 searches per evidence request in parallel. Saved cards always use the complete verbatim card body — never a summary. The save handler validates the body is non-empty before writing to the DB.
 
@@ -863,7 +864,7 @@ Click any completed tool-call step to expand a transparency panel showing the ex
 Text responses stream token-by-token across every provider (Gemini, OpenAI, Anthropic, Grok, LM Studio). `chat:geminiAgentTurn` in `electron/main.ts` parses each provider's own SSE format and forwards deltas to the renderer over a `chat:agentStreamChunk` event scoped by a per-turn `requestId`, while still accumulating the full response server-side for tool-call detection and title extraction. Gemini has a known API quirk, `MALFORMED_FUNCTION_CALL`, where streamed tool-calling occasionally breaks down mid-response — when that happens the handler transparently retries that turn once on the non-streaming endpoint before giving up.
 
 ### Chat sessions
-Each conversation has an auto-generated title (generated after the first exchange). Sessions are stored locally. The active session ID is tracked in Zustand as `geminiActiveId`.
+Each conversation has an auto-generated title (generated after the first exchange). Sessions are stored locally. The active session ID is tracked in Zustand as `geminiActiveId`. Click a chat's title in the panel header to rename it manually — sets `titleSetByUser`, permanently locking the title against the auto-title and `rename_chat` alike.
 
 ### Retry on transient failures
 Every AI provider call (Gemini, OpenAI, Anthropic, Grok — both single-turn helper calls and the multi-turn agent tool-calling loop) goes through `fetchWithRetry` in `electron/main.ts`. It retries HTTP 429/500/502/503/504/529 and network-level errors (dropped connection, timeout) up to twice with exponential backoff + jitter, honoring a `Retry-After` header when the provider sends one. It does **not** retry 400/401/403 — a bad API key or malformed request won't succeed on a second try. For the agent loop specifically, `fetchWithRetry`'s `timeoutMs` option gives each retry attempt a fresh 45s `AbortController` rather than reusing one that already fired.
@@ -937,6 +938,9 @@ Each chat (team room = `'team'`, or a dm_channel_id) has an independent notifica
 
 ### Presence: online status and typing
 One Supabase presence channel per team (`presence-<teamId>`) covers both online status for every member and typing state for the team room and every DM — each client tracks `{ userId, displayName, typing }`, where `typing` is a scope key (`'team'` or a dm_channel_id) or `null`. No message content ever crosses this channel. Deliberately lighter weight than the live-flow channel's private+RLS setup — presence here only reveals "so-and-so is online/typing", so an unauthenticated but team-scoped channel name is a proportionate tradeoff. `useTypingTracker(scopeKey)` (Chat.tsx) re-tracks on each composer keystroke and clears itself after 2.5s idle. Raw presence state lives in `appStore`'s `presenceState` (not chat-local) so any component can read it via `chatPrefs.ts`'s `presenceList()`/`isUserOnline()`/`typingDisplayNamesFor()` without prop drilling. `ChatAvatar`'s optional `online` prop draws the status dot; currently wired up in the all-chats DM list (1:1 DMs only).
+
+### Instant-open message cache
+`chatCache.ts` keeps the last 50 decrypted messages for each of the last 5 chats the user opened (team room and/or DMs, LRU by `lastOpened`) in local userData JSON (`chat_cache_<chatId>` + a `chat_cache_index` of which chats are cached), via the existing generic `storage:read`/`storage:write` IPC. `loadMessages()` in both `ChatBody` and `DMBody` renders the cached list immediately (no "Loading messages…" flash for a recently-visited chat) while the real Supabase fetch runs in the background and then fully replaces it — the cache is a "show something now, reconcile shortly after" layer, never a source of truth, so a stale cached edit/delete self-heals within one fetch. The realtime message handlers also update the cache incrementally so a quick reopen has the very latest message too. Evicting a chat past the 5-chat cap clears its cache file. Stores plaintext (already-decrypted) content, same trust tier as every other local userData file.
 
 ---
 

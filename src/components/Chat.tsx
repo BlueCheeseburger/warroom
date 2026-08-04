@@ -21,6 +21,7 @@ import {
 } from '../lib/chatPrefs';
 import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
 import OversizedFilePopup from './OversizedFilePopup';
+import { getCachedMessages, setCachedMessages } from '../lib/chatCache';
 
 type ChatView = 'team' | 'dm-list' | 'files' | 'pins' | { kind: 'dm'; channel: DMChannel };
 
@@ -529,7 +530,12 @@ function ChatBody() {
         const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
         decoded = await decryptMessage(key, msg);
       } catch {}
-      setMessages((prev) => prev.find((m) => m.id === decoded.id) ? prev : [...prev, decoded]);
+      setMessages((prev) => {
+        if (prev.find((m) => m.id === decoded.id)) return prev;
+        const next = [...prev, decoded];
+        setCachedMessages('team', next).catch(() => {});
+        return next;
+      });
       // Read the live value, not the one captured when this subscription was set up
       // (the effect only re-runs on team change), so the unread badge doesn't tick up
       // — and no desktop notification fires — while the chat panel is actually open
@@ -566,13 +572,17 @@ function ChatBody() {
 
   async function loadMessages() {
     if (!currentTeam) return;
-    setLoading(true);
+    // Show the last cached messages instantly while the real fetch runs, so
+    // reopening a recent chat never starts from a blank "Loading…" screen.
+    const cached = await getCachedMessages<ChatMessageType>('team');
+    if (cached) { setMessages(cached); setLoading(false); } else { setLoading(true); }
     const res = await window.warroom.chat.getMessages(currentTeam.id);
     if (res.ok) {
       try {
         const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
         const decrypted = await Promise.all((res.data as any[]).map((m) => decryptMessage(key, m)));
         setMessages(decrypted as ChatMessageType[]);
+        setCachedMessages('team', decrypted).catch(() => {});
       } catch {
         setMessages(res.data as ChatMessageType[]);
       }
@@ -1244,7 +1254,12 @@ function DMBody({ channel }: { channel: DMChannel }) {
           decoded = await decryptMessage(key, msg);
         }
       } catch {}
-      setMessages((prev) => prev.find((m) => m.id === decoded.id) ? prev : [...prev, decoded]);
+      setMessages((prev) => {
+        if (prev.find((m) => m.id === decoded.id)) return prev;
+        const next = [...prev, decoded];
+        setCachedMessages(channel.id, next).catch(() => {});
+        return next;
+      });
     });
     return () => { off(); window.warroom.chat.unsubscribeDM(); };
   }, [channel.id]);
@@ -1252,7 +1267,9 @@ function DMBody({ channel }: { channel: DMChannel }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   async function loadMessages() {
-    setLoading(true);
+    // Show the last cached messages instantly while the real fetch runs.
+    const cached = await getCachedMessages<DMMessage>(channel.id);
+    if (cached) { setMessages(cached); setLoading(false); } else { setLoading(true); }
     const res = await window.warroom.chat.getDMMessages(channel.id);
     if (res.ok) {
       try {
@@ -1260,6 +1277,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
           const key = await getTeamKey(currentTeam.id, currentTeam.invite_code);
           const decrypted = await Promise.all((res.data as any[]).map((m) => decryptMessage(key, m)));
           setMessages(decrypted as DMMessage[]);
+          setCachedMessages(channel.id, decrypted).catch(() => {});
         } else {
           setMessages(res.data as DMMessage[]);
         }

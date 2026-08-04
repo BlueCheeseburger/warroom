@@ -576,7 +576,8 @@ type ToolName =
   | 'control_timer'
   | 'get_case_synopses'
   | 'compare_impacts'
-  | 'search_warroom';
+  | 'search_warroom'
+  | 'rename_chat';
 
 interface ToolStep {
   id: string;
@@ -653,7 +654,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
   const saveTools   = new Set<ToolName>(['save_card_to_library', 'save_tournament_to_app', 'write_skill']);
   const skillTools  = new Set<ToolName>(['get_skill', 'read_attachment']);
   // App actions — navigation + flow editing. Shown with their own compass/grid indicator.
-  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer', 'get_case_synopses', 'compare_impacts']);
+  const actionTools = new Set<ToolName>(['navigate_app', 'list_flows', 'read_flow', 'edit_flow_cell', 'read_speech_doc', 'control_timer', 'get_case_synopses', 'compare_impacts', 'rename_chat']);
   // fetch_article + all search/lookup tools are "searchSteps" — shown in the search pill
   const searchSteps = steps.filter((s) => !saveTools.has(s.tool) && !skillTools.has(s.tool) && !actionTools.has(s.tool));
   const saveSteps   = steps.filter((s) => saveTools.has(s.tool));
@@ -1048,6 +1049,10 @@ interface Conversation {
   id: string;
   title: string;
   history: GeminiMsg[];
+  // Set once the user manually renames a chat. From then on, nothing automatic
+  // (the first-exchange auto-title, or the AI's own rename_chat tool call) is
+  // allowed to overwrite it — a manual rename is a deliberate, final choice.
+  titleSetByUser?: boolean;
 }
 
 function newConversation(): Conversation {
@@ -1061,11 +1066,12 @@ const convHistoryKey = (id: string) => `warroom-gemini-conv-${id}`;
 
 function loadConversations(): Conversation[] {
   try {
-    const meta: Array<{ id: string; title: string }> = JSON.parse(localStorage.getItem(CONV_META_KEY) ?? '[]');
+    const meta: Array<{ id: string; title: string; titleSetByUser?: boolean }> = JSON.parse(localStorage.getItem(CONV_META_KEY) ?? '[]');
     if (meta.length > 0) {
       return meta.map((m) => ({
         id: m.id,
         title: m.title,
+        titleSetByUser: m.titleSetByUser,
         history: (() => {
           try { return JSON.parse(localStorage.getItem(convHistoryKey(m.id)) ?? '[]'); } catch { return []; }
         })(),
@@ -1077,7 +1083,7 @@ function loadConversations(): Conversation[] {
 
 export function saveGeminiConversationsMeta(convs: Conversation[]) {
   try {
-    localStorage.setItem(CONV_META_KEY, JSON.stringify(convs.map((c) => ({ id: c.id, title: c.title }))));
+    localStorage.setItem(CONV_META_KEY, JSON.stringify(convs.map((c) => ({ id: c.id, title: c.title, titleSetByUser: c.titleSetByUser }))));
     window.dispatchEvent(new StorageEvent('storage', { key: CONV_META_KEY }));
   } catch {}
 }
@@ -1087,6 +1093,8 @@ export default function GeminiPanel() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string>(() => loadConversations()[0]?.id ?? '');
   const [showList, setShowList] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
 
   useEffect(() => {
@@ -1163,14 +1171,21 @@ export default function GeminiPanel() {
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== id) return c;
-          // Only update title if firstMsg is provided AND is a real title
-          const newTitle = firstMsg != null
-            ? firstMsg
-            : (c.title === 'New chat' || c.title === '…') ? c.title : c.title;
+          // Once the user has manually renamed a chat, no automatic title (the
+          // first-exchange auto-title, or the AI's rename_chat tool) may override it.
+          const newTitle = (firstMsg != null && !c.titleSetByUser) ? firstMsg : c.title;
           return { ...c, history, title: newTitle };
         })
       );
     }, 0);
+  }
+
+  // Manual rename — a deliberate, final choice. Locks the title against any
+  // future automatic rename (first-exchange auto-title or the AI's rename_chat).
+  function renameChat(id: string, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setConversations((prev) => prev.map((c) => c.id === id ? { ...c, title: trimmed, titleSetByUser: true } : c));
   }
 
   return (
@@ -1183,9 +1198,29 @@ export default function GeminiPanel() {
           <ListIcon />
         </PanelBtn>
         <AIProviderIcon provider={apiProvider} size={13} />
-        <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--ink)' }}>
-          {active.title}
-        </span>
+        {titleEditing ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={() => { renameChat(active.id, titleDraft); setTitleEditing(false); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { renameChat(active.id, titleDraft); setTitleEditing(false); }
+              else if (e.key === 'Escape') setTitleEditing(false);
+            }}
+            className="text-xs font-semibold flex-1 min-w-0 bg-transparent outline-none"
+            style={{ color: 'var(--ink)', border: '1px solid var(--border-med)', borderRadius: 4, padding: '1px 4px' }}
+          />
+        ) : (
+          <span
+            className="text-xs font-semibold flex-1 truncate cursor-text"
+            style={{ color: 'var(--ink)' }}
+            title="Click to rename"
+            onClick={() => { setTitleDraft(active.title); setTitleEditing(true); }}
+          >
+            {active.title}
+          </span>
+        )}
         {/* Context window indicator — only shown above 50% */}
         {estimateTokens(active.history) / GEMINI_CTX_TOKENS > 0.5 && (
           <ContextArc tokens={estimateTokens(active.history)} />
@@ -1239,6 +1274,7 @@ export default function GeminiPanel() {
           conversationId={active.id}
           initialHistory={active.history}
           onHistoryChange={onHistoryChange}
+          titleLocked={!!active.titleSetByUser}
         />
       </div>
     </div>
@@ -1415,10 +1451,11 @@ function buildAppIndex(db: any, flowsIndex: any[]): string {
   return '[APP INDEX — the user may refer to any item below by name. Match case-insensitively and use the warroom_id to link back with @[Name](warroom:type:id).]\n\n' + sections.join('\n\n');
 }
 
-function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
+function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLocked }: {
   conversationId: string;
   initialHistory: GeminiMsg[];
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
+  titleLocked: boolean;
 }) {
   const { update, agentSearchFns, db, setView, flowsIndex, cardOutdatedYears } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
@@ -2745,6 +2782,30 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange }: {
               syncSteps(steps);
               return { name, functionResult: `Search failed: ${e.message}` };
             }
+
+          } else if (name === 'rename_chat') {
+            const newTitle = String(args.title ?? '').trim();
+            steps = [...steps, { id: stepId, tool: 'rename_chat', label: `Renaming chat to "${newTitle}"`, status: 'running' }];
+            syncSteps(steps);
+            if (titleLocked) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: 'Not renamed — the user manually renamed this chat, so it stays locked. Do not try again this conversation.' };
+            }
+            if (!newTitle) {
+              steps = steps.map((s) => s.id === stepId ? { ...s, status: 'error' } : s);
+              syncSteps(steps);
+              return { name, functionResult: 'No title provided.' };
+            }
+            // Use functional setHistory so we rename against the correct current
+            // snapshot, not the stale `history` closure captured when send() started.
+            setHistory((prev) => {
+              onHistoryChange(conversationId, prev, newTitle);
+              return prev;
+            });
+            steps = steps.map((s) => s.id === stepId ? { ...s, status: 'done' } : s);
+            syncSteps(steps);
+            return { name, functionResult: `Renamed chat to "${newTitle}".` };
 
           } else {
             return { name, functionResult: `Unknown tool: ${name}` };

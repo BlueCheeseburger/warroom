@@ -2959,6 +2959,7 @@ export default function Settings() {
               { label: 'OpenCaselist credentials', note: 'secure_oc_username/password.json', tag: 'encrypted' },
               { label: 'Google Drive OAuth tokens', note: 'secure_gdrive_*.json', tag: 'encrypted' },
               { label: 'Chat credentials', note: 'secure_chat_*.json', tag: 'encrypted' },
+              { label: 'Recent chat messages (last 5 chats, 50 each — instant reopen)', note: 'chat_cache_*.json', tag: 'plaintext' },
             ].map(({ label, note, tag }) => (
               <div key={label} className="flex items-center gap-2">
                 <span
