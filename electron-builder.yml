@@ -50,8 +50,9 @@ win:
   artifactName: ${productName}-Setup-${version}.${ext}
   # Set CSC_LINK (path or base64 of the .pfx) and CSC_KEY_PASSWORD to sign.
   # Unset, builds stay unsigned and SmartScreen will warn on download.
-  signingHashAlgorithms:
-    - sha256
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
 protocols:
   - name: Warroom
     schemes:
