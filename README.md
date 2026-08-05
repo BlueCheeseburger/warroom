@@ -2,7 +2,19 @@
 
 Warroom is a desktop app for competitive policy debaters. It's built around the stuff prep actually involves — cases and blocks, cutting evidence, scouting opponents, tracking tournaments, flowing — plus an AI assistant, all running locally with no account required.
 
-At a glance it looks like a case organizer, which, fair, it mostly is. But a few things under the hood aren't what you'd expect from that description:
+## Core features
+
+- **Case & evidence organizer** — cases, blocks, and cards with tagging, folders, and full-text search
+- **AI card cutter** — paste a URL, screenshot, or PDF and get a formatted card back
+- **Live collaborative flowing** — co-flow with a teammate in real time, keystroke by keystroke
+- **Agentic Warroom AI** — searches evidence databases, cuts cards, edits flows, navigates the app for you
+- **Opponent & judge scouting**, tournament tracking, and live Tabroom round data
+- **Cross-ex prep, Impact Calc, and practice modes** for drilling weighing
+- **Team chat & shared files** with comments, mentions, and presence
+- **Keeps working after you close it** — a background daemon watches for updates and notifies you
+- Runs fully offline with local data storage — no account required
+
+---
 
 ## What makes it stand out
 
