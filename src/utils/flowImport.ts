@@ -201,3 +201,16 @@ export async function importFlowFromXlsx(base64: string): Promise<StoredFlowData
   data.sheets = parsed.map((p) => ({ id: crypto.randomUUID(), name: p.name.slice(0, 40), cells: p.cells }));
   return data;
 }
+
+/**
+ * Read a .xlsx file off disk (by path) and parse it into flow data, plus a
+ * display name derived from the filename. Shared by the single-file importer
+ * (Sidebar) and the bulk onboarding importer so both go through one code path.
+ */
+export async function importFlowFile(path: string): Promise<{ name: string; data: StoredFlowData }> {
+  const res = await window.warroom?.fs.readFileBytes(path);
+  if (!res?.ok || !res.base64) throw new Error(res?.error || 'Could not read the file.');
+  const data = await importFlowFromXlsx(res.base64);
+  const name = (path.split(/[\\/]/).pop() ?? 'Imported flow').replace(/\.xlsx$/i, '');
+  return { name, data };
+}

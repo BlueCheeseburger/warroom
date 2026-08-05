@@ -10,6 +10,7 @@ import {
   isQuickChatEnabled, setQuickChatEnabled, getQuickChatPins, setQuickChatPins,
 } from '../lib/chatPrefs';
 import QuickChatPicker from './QuickChatPicker';
+import type { UpdaterStatus } from '../types';
 
 type Palette = { bg: string; card: string; accent: string; ink: string; line: string };
 const THEME_OPTIONS: {
@@ -242,6 +243,7 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-flow',            label: 'Flow' },
   { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
   { id: 'settings-storage',         label: 'Storage' },
+  { id: 'settings-updates',         label: 'Updates' },
   { id: 'settings-documentation',   label: 'Documentation' },
   { id: 'settings-usermanual',      label: 'User Manual' },
   { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
@@ -515,6 +517,9 @@ export default function Settings() {
     cardOutdatedYears, setCardOutdatedYears, reduceMotion, setReduceMotion, skipDeleteConfirm, setSkipDeleteConfirm,
     timerWarningSecs, setTimerWarningSecs, dangerHighlight, setDangerHighlight,
   } = useApp();
+  const [appVersion, setAppVersion] = useState('');
+  const [autoUpdateCheck, setAutoUpdateCheckState] = useState(true);
+  const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>({ state: 'idle' });
   const [filesBarStyle, setFilesBarStyleLocal] = useState<FilesBarStyle>(getFilesBarStyle());
   const [quickChatEnabled, setQuickChatEnabledLocal] = useState(isQuickChatEnabled());
   const [showQuickChatPicker, setShowQuickChatPicker] = useState(false);
@@ -953,6 +958,7 @@ export default function Settings() {
         notifyOpponents: (s as any)?.notifyOpponents !== false,
       });
       setCiteYearFormatState((s as any)?.citeYearFormat === 'year' ? 'year' : 'month-day');
+      setAutoUpdateCheckState((s as any)?.autoUpdateCheck !== false);
       setDictationUseOfflineState(!!(s as any)?.dictationUseOffline);
       const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
       setSavedKeys(keys);
@@ -965,6 +971,19 @@ export default function Settings() {
       if (res?.ok) setOfflineModelReady(!!res.ready);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    window.warroom?.getAppVersion().then((v) => setAppVersion(v ?? ''));
+    window.warroom?.updater.getStatus().then((s) => s && setUpdaterStatus(s));
+    const off = window.warroom?.updater.onStatus((s) => setUpdaterStatus(s));
+    return () => off?.();
+  }, []);
+
+  async function toggleAutoUpdateCheck(val: boolean) {
+    setAutoUpdateCheckState(val);
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...s, autoUpdateCheck: val });
+  }
 
   // Apply the debate event immediately on selection — updates the live store (so the
   // timer, flows, opponent stats, and forms follow it right away) and persists it,
@@ -1343,6 +1362,13 @@ export default function Settings() {
         { label: 'Let Warroom AI rename chats', current: fmtBool(autoRenameChat), def: 'Off' },
       ],
       apply: () => { saveTokenSavingDefault(false); saveAutoRenameChat(false); },
+    },
+    {
+      section: 'Updates',
+      items: [
+        { label: 'Check for updates automatically', current: fmtBool(autoUpdateCheck), def: 'On' },
+      ],
+      apply: () => toggleAutoUpdateCheck(true),
     },
     {
       section: 'Flow',
@@ -3015,6 +3041,65 @@ export default function Settings() {
           Chat message content and shared attachments are end-to-end encrypted (AES-256-GCM) with a key
           derived from your team's invite code — Supabase only ever stores ciphertext.
         </p>
+      </div>
+
+      {/* Updates */}
+      <div id="settings-updates" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        <div className="label mb-1">Updates</div>
+
+        <div className="flex items-center justify-between">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+              Warroom {appVersion || '—'}
+            </div>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              {updaterStatus.state === 'checking' && 'Checking for updates…'}
+              {updaterStatus.state === 'not-available' && "You're on the latest version."}
+              {updaterStatus.state === 'available' && `Version ${updaterStatus.version} is available.`}
+              {updaterStatus.state === 'downloading' && `Downloading update… ${updaterStatus.percent}%`}
+              {updaterStatus.state === 'downloaded' && `Version ${updaterStatus.version} is ready — restart to install.`}
+              {updaterStatus.state === 'error' && `Update check failed: ${updaterStatus.message}`}
+              {updaterStatus.state === 'idle' && 'Updates download from GitHub releases.'}
+            </p>
+          </div>
+          {updaterStatus.state === 'downloaded' ? (
+            <button className="btn-primary px-3 py-1.5 text-xs shrink-0 ml-3" onClick={() => window.warroom.updater.install()}>
+              Restart & update
+            </button>
+          ) : updaterStatus.state === 'available' ? (
+            <button className="btn-primary px-3 py-1.5 text-xs shrink-0 ml-3" onClick={() => window.warroom.updater.download()}>
+              Download
+            </button>
+          ) : (
+            <button
+              className="px-3 py-1.5 text-xs rounded-lg border shrink-0 ml-3 disabled:opacity-50"
+              style={{ background: 'var(--bg-input)', borderColor: 'var(--border-med)', color: 'rgb(var(--ink-rgb))' }}
+              disabled={updaterStatus.state === 'checking'}
+              onClick={() => window.warroom?.updater.check()}
+            >
+              {updaterStatus.state === 'checking' ? 'Checking…' : 'Check for updates'}
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Check for updates automatically</div>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+              Checks quietly on launch and every few hours. You always choose whether to download and install.
+            </p>
+          </div>
+          <button
+            onClick={() => toggleAutoUpdateCheck(!autoUpdateCheck)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: autoUpdateCheck ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: autoUpdateCheck ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Documentation */}

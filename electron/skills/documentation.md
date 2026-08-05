@@ -202,7 +202,7 @@ Right-click (or a hover "⋯" button in the grid) opens the same three actions �
 
 ### Importing a whole folder of docx files
 
-`dialog:openFolderOfDocx` (main process) opens a native directory picker, recursively walks the chosen folder (`fs.readdir` with `withFileTypes`, skipping dotfiles/dirs and `node_modules`, capped at 2000 files as a safety net), and returns `{ folderName, paths }` — `null` only on cancel; an empty `paths` array is a valid, distinguishable "no .docx found" result. Every found path is trusted via `trustPath`/`persistTrustedPath`, the same anchor a file dialog provides, before the renderer ever sees it.
+`dialog:openFolderOfDocx(extensions?: string[])` (main process) opens a native directory picker, recursively walks the chosen folder (`fs.readdir` with `withFileTypes`, skipping dotfiles/dirs and `node_modules`, capped at 2000 files as a safety net) for files matching `extensions` (default `['docx']`), and returns `{ folderName, paths }` — `null` only on cancel; an empty `paths` array is a valid, distinguishable "no matches found" result. Every found path is trusted via `trustPath`/`persistTrustedPath`, the same anchor a file dialog provides, before the renderer ever sees it. `Onboarding.tsx`'s "import your prep" step passes `['docx', 'xlsx']` to pull in both speech docs and flows from one folder walk.
 
 `SpeechDocViewer.tsx`'s `pickFolder()` calls this, batch-adds every result to recents (same `addRecents` path multi-file import uses), then creates a new `CaseFolder` named after the picked directory (`createFolder(data, folderName, null)`) and files every imported doc into it (`moveItem`) in one `useCaseFolders().update()` call — so the whole batch lands in one new, correctly-named folder rather than at the top level.
 

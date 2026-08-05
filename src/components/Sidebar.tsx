@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp, FlowMeta } from '../store/appStore';
 import gdriveLogo from '../assets/gdrive-logo.png';
-import { importFlowFromXlsx } from '../utils/flowImport';
+import { importFlowFile } from '../utils/flowImport';
 import { useMenuA11y } from '../hooks/useMenuA11y';
 import {
   useCaseFolders, childFolders, resolveItemFolder, moveItem, moveFolder,
@@ -343,11 +343,8 @@ export default function Sidebar() {
     if (!path) return;
     setImporting(true);
     try {
-      const res = await window.warroom?.fs.readFileBytes(path);
-      if (!res?.ok || !res.base64) throw new Error(res?.error || 'Could not read the file.');
-      const data = await importFlowFromXlsx(res.base64);
+      const { name: baseName, data } = await importFlowFile(path);
       const id = crypto.randomUUID();
-      const baseName = (path.split(/[\\/]/).pop() ?? 'Imported flow').replace(/\.xlsx$/i, '');
       const meta: FlowMeta = { id, name: baseName || `Flow ${flowsIndex.length + 1}`, event: data.event, createdAt: new Date().toISOString() };
       const newIndex = [...flowsIndex, meta];
       await window.warroom?.storage.write(`flow_data_${id}`, data);

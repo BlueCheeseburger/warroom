@@ -4341,7 +4341,7 @@ function DocPaneViewer({
    * labels (see caseFolders.ts), so a duplicate name is harmless, not a conflict.
    */
   async function pickFolder() {
-    const res = await window.warroom.dialog.openFolderOfDocx();
+    const res = await window.warroom.dialog.openFolderOfDocx(['docx']);
     if (!res) return; // user canceled
     if (res.paths.length === 0) {
       setError(`No .docx files found in "${res.folderName}".`);

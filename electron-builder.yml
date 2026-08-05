@@ -3,6 +3,14 @@ productName: Warroom
 directories:
   output: dist
   buildResources: resources
+# electron-updater checks this feed for new releases. electron-builder auto-
+# generates latest-mac.yml / latest.yml alongside the dmg/exe on every build
+# (even with --publish never) — both must be uploaded to the GitHub release
+# next to the installers, or the app has nothing to check against.
+publish:
+  provider: github
+  owner: BlueCheeseburger
+  repo: warroom
 files:
   - out/**
   - package.json

@@ -41,7 +41,7 @@ const api = {
   dialog: {
     openFile: (accept: string[]) => ipcRenderer.invoke('dialog:openFile', accept),
     openFiles: (accept: string[]) => ipcRenderer.invoke('dialog:openFiles', accept),
-    openFolderOfDocx: () => ipcRenderer.invoke('dialog:openFolderOfDocx'),
+    openFolderOfDocx: (extensions?: string[]) => ipcRenderer.invoke('dialog:openFolderOfDocx', extensions),
     /**
      * Resolve OS-dragged File objects to real paths and trust them for the
      * file-read IPC handlers.
@@ -522,6 +522,18 @@ const api = {
     return () => ipcRenderer.removeListener('file:open', handler);
   },
   exportCardsToDocx: (cards: any[]) => ipcRenderer.invoke('export:cardsToDocx', cards),
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+    onStatus: (cb: (status: any) => void) => {
+      const h = (_e: any, status: any) => cb(status);
+      ipcRenderer.on('updater:status', h);
+      return () => ipcRenderer.removeListener('updater:status', h);
+    },
+  },
 };
 
 // Every `ai:*`/`gemini:*` handler in electron/main.ts now retries its own model

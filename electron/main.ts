@@ -22,6 +22,10 @@ import { Document, Packer, Paragraph, TextRun, UnderlineType, BorderStyle } from
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import * as DS from './daemonShared';
+import {
+  initAutoUpdater, checkForUpdatesQuiet, downloadUpdate, quitAndInstall,
+  scheduleAutoUpdateChecks, getLastUpdaterStatus,
+} from './updater';
 import { extractFlowCardsFromXml, ExtractedFlowCard } from './docxFlowCards';
 import {
   LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
@@ -1520,6 +1524,7 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   mainWin = win;
+  initAutoUpdater(win);
   if (isMac) setupTouchBar(win);
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL']);
@@ -2140,19 +2145,23 @@ ipcMain.handle('dialog:openFiles', async (_e, accept: string[]) => {
   return result.filePaths;
 });
 
-// Directory picker for bulk speech-doc import — walks the chosen folder
-// recursively and trusts every .docx found, so the renderer can read them all
-// immediately via fs:readDocxBytes without a second per-file trust round trip.
-ipcMain.handle('dialog:openFolderOfDocx', async () => {
+// Directory picker for bulk import — walks the chosen folder recursively and
+// trusts every file matching `extensions` (default: just .docx, for back-compat
+// with the speech-doc bulk importer), so the renderer can read them all
+// immediately via fs:readDocxBytes/readFileBytes without a second per-file
+// trust round trip. Onboarding's "import your prep" step passes
+// ['docx', 'xlsx'] to pull in speech docs and flows from the same folder walk.
+ipcMain.handle('dialog:openFolderOfDocx', async (_e, extensions: string[] = ['docx']) => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
   if (result.canceled || result.filePaths.length === 0) return null;
   const rootDir = result.filePaths[0];
+  const wantExts = new Set(extensions.map((e) => `.${e.toLowerCase()}`));
 
-  const DOCX_WALK_CAP = 2000; // safety net against a user picking their entire home folder
+  const WALK_CAP = 2000; // safety net against a user picking their entire home folder
   const paths: string[] = [];
 
   async function walk(dir: string): Promise<void> {
-    if (paths.length >= DOCX_WALK_CAP) return;
+    if (paths.length >= WALK_CAP) return;
     let entries: import('fs').Dirent[];
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
@@ -2160,12 +2169,12 @@ ipcMain.handle('dialog:openFolderOfDocx', async () => {
       return; // unreadable dir (permissions, symlink loop, etc.) — skip rather than fail the whole walk
     }
     for (const entry of entries) {
-      if (paths.length >= DOCX_WALK_CAP) return;
+      if (paths.length >= WALK_CAP) return;
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue; // skip dotfiles/dirs and stray node_modules
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(full);
-      } else if (entry.isFile() && extname(entry.name).toLowerCase() === '.docx') {
+      } else if (entry.isFile() && wantExts.has(extname(entry.name).toLowerCase())) {
         paths.push(full);
       }
     }
@@ -2173,8 +2182,8 @@ ipcMain.handle('dialog:openFolderOfDocx', async () => {
   await walk(rootDir);
 
   // Same trust anchor as dialog:openFile/openFiles: the user explicitly picked
-  // this folder through a native dialog, so every .docx found inside it is
-  // trusted the same way individually-picked files are.
+  // this folder through a native dialog, so every matching file found inside it
+  // is trusted the same way individually-picked files are.
   for (const p of paths) {
     trustPath(p);
     await persistTrustedPath(p);
@@ -2182,6 +2191,22 @@ ipcMain.handle('dialog:openFolderOfDocx', async () => {
 
   return { folderName: basename(rootDir), paths };
 });
+
+// ── Auto-update ──────────────────────────────────────────────────────────
+// 'check' is used both by the manual "Check for updates" button (always runs,
+// regardless of the background-check setting) and by app startup/the periodic
+// timer. Status changes are pushed to the renderer via the 'updater:status'
+// event (see electron/updater.ts); 'getStatus' just lets a freshly-mounted
+// component ask for the current state instead of waiting for the next push.
+ipcMain.handle('app:getVersion', () => app.getVersion());
+
+ipcMain.handle('updater:check', async () => {
+  await checkForUpdatesQuiet();
+  return getLastUpdaterStatus();
+});
+ipcMain.handle('updater:download', async () => downloadUpdate());
+ipcMain.handle('updater:install', () => { quitAndInstall(); });
+ipcMain.handle('updater:getStatus', () => getLastUpdaterStatus());
 
 // Trust paths recovered from a genuine OS drag-drop.
 //
@@ -8189,6 +8214,23 @@ app.whenReady().then(async () => {
     scheduleScoutingWatcher();
     restoreTeamFileWatches().catch(() => {});
   });
+
+  // Auto-update: only in packaged builds — a dev/unpackaged run has no
+  // published feed to check against, and electron-updater would just log
+  // ENOENT looking for a nonexistent dev-app-update.yml on every check.
+  // Respects the "Check for updates automatically" Settings toggle
+  // (app_settings.autoUpdateCheck, default true); the manual button in
+  // Settings calls 'updater:check' directly and ignores this setting.
+  if (app.isPackaged) {
+    const autoUpdateCheckEnabled = async () => {
+      const s = await readJson('app_settings').catch(() => ({})) as any;
+      return s?.autoUpdateCheck !== false;
+    };
+    setTimeout(async () => {
+      if (await autoUpdateCheckEnabled()) checkForUpdatesQuiet();
+      scheduleAutoUpdateChecks(autoUpdateCheckEnabled);
+    }, 10_000);
+  }
 });
 // Only the GUI process owns the heartbeat file — never let a daemon process clear it.
 app.on('before-quit', () => { if (!DAEMON_MODE) clearHeartbeat().catch(() => {}); });

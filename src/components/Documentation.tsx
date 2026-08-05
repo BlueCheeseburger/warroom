@@ -612,12 +612,14 @@ export default function Documentation() {
             actually means.
           </P>
           <P>
-            <strong>Import a whole folder.</strong> <Code>dialog:openFolderOfDocx</Code> opens a
-            native directory picker and recursively walks it (capped at 2000 files) for{' '}
-            <Code>.docx</Code> files, trusting each one the same way a file dialog does.{' '}
-            <Code>pickFolder()</Code> in <Code>SpeechDocViewer.tsx</Code> imports every result,
-            then creates one new folder named after the picked directory and files every doc into
-            it in a single update — so a folder import always lands as one correctly-named group.
+            <strong>Import a whole folder.</strong> <Code>dialog:openFolderOfDocx(extensions?)</Code>{' '}
+            opens a native directory picker and recursively walks it (capped at 2000 files) for
+            files matching the given extensions (default <Code>['docx']</Code>), trusting each one
+            the same way a file dialog does. <Code>pickFolder()</Code> in{' '}
+            <Code>SpeechDocViewer.tsx</Code> imports every result, then creates one new folder
+            named after the picked directory and files every doc into it in a single update — so a
+            folder import always lands as one correctly-named group. Onboarding's import step
+            passes <Code>['docx', 'xlsx']</Code> to import speech docs and flows together.
           </P>
         </section>
 
