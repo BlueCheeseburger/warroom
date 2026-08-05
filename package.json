@@ -1,6 +1,6 @@
 {
   "name": "warroom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tactical prep tool for competitive policy debaters",
   "main": "out/main/index.cjs",
   "type": "module",
