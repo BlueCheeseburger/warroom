@@ -45,6 +45,10 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  // GitHub releases are marked prerelease (early/unstable software, honestly
+  // labeled) — without this, electron-updater silently ignores every release
+  // and update checks would always report "up to date" even when they aren't.
+  autoUpdater.allowPrerelease = true;
 
   autoUpdater.on('checking-for-update', () => send({ state: 'checking' }));
   autoUpdater.on('update-available', (info: UpdateInfo) => send({ state: 'available', version: info.version }));
