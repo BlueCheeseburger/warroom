@@ -456,6 +456,7 @@ declare global {
       fs: {
         readFileBytes: (filePath: string) => Promise<{ ok: boolean; base64?: string; error?: string }>;
         readDocxBytes: (filePath: string) => Promise<{ ok: boolean; base64?: string; error?: string }>;
+        trustIfExists: (paths: string[]) => Promise<{ ok: boolean; existing: string[] }>;
         extractDocxText: (filePath: string) => Promise<{ ok: boolean; text?: string; priorityText?: string; error?: string }>;
         countDocxCards: (filePath: string) => Promise<{ ok: boolean; count?: number; error?: string }>;
         fileSize: (filePath: string) => Promise<{ ok: boolean; size?: number; error?: string }>;
@@ -650,6 +651,7 @@ declare global {
         bodyRuns?: CardRun[];
       }>) => Promise<{ ok: boolean; canceled?: boolean; error?: string }>;
       getAppVersion: () => Promise<string>;
+      relaunchApp: () => Promise<void>;
       updater: {
         check: () => Promise<UpdaterStatus>;
         download: () => Promise<{ ok: boolean; error?: string }>;

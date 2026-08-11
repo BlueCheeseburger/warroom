@@ -180,6 +180,7 @@ const api = {
   fs: {
     readFileBytes: (filePath: string) => ipcRenderer.invoke('fs:readFileBytes', filePath),
     readDocxBytes: (filePath: string) => ipcRenderer.invoke('fs:readDocxBytes', filePath),
+    trustIfExists: (paths: string[]) => ipcRenderer.invoke('fs:trustIfExists', paths),
     extractDocxText: (filePath: string) => ipcRenderer.invoke('fs:extractDocxText', filePath),
     countDocxCards: (filePath: string) => ipcRenderer.invoke('fs:countDocxCards', filePath),
     fileSize: (filePath: string) => ipcRenderer.invoke('fs:fileSize', filePath),
@@ -529,6 +530,7 @@ const api = {
   },
   exportCardsToDocx: (cards: any[]) => ipcRenderer.invoke('export:cardsToDocx', cards),
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
     download: () => ipcRenderer.invoke('updater:download'),

@@ -19,7 +19,7 @@
 
 // Preferences that live in localStorage under a `warroom-` key and are safe/meaningful
 // to export. Keep this in sync — see the CLAUDE.md rule "Settings export/import — keep in sync".
-const SETTINGS_LOCALSTORAGE_KEYS = [
+export const SETTINGS_LOCALSTORAGE_KEYS = [
   'warroom-theme',
   'warroom-direction',
   'warroom-danger-highlight',

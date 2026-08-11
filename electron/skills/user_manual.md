@@ -667,6 +667,13 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Quick chat | Off by default. Turning it on opens a picker to choose which team room/DMs/group DMs get pinned to the title bar, with an optional keyboard shortcut per pin — see "Quick Chat" below |
 | Flow | Column colors, new-flow defaults, and live editor behavior — one block, see below |
 | Setup wizard | Re-run onboarding |
+| Updates | Manual "Check for updates" button and a toggle for checking automatically in the background |
+
+### Import, Export & Reset
+Under Settings → Import, Export & Reset:
+- **Export/Import settings**: just your preferences (event, AI provider/model, theme, notifications, and more) as a small file. Never includes API keys or passwords.
+- **Export/Import everything**: your whole library — cases, blocks, cards, opponents, judges, tournaments, folders, flows, and Warroom AI chat history — for moving to a new computer. Shows a size warning first if your chat history is large. Speech docs come along as file-path references, not the actual files, so you'll likely need to copy those files over separately; after import, anything that can't be found gets a "locate file" prompt to relink it. Team Files and API keys/passwords are never included — Team Files sync automatically once you sign in on the new computer, and keys need re-entering there. Import fully replaces what's currently in the app and needs a restart to take effect.
+- **Reset settings to default**: shows exactly what's changed from default before resetting.
 
 ### Flow
 One settings block covering everything about how flows work by default. None of it touches a flow you've already opened — those keep whatever they were last saved at.

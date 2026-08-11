@@ -4,6 +4,11 @@ import { signOut } from '../lib/supabase';
 import { AutoFlowTagStyle, AUTOFLOW_STYLE_DEFAULTS, readAutoFlowTagStyle, writeAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { FlowPrefs, FLOW_PREFS_DEFAULTS, readFlowPrefs, writeFlowPrefs } from '../lib/flowPrefs';
 import { exportSettings, importSettings } from '../utils/settingsExport';
+import {
+  prepareExport, writeExport, pickImportFile, applyImport,
+  CHAT_HISTORY_WARN_BYTES, ExportSummary,
+} from '../utils/dataExport';
+import { checkMissingSpeechDocs, relinkSpeechDoc, MissingDoc } from '../utils/missingSpeechDocs';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import {
   FilesBarStyle, getFilesBarStyle, setFilesBarStyle,
@@ -546,6 +551,76 @@ export default function Settings() {
     if (!res.ok) { setSettingsImportStatus('error'); setSettingsImportMsg(res.error ?? 'Import failed'); return; }
     setSettingsImportStatus('done');
     setSettingsImportMsg('Some settings (like theme) need a restart to fully apply.');
+  }
+
+  // ── Full data export/import ("make my new computer look identical") ──────
+  const [dataExportStage, setDataExportStage] = useState<'idle' | 'preparing' | 'confirm' | 'saving' | 'done' | 'error'>('idle');
+  const [dataExportFile, setDataExportFile] = useState<Awaited<ReturnType<typeof prepareExport>>['file'] | null>(null);
+  const [dataExportSummary, setDataExportSummary] = useState<ExportSummary | null>(null);
+  const [dataExportMsg, setDataExportMsg] = useState('');
+
+  const [dataImportStage, setDataImportStage] = useState<'idle' | 'confirm' | 'applying' | 'done' | 'error'>('idle');
+  const [dataImportFile, setDataImportFile] = useState<Awaited<ReturnType<typeof pickImportFile>>['file'] | null>(null);
+  const [dataImportSummary, setDataImportSummary] = useState<ExportSummary | null>(null);
+  const [dataImportMsg, setDataImportMsg] = useState('');
+  const [missingDocs, setMissingDocs] = useState<MissingDoc[] | null>(null);
+  const [relinkingPath, setRelinkingPath] = useState<string | null>(null);
+
+  async function startDataExport() {
+    setDataExportStage('preparing'); setDataExportMsg('');
+    const res = await prepareExport();
+    if (!res.ok || !res.file || !res.summary) {
+      setDataExportStage('error'); setDataExportMsg(res.error ?? 'Failed to gather data'); return;
+    }
+    setDataExportFile(res.file);
+    setDataExportSummary(res.summary);
+    setDataExportStage('confirm');
+  }
+
+  async function confirmDataExport() {
+    if (!dataExportFile) return;
+    setDataExportStage('saving');
+    const res = await writeExport(dataExportFile);
+    if (res.canceled) { setDataExportStage('idle'); return; }
+    if (!res.ok) { setDataExportStage('error'); setDataExportMsg(res.error ?? 'Export failed'); return; }
+    setDataExportStage('done');
+    setTimeout(() => setDataExportStage('idle'), 2500);
+  }
+
+  async function startDataImport() {
+    setDataImportMsg('');
+    const res = await pickImportFile();
+    if (res.canceled) return;
+    if (!res.ok || !res.file || !res.summary) {
+      setDataImportStage('error'); setDataImportMsg(res.error ?? 'Failed to read file'); return;
+    }
+    setDataImportFile(res.file);
+    setDataImportSummary(res.summary);
+    setDataImportStage('confirm');
+  }
+
+  async function confirmDataImport() {
+    if (!dataImportFile) return;
+    setDataImportStage('applying');
+    const res = await applyImport(dataImportFile);
+    if (!res.ok) { setDataImportStage('error'); setDataImportMsg(res.error ?? 'Import failed'); return; }
+    setDataImportStage('done');
+    const missing = await checkMissingSpeechDocs();
+    localStorage.removeItem('warroom-import-check-pending');
+    if (missing.length > 0) setMissingDocs(missing);
+  }
+
+  async function relinkDoc(doc: MissingDoc) {
+    setRelinkingPath(doc.path);
+    try {
+      const newPath = await window.warroom?.dialog.openFile(['docx']);
+      if (newPath) {
+        await relinkSpeechDoc(doc.path, newPath);
+        setMissingDocs((prev) => prev?.filter((d) => d.path !== doc.path) ?? null);
+      }
+    } finally {
+      setRelinkingPath(null);
+    }
   }
 
   // Whether the app is *effectively* dark right now, so the theme previews
@@ -3191,6 +3266,41 @@ export default function Settings() {
             <p className="text-xs mt-2" style={{ color: 'var(--nav-inactive-color)' }}>All settings reset to default ✓</p>
           )}
         </div>
+
+        <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="text-sm font-medium mb-0.5" style={{ color: 'var(--ink)' }}>Everything (new computer)</div>
+          <p className="text-[11px] mb-2 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+            Take your whole library with you — cases, blocks, cards, opponents, judges, tournaments, folders,
+            flows, and Warroom AI chat history, on top of settings. Speech docs come along as file references
+            (not the files themselves), so you may need to move those files over separately and relink any
+            that don't resolve on the new computer. <strong>API keys/passwords and Team Files are never
+            included</strong> — Team Files sync automatically once you sign in on the new computer.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button className="btn shrink-0" title="Save your whole library to a file" onClick={startDataExport} disabled={dataExportStage === 'preparing' || dataExportStage === 'saving'}>
+              {dataExportStage === 'preparing' ? 'Gathering…' : dataExportStage === 'saving' ? 'Saving…' : dataExportStage === 'done' ? 'Saved ✓' : 'Export everything'}
+            </button>
+            <button className="btn shrink-0" title="Replace everything from a backup file" onClick={startDataImport} disabled={dataImportStage === 'applying'}>
+              {dataImportStage === 'applying' ? 'Importing…' : dataImportStage === 'done' ? 'Imported ✓' : 'Import everything'}
+            </button>
+          </div>
+          {dataExportStage === 'error' && (
+            <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{dataExportMsg}</p>
+          )}
+          {dataImportStage === 'error' && (
+            <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{dataImportMsg}</p>
+          )}
+          {dataImportStage === 'done' && !missingDocs && (
+            <div className="flex items-center gap-2 mt-2">
+              <p className="text-xs" style={{ color: 'var(--nav-inactive-color)' }}>
+                Import complete — restart to load everything.
+              </p>
+              <button type="button" className="btn text-xs px-2.5 py-1" onClick={() => window.warroom?.relaunchApp()}>
+                Restart now
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
         </div>
@@ -3256,6 +3366,145 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      {(dataExportStage === 'confirm') && dataExportSummary && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setDataExportStage('idle')}
+        >
+          <div
+            className="rounded-xl shadow-2xl w-full flex flex-col"
+            style={{ background: 'var(--bg-elevated)', maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Export everything?</h2>
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                This file will include:
+              </p>
+            </div>
+            <div className="p-5 py-3">
+              <ExportSummaryList summary={dataExportSummary} />
+              {dataExportSummary.chatHistoryBytes > CHAT_HISTORY_WARN_BYTES && (
+                <p className="text-xs mt-3 leading-relaxed" style={{ color: 'var(--danger, #b3261e)' }}>
+                  Your Warroom AI chat history alone is {(dataExportSummary.chatHistoryBytes / 1_000_000).toFixed(1)} MB — this will be a large file.
+                </p>
+              )}
+              <p className="text-[11px] mt-3 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                API keys/passwords and Team Files are never included.
+              </p>
+            </div>
+            <div className="p-5 pt-3 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid var(--border-side)' }}>
+              <button type="button" className="btn text-xs px-3 py-1.5" onClick={() => setDataExportStage('idle')}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary text-xs px-3 py-1.5" onClick={confirmDataExport}>
+                Save file…
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dataImportStage === 'confirm' && dataImportSummary && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setDataImportStage('idle')}
+        >
+          <div
+            className="rounded-xl shadow-2xl w-full flex flex-col"
+            style={{ background: 'var(--bg-elevated)', maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Replace everything with this backup?</h2>
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--danger, #b3261e)' }}>
+                This replaces everything currently in the app — cases, flows, opponents, judges,
+                tournaments, folders, and Warroom AI chat history. Can't be undone.
+              </p>
+            </div>
+            <div className="p-5 py-3">
+              <ExportSummaryList summary={dataImportSummary} />
+            </div>
+            <div className="p-5 pt-3 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid var(--border-side)' }}>
+              <button type="button" className="btn text-xs px-3 py-1.5" onClick={() => setDataImportStage('idle')}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn text-xs px-3 py-1.5"
+                style={{ background: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)', color: '#fff' }}
+                onClick={confirmDataImport}
+              >
+                Replace everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {missingDocs && missingDocs.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div
+            className="rounded-xl shadow-2xl w-full flex flex-col"
+            style={{ background: 'var(--bg-elevated)', maxWidth: 480, maxHeight: '80vh' }}
+          >
+            <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Some speech docs weren't found</h2>
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                They may still be on your old computer — move them over, then locate each one here
+                (or skip for now; they'll just show as missing until relinked).
+              </p>
+            </div>
+            <div className="p-5 py-3 overflow-y-auto space-y-1.5" style={{ flex: 1 }}>
+              {missingDocs.map((d) => (
+                <div key={d.path} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate" style={{ color: 'var(--ink)' }}>{d.name}</div>
+                    <div className="text-[10px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{d.path}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn text-xs px-2.5 py-1 shrink-0"
+                    onClick={() => relinkDoc(d)}
+                    disabled={relinkingPath === d.path}
+                  >
+                    {relinkingPath === d.path ? 'Locating…' : 'Locate file…'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="p-5 pt-3 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid var(--border-side)' }}>
+              <button type="button" className="btn text-xs px-3 py-1.5" onClick={() => setMissingDocs(null)}>
+                Skip for now
+              </button>
+              <button type="button" className="btn-primary text-xs px-3 py-1.5" onClick={() => window.warroom?.relaunchApp()}>
+                Restart now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ExportSummaryList({ summary }: { summary: ExportSummary }) {
+  const rows: [string, number][] = [
+    ['Cases', summary.cases], ['Blocks', summary.blocks], ['Cards', summary.cards],
+    ['Opponents', summary.opponents], ['Judges', summary.judges], ['Tournaments', summary.tournaments],
+    ['Flows', summary.flows], ['Speech docs', summary.speechDocs], ['Warroom AI chats', summary.aiChats],
+  ];
+  return (
+    <ul className="space-y-0.5">
+      {rows.map(([label, count]) => (
+        <li key={label} className="text-xs flex items-center justify-between" style={{ color: 'var(--ink)' }}>
+          <span>{label}</span>
+          <span style={{ color: 'var(--nav-inactive-color)' }}>{count}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -2200,6 +2200,14 @@ ipcMain.handle('dialog:openFolderOfDocx', async (_e, extensions: string[] = ['do
 // component ask for the current state instead of waiting for the next push.
 ipcMain.handle('app:getVersion', () => app.getVersion());
 
+// Used after a full-data import (utils/dataExport.ts) — the renderer's
+// in-memory store was loaded from disk at startup, so a freshly-imported
+// db.json/flows_index won't be reflected without a restart.
+ipcMain.handle('app:relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
 ipcMain.handle('updater:check', async () => {
   await checkForUpdatesQuiet();
   return getLastUpdaterStatus();
@@ -3644,6 +3652,27 @@ ipcMain.handle('fs:readDocxBytes', async (_e, filePath: string) => {
   } catch (e: any) {
     return { ok: false, error: e.message };
   }
+});
+
+// Called right after a full-data import (see utils/dataExport.ts): the
+// imported speech-doc recents carry paths from whatever computer the export
+// came from, which are neither guaranteed to exist here nor (even if they
+// happen to) trusted yet — reading them would fail with "not opened through
+// a dialog" otherwise. For each path that DOES exist on this machine, trust
+// it the same way a file dialog would so it's immediately openable; whatever
+// isn't in the returned list is what the "locate file" recovery UI is for.
+ipcMain.handle('fs:trustIfExists', async (_e, paths: string[]) => {
+  const existing: string[] = [];
+  for (const p of Array.isArray(paths) ? paths : []) {
+    try {
+      if (typeof p === 'string' && existsSync(p)) {
+        trustPath(p);
+        await persistTrustedPath(p);
+        existing.push(p);
+      }
+    } catch {}
+  }
+  return { ok: true, existing };
 });
 
 // Extract plain text from a .docx/.pdf for the global search keyword index.
