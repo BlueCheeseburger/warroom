@@ -222,13 +222,13 @@ export default function AgentSearchViews() {
       <webview
         ref={logosRef as any}
         src="https://logos-debate.netlify.app/"
-        allowpopups={true}
+        allowpopups={'true' as any}
         style={{ width: 1280, height: 800, display: 'flex' }}
       />
       <webview
         ref={openevRef as any}
         src="https://opencaselist.com/openev"
-        allowpopups={true}
+        allowpopups={'true' as any}
         style={{ width: 1280, height: 800, display: 'flex' }}
       />
     </div>

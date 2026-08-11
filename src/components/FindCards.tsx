@@ -117,10 +117,13 @@ export default function FindCards() {
           className="w-full h-full rounded-xl overflow-hidden"
           style={{ border: '1px solid var(--border-subtle)' }}
         >
+          {/* webview's allowpopups is a real string-valued DOM attribute, but
+              @types/react wrongly types it as boolean — passing a literal
+              `true` triggers React's "non-boolean attribute" console warning. */}
           <webview
             ref={webviewRef as any}
             src="https://logos-debate.netlify.app/"
-            allowpopups={true}
+            allowpopups={'true' as any}
             className="w-full h-full"
             style={{ display: 'flex' }}
           />

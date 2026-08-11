@@ -225,7 +225,7 @@ export default function OpenEvView() {
           <webview
             ref={webviewRef as any}
             src="https://opencaselist.com/openev"
-            allowpopups={true}
+            allowpopups={'true' as any}
             className="w-full h-full"
             style={{ display: 'flex' }}
           />
