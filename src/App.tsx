@@ -711,20 +711,26 @@ export default function App() {
             onMouseDown={onResizeStart}
           />
         )}
-        {/* Visible chat panel — only in the flex row when open */}
-        {chatOpen && (
-          <div style={{ width: chatWidth, minWidth: chatWidth, maxWidth: chatWidth, flexShrink: 0 }}>
-            <Chat />
-          </div>
-        )}
-      </div>
-      {/* Always-mounted Chat for session restore + unread counter subscriptions.
-          Position absolute + zero size so it never affects layout. */}
-      {!chatOpen && (
-        <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
+        {/* Single persistent Chat instance — toggled via style, never via a
+            conditional JSX branch. Two separate `{chatOpen && <Chat/>}` /
+            `{!chatOpen && <Chat/>}` mounts (one in this flex row, one absolute
+            outside it) used to sit in different tree positions, so opening
+            chat unmounted the background instance and mounted a brand new one
+            — every open re-ran every effect (message cache read, realtime
+            subscribe, typing tracker) from scratch, which is what showed up
+            as a ~0.5s loading flash despite the cache-first read being fast.
+            One element that only changes style keeps the same component
+            identity across open/close, so messages already in memory show
+            instantly. */}
+        <div
+          style={chatOpen
+            ? { width: chatWidth, minWidth: chatWidth, maxWidth: chatWidth, flexShrink: 0 }
+            : { position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}
+          aria-hidden={!chatOpen}
+        >
           <Chat />
         </div>
-      )}
+      </div>
       {showOnboarding && <Onboarding onDone={() => setShowOnboarding(false)} />}
       {searchOpen && <SearchPalette />}
       {autoFlowOpen && <AutoFlow onClose={() => setAutoFlowOpen(false)} />}

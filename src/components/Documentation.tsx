@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/4/26
+          Last updated: 8/10/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -2168,11 +2168,29 @@ export default function Documentation() {
             own Warroom app is running — teammates just see <Code>updated_at</Code> move and
             re-open the file for the latest version.
           </P>
+          <P>
+            <strong>"+ Add file" only sources from the app's own library</strong> — a two-step
+            picker ("From your speech docs" / "From your flows"), no raw OS file dialog. Speech
+            docs use the mechanism above unchanged (a real path on disk, <Code>fs.watch</Code>).
+            Flows have no file on disk, so they get a parallel, simpler mechanism: adding one
+            calls <Code>flowDataToXlsxBase64()</Code> (<Code>utils/flowImport.ts</Code> — a pure
+            serializer shared with <Code>FlowView.tsx</Code>'s own xlsx export, so the two can't
+            drift) to build the initial upload, then registers a <Code>fileId → flowId</Code> watch
+            in <Code>team_file_flow_watches.json</Code> (same shape/restore story as the docx map,
+            different file) via <Code>chat:watchFlowTeamFile</Code>. There's no <Code>fs.watch</Code>{' '}
+            for a flow — instead, <Code>FlowView.tsx</Code>'s <Code>persist()</Code> (its autosave)
+            calls <Code>pushToWatchedTeamFile()</Code> after every save, debounced 1.5s: it asks
+            main.ts (<Code>chat:getWatchedFileIdForFlow</Code>) whether this flow has a linked Team
+            File, and if so, serializes + encrypts + calls <Code>chat:updateTeamFileContent</Code>{' '}
+            directly from the renderer — no IPC round-trip to read bytes off disk needed, since the
+            flow's data is already in memory where it saved. <Code>chat:isWatchingTeamFile</Code>{' '}
+            checks both watch maps, so the 🔄 indicator works the same for either source.
+          </P>
           <H3>Oversized attachments (2MB cap) and AI summarization</H3>
           <P>
-            <Code>fileSizeGate.ts</Code> defines <Code>MAX_ATTACHMENT_BYTES</Code> (2MB). Both the
+            <Code>fileSizeGate.ts</Code> defines <Code>MAX_ATTACHMENT_BYTES</Code> (2MB). The
             chat composer's speechdoc/flow mention-attach (Chat.tsx <Code>handleMentionSelect</Code>)
-            and Team Files' "+ Add file" (<Code>TeamFiles.tsx</Code> <Code>handleUpload</Code>)
+            and Team Files' speech-doc source (<Code>TeamFiles.tsx</Code> <Code>addFromSpeechDoc</Code>)
             measure the source before sending, and show <Code>OversizedFilePopup.tsx</Code> when
             it's over the cap. "Send name only" attaches/uploads a placeholder (
             <Code>{'{ oversized: true, sizeBytes }'}</Code> for chat, empty <Code>data_b64</Code>{' '}

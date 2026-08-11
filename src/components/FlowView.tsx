@@ -1,5 +1,4 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
@@ -12,6 +11,8 @@ import {
 } from '../lib/flowDoc';
 import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
 import { flushCellsIntoSheets } from '../lib/flowCellFlush';
+import { flowDataToXlsxBase64 } from '../utils/flowImport';
+import { teamKeyFor, encryptText } from '../lib/chatCrypto';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
 import TaggedInIndicator from './TaggedInIndicator';
 
@@ -259,6 +260,10 @@ export default function FlowView() {
   const summaryDisabled = useRef(false);
   const summaryCooldown = useRef<Map<string, number>>(new Map());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounces the Team Files push (see pushToWatchedTeamFile below) — persist()
+  // can fire on every keystroke via the autosave path, but re-exporting to
+  // xlsx and hitting Supabase on every one of those would be wasteful.
+  const teamFilePushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cellEls = useRef<Record<string, HTMLDivElement | null>>({});
   const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -498,6 +503,31 @@ export default function FlowView() {
     // carries it and teammates re-render. Cell *text* is synced separately, per
     // keystroke, so we deliberately don't push cells here (would clobber merges).
     if (liveRef.current && !applyingRemote.current) syncStructureToDoc(payload);
+    pushToWatchedTeamFile(payload);
+  }
+
+  /**
+   * If this flow was added to Team Files (see TeamFiles.tsx's "add from your
+   * flows"), push fresh content there too — the flow equivalent of the docx
+   * fs.watch auto-update. Debounced since persist() can fire on every
+   * keystroke; only the device that actually added the flow to Team Files
+   * has a registered watch, so this is a no-op for everyone else.
+   */
+  function pushToWatchedTeamFile(payload: StoredFlowData) {
+    if (!flowId || !currentTeam) return;
+    if (teamFilePushTimer.current) clearTimeout(teamFilePushTimer.current);
+    teamFilePushTimer.current = setTimeout(async () => {
+      teamFilePushTimer.current = null;
+      try {
+        const res = await window.warroom?.teamFiles.getWatchedFileIdForFlow(flowId);
+        const fileId = res?.ok ? res.data : null;
+        if (!fileId) return;
+        const base64 = flowDataToXlsxBase64(payload);
+        const key = await teamKeyFor(currentTeam);
+        const encData = await encryptText(key, base64);
+        await window.warroom?.teamFiles.updateContent(fileId, encData);
+      } catch {}
+    }, 1500);
   }
 
   // ── Live: structure ↔ Y.Doc ────────────────────────────────────────────────
@@ -1703,24 +1733,11 @@ export default function FlowView() {
 
   async function buildXlsxBase64(): Promise<string> {
     const allSheets = flushAndGetSheets();
-    const cols = customColumns ?? baseCols;
-    const wb = XLSX.utils.book_new();
-
-    for (const sheet of allSheets) {
-      const aoa: string[][] = [cols];
-      for (let ri = 0; ri < NUM_ROWS; ri++) {
-        const row = cols.map((_, ci) => htmlToText(sheet.cells[`${ri}-${ci}`] ?? ''));
-        if (row.some((v) => v.trim() !== '')) aoa.push(row);
-      }
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = cols.map((_, ci) => ({
-        wch: Math.min(60, Math.max(12, ...aoa.map((row) => (row[ci] ?? '').length))),
-      }));
-      const safeName = sheet.name.replace(/[\\/:*?[\]]/g, '_').slice(0, 31);
-      XLSX.utils.book_append_sheet(wb, ws, safeName);
-    }
-
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }) as string;
+    return flowDataToXlsxBase64({
+      event: flowEvent,
+      variant, pfOrder, customColumns, columnWidths, columnColors, fontSize, zoom,
+      sheets: allSheets,
+    });
   }
 
   async function exportXlsx() {

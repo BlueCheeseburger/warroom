@@ -578,6 +578,9 @@ declare global {
         isWatching: (fileId: string) => Promise<{ ok: boolean; data?: boolean; error?: string }>;
         readWatchedBytes: (fileId: string) => Promise<{ ok: boolean; data?: { base64: string }; error?: string }>;
         onLocalFileChanged: (cb: (p: { fileId: string }) => void) => () => void;
+        watchFlow: (fileId: string, flowId: string) => Promise<{ ok: boolean; error?: string }>;
+        unwatchFlow: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+        getWatchedFileIdForFlow: (flowId: string) => Promise<{ ok: boolean; data?: string | null; error?: string }>;
       };
       docComments: {
         get: (teamId: string, docKey: string) => Promise<{ ok: boolean; data?: any[]; error?: string }>;

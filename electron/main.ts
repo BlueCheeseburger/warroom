@@ -6904,10 +6904,13 @@ ipcMain.handle('chat:unwatchLocalTeamFile', async (_e, fileId: string) => {
 });
 
 // So the UI can show an "auto-updating" indicator only on the device actually
-// watching each file (never true for a file a teammate uploaded).
+// watching each file (never true for a file a teammate uploaded). Checks both
+// the docx (fs.watch) and flow (in-app save hook) registries.
 ipcMain.handle('chat:isWatchingTeamFile', async (_e, fileId: string) => {
   const map = await loadTeamFileWatchMap();
-  return sbOk(!!map[fileId]);
+  if (map[fileId]) return sbOk(true);
+  const flowMap = await loadFlowWatchMap();
+  return sbOk(!!flowMap[fileId]);
 });
 
 // Reads current bytes for a locally-watched file — called after the debounced
@@ -6935,6 +6938,47 @@ async function restoreTeamFileWatches() {
     }
   } catch {}
 }
+
+// ── Flow watching (powers auto-update for flows shared to Team Files) ──────
+// teamFileId -> flowId, persisted to team_file_flow_watches.json. Unlike the
+// docx case above, flow content lives in the app's own storage rather than a
+// file on disk we can fs.watch, and the renderer already holds that data
+// whenever a flow saves — so this is a plain lookup, no watch handles or
+// debounce timers needed here. FlowView.tsx checks it (via
+// getWatchedFileIdForFlow) after every save and pushes the update itself.
+async function loadFlowWatchMap(): Promise<Record<string, string>> {
+  return (await readJson('team_file_flow_watches.json')) ?? {};
+}
+async function saveFlowWatchMap(map: Record<string, string>): Promise<void> {
+  await writeJson('team_file_flow_watches.json', map);
+}
+
+ipcMain.handle('chat:watchFlowTeamFile', async (_e, fileId: string, flowId: string) => {
+  try {
+    const map = await loadFlowWatchMap();
+    map[fileId] = flowId;
+    await saveFlowWatchMap(map);
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+ipcMain.handle('chat:unwatchFlowTeamFile', async (_e, fileId: string) => {
+  try {
+    const map = await loadFlowWatchMap();
+    if (map[fileId]) { delete map[fileId]; await saveFlowWatchMap(map); }
+    return sbOk(null);
+  } catch (e) { return sbErr(e); }
+});
+
+// Reverse lookup used by FlowView after every save: is there a Team File this
+// device should push fresh bytes to for the flow that just changed?
+ipcMain.handle('chat:getWatchedFileIdForFlow', async (_e, flowId: string) => {
+  try {
+    const map = await loadFlowWatchMap();
+    const entry = Object.entries(map).find(([, fid]) => fid === flowId);
+    return sbOk(entry ? entry[0] : null);
+  } catch (e) { return sbErr(e); }
+});
 
 // ─── Pinned messages ────────────────────────────────────────────────────────
 // One shared pin board per team room or per DM channel — see pinned_messages

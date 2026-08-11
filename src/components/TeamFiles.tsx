@@ -1,16 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { useApp } from '../store/appStore';
+import { useApp, FlowMeta } from '../store/appStore';
 import { TeamFile } from '../types';
 import { teamKeyFor, encryptText, decryptText } from '../lib/chatCrypto';
 import { MAX_ATTACHMENT_BYTES, base64SizeBytes } from '../lib/fileSizeGate';
+import { flowDataToXlsxBase64 } from '../utils/flowImport';
+import type { StoredFlowData } from './FlowView';
 import OversizedFilePopup from './OversizedFilePopup';
 
-// A per-team file library, separate from the chat message stream. Files are
-// uploaded once (encrypted client-side, see chatCrypto.ts) and the uploader's
-// own device auto-pushes fresh content whenever their local copy changes on
-// disk — see the `onLocalFileChanged` listener wired up in Chat.tsx, and the
-// fs.watch machinery in electron/main.ts. This component only reads/writes
-// team_files rows and renders the list; it doesn't own the watch itself.
+// Speech-doc recents — same RECENTS_KEY/shape as SpeechDocViewer.tsx and
+// every other reader of this list (not exported from there, so duplicated
+// like the other readers).
+const SPEECH_RECENTS_KEY = 'warroom-speech-doc-recents';
+interface RecentDoc { path: string; name: string }
+function getSpeechDocRecents(): RecentDoc[] {
+  try { return JSON.parse(localStorage.getItem(SPEECH_RECENTS_KEY) ?? '[]'); } catch { return []; }
+}
+
+type AddSource = 'menu' | 'speechdocs' | 'flows';
+
+// A per-team file library, separate from the chat message stream. Every file
+// added here comes from the app's own library (speech docs or flows) rather
+// than an arbitrary OS file picker, and the device that added it auto-pushes
+// fresh content whenever the source changes — two different mechanisms
+// depending on the source: speech docs are a real file on disk, watched via
+// fs.watch (`onLocalFileChanged` in Chat.tsx, fs.watch machinery in
+// electron/main.ts); flows have no file on disk, so FlowView.tsx itself
+// checks after every save whether it's linked to a Team File and pushes
+// directly (see `pushToWatchedTeamFile`). This component only reads/writes
+// team_files rows and renders the list; it doesn't own either watch itself.
 
 interface DecryptedFile extends Omit<TeamFile, 'name' | 'summary_text'> {
   name: string;
@@ -30,7 +47,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function TeamFiles() {
-  const { currentUser, currentTeam, setView } = useApp();
+  const { currentUser, currentTeam, setView, flowsIndex } = useApp();
   const [files, setFiles] = useState<DecryptedFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -40,6 +57,7 @@ export default function TeamFiles() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [expandedSummary, setExpandedSummary] = useState<{ id: string; text: string } | null>(null);
+  const [addSource, setAddSource] = useState<AddSource | null>(null);
 
   // Oversized-upload gate: set once a chosen file is measured as over the cap.
   const [oversized, setOversized] = useState<{ path: string; filename: string; base64: string; sizeBytes: number } | null>(null);
@@ -106,27 +124,52 @@ export default function TeamFiles() {
     setLoading(false);
   }
 
-  async function handleUpload() {
-    if (!currentUser || !currentTeam) return;
+  // "Add from your speech docs" — sourced from a doc already saved in the
+  // app (no OS file dialog — see the note on `addSource`'s removed "from
+  // your computer" option). Ties together the same way as before: watchLocal
+  // still applies, since this is still a real path on disk.
+  async function addFromSpeechDoc(doc: RecentDoc) {
     setError('');
     try {
-      const path = await window.warroom.dialog.openFile(['docx']);
-      if (!path) return;
-      const bytesRes = await window.warroom.fs.readFileBytes(path);
+      const bytesRes = await window.warroom.fs.readFileBytes(doc.path);
       if (!bytesRes.ok || !bytesRes.base64) throw new Error(bytesRes.error ?? 'Failed to read file');
-      const filename = path.split(/[\\/]/).pop() ?? 'Document.docx';
       const sizeBytes = base64SizeBytes(bytesRes.base64);
       if (sizeBytes > MAX_ATTACHMENT_BYTES) {
-        setOversized({ path, filename, base64: bytesRes.base64, sizeBytes });
+        setOversized({ path: doc.path, filename: doc.name, base64: bytesRes.base64, sizeBytes });
         return;
       }
-      await finishUpload(path, filename, bytesRes.base64);
+      await finishUpload(doc.path, doc.name, bytesRes.base64);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to upload file');
+      setError(e?.message ?? 'Failed to add file');
+    } finally {
+      setAddSource(null);
     }
   }
 
-  async function finishUpload(path: string, filename: string, base64: string, summaryText?: string) {
+  // "Add from your flows" — flows have no file on disk, so there's no OS
+  // dialog and no watchLocal; instead finishUpload registers a flow watch
+  // (see FlowView.tsx's pushToWatchedTeamFile) so future saves push here too.
+  async function addFromFlow(flow: FlowMeta) {
+    setError('');
+    try {
+      const data = await window.warroom.storage.read(`flow_data_${flow.id}`);
+      if (!data) throw new Error('Could not read this flow');
+      const base64 = flowDataToXlsxBase64(data as StoredFlowData);
+      const filename = `${flow.name || 'Flow'}.xlsx`;
+      const sizeBytes = base64SizeBytes(base64);
+      if (sizeBytes > MAX_ATTACHMENT_BYTES) {
+        setError('This flow is too large to share.');
+        return;
+      }
+      await finishUpload('', filename, base64, undefined, flow.id);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to add flow');
+    } finally {
+      setAddSource(null);
+    }
+  }
+
+  async function finishUpload(path: string, filename: string, base64: string, summaryText?: string, flowId?: string) {
     if (!currentUser || !currentTeam) return;
     setUploading(true);
     try {
@@ -141,10 +184,13 @@ export default function TeamFiles() {
         name: encName, dataB64: encData, summaryText: encSummary,
       });
       if (!res.ok || !res.data) throw new Error(res.error ?? 'Upload failed');
-      // Only watch the local file for auto-update when the real content was sent —
-      // a name-only or summarized upload has nothing on Supabase to keep in sync.
+      // Only watch for auto-update when the real content was sent — a
+      // name-only or summarized upload has nothing on Supabase to keep in
+      // sync. Flow uploads register a flow watch; doc uploads (from computer
+      // or from the speech-doc library) register a local-path watch.
       if (base64) {
-        await window.warroom.teamFiles.watchLocal(res.data.id, path);
+        if (flowId) await window.warroom.teamFiles.watchFlow(res.data.id, flowId);
+        else if (path) await window.warroom.teamFiles.watchLocal(res.data.id, path);
         setWatchingIds((prev) => new Set(prev).add(res.data.id));
       }
       setFiles((prev) => (prev.find((f) => f.id === res.data.id) ? prev : [{ ...res.data, name: filename, summary_text: summaryText ?? null }, ...prev]));
@@ -231,7 +277,7 @@ export default function TeamFiles() {
           <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
         ) : files.length === 0 ? (
           <div className="text-xs text-center pt-6 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-            No files yet.<br />Upload a .docx to share it with your team.
+            No files yet.<br />Add a speech doc or flow to share it with your team.
           </div>
         ) : files.map((f) => {
           const isHovered = hoveredId === f.id;
@@ -261,7 +307,7 @@ export default function TeamFiles() {
                     {!f.removed && watchingIds.has(f.id) && (
                       <span
                         className="text-[11px] leading-none shrink-0"
-                        title="This device watches your local file and pushes updates automatically when you save changes"
+                        title="This device pushes updates automatically when the source changes"
                       >
                         🔄
                       </span>
@@ -298,16 +344,85 @@ export default function TeamFiles() {
           );
         })}
       </div>
-      <div className="shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--border-side)' }}>
+      <div className="shrink-0 px-3 pb-3 pt-2 relative" style={{ borderTop: '1px solid var(--border-side)' }}>
+        {addSource && (
+          <div
+            className="absolute left-3 right-3 bottom-full mb-1.5 rounded-lg overflow-hidden z-10"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-med)', boxShadow: '0 2px 12px rgba(0,0,0,0.24)' }}
+          >
+            {addSource === 'menu' && (
+              <>
+                <AddSourceRow label="From your speech docs" title="Pick a saved speech doc" onClick={() => setAddSource('speechdocs')} />
+                <AddSourceRow label="From your flows" title="Pick a saved flow" onClick={() => setAddSource('flows')} />
+              </>
+            )}
+            {addSource === 'speechdocs' && (
+              <PickerList
+                items={getSpeechDocRecents()}
+                getLabel={(d) => d.name}
+                emptyLabel="No speech docs yet."
+                onBack={() => setAddSource('menu')}
+                onPick={addFromSpeechDoc}
+              />
+            )}
+            {addSource === 'flows' && (
+              <PickerList
+                items={flowsIndex}
+                getLabel={(f) => f.name}
+                emptyLabel="No flows yet."
+                onBack={() => setAddSource('menu')}
+                onPick={addFromFlow}
+              />
+            )}
+          </div>
+        )}
         <button
           className="btn-primary w-full text-xs py-1.5"
-          title="Upload a .docx to share with your team"
-          onClick={handleUpload}
+          title="Add a file to share with your team"
+          onClick={() => setAddSource((cur) => (cur ? null : 'menu'))}
           disabled={uploading}
         >
           {uploading ? 'Uploading…' : '+ Add file'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function AddSourceRow({ label, title, onClick }: { label: string; title?: string; onClick: () => void }) {
+  return (
+    <button
+      className="w-full text-left px-3 py-2 text-xs transition-colors"
+      style={{ background: 'transparent', border: 'none', color: 'var(--ink)' }}
+      title={title ?? label}
+      onClick={onClick}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PickerList<T>({ items, getLabel, emptyLabel, onBack, onPick }: {
+  items: T[]; getLabel: (item: T) => string; emptyLabel: string;
+  onBack: () => void; onPick: (item: T) => void;
+}) {
+  return (
+    <div className="max-h-52 overflow-y-auto scroll-thin">
+      <button
+        className="w-full text-left px-3 py-2 text-xs font-medium sticky top-0"
+        style={{ background: 'var(--bg-elevated)', border: 'none', borderBottom: '1px solid var(--border-side)', color: 'var(--nav-inactive-color)' }}
+        title="Back to add options"
+        onClick={onBack}
+      >
+        ‹ Back
+      </button>
+      {items.length === 0 ? (
+        <div className="px-3 py-3 text-xs text-center" style={{ color: 'var(--nav-inactive-color)' }}>{emptyLabel}</div>
+      ) : items.map((item, i) => (
+        <AddSourceRow key={i} label={getLabel(item)} onClick={() => onPick(item)} />
+      ))}
     </div>
   );
 }

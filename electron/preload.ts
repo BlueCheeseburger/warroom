@@ -405,6 +405,12 @@ const api = {
       ipcRenderer.on('chat:localTeamFileChanged', handler);
       return () => ipcRenderer.removeListener('chat:localTeamFileChanged', handler);
     },
+    // Flow watch (powers auto-update for flows shared to Team Files) — unlike
+    // watchLocal above, there's no file on disk to fs.watch, so FlowView.tsx
+    // itself checks getWatchedFileIdForFlow after every save and pushes.
+    watchFlow: (fileId: string, flowId: string) => ipcRenderer.invoke('chat:watchFlowTeamFile', fileId, flowId),
+    unwatchFlow: (fileId: string) => ipcRenderer.invoke('chat:unwatchFlowTeamFile', fileId),
+    getWatchedFileIdForFlow: (flowId: string) => ipcRenderer.invoke('chat:getWatchedFileIdForFlow', flowId),
   },
   // Team-scoped comments anchored to a span of text in an open speech doc —
   // see doc_comments in supabase/schema.sql and the handlers in main.ts.

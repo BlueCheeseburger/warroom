@@ -596,10 +596,10 @@ Every team room, DM, and group DM gets its own identity icon, used in All Chats,
 ### Team Files
 Team rooms have a shared file library separate from the message stream, so important docs don't get buried by chatter. By default it's a **Chat / Files** bar right under the room name; Settings → Chat can switch that to a single Files icon in the header instead (Settings → Chat → "Team files display"). DMs and group DMs don't get a Files list — attachments there stay in the message stream.
 
-- **Upload**: "+ Add file" → pick a .docx. It's encrypted and shared with the whole team instantly.
-- **Sent in chat, not just uploaded**: a speech doc you attach directly to a team-room message (not via "+ Add file") is automatically added to Team Files too, with the same auto-update watch — you don't have to upload it twice.
-- **Each file shows**: its name, when it was last modified, and who uploaded it.
-- **Auto-update**: if you're the one who uploaded a file (or sent it as a chat attachment), Warroom watches your local copy — the next time you save changes in Word (or wherever you edit it), your team's copy updates automatically, no re-upload needed. This only works while your Warroom app is open on the device you uploaded from; a 🔄 "auto-updating" tag shows on files your device is actively watching.
+- **Add**: "+ Add file" → pick a speech doc or a flow already saved in the app (there's no raw computer-file picker — only your own library). Flows are converted to .xlsx on the way in. It's encrypted and shared with the whole team instantly.
+- **Sent in chat, not just uploaded**: a speech doc you attach directly to a team-room message (not via "+ Add file") is automatically added to Team Files too, with the same auto-update watch — you don't have to add it twice.
+- **Each file shows**: its name, when it was last modified, and who added it.
+- **Auto-update**: if you're the one who added a file (or sent it as a chat attachment), Warroom keeps your team's copy in sync automatically — for a speech doc, the next time you save changes in Word (or wherever you edit it); for a flow, the next time you save an edit in the Flow view. No re-adding needed either way. This only works while your Warroom app is open on the device that added it; a 🔄 "auto-updating" tag shows on files your device is actively watching.
 - **Open a file**: click its name to view it in the Speech Doc Viewer (or, for an AI-summarized file, to show the summary — see below).
 - **Remove**: only the uploader sees this (trash icon). Unlike a full delete, it clears the file's content but keeps the row — the name, uploader, and dates stay visible as a record that a file used to be there.
 

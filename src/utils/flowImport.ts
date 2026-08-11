@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { makeDefaultData, PF_PRO_FIRST_COLS, NUM_ROWS } from '../components/FlowView';
+import { makeDefaultData, POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from '../components/FlowView';
+import { htmlToText } from '../lib/cellHtml';
 
 type StoredFlowData = ReturnType<typeof makeDefaultData>;
 type FlowEvent = 'policy' | 'pf';
@@ -207,6 +208,39 @@ export async function importFlowFromXlsx(base64: string): Promise<StoredFlowData
  * display name derived from the filename. Shared by the single-file importer
  * (Sidebar) and the bulk onboarding importer so both go through one code path.
  */
+/**
+ * Serialize stored flow data (the same shape written to `flow_data_{id}`) to
+ * an .xlsx base64 string, without needing a live FlowView instance mounted.
+ * Mirrors FlowView's own `buildXlsxBase64`, which wraps this with its
+ * in-memory (not-yet-flushed-to-storage) state — kept as one implementation
+ * so the two never drift. Used directly by Team Files' "add from your
+ * flows" / auto-sync path, where the flow usually isn't open in an editor.
+ */
+export function flowDataToXlsxBase64(data: StoredFlowData): string {
+  const flowEvent: FlowEvent = data.event === 'pf' ? 'pf' : 'policy';
+  const baseCols = flowEvent === 'policy'
+    ? POLICY_COLS
+    : (data.pfOrder === 'pro-first' ? PF_PRO_FIRST_COLS : PF_CON_FIRST_COLS);
+  const cols = data.customColumns ?? baseCols;
+  const wb = XLSX.utils.book_new();
+
+  for (const sheet of data.sheets) {
+    const aoa: string[][] = [cols];
+    for (let ri = 0; ri < NUM_ROWS; ri++) {
+      const row = cols.map((_, ci) => htmlToText(sheet.cells[`${ri}-${ci}`] ?? ''));
+      if (row.some((v) => v.trim() !== '')) aoa.push(row);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = cols.map((_, ci) => ({
+      wch: Math.min(60, Math.max(12, ...aoa.map((row) => (row[ci] ?? '').length))),
+    }));
+    const safeName = sheet.name.replace(/[\\/:*?[\]]/g, '_').slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+  }
+
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }) as string;
+}
+
 export async function importFlowFile(path: string): Promise<{ name: string; data: StoredFlowData }> {
   const res = await window.warroom?.fs.readFileBytes(path);
   if (!res?.ok || !res.base64) throw new Error(res?.error || 'Could not read the file.');
