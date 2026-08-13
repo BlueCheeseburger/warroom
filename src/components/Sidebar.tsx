@@ -19,6 +19,7 @@ import {
   comboKeyFor, saveComboLayout, listComboViews, deleteComboView, pruneComboViews, renameComboView,
   COMBO_LAYOUTS_CHANGED, SavedComboView,
 } from '../utils/docComboLayout';
+import { useMissingSpeechDocs } from '../utils/missingSpeechDocs';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
 interface RecentDoc { path: string; name: string; cardCount?: number }
@@ -937,6 +938,7 @@ function CasesSection({ view, setView, db }: {
   view: any; setView: (v: any) => void; db: any;
 }) {
   const { folders, update } = useCaseFolders();
+  const { missing: missingDocPaths, relink: relinkMissingDoc } = useMissingSpeechDocs();
   const [openIds, toggleOpen, openFolderOnly] = useOpenFolders();
   const dragExpand = useDragHoverExpand(openFolderOnly);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
@@ -1132,6 +1134,7 @@ function CasesSection({ view, setView, db }: {
 
   function renderItem(item: CaseItem, depth: number) {
     const isDoc = item.kind === 'speech-doc';
+    const isMissing = isDoc && missingDocPaths.has(item.path!);
     const isSelected = selected.has(item.key);
     const showTarget = reorderTarget?.key === item.key ? reorderTarget.edge : null;
     return (
@@ -1162,9 +1165,12 @@ function CasesSection({ view, setView, db }: {
       >
         <NavItem
           active={isItemActive(item) || isSelected}
-          onClick={() => setView(isDoc
-            ? { kind: 'speech-doc', docPath: item.path }
-            : { kind: 'case', caseId: item.id })}
+          onClick={() => {
+            // A missing doc has nothing to open — offer to relink it instead
+            // of navigating to a speech-doc view that'll just fail to load.
+            if (isMissing) { relinkMissingDoc(item.path!); return; }
+            setView(isDoc ? { kind: 'speech-doc', docPath: item.path } : { kind: 'case', caseId: item.id });
+          }}
           itemId={item.id}
           itemType={isDoc ? 'speech-doc' : 'case'}
           itemName={item.name}
@@ -1179,7 +1185,16 @@ function CasesSection({ view, setView, db }: {
           } : undefined}
           moveOptions={moveOptionsFor(item)}
         >
-          <span className="truncate">{item.name}</span>
+          <span className="truncate" style={isMissing ? { color: 'var(--danger, #ef4444)' } : undefined}>{item.name}</span>
+          {isMissing && (
+            <span
+              title="File not found on this computer — click to locate it"
+              className="shrink-0"
+              style={{ color: 'var(--danger, #ef4444)', fontSize: 11, lineHeight: 1 }}
+            >
+              ⚠
+            </span>
+          )}
         </NavItem>
       </div>
     );

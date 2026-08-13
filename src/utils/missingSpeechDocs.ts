@@ -1,10 +1,13 @@
 /**
- * Post-import recovery for speech docs whose path doesn't resolve on this
- * computer — expected after a full-data import from a different machine
- * (see dataExport.ts), since speech docs are exported as path references,
- * never bundled file bytes.
+ * Missing-speech-doc detection + relink. Originally built for post-import
+ * recovery (see dataExport.ts — speech docs export as path references, not
+ * bundled bytes, so most won't resolve on a different computer), but the
+ * same "file moved/deleted outside the app" problem can happen any time —
+ * see `useMissingSpeechDocs` below, used by Sidebar.tsx/CasesGrid.tsx for a
+ * persistent broken-file indicator, not just right after an import.
  */
 
+import { useCallback, useEffect, useState } from 'react';
 import { loadCaseFolders, saveCaseFolders, itemKeyForDoc } from './caseFolders';
 
 const RECENTS_KEY = 'warroom-speech-doc-recents';
@@ -58,4 +61,36 @@ export async function relinkSpeechDoc(oldPath: string, newPath: string): Promise
     await saveCaseFolders({ ...data, assignments });
   }
   return true;
+}
+
+/**
+ * Live (well, checked-on-mount-and-on-change, not polled) set of missing doc
+ * paths, for rendering a persistent broken-file badge in the sidebar/grid.
+ * Re-checks whenever the recents list changes — covers a doc being added,
+ * removed, or relinked — not on a timer, since "the file went missing" isn't
+ * something that needs sub-second detection.
+ */
+export function useMissingSpeechDocs() {
+  const [missing, setMissing] = useState<Set<string>>(new Set());
+
+  const refresh = useCallback(() => {
+    checkMissingSpeechDocs().then((docs) => setMissing(new Set(docs.map((d) => d.path))));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    function onStorage(e: StorageEvent) { if (e.key === RECENTS_KEY) refresh(); }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [refresh]);
+
+  const relink = useCallback(async (path: string): Promise<boolean> => {
+    const newPath = await window.warroom?.dialog.openFile(['docx']);
+    if (!newPath) return false;
+    const ok = await relinkSpeechDoc(path, newPath);
+    if (ok) setMissing((prev) => { const next = new Set(prev); next.delete(path); return next; });
+    return ok;
+  }, []);
+
+  return { missing, relink };
 }
