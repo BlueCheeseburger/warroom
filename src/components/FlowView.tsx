@@ -99,6 +99,11 @@ export interface StoredFlowData {
   columnColors?: (string | null)[];
   fontSize: number;
   zoom: number;
+  // Which tab was open, so reopening the flow (or relaunching the app) lands
+  // back where you left off — see the session-restore work. Distinct from
+  // FlowSnapshot below (the undo stack), which deliberately excludes this:
+  // undo is about document content, not which tab you're looking at.
+  activeSheetIdx?: number;
 }
 
 // An undo step. Deliberately holds no active-sheet index: which tab is open is
@@ -363,6 +368,12 @@ export default function FlowView() {
         setFontSize(data.fontSize ?? DEFAULT_FONT_SIZE);
         setZoom(data.zoom ?? 100);
         cellsRef.current = data.sheets[0]?.cells ?? {}; cellsOwnerId.current = data.sheets[0]?.id ?? null;
+        // Restore which tab was open (session restore) — falls back to 0 for
+        // flows saved before this field existed, same as a fresh load.
+        const savedTab = data.activeSheetIdx;
+        setActiveSheetIdx(
+          typeof savedTab === 'number' && savedTab >= 0 && savedTab < data.sheets.length ? savedTab : 0
+        );
       } else {
         const rawEv = flowMeta?.event ?? event;
         const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
@@ -380,8 +391,8 @@ export default function FlowView() {
         setFontSize(prefs.defaultFontSize);
         setZoom(prefs.defaultZoom);
         cellsRef.current = {}; cellsOwnerId.current = def.sheets[0]?.id ?? null;
+        setActiveSheetIdx(0);
       }
-      setActiveSheetIdx(0);
       setLoaded(true);
       history.current = []; histIdx.current = -1;
       requestAnimationFrame(recordHistory);
@@ -495,6 +506,7 @@ export default function FlowView() {
       columnColors: s.columnColors,
       fontSize: s.fontSize,
       zoom: s.zoom,
+      activeSheetIdx: s.activeSheetIdx,
       ...overrides,
     } as StoredFlowData;
     // Local mirror — keeps the flow in the sidebar and working offline even when live.
@@ -505,6 +517,14 @@ export default function FlowView() {
     if (liveRef.current && !applyingRemote.current) syncStructureToDoc(payload);
     pushToWatchedTeamFile(payload);
   }
+
+  // Persist purely switching tabs too (not just content edits) — otherwise
+  // opening a flow, clicking a different tab, and closing without editing
+  // anything would silently forget the tab switch on next open/relaunch.
+  useEffect(() => {
+    if (!loaded) return;
+    persist();
+  }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * If this flow was added to Team Files (see TeamFiles.tsx's "add from your

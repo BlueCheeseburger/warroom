@@ -64,6 +64,25 @@ function QuickChatBar() {
 // ─── Speech timer data ────────────────────────────────────────────────────────
 
 export const TIMER_LEVEL_KEY = 'warroom-timer-level';
+const TIMER_SESSION_KEY = 'warroom-timer-session';
+
+interface TimerSession { event: string; level: PolicyLevel; slotIdx: number; timeLeft: number | null; }
+
+function loadTimerSession(event: string, level: PolicyLevel): { slotIdx: number; timeLeft: number | null } | null {
+  try {
+    const raw = localStorage.getItem(TIMER_SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as TimerSession;
+    // Only resume a timer that actually belongs to the current event/level —
+    // a stale slot index from PF wouldn't mean anything against Policy's slots.
+    if (s.event !== event || s.level !== level) return null;
+    return { slotIdx: s.slotIdx, timeLeft: s.timeLeft };
+  } catch { return null; }
+}
+
+function saveTimerSession(s: TimerSession) {
+  try { localStorage.setItem(TIMER_SESSION_KEY, JSON.stringify(s)); } catch {}
+}
 
 export interface SpeechSlot { label: string; secs: number; }
 export type PolicyLevel = 'hs' | 'clg';
@@ -128,8 +147,14 @@ function SpeechTimer() {
     ? db.tournaments[db.rounds[view.roundId]?.tournamentId ?? '']
     : undefined;
   const customTimes = activeTournament?.customSpeechTimes;
-  const [slotIdx, setSlotIdx] = useState(0);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  // Session restore: resume the exact slot + remaining time from before the
+  // app closed (cleanly or not — a laptop battery dying mid-speech shouldn't
+  // reset the clock). Deliberately does NOT restore `running` — it always
+  // reopens paused, so the timer never silently starts counting down again
+  // before the user has actually looked at the screen.
+  const restoredSession = useMemo(() => loadTimerSession(event, level), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [slotIdx, setSlotIdx] = useState(restoredSession?.slotIdx ?? 0);
+  const [timeLeft, setTimeLeft] = useState<number | null>(restoredSession?.timeLeft ?? null);
   const [running, setRunning] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editingPart, setEditingPart] = useState<'min' | 'sec' | null>(null);
@@ -169,8 +194,12 @@ function SpeechTimer() {
   const runningRef = useRef(running);
   runningRef.current = running;
 
-  // Reset on event or level change
+  // Reset on event or level change — but not on mount, which would otherwise
+  // immediately wipe out the slot/time just restored above from a prior
+  // session (this effect's deps fire on mount too, same as any other).
+  const skipFirstReset = useRef(true);
   useEffect(() => {
+    if (skipFirstReset.current) { skipFirstReset.current = false; return; }
     setRunning(false);
     setTimeLeft(null);
     setSlotIdx(0);
@@ -283,6 +312,13 @@ function SpeechTimer() {
     localStorage.setItem(TIMER_LEVEL_KEY, next);
     setLevel(next);
   }
+
+  // Persist for session restore — fires every tick while running (not just on
+  // pause), since a battery dying mid-speech needs the remaining time saved
+  // continuously, not only at moments the user explicitly stopped the clock.
+  useEffect(() => {
+    saveTimerSession({ event, level, slotIdx, timeLeft });
+  }, [event, level, slotIdx, timeLeft]);
 
   // Expose state for agent reads and listen for agent control events
   useEffect(() => {

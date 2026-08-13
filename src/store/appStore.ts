@@ -36,6 +36,50 @@ export interface FlowMeta {
   createdAt?: string;
 }
 
+// ── Session restore ─────────────────────────────────────────────────────────
+// So a laptop battery dying (or the app closing uncleanly) mid-prep doesn't
+// lose your place: the current view and any open compare panes are written
+// to localStorage on every change (not just on a clean quit, which an
+// unclean close never gets a chance to run) and read back in as the initial
+// state below. See TitleBar.tsx's SpeechTimer and Chat.tsx's composer drafts
+// for the other two pieces of session restore — those persist themselves,
+// independent of this store.
+const SESSION_VIEW_KEY = 'warroom-session-view';
+const SESSION_PANES_KEY = 'warroom-session-panes';
+
+// View kinds deliberately NOT restored — either transient state that means
+// nothing after a restart (a one-off AI comparison result, an in-progress
+// practice-mode game) or a live preview of something never actually saved
+// (a judge card looked at but not added to your judges). Falls back to home.
+const NON_RESTORABLE_VIEW_KINDS = new Set(['judge-preview', 'impact-calc', 'outweigh-game']);
+
+function loadSessionView(): View {
+  try {
+    const raw = localStorage.getItem(SESSION_VIEW_KEY);
+    if (!raw) return { kind: 'home' };
+    const v = JSON.parse(raw) as View;
+    if (!v?.kind || NON_RESTORABLE_VIEW_KINDS.has(v.kind)) return { kind: 'home' };
+    return v;
+  } catch { return { kind: 'home' }; }
+}
+
+function loadSessionPanes(forView: View): [string | undefined, string | undefined] {
+  if (forView.kind !== 'speech-doc') return [undefined, undefined];
+  try {
+    const raw = localStorage.getItem(SESSION_PANES_KEY);
+    if (!raw) return [undefined, undefined];
+    const p = JSON.parse(raw);
+    return Array.isArray(p) && p.length === 2 ? (p as [string | undefined, string | undefined]) : [undefined, undefined];
+  } catch { return [undefined, undefined]; }
+}
+
+function saveSessionView(v: View) {
+  try { localStorage.setItem(SESSION_VIEW_KEY, JSON.stringify(v)); } catch {}
+}
+function saveSessionPanes(p: [string | undefined, string | undefined]) {
+  try { localStorage.setItem(SESSION_PANES_KEY, JSON.stringify(p)); } catch {}
+}
+
 export type View =
   | { kind: 'home' }
   | { kind: 'cases-grid'; folderId?: string }
@@ -204,10 +248,12 @@ interface AppState {
   dismissUndoToast: (id: string) => void;
 }
 
+const initialSessionView = loadSessionView();
+
 export const useApp = create<AppState>((set, get) => ({
   db: emptyDB(),
-  view: { kind: 'home' },
-  navHistory: [{ kind: 'home' }],
+  view: initialSessionView,
+  navHistory: [initialSessionView],
   navHistoryIndex: 0,
   theme: (localStorage.getItem('warroom-theme') as Theme | null) ?? 'system',
   direction: (localStorage.getItem('warroom-direction') as Direction | null) ?? 'calm',
@@ -235,19 +281,21 @@ export const useApp = create<AppState>((set, get) => ({
     localStorage.setItem('warroom-timer-warning-secs', String(v));
     set({ timerWarningSecs: v });
   },
-  extraDocPanes: [undefined, undefined],
+  extraDocPanes: loadSessionPanes(initialSessionView),
   setExtraDocPane: (slot, docPath) => set((s) => {
     const next: [string | undefined, string | undefined] = [...s.extraDocPanes];
     next[slot] = docPath;
+    saveSessionPanes(next);
     return { extraDocPanes: next };
   }),
   focusedPane: 0,
   setFocusedPane: (pane) => set({ focusedPane: pane }),
-  setMainDocPath: (docPath) => set((s) => (
-    s.view.kind === 'speech-doc' && (s.view as any).docPath !== docPath
-      ? { view: { ...s.view, docPath } }
-      : {}
-  )),
+  setMainDocPath: (docPath) => set((s) => {
+    if (s.view.kind !== 'speech-doc' || (s.view as any).docPath === docPath) return {};
+    const next = { ...s.view, docPath };
+    saveSessionView(next);
+    return { view: next };
+  }),
   event: (localStorage.getItem('warroom-event') as DebateEvent | null) ?? 'policy',
   flowsIndex: [],
   ready: false,
@@ -300,6 +348,8 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (v) => set((s) => {
     const trimmed = s.navHistory.slice(0, s.navHistoryIndex + 1);
     const newHistory = [...trimmed, v].slice(-60);
+    saveSessionView(v);
+    saveSessionPanes([undefined, undefined]);
     return {
       view: v, navHistory: newHistory, navHistoryIndex: newHistory.length - 1,
       extraDocPanes: [undefined, undefined], focusedPane: 0,
@@ -308,6 +358,8 @@ export const useApp = create<AppState>((set, get) => ({
   goBack: () => set((s) => {
     if (s.navHistoryIndex <= 0) return s;
     const newIndex = s.navHistoryIndex - 1;
+    saveSessionView(s.navHistory[newIndex]);
+    saveSessionPanes([undefined, undefined]);
     return {
       view: s.navHistory[newIndex], navHistoryIndex: newIndex,
       extraDocPanes: [undefined, undefined], focusedPane: 0,
@@ -316,6 +368,8 @@ export const useApp = create<AppState>((set, get) => ({
   goForward: () => set((s) => {
     if (s.navHistoryIndex >= s.navHistory.length - 1) return s;
     const newIndex = s.navHistoryIndex + 1;
+    saveSessionView(s.navHistory[newIndex]);
+    saveSessionPanes([undefined, undefined]);
     return {
       view: s.navHistory[newIndex], navHistoryIndex: newIndex,
       extraDocPanes: [undefined, undefined], focusedPane: 0,

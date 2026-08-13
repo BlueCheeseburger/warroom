@@ -24,6 +24,7 @@ import {
   FOLDER_DRAG_MIME as FOLDER_MIME,
 } from '../utils/caseFolders';
 import CasePreview from './CasePreview';
+import { useMissingSpeechDocs } from '../utils/missingSpeechDocs';
 import SharePanel, { ShareItem } from './SharePanel';
 
 // ITEM_MIME/FOLDER_MIME are imported (aliased) from caseFolders.ts rather than
@@ -51,6 +52,7 @@ export default function CasesGrid() {
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const { folders, ready, update } = useCaseFolders();
+  const { missing: missingDocPaths, relink: relinkMissingDoc } = useMissingSpeechDocs();
 
   const currentFolderId = view.kind === 'cases-grid' ? view.folderId ?? null : null;
 
@@ -144,6 +146,7 @@ export default function CasesGrid() {
 
   function openItem(item: CaseItem) {
     if (item.kind === 'speech-doc') {
+      if (item.path && missingDocPaths.has(item.path)) { relinkMissingDoc(item.path); return; }
       if (item.path) setView({ kind: 'speech-doc', docPath: item.path });
       return;
     }
@@ -456,6 +459,7 @@ export default function CasesGrid() {
                   <ItemTile
                     key={item.key}
                     item={item}
+                    isMissing={item.kind === 'speech-doc' && !!item.path && missingDocPaths.has(item.path)}
                     folderName={searching ? (home?.name ?? 'Cases') : undefined}
                     dimmed={drag?.type === 'item' && drag.key === item.key}
                     selected={selected.has(item.key)}
@@ -673,11 +677,14 @@ export function TileAction({ label, danger, onClick, children }: {
 // ─── Item tile ────────────────────────────────────────────────────────────────
 
 function ItemTile({
-  item, folderName, dimmed, selected, onOpen, onToggleSelect, onDragStart, onDragEnd,
+  item, isMissing, folderName, dimmed, selected, onOpen, onToggleSelect, onDragStart, onDragEnd,
   onReorderOver, onReorderLeave, onReorderDrop, reorderEdge,
   folderChoices, currentFolderId, onMoveTo, onRename, onDelete,
 }: {
   item: CaseItem;
+  /** File not found on this computer — see missingSpeechDocs.ts. Clicking a
+   * missing tile offers to relink instead of trying (and failing) to open it. */
+  isMissing?: boolean;
   /** Set only while searching — tells the user where the hit actually lives. */
   folderName?: string;
   dimmed: boolean;
@@ -819,7 +826,14 @@ function ItemTile({
       )}
 
       <div className="mt-2 px-0.5">
-        <div className="text-xs font-medium truncate text-ink" title={item.name}>{item.name}</div>
+        <div
+          className="text-xs font-medium truncate flex items-center gap-1"
+          style={{ color: isMissing ? 'var(--danger, #ef4444)' : 'rgb(var(--ink-rgb))' }}
+          title={isMissing ? `File not found on this computer — click to locate it` : item.name}
+        >
+          {isMissing && <span style={{ fontSize: 11, lineHeight: 1 }}>⚠</span>}
+          <span className="truncate">{item.name}</span>
+        </div>
         <div className="mt-1 flex items-center gap-1 flex-wrap">
           {item.side !== 'unknown' && <SideBadge side={item.side} />}
           <span

@@ -25,6 +25,24 @@ import { getCachedMessages, setCachedMessages } from '../lib/chatCache';
 
 type ChatView = 'team' | 'dm-list' | 'files' | 'pins' | { kind: 'dm'; channel: DMChannel };
 
+// ── Unsubmitted composer drafts (session restore) ──────────────────────────
+// Persisted so a crash/restart (or just navigating away) never loses text you
+// typed but hadn't sent. Team room has one draft slot; each DM channel gets
+// its own, keyed by channel id, so switching between DMs shows the right
+// draft instead of leaking one conversation's half-typed message into another.
+const TEAM_DRAFT_KEY = 'warroom-draft-team';
+const dmDraftKey = (channelId: string) => `warroom-draft-dm-${channelId}`;
+
+function loadDraft(key: string): string {
+  try { return localStorage.getItem(key) ?? ''; } catch { return ''; }
+}
+function saveDraft(key: string, text: string) {
+  try {
+    if (text) localStorage.setItem(key, text);
+    else localStorage.removeItem(key); // don't keep an empty-string draft around forever
+  } catch {}
+}
+
 // A message is decrypted content mentioning `@DisplayName_With_Underscores` or
 // directly replying to a message you sent — used by the "mentions & replies
 // only" notification level (see chatPrefs.ts's ChatNotifLevel).
@@ -474,7 +492,7 @@ function ChatBody() {
   const { currentUser, currentTeam, chatOpen, clearUnread, incrementUnread } = useApp();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [composerText, setComposerText] = useState('');
+  const [composerText, setComposerText] = useState(() => loadDraft(TEAM_DRAFT_KEY));
   const [pendingMentions, setPendingMentions] = useState<PendingMention[]>([]);
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -593,6 +611,7 @@ function ChatBody() {
   function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setComposerText(val);
+    saveDraft(TEAM_DRAFT_KEY, val);
     notifyTyping();
     const cursor = e.target.selectionStart ?? val.length;
     const match = val.slice(0, cursor).match(/@(\w*)$/);
@@ -784,7 +803,7 @@ function ChatBody() {
       reply_to_id: savedReply?.id, reply_to_sender_name: savedReply?.senderName, reply_to_content: savedReply?.content,
     } as any;
     setMessages((prev) => [...prev, optimistic]);
-    setComposerText(''); setPendingMentions([]); setReplyingTo(null); setError('');
+    setComposerText(''); saveDraft(TEAM_DRAFT_KEY, ''); setPendingMentions([]); setReplyingTo(null); setError('');
     setSending(true);
     try {
       const plainAtts = savedMentions
@@ -1203,7 +1222,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
   const { currentUser, currentTeam, teamMembers } = useApp();
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [composerText, setComposerText] = useState('');
+  const [composerText, setComposerText] = useState(() => loadDraft(dmDraftKey(channel.id)));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [showAddMember, setShowAddMember] = useState(false);
@@ -1224,6 +1243,11 @@ function DMBody({ channel }: { channel: DMChannel }) {
       if (res.ok) setPinnedMap(new Map((res.data as PinnedMessage[]).filter((p) => p.message_id).map((p) => [p.message_id as string, p.id])));
     });
   }, [channel.id]);
+
+  // Switch to this channel's own draft — DMBody isn't remounted per-channel
+  // (no `key` on <DMBody>, see DMPane), so without this, switching DMs would
+  // otherwise leak one conversation's unsent text into another's composer.
+  useEffect(() => { setComposerText(loadDraft(dmDraftKey(channel.id))); }, [channel.id]);
 
   async function handleTogglePin(m: DMMessage) {
     if (!currentTeam || !currentUser) return;
@@ -1345,7 +1369,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
       reply_to_id: savedReply?.id, reply_to_sender_name: savedReply?.senderName, reply_to_content: savedReply?.content,
     } as any;
     setMessages((prev) => [...prev, optimistic]);
-    setComposerText(''); setReplyingTo(null); setError('');
+    setComposerText(''); saveDraft(dmDraftKey(channel.id), ''); setReplyingTo(null); setError('');
     setSending(true);
     try {
       const key = await teamKeyFor(currentTeam);
@@ -1488,7 +1512,7 @@ function DMBody({ channel }: { channel: DMChannel }) {
             placeholder="Message…"
             style={{ paddingRight: 40, paddingBottom: 34 }}
             value={composerText}
-            onChange={(e) => { setComposerText(e.target.value); notifyTyping(); }}
+            onChange={(e) => { setComposerText(e.target.value); saveDraft(dmDraftKey(channel.id), e.target.value); notifyTyping(); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               if (e.key === 'Escape') setReplyingTo(null);
