@@ -55,6 +55,7 @@ Make a folder to group things however you think about them — by tournament, by
 - **Open a folder**: click it, in the grid or in the sidebar
 - **Nest folders**: drag one folder into another; they can go as deep as you like
 - **Rename or delete**: hover a folder in the grid — Rename and Delete appear on the tile
+- **Share the whole folder**: hover a folder in the grid and click the share icon — every case and doc inside it (including subfolders) goes out together as one share, the same **Send to** picker (team room, teammates, or by email) as sharing a single case or doc uses. The recipient gets one message with everything attached, instead of you sharing each item one by one.
 
 Folders also appear in the sidebar under Cases, as a tree you can expand and collapse (there's a bigger click target on the arrow now, so it's easier to hit). Whatever you file in one place shows up in the other immediately — it's the same set of folders, just two ways of looking at it.
 

@@ -621,6 +621,17 @@ export default function Documentation() {
             folder import always lands as one correctly-named group. Onboarding's import step
             passes <Code>['docx', 'xlsx']</Code> to import speech docs and flows together.
           </P>
+          <P>
+            <strong>Share a whole folder.</strong> A <strong>Share folder</strong> hover action on
+            each folder tile (alongside Rename/Delete) opens the same <Code>SharePanel</Code> every
+            single case/doc share already uses, but in a new multi-item mode:{' '}
+            <Code>itemsInFolderRecursive</Code> (<Code>caseItems.ts</Code>) collects every case and
+            speech doc filed under that folder <em>and its subfolders</em>, each becomes its own
+            attachment (same payload shapes the single-item share sites already build — file bytes
+            for docs, <Code>{'{ case, blocks }'}</Code> for cases), and every recipient gets one
+            message carrying all of them together rather than a flood of separate shares. Flow
+            folders don't get this action — they keep their own always-live sharing model.
+          </P>
         </section>
 
         {/* ── Library ────────────────────────────────────────────────── */}

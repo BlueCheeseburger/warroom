@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../store/appStore';
-import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks, readSpeechDocRecents, writeSpeechDocRecents } from '../utils/caseItems';
+import { buildCaseItems, CaseItem, CaseItemKind, removeFromRecents, renameInRecents, deleteCaseAndBlocks, readSpeechDocRecents, writeSpeechDocRecents, itemsInFolderRecursive } from '../utils/caseItems';
 import { useMenuA11y } from '../hooks/useMenuA11y';
 import {
   useCaseFolders,
@@ -24,6 +24,7 @@ import {
   FOLDER_DRAG_MIME as FOLDER_MIME,
 } from '../utils/caseFolders';
 import CasePreview from './CasePreview';
+import SharePanel, { ShareItem } from './SharePanel';
 
 // ITEM_MIME/FOLDER_MIME are imported (aliased) from caseFolders.ts rather than
 // declared locally — the sidebar tree is a separate React tree that also drags
@@ -70,6 +71,7 @@ export default function CasesGrid() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<CaseFolder | null>(null);
+  const [shareFolder, setShareFolder] = useState<CaseFolder | null>(null);
   const [drag, setDrag] = useState<Drag>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -168,6 +170,37 @@ export default function CasesGrid() {
     // The open folder just stopped existing — follow its documents up to the parent.
     if (currentFolderId === folder.id) navigate(folder.parentId);
     pushUndoToast(`Deleted folder "${folder.name}"`, () => update(() => snapshot));
+  }
+
+  /**
+   * Every case and speech doc in a folder (recursively, including subfolders),
+   * converted into the per-item `getData` shape `SharePanel` already knows how
+   * to encrypt and attach — the exact same payloads a single case/doc share
+   * builds (`CaseView.tsx`, `SpeechDocViewer.tsx`), just bundled item by item.
+   */
+  function folderShareItems(folder: CaseFolder): ShareItem[] {
+    return itemsInFolderRecursive(folders, items, folder.id).map((item): ShareItem => {
+      if (item.kind === 'speech-doc') {
+        return {
+          type: 'speech-doc',
+          id: item.id,
+          name: item.name,
+          getData: async () => {
+            const res = await window.warroom.fs.readFileBytes(item.path!);
+            return { filename: /\.docx$/i.test(item.name) ? item.name : `${item.name}.docx`, base64: res.base64 ?? '' };
+          },
+        };
+      }
+      return {
+        type: 'case',
+        id: item.id,
+        name: item.name,
+        getData: async () => ({
+          case: db.cases[item.id],
+          blocks: Object.fromEntries((db.cases[item.id]?.blocks ?? []).map((bid: string) => [bid, db.blocks[bid]]).filter(([, b]: any) => b)),
+        }),
+      };
+    });
   }
 
   /** True if the currently-open view is showing one of the given item ids/paths. */
@@ -373,6 +406,7 @@ export default function CasesGrid() {
                     onCommitRename={() => commitRename(f.id)}
                     onCancelRename={() => setRenamingId(null)}
                     onDelete={() => setConfirmDelete(f)}
+                    onShare={() => setShareFolder(f)}
                     onDragStart={(e) => {
                       e.dataTransfer.setData(FOLDER_MIME, f.id);
                       e.dataTransfer.effectAllowed = 'move';
@@ -458,6 +492,13 @@ export default function CasesGrid() {
           onConfirm={() => doDelete(confirmDelete)}
         />
       )}
+      {shareFolder && (
+        <SharePanel
+          name={shareFolder.name}
+          items={folderShareItems(shareFolder)}
+          onClose={() => setShareFolder(null)}
+        />
+      )}
     </div>
   );
 }
@@ -507,7 +548,7 @@ export function FolderIcon({ size = 15 }: { size?: number }) {
 
 export function FolderTile({
   folder, count, renaming, renameDraft, highlighted, dimmed,
-  onOpen, onStartRename, onRenameDraft, onCommitRename, onCancelRename, onDelete,
+  onOpen, onStartRename, onRenameDraft, onCommitRename, onCancelRename, onDelete, onShare,
   onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
 }: {
   folder: CaseFolder;
@@ -522,6 +563,8 @@ export function FolderTile({
   onCommitRename: () => void;
   onCancelRename: () => void;
   onDelete: () => void;
+  /** Cases folders only — Flow folders have their own live-collab share model and leave this unset. */
+  onShare?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -578,6 +621,13 @@ export function FolderTile({
       </div>
       {hover && (
         <div className="flex items-center gap-1 shrink-0">
+          {onShare && (
+            <TileAction label="Share folder" onClick={(e) => { e.stopPropagation(); onShare(); }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M12 10a2 2 0 0 0-1.6.8L5.9 8.4A2 2 0 0 0 6 8a2 2 0 0 0-.1-.4l4.5-2.3A2 2 0 1 0 9.9 3.4L5.4 5.7A2 2 0 1 0 5.4 10.3l4.5 2.3A2 2 0 1 0 12 10z"/>
+              </svg>
+            </TileAction>
+          )}
           <TileAction label="Rename" onClick={(e) => { e.stopPropagation(); onStartRename(); }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />

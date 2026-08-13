@@ -6,11 +6,24 @@ import wordIcon from '../assets/word-icon.png';
 import excelIcon from '../assets/excel-icon.png';
 import sheetsIcon from '../assets/sheets-icon.png';
 
-interface Props {
-  type: 'flow' | 'case' | 'block' | 'speech-doc';
+/** One item bundled into a folder share — same `type`/`getData` contract as a
+ *  single share, just packed several-at-once into one message's attachments. */
+export interface ShareItem {
+  type: 'case' | 'speech-doc';
   id: string;
   name: string;
   getData: () => Promise<any>;
+}
+
+interface Props {
+  // Single-item share: all three required. Folder share: omit these, pass
+  // `items` instead — every case/doc inside becomes its own attachment, all
+  // sent together in one message per recipient.
+  type?: 'flow' | 'case' | 'block' | 'speech-doc';
+  id?: string;
+  name: string;
+  getData?: () => Promise<any>;
+  items?: ShareItem[];
   onClose: () => void;
   onShared?: () => void;
   // Optional banner shown at the top of the panel (e.g. live-collab explainer).
@@ -35,7 +48,7 @@ function dmChannelTitle(ch: DMChannel, myId?: string) {
 
 interface EmailRecipient { userId: string; displayName: string; email: string; }
 
-export default function SharePanel({ type, id, name, getData, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord, collabNote, live }: Props) {
+export default function SharePanel({ type, id, name, getData, items, onClose, onShared, onExportXlsx, onExportDocx, onOpenInExcel, onOpenInSheets, onOpenInWord, collabNote, live }: Props) {
   const { currentUser, currentTeam, teamMembers, defaultSharePermission, flowsIndex, setFlowsIndex, update, setView } = useApp();
   const [dmChannels, setDmChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,16 +114,25 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
 
   async function handleShare() {
     if (!currentUser || !currentTeam) return;
+    if (items && items.length === 0) { setError('This folder is empty — nothing to share.'); return; }
+    if (!items && (!type || !getData)) return; // single-item mode requires these
     const allSelected = [...selectedMembers];
     if (allSelected.length === 0 && !shareToRoom) { setError('Select at least one recipient.'); return; }
     setSharing(true); setError('');
 
     try {
-      const data = await getData();
       // Encrypt content + attachment data with the team key before anything is sent.
       const key = await teamKeyFor(currentTeam);
-      const attachment = { type, name, data: await encryptAttachmentData(key, data ?? {}), permission };
-      const sharedContent = await encryptText(key, `Shared "${name}"`);
+      // Folder share: every item inside becomes its own attachment, all riding
+      // in the same message — the recipient sees one message with N chips
+      // rather than a flood of separate shares. Single-item share: unchanged,
+      // exactly one attachment.
+      const attachments = items
+        ? await Promise.all(items.map(async (it) => ({
+            type: it.type, name: it.name, data: await encryptAttachmentData(key, (await it.getData()) ?? {}), permission,
+          })))
+        : [{ type: type!, name, data: await encryptAttachmentData(key, (await getData!()) ?? {}), permission }];
+      const sharedContent = await encryptText(key, items ? `Shared folder "${name}" (${items.length} item${items.length === 1 ? '' : 's'})` : `Shared "${name}"`);
 
       // Combine team members + email-looked-up recipients
       const recipientList: { userId: string; displayName: string }[] = [
@@ -145,7 +167,7 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
           senderId: currentUser.id,
           senderName: currentUser.displayName,
           content: sharedContent,
-          attachments: [attachment],
+          attachments,
         });
       }
 
@@ -156,19 +178,27 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
           senderId: currentUser.id,
           senderName: currentUser.displayName,
           content: sharedContent,
-          attachments: [attachment],
+          attachments,
         });
       }
 
       // Mark as shared in sidebar
-      if (type === 'flow') {
+      if (items) {
+        const sharedCaseIds = new Set(items.filter((it) => it.type === 'case').map((it) => it.id));
+        if (sharedCaseIds.size > 0) {
+          await update((db: DB) => ({
+            ...db,
+            cases: Object.fromEntries(Object.entries(db.cases).map(([cid, c]) => [cid, sharedCaseIds.has(cid) ? { ...c, shared: true } : c])),
+          }));
+        }
+      } else if (type === 'flow') {
         const newIndex = flowsIndex.map((f) => f.id === id ? { ...f, shared: true } : f);
         setFlowsIndex(newIndex);
         window.warroom.storage.write('flows_index', newIndex);
       } else if (type === 'case') {
         await update((db: DB) => ({
           ...db,
-          cases: { ...db.cases, [id]: { ...db.cases[id], shared: true } },
+          cases: { ...db.cases, [id!]: { ...db.cases[id!], shared: true } },
         }));
       }
 
@@ -196,8 +226,10 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
         <div className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0"
           style={{ borderBottom: '1px solid var(--border-side)' }}>
           <div>
-            <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Share</div>
-            <div className="text-xs mt-0.5 truncate max-w-[200px]" style={{ color: 'var(--nav-inactive-color)' }}>{name}</div>
+            <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{items ? 'Share folder' : 'Share'}</div>
+            <div className="text-xs mt-0.5 truncate max-w-[200px]" style={{ color: 'var(--nav-inactive-color)' }}>
+              {name}{items ? ` · ${items.length} item${items.length === 1 ? '' : 's'}` : ''}
+            </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--nav-inactive-color)', fontSize: 18 }}>×</button>
         </div>
@@ -385,6 +417,11 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
               {/* Recipients */}
               <div>
                 <div className="label mb-2">Send to</div>
+                {items?.length === 0 && (
+                  <p className="text-[11px] mb-2" style={{ color: 'var(--nav-inactive-color)' }}>
+                    This folder is empty — nothing to share.
+                  </p>
+                )}
                 {type === 'flow' && !live && currentUser && currentTeam && (
                   <p className="text-[11px] mb-2" style={{ color: 'var(--nav-inactive-color)' }}>
                     Sending starts a live session — recipients join and edit with you in realtime.
@@ -503,7 +540,7 @@ export default function SharePanel({ type, id, name, getData, onClose, onShared,
             <button
               className="btn-primary w-full text-xs py-2"
               onClick={handleShare}
-              disabled={sharing || (selectedMembers.length === 0 && !shareToRoom)}
+              disabled={sharing || (selectedMembers.length === 0 && !shareToRoom) || items?.length === 0}
             >
               {sharing ? 'Sharing…' : 'Share'}
             </button>

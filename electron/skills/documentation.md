@@ -206,6 +206,12 @@ Right-click (or a hover "⋯" button in the grid) opens the same three actions �
 
 `SpeechDocViewer.tsx`'s `pickFolder()` calls this, batch-adds every result to recents (same `addRecents` path multi-file import uses), then creates a new `CaseFolder` named after the picked directory (`createFolder(data, folderName, null)`) and files every imported doc into it (`moveItem`) in one `useCaseFolders().update()` call — so the whole batch lands in one new, correctly-named folder rather than at the top level.
 
+### Sharing a whole folder
+
+A **Share folder** tile action (`CasesGrid.tsx`'s `FolderTile`, alongside Rename/Delete — same reused-across-`FlowsGrid` component, so its new `onShare?` prop is optional and left unset for Flow folders, which keep their own live-collab share model) opens `SharePanel` in a new multi-item mode rather than the single `type`/`id`/`getData` mode every other share site uses. `itemsInFolderRecursive(folders, items, folderId)` (`caseItems.ts`) collects every case/oc-case/speech-doc filed under the folder **and its subfolders** (via `descendantFolderIds`, the same set `deleteFolder`'s cascade logic already needs) — sharing a folder means the whole subtree, not just its direct contents. `CasesGrid.tsx`'s `folderShareItems()` maps each into a `ShareItem` (`{ type, id, name, getData }` — exported from `SharePanel.tsx`), reusing the *exact* payload shapes the single-item share sites already build: `speech-doc` reads file bytes via `window.warroom.fs.readFileBytes`, same as `SpeechDocViewer.tsx`'s own share button; `case`/`oc-case` both share as `type: 'case'` with `{ case, blocks }`, same as `CaseView.tsx`'s.
+
+`SharePanel`'s `handleShare` branches on whether `items` was passed: multi-item builds one `attachments` array (every item individually encrypted with the team key, same `encryptAttachmentData` call as before) and sends it as a **single message** per recipient/room — the recipient sees one message with N attachment chips, not a flood of separate shares. Single-item share is unchanged, still exactly one attachment. `type`/`id`/`getData` are optional on `SharePanel`'s props specifically to make room for this — a folder share has no single id/type of its own, just its `name` (used for the header and the "Shared folder …" message text) and its `items`. Marking cases `shared: true` after sending loops over every `case`-typed item instead of touching a single id. An empty folder disables the Share button and shows an inline "nothing to share" note rather than silently no-op'ing.
+
 ---
 
 ## Cards (Card Library)

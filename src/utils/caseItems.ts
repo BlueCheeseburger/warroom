@@ -16,7 +16,7 @@
  */
 
 import { DB } from '../types';
-import { itemKeyForCase, itemKeyForDoc } from './caseFolders';
+import { itemKeyForCase, itemKeyForDoc, resolveItemFolder, descendantFolderIds, CaseFoldersData } from './caseFolders';
 
 export type CaseItemKind = 'case' | 'oc-case' | 'speech-doc';
 export type ItemSide = 'aff' | 'neg' | 'unknown';
@@ -107,6 +107,20 @@ export function buildCaseItems(db: DB): CaseItem[] {
   }
 
   return items;
+}
+
+/**
+ * Every case + speech doc filed under `folderId`, including everything in its
+ * subfolders (nested arbitrarily deep) — "share this folder" means the whole
+ * subtree, not just what's directly in it, same as how deleting a folder
+ * promotes its subfolders' contents rather than losing them.
+ */
+export function itemsInFolderRecursive(folders: CaseFoldersData, items: CaseItem[], folderId: string): CaseItem[] {
+  const ids = new Set([folderId, ...descendantFolderIds(folders, folderId)]);
+  return items.filter((i) => {
+    const f = resolveItemFolder(folders, i.key);
+    return f !== null && ids.has(f);
+  });
 }
 
 /**
