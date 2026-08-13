@@ -1070,6 +1070,24 @@ function newConversation(): Conversation {
 const CONV_META_KEY = 'warroom-gemini-conversations';
 const convHistoryKey = (id: string) => `warroom-gemini-conv-${id}`;
 
+// Unsubmitted composer draft, per conversation (session restore) — survives
+// closing the Gemini panel (unmounts GeminiBody), closing the whole app, or
+// a crash, since it's written to localStorage on every keystroke rather than
+// only on a clean shutdown. GeminiBody remounts with a fresh key per
+// conversationId (see `key={active.id}` below), so a plain useState
+// initializer here is enough to load the right draft — no cross-conversation
+// leak to guard against the way DM composers needed one.
+const convDraftKey = (id: string) => `warroom-gemini-draft-${id}`;
+function loadDraft(id: string): string {
+  try { return localStorage.getItem(convDraftKey(id)) ?? ''; } catch { return ''; }
+}
+function saveDraft(id: string, text: string) {
+  try {
+    if (text) localStorage.setItem(convDraftKey(id), text);
+    else localStorage.removeItem(convDraftKey(id));
+  } catch {}
+}
+
 function loadConversations(): Conversation[] {
   try {
     const meta: Array<{ id: string; title: string; titleSetByUser?: boolean }> = JSON.parse(localStorage.getItem(CONV_META_KEY) ?? '[]');
@@ -1465,7 +1483,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
 }) {
   const { update, agentSearchFns, db, setView, flowsIndex, cardOutdatedYears } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
-  const [composerText, setComposerText] = useState('');
+  const [composerText, setComposerText] = useState(() => loadDraft(conversationId));
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -1661,6 +1679,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setComposerText(val);
+    saveDraft(conversationId, val);
     const cursor = e.target.selectionStart ?? val.length;
     // @ mention picker
     const mentionMatch = val.slice(0, cursor).match(/@(\w*)$/);
@@ -1851,7 +1870,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
       onHistoryChange(conversationId, next, isFirst ? '…' : undefined);
       return next;
     });
-    setComposerText(''); setPendingMentions([]);
+    setComposerText(''); saveDraft(conversationId, ''); setPendingMentions([]);
 
     // Build full app index (injected into system_instruction via IPC)
     const userContext = buildAppIndex(db, flowsIndex);
