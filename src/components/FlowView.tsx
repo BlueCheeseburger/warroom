@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { useApp, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import AnalyzeRound from './AnalyzeRound';
-import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser } from '../lib/flowSync';
+import { createFlowSync, FlowSyncHandle, RemoteCursor, PresenceUser, FlowSyncStatus } from '../lib/flowSync';
 import { isShortcutDisabled, matchesShortcut } from '../lib/shortcutPrefs';
 import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
@@ -242,6 +242,10 @@ export default function FlowView() {
   const [liveReady, setLiveReady] = useState(false);    // sync handle attached
   const [liveStarting, setLiveStarting] = useState(false);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+  // Live-sync connection status — see flowSync.ts's FlowSyncStatus. Only
+  // meaningful while `live` is true; the flow keeps working offline either
+  // way, this just says whether edits are currently reaching teammates.
+  const [syncStatus, setSyncStatus] = useState<FlowSyncStatus>('CONNECTING');
   const syncRef = useRef<FlowSyncHandle | null>(null);
   const liveRef = useRef(false);                          // mirror for callbacks
   const applyingRemote = useRef(false);                   // guard structural echo
@@ -699,6 +703,7 @@ export default function FlowView() {
       if (!docToData(handle.doc)) seedDoc(handle.doc, currentDataForDoc(), cellToHtml);
       else hydrateFromDoc(handle.doc, { remountCells: true });
       handle.onCursors((c) => { if (!cancelled) setRemoteCursors(c); });
+      handle.onStatus((s) => { if (!cancelled) setSyncStatus(s); });
       setLiveReady(true);
       setLiveStarting(false);
     })();
@@ -707,6 +712,7 @@ export default function FlowView() {
       liveRef.current = false;
       setLiveReady(false);
       setRemoteCursors([]);
+      setSyncStatus('CONNECTING');
       syncRef.current = null;
       handle?.destroy();
     };
@@ -1933,20 +1939,32 @@ export default function FlowView() {
 
         {/* Live status — present only while live; the entry point into going live
             lives inside the Share panel now (see "Combine Share and Collaborate"
-            below), so this is purely a glanceable status readout + leave button. */}
-        {live && (
+            below), so this is purely a glanceable status readout + leave button.
+            Reflects `syncStatus`, not just `liveReady` — liveReady only ever
+            covers the FIRST join; a connection can drop and try to reconnect
+            afterward (network blip, laptop sleep) without liveReady ever
+            flipping back, so without syncStatus this dot would keep showing
+            "synced" green through an actual disconnect. */}
+        {live && (() => {
+          const connected = liveReady && syncStatus === 'SUBSCRIBED';
+          const label = !liveReady ? 'Connecting…' : connected ? 'Live' : 'Reconnecting…';
+          const dotColor = connected ? '#16a34a' : '#d97706';
+          const title = !liveReady
+            ? 'Connecting to live session…'
+            : connected
+            ? `Live — editing together in realtime${remoteCursors.length ? ` with ${remoteCursors.map((c) => c.user.name).join(', ')}` : ' (no one else here yet)'}`
+            : 'Connection dropped — reconnecting. Your edits are still saving locally and will sync once back online.';
+          return (
           <div
             className="flex items-center gap-1.5 shrink-0 px-2 h-[26px] rounded-md"
             style={{ background: 'var(--nav-active-bg)' }}
-            title={liveReady
-              ? `Live — editing together in realtime${remoteCursors.length ? ` with ${remoteCursors.map((c) => c.user.name).join(', ')}` : ' (no one else here yet)'}`
-              : 'Connecting to live session…'}
+            title={title}
           >
             <span className="relative flex h-2 w-2 shrink-0">
-              {liveReady && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: '#16a34a' }} />}
-              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: liveReady ? '#16a34a' : '#d97706' }} />
+              {connected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: dotColor }} />}
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: dotColor }} />
             </span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--nav-active-color)' }}>Live</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--nav-active-color)' }}>{label}</span>
             {/* Present teammates */}
             <div className="flex items-center -space-x-1">
               {remoteCursors.slice(0, 4).map((c) => (
@@ -1966,7 +1984,8 @@ export default function FlowView() {
               >✕</button>
             </FlowTooltip>
           </div>
-        )}
+          );
+        })()}
 
         {/* Share — also where going live now starts (was a separate button; both
             led to the same panel, so they're one button now). */}

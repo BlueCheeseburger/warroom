@@ -298,6 +298,7 @@ declare global {
         onRemoteUpdate: (cb: (p: { flowId: string; update: string }) => void) => () => void;
         onRemoteAwareness: (cb: (p: { flowId: string; awareness: string }) => void) => () => void;
         onPresence: (cb: (p: { flowId: string; state: any }) => void) => () => void;
+        onStatus: (cb: (p: { flowId: string; status: string }) => void) => () => void;
       };
       secure: {
         set: (key: string, value: string) => Promise<boolean>;

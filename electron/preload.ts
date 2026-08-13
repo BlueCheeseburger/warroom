@@ -33,6 +33,15 @@ const api = {
       ipcRenderer.on('flowSync:presence', h);
       return () => ipcRenderer.removeListener('flowSync:presence', h);
     },
+    // Realtime channel status (SUBSCRIBED / CHANNEL_ERROR / TIMED_OUT / CLOSED)
+    // — fires on join AND every later transition (drop + reconnect), so the
+    // live-sync indicator reflects reality for the whole session, not just
+    // the initial join.
+    onStatus: (cb: (p: { flowId: string; status: string }) => void) => {
+      const h = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('flowSync:status', h);
+      return () => ipcRenderer.removeListener('flowSync:status', h);
+    },
   },
   secure: {
     set: (key: string, value: string) => ipcRenderer.invoke('secure:set', key, value),

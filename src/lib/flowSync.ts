@@ -15,11 +15,18 @@ import { u8ToB64, b64ToU8, REMOTE_ORIGIN } from './flowDoc';
 export interface PresenceUser { id: string; name: string; color: string }
 export interface RemoteCursor { user: PresenceUser; cell: string | null }
 
+// SUBSCRIBED = actively syncing. CHANNEL_ERROR/TIMED_OUT/CLOSED = not
+// currently synced — edits still save locally (this doc keeps working
+// offline), they just aren't reaching teammates until it reconnects.
+export type FlowSyncStatus = 'SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CLOSED' | 'CONNECTING';
+
 export interface FlowSyncHandle {
   doc: Y.Doc;
   awareness: Awareness;
   setActiveCell: (cell: string | null) => void;
   onCursors: (cb: (cursors: RemoteCursor[]) => void) => () => void;
+  /** Current + future connection status — see FlowSyncStatus. Fires immediately with whatever's known so far. */
+  onStatus: (cb: (status: FlowSyncStatus) => void) => () => void;
   saveSnapshotNow: () => void;
   destroy: () => Promise<void>;
 }
@@ -46,7 +53,21 @@ export async function createFlowSync(
   } catch { /* fall through — broadcast convergence will catch us up */ }
 
   // 2) Subscribe to the broadcast channel.
-  await wr.join(flowId);
+  const joinRes = await wr.join(flowId);
+
+  // Connection status — fed by main.ts forwarding every transition on the
+  // underlying Supabase channel (join.status changes covers the FIRST one;
+  // subsequent drops/reconnects arrive via onStatus below).
+  let currentStatus: FlowSyncStatus = joinRes?.ok ? 'SUBSCRIBED' : 'CHANNEL_ERROR';
+  const statusSubs = new Set<(s: FlowSyncStatus) => void>();
+  function emitStatus(s: FlowSyncStatus) {
+    currentStatus = s;
+    statusSubs.forEach((cb) => cb(s));
+  }
+  const offStatus = wr.onStatus(({ flowId: fid, status: s }) => {
+    if (fid !== flowId) return;
+    emitStatus(s as FlowSyncStatus);
+  });
 
   // 3) Local doc edits → broadcast (skip anything we applied from remote).
   const onDocUpdate = (update: Uint8Array, origin: any) => {
@@ -128,8 +149,14 @@ export async function createFlowSync(
       cb([]);
       return () => cursorSubs.delete(cb);
     },
+    onStatus(cb) {
+      statusSubs.add(cb);
+      cb(currentStatus);
+      return () => statusSubs.delete(cb);
+    },
     saveSnapshotNow,
     async destroy() {
+      offStatus();
       saveSnapshotNow();
       doc.off('update', onDocUpdate);
       awareness.off('update', onAwarenessUpdate);

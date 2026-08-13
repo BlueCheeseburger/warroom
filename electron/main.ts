@@ -7377,11 +7377,21 @@ ipcMain.handle('flowSync:join', async (_e, flowId: string) => {
   });
   const status = await new Promise<string>((resolve) => {
     const timer = setTimeout(() => resolve('TIMED_OUT'), 10_000);
+    let resolved = false;
+    // This callback is the channel's ONGOING status listener, not a one-shot —
+    // supabase-js calls it again on every later transition too (a network
+    // drop, then its own automatic reconnect attempts, then re-subscribed).
+    // Forward every one of those to the renderer (flowSync:status) so the
+    // live-sync indicator reflects reality after the initial join, not just
+    // whatever the status was at join time.
     ch.subscribe((s: string) => {
+      mainWin?.webContents.send('flowSync:status', { flowId, status: s });
       // SUBSCRIBED = joined; CHANNEL_ERROR/TIMED_OUT/CLOSED = failed (e.g. the
       // realtime RLS policy rejected a non-member). Resolve either way so we
-      // never hang the renderer waiting on a channel that will never join.
-      if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+      // never hang the renderer waiting on a channel that will never join —
+      // but only the FIRST such transition settles this join promise.
+      if (!resolved && (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')) {
+        resolved = true;
         clearTimeout(timer);
         resolve(s);
       }
