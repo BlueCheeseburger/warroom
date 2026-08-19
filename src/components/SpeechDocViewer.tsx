@@ -5,7 +5,12 @@ import { useApp } from '../store/appStore';
 import type { DebateEvent, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './FlowView';
-import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes, softenGreenHighlight, removeGreenHighlightSoften } from '../utils/docxViewerUtils';
+import {
+  parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes,
+  tagHighlightElements, applyHighlightReadability, resetHighlightReadability,
+  loadHighlightReadability, HIGHLIGHT_READABILITY_CHANGED,
+} from '../utils/docxViewerUtils';
+import HighlightReadabilityMenu from './HighlightReadabilityMenu';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
@@ -3065,6 +3070,19 @@ function DocPaneViewer({
     window.addEventListener('warroom-doc-light-changed', onChange);
     return () => window.removeEventListener('warroom-doc-light-changed', onChange);
   }, []);
+  // Highlight readability slider (⋯ menu) — how much to soften Word's raw
+  // highlighter colors on a light-rendered page. Read once here; the live
+  // theme-sync effect below (which already depends on docLightInDark) also
+  // depends on this, so any change re-applies to the open doc immediately.
+  const [highlightReadability, setHighlightReadability] = useState(() => loadHighlightReadability());
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail;
+      if (typeof v === 'number') setHighlightReadability(v);
+    };
+    window.addEventListener(HIGHLIGHT_READABILITY_CHANGED, onChange);
+    return () => window.removeEventListener(HIGHLIGHT_READABILITY_CHANGED, onChange);
+  }, []);
   // Settings → "Speech doc margins": how much of the doc's real Word page
   // margins to keep (0 = edge-to-edge, 100 = full original margin). Default
   // 50 — cut noticeably, but not stripped bare, out of the box.
@@ -4017,18 +4035,21 @@ function DocPaneViewer({
       if (!containerRef.current) return;
       const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
       if (isDark) {
+        // Reset to Word's true raw color FIRST — applyDarkModeViewerFixes
+        // computes its dim from whatever's currently on screen, so it must
+        // never see an already-softened color as its starting point.
+        resetHighlightReadability(containerRef.current);
         applyDarkModeViewerFixes(containerRef.current);
-        removeGreenHighlightSoften(containerRef.current);
       } else {
         removeDarkModeViewerFixes(containerRef.current);
-        softenGreenHighlight(containerRef.current);
+        applyHighlightReadability(containerRef.current, highlightReadability);
       }
     };
     sync();
     const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
-  }, [docLightInDark]);
+  }, [docLightInDark, highlightReadability]);
 
   // Keep refs in sync (so the async loadFile closure always reads fresh values)
   useEffect(() => { focusActiveRef.current = focusActive; }, [focusActive]);
@@ -4147,8 +4168,12 @@ function DocPaneViewer({
           if (Number.isFinite(pr)) { page.dataset.origPr = String(pr); page.style.paddingRight = `${pr * (docMarginPct / 100)}px`; }
         }
         const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
-        if (isDark) applyDarkModeViewerFixes(containerRef.current);
-        else softenGreenHighlight(containerRef.current);
+        if (isDark) {
+          applyDarkModeViewerFixes(containerRef.current);
+        } else {
+          tagHighlightElements(containerRef.current);
+          applyHighlightReadability(containerRef.current, highlightReadability);
+        }
 
         // Resolve which paragraph styles are headings from styles.xml (handles
         // docs whose headings aren't literally Heading1–9). Falls back to the
@@ -4771,6 +4796,8 @@ function DocPaneViewer({
             onClick={toggleCommentsVisible}
           />
         )}
+
+        <HighlightReadabilityMenu />
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
 

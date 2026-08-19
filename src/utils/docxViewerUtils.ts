@@ -64,44 +64,114 @@ export function applyDarkModeViewerFixes(container: HTMLElement) {
   }
 }
 
-// Word's raw "green" highlighter (OOXML `w:highlight w:val="green"`) renders
-// as a fully-saturated, near-neon green — perceptibly harsher against black
-// text than the other two read-aloud colors (yellow, cyan) at the same
-// technical luminance, since pure green sits at the peak of human contrast
-// sensitivity (the luminance formula weights G at 0.587 vs. 0.299/0.114 for
-// R/B). This softens it to a muted, easier-to-read tone. Scoped to whenever
-// the doc page itself renders light (light theme, or "keep docs light" in
-// dark mode) — a dark page already gets a luminance-based dim for every
-// highlight color from applyDarkModeViewerFixes above, which handles raw
-// green fine on its own.
-function isRawGreenHighlight({ r, g, b }: { r: number; g: number; b: number }) {
-  return g > 200 && r < 90 && b < 90;
+// ── Highlight readability slider ────────────────────────────────────────────
+// Word's raw highlighter colors (OOXML `w:highlight`) render at full
+// saturation — yellow/cyan read fine that way, but green in particular is
+// perceptibly harsher against black text at the same technical luminance,
+// since pure green sits at the peak of human contrast sensitivity (the
+// luminance formula weights G at 0.587 vs. R/B's 0.299/0.114). Rather than
+// hardcode a fix, this exposes a 0–100 "readability" dial per doc-viewer
+// pane (0 = exactly Word's own colors, 100 = fully muted/pastel), so debaters
+// who are used to reading raw neon highlights aren't forced into a different
+// look. Scoped to whenever the doc page itself renders light (light theme, or
+// "keep docs light" in dark mode) — a dark page already gets its own
+// luminance-based dim from applyDarkModeViewerFixes above, unaffected by this.
+
+export type HighlightKind = 'yellow' | 'cyan' | 'green';
+
+const HL_RAW: Record<HighlightKind, [number, number, number]> = {
+  yellow: [255, 255, 0],
+  cyan: [0, 255, 255],
+  green: [0, 255, 0],
+};
+
+// The fully-readable (readability = 100) end of the dial for each color —
+// muted pastels that keep each hue recognizable rather than converging on
+// one generic "highlighter" look.
+const HL_SOFT_TARGET: Record<HighlightKind, [number, number, number]> = {
+  yellow: [255, 244, 168],
+  cyan: [163, 232, 232],
+  green: [163, 225, 163],
+};
+
+function classifyRawHighlight(r: number, g: number, b: number): HighlightKind | null {
+  if (r > 200 && g > 200 && b < 90) return 'yellow';
+  if (r < 90 && g > 200 && b > 200) return 'cyan';
+  if (r < 90 && g > 200 && b < 90) return 'green';
+  return null;
 }
 
-const SOFT_GREEN = 'rgb(150, 214, 150)';
-
-export function softenGreenHighlight(container: HTMLElement) {
+/**
+ * Tags every element whose (pristine, freshly-rendered) background is one of
+ * Word's three raw highlighter colors with which one, via `data-hl-kind`.
+ * Call this exactly once, right after docx-preview renders a document and
+ * before any other color pass (dark-mode dimming, readability) touches it —
+ * once a highlight has been recolored it no longer reads as "raw," so this
+ * is the only point classification by computed style actually works.
+ * `applyHighlightReadability`/`resetHighlightReadability` read the tag
+ * instead, so they stay correct no matter how many times they're called
+ * afterward (e.g. live while dragging the slider).
+ */
+export function tagHighlightElements(container: HTMLElement) {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT);
   let node: Node | null = walker.currentNode;
   while (node) {
     const el = node as HTMLElement;
     const bg = window.getComputedStyle(el).backgroundColor;
-    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-      const rgb = parseRgb(bg);
-      if (rgb && isRawGreenHighlight(rgb)) {
-        if (!el.dataset.origHighlightBg) el.dataset.origHighlightBg = bg;
-        el.style.setProperty('background-color', SOFT_GREEN, 'important');
-      }
-    }
+    const rgb = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? parseRgb(bg) : null;
+    const kind = rgb && classifyRawHighlight(rgb.r, rgb.g, rgb.b);
+    if (kind) el.dataset.hlKind = kind;
     node = walker.nextNode();
   }
 }
 
-export function removeGreenHighlightSoften(container: HTMLElement) {
-  container.querySelectorAll<HTMLElement>('[data-orig-highlight-bg]').forEach(el => {
-    el.style.setProperty('background-color', el.dataset.origHighlightBg!);
-    delete el.dataset.origHighlightBg;
+/**
+ * Sets every `data-hl-kind`-tagged element's background to `readability`%
+ * of the way from Word's raw highlighter color toward its muted target —
+ * 0 = the exact original Word color, 100 = fully softened. Cheap to call
+ * repeatedly (only reads the tag, never computed style), so it's safe to
+ * call live on every slider input event.
+ */
+export function applyHighlightReadability(container: HTMLElement, readability: number) {
+  const frac = Math.max(0, Math.min(100, readability)) / 100;
+  container.querySelectorAll<HTMLElement>('[data-hl-kind]').forEach((el) => {
+    const kind = el.dataset.hlKind as HighlightKind;
+    const raw = HL_RAW[kind];
+    const target = HL_SOFT_TARGET[kind];
+    if (!raw || !target) return;
+    const r = Math.round(raw[0] + (target[0] - raw[0]) * frac);
+    const g = Math.round(raw[1] + (target[1] - raw[1]) * frac);
+    const b = Math.round(raw[2] + (target[2] - raw[2]) * frac);
+    el.style.setProperty('background-color', `rgb(${r}, ${g}, ${b})`, 'important');
   });
+}
+
+/**
+ * Restores every tagged element to Word's exact original highlighter color.
+ * Used before handing a page off to applyDarkModeViewerFixes, which needs to
+ * compute its own dimming from the true raw color, not an already-softened
+ * one — and safe to call unconditionally the rest of the time, since it's a
+ * no-op wherever nothing was ever tagged.
+ */
+export function resetHighlightReadability(container: HTMLElement) {
+  container.querySelectorAll<HTMLElement>('[data-hl-kind]').forEach((el) => {
+    const raw = HL_RAW[el.dataset.hlKind as HighlightKind];
+    if (raw) el.style.setProperty('background-color', `rgb(${raw[0]}, ${raw[1]}, ${raw[2]})`, 'important');
+  });
+}
+
+const HIGHLIGHT_READABILITY_KEY = 'warroom-highlight-readability';
+export const HIGHLIGHT_READABILITY_CHANGED = 'warroom-highlight-readability-changed';
+
+export function loadHighlightReadability(): number {
+  const v = parseInt(localStorage.getItem(HIGHLIGHT_READABILITY_KEY) ?? '', 10);
+  return Number.isFinite(v) && v >= 0 && v <= 100 ? v : 50;
+}
+
+export function saveHighlightReadability(v: number) {
+  const clamped = Math.max(0, Math.min(100, Math.round(v)));
+  try { localStorage.setItem(HIGHLIGHT_READABILITY_KEY, String(clamped)); } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent(HIGHLIGHT_READABILITY_CHANGED, { detail: clamped }));
 }
 
 export function removeDarkModeViewerFixes(container: HTMLElement) {

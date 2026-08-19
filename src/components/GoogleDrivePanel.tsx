@@ -3,6 +3,10 @@ import { renderAsync } from 'docx-preview';
 import * as XLSX from 'xlsx';
 import { DriveFile } from '../types';
 import gdriveLogo from '../assets/gdrive-logo.png';
+import {
+  tagHighlightElements, applyHighlightReadability, loadHighlightReadability, HIGHLIGHT_READABILITY_CHANGED,
+} from '../utils/docxViewerUtils';
+import HighlightReadabilityMenu from './HighlightReadabilityMenu';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -167,6 +171,19 @@ function SpreadsheetViewer({ base64 }: { base64: string }) {
 function WordViewer({ base64 }: { base64: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState('');
+  // This page always renders on a plain white background (see the inline
+  // style below) regardless of app theme, so — unlike SpeechDocViewer, which
+  // branches on dark/light — highlight readability always applies here; there
+  // is no dark-page case to hand off to applyDarkModeViewerFixes instead.
+  const [highlightReadability, setHighlightReadability] = useState(() => loadHighlightReadability());
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail;
+      if (typeof v === 'number') setHighlightReadability(v);
+    };
+    window.addEventListener(HIGHLIGHT_READABILITY_CHANGED, onChange);
+    return () => window.removeEventListener(HIGHLIGHT_READABILITY_CHANGED, onChange);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -181,13 +198,23 @@ function WordViewer({ base64 }: { base64: string }) {
             ignoreHeight: true,
             ignoreFonts: false,
           });
+          if (!cancelled && containerRef.current) {
+            tagHighlightElements(containerRef.current);
+            applyHighlightReadability(containerRef.current, highlightReadability);
+          }
         }
       } catch (e: any) {
         if (!cancelled) setErr(e.message);
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base64]);
+
+  // Live-apply when the slider changes, without re-rendering the whole doc.
+  useEffect(() => {
+    if (containerRef.current) applyHighlightReadability(containerRef.current, highlightReadability);
+  }, [highlightReadability]);
 
   if (err) return <div className="p-8 text-sm" style={{ color: 'var(--danger, #ef4444)' }}>Error rendering document: {err}</div>;
 
@@ -240,6 +267,7 @@ function FileViewer({ file, onBack }: { file: DriveFile; onBack: () => void }) {
             {file.name}
           </span>
         </div>
+        {isDocx(file) && <HighlightReadabilityMenu />}
       </div>
 
       {/* Content */}

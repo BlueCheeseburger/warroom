@@ -1510,6 +1510,31 @@ export default function Documentation() {
             teammates viewing the same doc.
           </P>
           <P>
+            <strong>Highlight readability slider.</strong> A small <strong>⋯</strong> button in the
+            toolbar (next to Share) opens a one-slider popover, <Code>HighlightReadabilityMenu.tsx</Code>{' '}
+            — 0–100, default 50, persisted as <Code>warroom-highlight-readability</Code> and broadcast
+            via a <Code>HIGHLIGHT_READABILITY_CHANGED</Code> window event so every open pane (and{' '}
+            <Code>GoogleDrivePanel.tsx</Code>'s Word viewer) stays in sync with no prop wiring between
+            them. At 0 it renders Word's exact highlighter colors; at 100 it fully mutes them toward
+            per-color pastel targets, yellow/cyan/green all softening without converging on one
+            generic look — pure green in particular reads harsher than the other two at the same
+            technical luminance (the luminance formula weights G at 0.587 vs. R/B's 0.299/0.114, and
+            pure green sits at the peak of human contrast sensitivity), which is what originally
+            motivated this. <Code>docxViewerUtils.ts</Code>: <Code>tagHighlightElements</Code> walks a
+            freshly-rendered doc exactly once, classifying each element's <em>computed</em> background
+            against Word's three raw colors and stamping the match onto <Code>data-hl-kind</Code> —
+            necessary because a recolored highlight no longer reads as "raw" to reinspect later.
+            Every subsequent read — dragging the slider, switching dark mode — goes through that tag via{' '}
+            <Code>applyHighlightReadability(container, pct)</Code> (interpolates raw → pastel by{' '}
+            <Code>pct/100</Code>, cheap enough for every slider input event) or{' '}
+            <Code>resetHighlightReadability(container)</Code>, never by re-inspecting computed style.
+            Scoped to light-rendered pages only — light theme, or dark mode with "Keep speech docs
+            light" on (the default) — since a genuinely dark page already gets its own luminance-based
+            dim from <Code>applyDarkModeViewerFixes</Code>; the reset step runs before that dim
+            whenever a page goes dark, so it always computes from the true raw color rather than an
+            already-softened one.
+          </P>
+          <P>
             <strong>Office-font substitution.</strong> macOS ships no Calibri, so{' '}
             <Code>docx-preview</Code>'s inline <Code>font-family: Calibri</Code> would fall back to a
             serif (Times New Roman-like) font — wrong for nearly all debate docs. A one-time global{' '}
