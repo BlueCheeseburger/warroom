@@ -61,10 +61,11 @@ export const GROUPS: Group[] = [
     ],
   },
   {
+    // Comments UI is currently hidden (COMMENTS_UI_ENABLED in
+    // SpeechDocViewer.tsx) — the shortcut stays registered in
+    // shortcutPrefs.ts, just not listed here while it's inert.
     title: 'Speech doc viewer',
-    shortcuts: [
-      { id: 'doc-insert-comment', keys: [`${MOD}⌥M`], label: 'Comment on the selected text' },
-    ],
+    shortcuts: [],
   },
   {
     title: 'Flow editor',

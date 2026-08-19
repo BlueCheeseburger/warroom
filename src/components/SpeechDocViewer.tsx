@@ -1375,6 +1375,13 @@ function paintFindHighlights(all: Range[], active: Range | null) {
 // Highlight API as in-doc find (paints without mutating the DOM), on its own
 // registry name and a deliberately different color so a comment's highlight
 // never reads as the document's own cyan/yellow/green evidence emphasis.
+// Kill switch for the doc-comments feature's UI — every entry point (toolbar
+// button, selection bubble, card-margin icon, panel, ⌘⌥M shortcut, and
+// highlight painting) is gated on this. Backend, schema, IPC, state, and
+// realtime sync are all still fully wired up and untouched — flipping this
+// back to true is the entire re-enable.
+const COMMENTS_UI_ENABLED = false;
+
 const COMMENT_HL = 'wr-comment';
 
 interface DocComment {
@@ -3709,7 +3716,7 @@ function DocPaneViewer({
       if (r) ranges.set(c.id, r);
     }
     commentRangesRef.current = ranges;
-    if (commentsVisible) {
+    if (COMMENTS_UI_ENABLED && commentsVisible) {
       const painted = comments
         .filter((c) => !c.parent_id && !c.resolved)
         .map((c) => ranges.get(c.id))
@@ -3740,7 +3747,7 @@ function DocPaneViewer({
   // only one should react.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!focused) return;
+      if (!focused || !COMMENTS_UI_ENABLED) return;
       if (step === 'viewing' && matchesShortcut(e, 'doc-insert-comment')) {
         if (!currentTeam || !selBubble) return;
         e.preventDefault();
@@ -3793,7 +3800,7 @@ function DocPaneViewer({
   }
   useEffect(() => {
     const cont = containerRef.current;
-    if (!cont || step !== 'viewing' || !currentTeam || !commentsVisible) { setHoveredCardTag(null); return; }
+    if (!COMMENTS_UI_ENABLED || !cont || step !== 'viewing' || !currentTeam || !commentsVisible) { setHoveredCardTag(null); return; }
     function onOver(e: MouseEvent) {
       const target = (e.target as Element)?.closest?.('[data-cred-id]');
       if (!target) return;
@@ -4753,7 +4760,7 @@ function DocPaneViewer({
           </>
         )}
 
-        {currentTeam && (
+        {COMMENTS_UI_ENABLED && currentTeam && (
           <IconBtn
             icon={<IcoComment active={commentsVisible} />}
             label={comments.length ? `Comments (${comments.length}) · ⌘⌥M` : 'Comments · ⌘⌥M'}
@@ -5073,7 +5080,7 @@ function DocPaneViewer({
               {selBubble.count} word{selBubble.count === 1 ? '' : 's'}
             </div>
           )}
-          {selBubble && currentTeam && commentsVisible && (
+          {COMMENTS_UI_ENABLED && selBubble && currentTeam && commentsVisible && (
             <button
               className="fixed z-40 flex items-center justify-center rounded-full transition"
               style={{
@@ -5088,7 +5095,7 @@ function DocPaneViewer({
               <IcoComment />
             </button>
           )}
-          {hoveredCardTag && currentTeam && commentsVisible && (
+          {COMMENTS_UI_ENABLED && hoveredCardTag && currentTeam && commentsVisible && (
             <button
               className="fixed z-40 flex items-center justify-center rounded-full transition"
               style={{
@@ -5131,7 +5138,7 @@ function DocPaneViewer({
             onDismiss={dismissWarning}
           />
         )}
-        {commentsVisible && step === 'viewing' && (
+        {COMMENTS_UI_ENABLED && commentsVisible && step === 'viewing' && (
           <CommentsPanel
             comments={comments}
             currentUserId={currentUser?.id}
