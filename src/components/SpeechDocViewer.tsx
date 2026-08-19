@@ -10,7 +10,7 @@ import {
   tagHighlightElements, applyHighlightReadability, resetHighlightReadability,
   loadHighlightReadability, HIGHLIGHT_READABILITY_CHANGED,
 } from '../utils/docxViewerUtils';
-import HighlightReadabilityMenu from './HighlightReadabilityMenu';
+import HighlightReadabilityMenu, { HighlightReadabilitySlider } from './HighlightReadabilityMenu';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
@@ -374,6 +374,24 @@ function IcoBack({ size = 15 }: { size?: number }) {
 
 // ── Focus / reading-mode helpers ─────────────────────────────────────────
 
+/**
+ * Is this element a genuine Word highlight? Checks `data-hl-kind` (stamped
+ * by `tagHighlightElements` from the doc's pristine, freshly-rendered color,
+ * before any color pass touches it) first — falling back to the raw
+ * brightness heuristic only for elements that were never tagged (e.g. some
+ * other, non-highlight bright background). This must NOT re-derive the
+ * answer from the element's *current* computed background: once the
+ * highlight-readability slider or dark-mode dimming has recolored it, a
+ * muted/dimmed color can legitimately fail a brightness check even though
+ * it's still very much a highlight — which used to make focus mode hide
+ * highlighted text entirely, and undercount it for reading-time/auto-scroll.
+ */
+function isSpanHighlighted(el: HTMLElement): boolean {
+  if (el.dataset.hlKind) return true;
+  const rgb = parseRgb(window.getComputedStyle(el).backgroundColor);
+  return !!(rgb && isBrightHighlight(rgb));
+}
+
 type FocusType = 'highlight' | 'highlight+underline';
 
 function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?: HeadingClasses) {
@@ -400,10 +418,7 @@ function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?
     // Hat / tag paragraphs: every span is bold and none are highlighted. These
     // are always shown in full regardless of mode.
     const allBold = spans.every(s => parseInt(window.getComputedStyle(s).fontWeight) >= 600);
-    const anyHighlight = spans.some(s => {
-      const rgb = parseRgb(window.getComputedStyle(s).backgroundColor);
-      return rgb && isBrightHighlight(rgb);
-    });
+    const anyHighlight = spans.some(isSpanHighlighted);
     if (allBold && !anyHighlight) return;
 
     // Cite paragraphs are structural metadata (author, quals, date, publication),
@@ -419,8 +434,7 @@ function applyFocusMode(container: HTMLElement, mode: FocusType, headingClasses?
     // Body paragraph — hide spans that don't meet the mode criteria
     spans.forEach(span => {
       const cs  = window.getComputedStyle(span);
-      const rgb = parseRgb(cs.backgroundColor);
-      const highlighted = !!(rgb && isBrightHighlight(rgb));
+      const highlighted = isSpanHighlighted(span);
       const underlined  = cs.textDecoration.includes('underline');
 
       const keep = highlighted || (mode === 'highlight+underline' && underlined);
@@ -870,7 +884,7 @@ function ToolbarPill({ active, label, icon, onClick, title }: {
 // flow, credibility, and cross-ex controls fold in here instead. Inside the
 // menu they get their labels back (there's room), so nothing becomes a
 // mystery icon.
-function ToolbarOverflowMenu({ items }: {
+function ToolbarOverflowMenu({ items, extra }: {
   // `ai` marks a row that triggers an AI/API call — it gets a small gradient
   // dot instead of the full `.ai-glow-ring` treatment other AI buttons use.
   // The ring is built for an isolated round/pill button (it protrudes 2px
@@ -880,6 +894,11 @@ function ToolbarOverflowMenu({ items }: {
   // than a glow. A dot carries the same blue→pink "this calls an AI" signal
   // without needing room around the element to render into.
   items: { label: string; hint?: string; icon: React.ReactNode; active: boolean; ai?: boolean; onClick: () => void }[];
+  // Non-button content (the highlight-readability slider) appended below the
+  // items, behind the same divider treatment the AI-tools group gets — folded
+  // in here rather than its own separate "⋯" trigger, so a compact pane never
+  // shows two overflow-menu buttons side by side.
+  extra?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [tip, setTip] = useState(false);
@@ -960,6 +979,12 @@ function ToolbarOverflowMenu({ items }: {
               </button>
             </React.Fragment>
           ))}
+          {extra && (
+            <>
+              <div style={{ height: 1, margin: '4px 6px', background: 'var(--border-subtle)' }} />
+              {extra}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1620,9 +1645,7 @@ function forceHeadingFont(container: HTMLElement, headingClasses?: HeadingClasse
 }
 
 function isHighlightedEl(el: HTMLElement): boolean {
-  const bgStr = el.dataset.origBg || window.getComputedStyle(el).backgroundColor;
-  const rgb = parseRgb(bgStr);
-  return !!(rgb && isBrightHighlight(rgb));
+  return isSpanHighlighted(el);
 }
 function isBoldEl(el: HTMLElement): boolean {
   return parseInt(window.getComputedStyle(el).fontWeight, 10) >= 600;
@@ -4167,11 +4190,17 @@ function DocPaneViewer({
           if (Number.isFinite(pl)) { page.dataset.origPl = String(pl); page.style.paddingLeft = `${pl * (docMarginPct / 100)}px`; }
           if (Number.isFinite(pr)) { page.dataset.origPr = String(pr); page.style.paddingRight = `${pr * (docMarginPct / 100)}px`; }
         }
+        // Tag every genuinely-highlighted element from its pristine, freshly-
+        // rendered color BEFORE any color pass (dark-mode dim or readability
+        // soften) touches it — every downstream consumer that needs to know
+        // "is this a highlight" (focus mode, reading-time word counting) reads
+        // this tag instead of re-inspecting computed background color, which
+        // stops being reliable once that color has been recolored.
+        tagHighlightElements(containerRef.current);
         const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
         if (isDark) {
           applyDarkModeViewerFixes(containerRef.current);
         } else {
-          tagHighlightElements(containerRef.current);
           applyHighlightReadability(containerRef.current, highlightReadability);
         }
 
@@ -4768,6 +4797,7 @@ function DocPaneViewer({
                 onClick: () => setCxOpen(v => { const next = !v; if (next) setCredOpen(false); return next; }),
               },
             ]}
+            extra={<HighlightReadabilitySlider />}
           />
         ) : (
           <>
@@ -4797,7 +4827,7 @@ function DocPaneViewer({
           />
         )}
 
-        <HighlightReadabilityMenu />
+        {!toolbarCompact && <HighlightReadabilityMenu />}
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 2px' }} />
 
@@ -5295,12 +5325,25 @@ export default function SpeechDocViewer() {
   }, [currentTeam?.id]);
 
   const pane0Path = view.kind === 'speech-doc' ? (view as any).docPath as string | undefined : undefined;
-  const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length;
+  // "+ compare doc" opens an empty pane awaiting a drop — that's ephemeral UI
+  // state, not a real pane's content, so it's tracked purely locally here
+  // rather than written into extraDocPanes (the persisted, session-restored
+  // store). Writing it there used to leave a phantom empty third pane behind
+  // any time the app restarted before a file actually landed in it — the
+  // store had no way to tell "pending, about to be filled" apart from "a
+  // real, saved pane" once it was serialized. Cleared the moment either a
+  // real file is dropped into it (below) or the pane's own × is clicked.
+  const [pendingEmptySlot, setPendingEmptySlot] = useState<0 | 1 | null>(null);
+  useEffect(() => {
+    if (pendingEmptySlot !== null && extraDocPanes[pendingEmptySlot] !== undefined) setPendingEmptySlot(null);
+  }, [extraDocPanes, pendingEmptySlot]);
+  const pendingSlotOpen = pendingEmptySlot !== null && extraDocPanes[pendingEmptySlot] === undefined;
+  const openExtraCount = extraDocPanes.filter((p) => p !== undefined).length + (pendingSlotOpen ? 1 : 0);
   const openPaneCount = 1 + openExtraCount;
   const canAddPane = openExtraCount < 2;
   const addPane = () => {
     const slot: 0 | 1 = extraDocPanes[0] === undefined ? 0 : 1;
-    setExtraDocPane(slot, '');
+    setPendingEmptySlot(slot);
     setFocusedPane((slot + 1) as 1 | 2);
   };
 
@@ -5487,10 +5530,17 @@ export default function SpeechDocViewer() {
     window.addEventListener('mouseup', onUp);
   }
 
-  const panes = [
-    { key: 0 as const, docPath: undefined, isMain: true },
+  const panes: { key: 0 | 1 | 2; docPath: string | undefined; isMain: boolean; pending?: boolean }[] = [
+    { key: 0, docPath: undefined, isMain: true },
     ...extraDocPanes.map((p, i) => ({ key: (i + 1) as 1 | 2, docPath: p, isMain: false })).filter((p) => p.docPath !== undefined),
   ];
+  if (pendingSlotOpen) {
+    const key = (pendingEmptySlot as 0 | 1) + 1 as 1 | 2;
+    if (!panes.some((p) => p.key === key)) {
+      panes.push({ key, docPath: undefined, isMain: false, pending: true });
+      panes.sort((a, b) => a.key - b.key);
+    }
+  }
 
   return (
     <div ref={scrollRowRef} className="flex h-full min-h-0 w-full overflow-x-auto scroll-thin">
@@ -5520,7 +5570,8 @@ export default function SpeechDocViewer() {
               focused={focusedPane === p.key}
               onFocusPane={() => setFocusedPane(p.key)}
               onCloseExtraPane={p.isMain ? undefined : () => {
-                setExtraDocPane((p.key - 1) as 0 | 1, undefined);
+                if (p.pending) setPendingEmptySlot(null);
+                else setExtraDocPane((p.key - 1) as 0 | 1, undefined);
                 if (focusedPane === p.key) setFocusedPane(0);
               }}
               onAddPane={addPane}
