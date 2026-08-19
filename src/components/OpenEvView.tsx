@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useApp } from '../store/appStore';
+import { useWebviewFindInPage } from './useWebviewFindInPage';
+import { FindBar } from './useInPageFind';
 
 // ─── URL guard ────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,8 @@ export default function OpenEvView() {
   const { theme } = useApp();
   const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
   const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
+  const isActive = useApp(s => s.view.kind === 'open-ev');
+  const find = useWebviewFindInPage(webviewRef, isActive);
 
   const effectiveDark = useCallback((): boolean => {
     if (theme === 'dark') return true;
@@ -210,6 +214,7 @@ export default function OpenEvView() {
         </p>
       </div>
       <div className="flex-1 px-4 pb-4 min-h-0 relative">
+        {find.open && <FindBar {...find} />}
         {loading && (
           <div
             className="absolute inset-4 flex items-center justify-center rounded-xl text-xs z-10"

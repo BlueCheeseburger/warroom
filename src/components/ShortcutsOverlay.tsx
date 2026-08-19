@@ -47,7 +47,7 @@ export const GROUPS: Group[] = [
   {
     title: 'Find on a page',
     shortcuts: [
-      { id: 'find-page', keys: [`${MOD}F`], label: 'Find on this page — Documentation, User Manual, a speech doc, or a flow' },
+      { id: 'find-page', keys: [`${MOD}F`], label: 'Find on this page — Documentation, User Manual, a speech doc, a flow, or Logos/Open Ev/Google Scholar' },
       { keys: ['Enter', '⇧Enter'], label: 'Next / previous match' },
     ],
   },

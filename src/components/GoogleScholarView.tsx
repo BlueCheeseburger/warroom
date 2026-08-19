@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useApp } from '../store/appStore';
+import { useWebviewFindInPage } from './useWebviewFindInPage';
+import { FindBar } from './useInPageFind';
 
 function buildDarkCSS(): string {
   // Resolve the app's actual background color so the webview matches exactly.
@@ -30,6 +32,8 @@ export default function GoogleScholarView() {
   const { theme } = useApp();
   const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
   const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
+  const isActive = useApp(s => s.view.kind === 'google-scholar');
+  const find = useWebviewFindInPage(webviewRef, isActive);
 
   // True if dark mode is currently active (handles system preference)
   const effectiveDark = useCallback((): boolean => {
@@ -86,6 +90,7 @@ export default function GoogleScholarView() {
         </p>
       </div>
       <div className="flex-1 px-4 pb-4 min-h-0 relative">
+        {find.open && <FindBar {...find} />}
         {loading && (
           <div
             className="absolute inset-4 flex items-center justify-center rounded-xl text-xs z-10"

@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/10/26
+          Last updated: 8/18/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -457,7 +457,8 @@ export default function Documentation() {
             checks disabled state, then compares the event against the effective binding (override if
             set, else default). This is what makes a rebind or disable take effect everywhere that id is
             wired up at once (e.g. <Code>find-page</Code> covers ⌘F in Documentation, User Manual, the
-            speech doc viewer, and flows — one toggle or rebind, three call sites).
+            speech doc viewer, flows, and the Logos/Open Ev/Google Scholar webviews — one toggle or
+            rebind, every call site).
           </P>
           <P>
             Two separate controls that never share a gesture: <strong>click a shortcut's key badge

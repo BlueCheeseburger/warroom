@@ -724,7 +724,7 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **⌘K / Ctrl K**: open global search
 - **⌘/ / Ctrl+/**: open the keyboard shortcuts list
 - **Escape**: close the current modal, popover, or overlay
-- **⌘F / Ctrl F**: find on the current page — Documentation, User Manual, a speech doc, or a flow
+- **⌘F / Ctrl F**: find on the current page — Documentation, User Manual, a speech doc, a flow, or the Logos/Open Ev/Google Scholar browser views
 - **Enter**: send message in AI panel or team chat
 - **Shift+Enter**: new line in AI panel or team chat
 - **Escape**: close mention picker or attach menu

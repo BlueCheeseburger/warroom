@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useApp } from '../store/appStore';
+import { useWebviewFindInPage } from './useWebviewFindInPage';
+import { FindBar } from './useInPageFind';
 
 // CSS injected into the Logos webview to force a clean light theme
 const LOGOS_LIGHT_CSS = `
@@ -31,6 +33,8 @@ export default function FindCards() {
   const pendingSearchQuery = useApp(s => s.pendingSearchQuery);
   const setPendingSearchQuery = useApp(s => s.setPendingSearchQuery);
   const pendingSearchRef = useRef(pendingSearchQuery);
+  const isActive = useApp(s => s.view.kind === 'logos');
+  const find = useWebviewFindInPage(webviewRef, isActive);
 
   useEffect(() => {
     if (!pendingSearchQuery) return;
@@ -105,6 +109,7 @@ export default function FindCards() {
         <p className="text-xs mt-1" style={{ color: 'var(--placeholder)' }}>Search the Logos evidence database</p>
       </div>
       <div className="flex-1 px-4 pb-4 min-h-0 relative">
+        {find.open && <FindBar {...find} />}
         {loading && (
           <div
             className="absolute inset-4 flex items-center justify-center rounded-xl text-xs z-10"
