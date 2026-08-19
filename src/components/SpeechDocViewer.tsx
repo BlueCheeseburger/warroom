@@ -5,7 +5,7 @@ import { useApp } from '../store/appStore';
 import type { DebateEvent, FlowMeta } from '../store/appStore';
 import SharePanel from './SharePanel';
 import { POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS, NUM_ROWS } from './FlowView';
-import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes } from '../utils/docxViewerUtils';
+import { parseRgb, isBrightHighlight, applyDarkModeViewerFixes, removeDarkModeViewerFixes, softenGreenHighlight, removeGreenHighlightSoften } from '../utils/docxViewerUtils';
 import { matchesShortcut } from '../lib/shortcutPrefs';
 import { useCaseFolders, createFolder, moveItem, itemKeyForDoc } from '../utils/caseFolders';
 import { comboKeyFor, loadComboLayout, saveComboLayout, rememberComboView } from '../utils/docComboLayout';
@@ -4018,8 +4018,10 @@ function DocPaneViewer({
       const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
       if (isDark) {
         applyDarkModeViewerFixes(containerRef.current);
+        removeGreenHighlightSoften(containerRef.current);
       } else {
         removeDarkModeViewerFixes(containerRef.current);
+        softenGreenHighlight(containerRef.current);
       }
     };
     sync();
@@ -4146,6 +4148,7 @@ function DocPaneViewer({
         }
         const isDark = document.documentElement.classList.contains('dark') && !docLightInDark;
         if (isDark) applyDarkModeViewerFixes(containerRef.current);
+        else softenGreenHighlight(containerRef.current);
 
         // Resolve which paragraph styles are headings from styles.xml (handles
         // docs whose headings aren't literally Heading1–9). Falls back to the

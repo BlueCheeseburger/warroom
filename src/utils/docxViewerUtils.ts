@@ -64,6 +64,46 @@ export function applyDarkModeViewerFixes(container: HTMLElement) {
   }
 }
 
+// Word's raw "green" highlighter (OOXML `w:highlight w:val="green"`) renders
+// as a fully-saturated, near-neon green — perceptibly harsher against black
+// text than the other two read-aloud colors (yellow, cyan) at the same
+// technical luminance, since pure green sits at the peak of human contrast
+// sensitivity (the luminance formula weights G at 0.587 vs. 0.299/0.114 for
+// R/B). This softens it to a muted, easier-to-read tone. Scoped to whenever
+// the doc page itself renders light (light theme, or "keep docs light" in
+// dark mode) — a dark page already gets a luminance-based dim for every
+// highlight color from applyDarkModeViewerFixes above, which handles raw
+// green fine on its own.
+function isRawGreenHighlight({ r, g, b }: { r: number; g: number; b: number }) {
+  return g > 200 && r < 90 && b < 90;
+}
+
+const SOFT_GREEN = 'rgb(150, 214, 150)';
+
+export function softenGreenHighlight(container: HTMLElement) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT);
+  let node: Node | null = walker.currentNode;
+  while (node) {
+    const el = node as HTMLElement;
+    const bg = window.getComputedStyle(el).backgroundColor;
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+      const rgb = parseRgb(bg);
+      if (rgb && isRawGreenHighlight(rgb)) {
+        if (!el.dataset.origHighlightBg) el.dataset.origHighlightBg = bg;
+        el.style.setProperty('background-color', SOFT_GREEN, 'important');
+      }
+    }
+    node = walker.nextNode();
+  }
+}
+
+export function removeGreenHighlightSoften(container: HTMLElement) {
+  container.querySelectorAll<HTMLElement>('[data-orig-highlight-bg]').forEach(el => {
+    el.style.setProperty('background-color', el.dataset.origHighlightBg!);
+    delete el.dataset.origHighlightBg;
+  });
+}
+
 export function removeDarkModeViewerFixes(container: HTMLElement) {
   container.querySelectorAll<HTMLElement>('[data-orig-bg]').forEach(el => {
     el.style.setProperty('background-color', el.dataset.origBg!);
