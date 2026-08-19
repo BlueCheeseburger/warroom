@@ -646,6 +646,11 @@ declare global {
       };
       platform: string;
       setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => Promise<boolean>;
+      windowMinimize: () => Promise<void>;
+      windowToggleMaximize: () => Promise<void>;
+      windowClose: () => Promise<void>;
+      windowGetState: () => Promise<{ maximized: boolean; focused: boolean }>;
+      onWindowStateChanged: (cb: (s: { maximized: boolean; focused: boolean }) => void) => () => void;
       onFileOpen: (cb: (filePath: string) => void) => () => void;
       exportCardsToDocx: (cards: Array<{
         tag: string; cite: string; body: string;

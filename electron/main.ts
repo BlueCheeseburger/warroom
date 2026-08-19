@@ -1499,10 +1499,17 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     icon: iconPath,
-    // macOS: hide native chrome, show traffic lights inset into our custom titlebar
+    // macOS: fully frameless — no native traffic lights at all. `hiddenInset`
+    // used to draw them, but they're OS-level chrome layered above the page,
+    // so macOS's own auto-hidden system menu bar (revealed on mouse-to-top,
+    // or in fullscreen) slides down and visually covers that exact top-left
+    // corner, hiding them. `frame: false` removes them entirely in favor of
+    // fully custom traffic-light buttons drawn in TitleBar.tsx's own DOM
+    // (window:minimize/toggleMaximize/close below) — real app content, never
+    // covered by an OS overlay.
     // Windows: use a frameless window with a custom overlay for the caption buttons
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    ...(isMac ? {} : {
+    ...(isMac ? { frame: false } : {
+      titleBarStyle: 'hidden',
       titleBarOverlay: {
         color: '#e8e8ea',
         symbolColor: '#3c3c43',
@@ -1526,6 +1533,17 @@ function createWindow() {
   mainWin = win;
   initAutoUpdater(win);
   if (isMac) setupTouchBar(win);
+
+  // Custom traffic-light buttons (TitleBar.tsx) mirror real ones: dim on
+  // blur, swap the green button's glyph between maximize/restore. Pushed
+  // rather than polled since these are exactly the events that change them.
+  const pushWindowState = () => {
+    win.webContents.send('window:stateChanged', { maximized: win.isMaximized(), focused: win.isFocused() });
+  };
+  win.on('maximize', pushWindowState);
+  win.on('unmaximize', pushWindowState);
+  win.on('focus', pushWindowState);
+  win.on('blur', pushWindowState);
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {
@@ -1587,6 +1605,28 @@ ipcMain.handle('window:setTitleBarOverlay', (event, opts: { color: string; symbo
     } catch { return false; }
   }
   return false;
+});
+
+// Custom traffic-light buttons (macOS — see the `frame: false` note in
+// createWindow above) and the equivalent custom min/max/close row some
+// platforms might add later. Kept generic (not mac-only) since the same
+// three actions are universal window verbs.
+ipcMain.handle('window:minimize', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+ipcMain.handle('window:toggleMaximize', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (!w) return;
+  if (w.isMaximized()) w.unmaximize(); else w.maximize();
+});
+ipcMain.handle('window:close', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
+// So the green button can show "restore" vs "maximize" — and so the buttons
+// can dim on blur the way real traffic lights do, without extra IPC calls.
+ipcMain.handle('window:getState', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  return { maximized: !!w?.isMaximized(), focused: !!w?.isFocused() };
 });
 
 // Only these keys may be read or written through the renderer-facing secure

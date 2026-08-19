@@ -766,6 +766,81 @@ function NavArrow({ direction, enabled, onClick, title }: {
   );
 }
 
+// ─── Custom traffic lights (macOS) ─────────────────────────────────────────────
+// Real app content, not OS chrome — see the `frame: false` note in main.ts's
+// createWindow. macOS's own auto-hidden system menu bar slides down over the
+// window's top-left corner (on mouse-to-top, or in fullscreen), which used to
+// visually cover the native `hiddenInset` traffic lights living in that exact
+// spot. Drawing them ourselves means they're just DOM content underneath
+// whatever the OS overlays — never hidden.
+
+const TL_COLORS = {
+  close:    { base: '#FF5F57', hover: '#E64640' },
+  minimize: { base: '#FEBC2E', hover: '#E5A324' },
+  maximize: { base: '#28C840', hover: '#20A934' },
+} as const;
+
+function TrafficLight({ kind, hovered, focused, onClick, title }: {
+  kind: keyof typeof TL_COLORS;
+  hovered: boolean;
+  focused: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  const c = TL_COLORS[kind];
+  // Unfocused: real macOS traffic lights go flat grey with no glyphs at all.
+  const bg = !focused ? 'rgba(0,0,0,0.18)' : hovered ? c.hover : c.base;
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="rounded-full flex items-center justify-center"
+      style={{
+        width: 12, height: 12, background: bg, border: 'none', padding: 0, cursor: 'pointer',
+        WebkitAppRegion: 'no-drag',
+      } as any}
+    >
+      {focused && hovered && (
+        <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.7 }}>
+          {kind === 'close' && (
+            <path d="M1.5 1.5L6.5 6.5M6.5 1.5L1.5 6.5" stroke="#4d0000" strokeWidth="1.2" strokeLinecap="round" />
+          )}
+          {kind === 'minimize' && (
+            <path d="M1.5 4H6.5" stroke="#5c3d00" strokeWidth="1.2" strokeLinecap="round" />
+          )}
+          {kind === 'maximize' && (
+            <path d="M1.3 4H6.7M4 1.3V6.7" stroke="#003d0a" strokeWidth="1.2" strokeLinecap="round" transform="rotate(45 4 4)" />
+          )}
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function MacTrafficLights() {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(true);
+
+  useEffect(() => {
+    window.warroom?.windowGetState().then((s) => setFocused(s.focused));
+    const off = window.warroom?.onWindowStateChanged((s) => setFocused(s.focused));
+    return off;
+  }, []);
+
+  return (
+    <div
+      className="absolute flex items-center gap-2"
+      style={{ left: 20, top: '50%', transform: 'translateY(-50%)', WebkitAppRegion: 'no-drag' } as any}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <TrafficLight kind="close" hovered={hovered} focused={focused} title="Close" onClick={() => window.warroom?.windowClose()} />
+      <TrafficLight kind="minimize" hovered={hovered} focused={focused} title="Minimize" onClick={() => window.warroom?.windowMinimize()} />
+      <TrafficLight kind="maximize" hovered={hovered} focused={focused} title="Zoom" onClick={() => window.warroom?.windowToggleMaximize()} />
+    </div>
+  );
+}
+
 // ─── TitleBar ─────────────────────────────────────────────────────────────────
 
 export default function TitleBar() {
@@ -790,7 +865,7 @@ export default function TitleBar() {
 
   return (
     <div
-      className="titlebar glass-titlebar h-9 flex items-center select-none"
+      className="titlebar glass-titlebar h-9 flex items-center select-none relative"
       style={{
         borderBottom: '1px solid var(--border-side)',
         paddingLeft: isMac ? 80 : 12,
@@ -802,7 +877,14 @@ export default function TitleBar() {
           ? 'max(140px, calc(100vw - env(titlebar-area-width, 100vw)))'
           : undefined,
       }}
+      // frame:false (see main.ts) loses macOS's native "double-click the title
+      // bar to zoom" for free — replicate it. Only on a direct hit against the
+      // bar's own background (e.currentTarget), never a child button/control,
+      // so double-clicking e.g. the wordmark or timer doesn't also zoom.
+      onDoubleClick={(e) => { if (isMac && e.target === e.currentTarget) window.warroom?.windowToggleMaximize(); }}
     >
+      {isMac && <MacTrafficLights />}
+
       {/* Left: wordmark + nav arrows */}
       <button
         className="text-[11px] tracking-[0.2em] font-bold mr-2 transition"

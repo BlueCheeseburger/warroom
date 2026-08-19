@@ -519,6 +519,17 @@ const api = {
   platform: process.platform,
   setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
     ipcRenderer.invoke('window:setTitleBarOverlay', opts),
+  // Custom traffic-light buttons (TitleBar.tsx) — see the `frame: false`
+  // note in main.ts's createWindow.
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowGetState: () => ipcRenderer.invoke('window:getState'),
+  onWindowStateChanged: (cb: (s: { maximized: boolean; focused: boolean }) => void) => {
+    const h = (_e: any, s: any) => cb(s);
+    ipcRenderer.on('window:stateChanged', h);
+    return () => ipcRenderer.removeListener('window:stateChanged', h);
+  },
   onScoutingOpen: (cb: (data: { kind: 'judge' | 'opponent'; id: string }) => void) => {
     // Keep references to the exact listeners we register so cleanup can remove
     // them. (Previously cleanup removed an unrelated `handler` that was never
