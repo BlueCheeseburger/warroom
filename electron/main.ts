@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, session, clipboard, Notification as ElectronNotification, net, TouchBar } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, session, clipboard, Notification as ElectronNotification, net, TouchBar, Menu } from 'electron';
 import type { TouchBarButton, TouchBarLabel } from 'electron';
 // TouchBarButton/TouchBarLabel/TouchBarSpacer aren't separate module exports as
 // values — only TouchBar itself is a real class; the item constructors are
@@ -8282,6 +8282,21 @@ app.whenReady().then(async () => {
   // (open-url won't fire for a raw argv URL), so buffer it for did-finish-load.
   const argvLink = DS.findDeepLinkArg(process.argv);
   if (argvLink) pendingDeepLink = argvLink;
+
+  // Explicitly set the application menu (role-based, same items Electron's
+  // implicit default menu already renders) rather than leaving it unset.
+  // macOS's native fullscreen chrome — the traffic lights and the auto-hide
+  // menu bar, both revealed by hovering the mouse at the very top edge of
+  // the screen — is owned by the OS via this menu, not by Warroom's own
+  // custom titlebar; with no menu explicitly attached, that hover-reveal
+  // strip has nothing to bind to and never appears once fullscreen hides it.
+  const isMac = process.platform === 'darwin';
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    { role: 'editMenu' as const },
+    { role: 'viewMenu' as const },
+    { role: 'windowMenu' as const },
+  ]));
 
   createWindow();
 
