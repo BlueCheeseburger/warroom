@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/18/26
+          Last updated: 8/19/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1402,6 +1402,18 @@ export default function Documentation() {
             shrink to icon-only to save room.
           </P>
           <P>
+            <strong>"+ compare doc" opens ephemeral, not persisted, state.</strong> Clicking it sets{' '}
+            <Code>pendingEmptySlot</Code> (wrapper-local <Code>useState</Code>) rather than writing an
+            open-but-empty <Code>''</Code> sentinel into <Code>extraDocPanes</Code> the way an earlier
+            version did — that sentinel was exactly the shape session-restore (which persists{' '}
+            <Code>extraDocPanes</Code> across app restarts) couldn't tell apart from a real saved pane,
+            so clicking + and closing the app before ever dropping a file in could resurrect a phantom
+            empty third pane on the next launch, unprompted. The pending slot renders identically (its
+            own drop-zone, its own × ) but is invisible to persistence since it's never written to the
+            store; an effect clears it the moment a real file lands in that slot, and it counts toward{' '}
+            <Code>openPaneCount</Code>/<Code>canAddPane</Code> exactly like a real pane while showing.
+          </P>
+          <P>
             <strong>Resize panes.</strong> Drag the thin divider between two panes to resize them —
             they start out equal. The divider itself never persists as a standalone preference; it's
             saved as part of the remembered layout for the exact set of docs open together (see
@@ -1440,7 +1452,12 @@ export default function Documentation() {
             toolbar per pane, so Reading time, Send to flow, Credibility, and Cross-Ex collapse into
             a hover-opened <strong>⋯</strong> menu (<Code>ToolbarOverflowMenu</Code>), where they
             keep their text labels. The two AI tools keep their gradient ring on their menu rows;
-            the ⋯ button itself doesn't get one, since opening a menu isn't an API call.
+            the ⋯ button itself doesn't get one, since opening a menu isn't an API call. The
+            highlight-readability slider folds into this same menu once compact (via a new{' '}
+            <Code>extra?: React.ReactNode</Code> prop, appended after a divider) instead of keeping
+            its own separate trigger — the standalone version only renders when{' '}
+            <Code>!toolbarCompact</Code>, so a compact pane never shows two <strong>⋯</strong> buttons
+            side by side.
           </P>
           <P>
             <strong>Rename a doc.</strong> Double-click the doc's name in the toolbar to rename it
@@ -1589,10 +1606,21 @@ export default function Documentation() {
             cite — not plain underlined / bold body text, the full small-text cites, or unread body, so
             the estimate matches Verbatim's highlighted-word count. Preset chips set
             ~175 wpm (lay / traditional) and ~300 wpm (flow / spreading). Select a portion of the doc
-            first and it estimates just that selection. <strong>Auto-scroll</strong> scrolls the doc at
-            your wpm (a <Code>requestAnimationFrame</Code> loop paced by{' '}
-            <Code>scrollHeight / wordCount</Code>); a floating control lets you pause / resume, change
-            speed live, or stop.
+            first and it estimates just that selection. Highlight detection for the word count goes
+            through <Code>isSpanHighlighted</Code> (checks <Code>data-hl-kind</Code> first, the tag{' '}
+            <Code>tagHighlightElements</Code> stamps from a doc's pristine color right after render,
+            before the highlight-readability slider or dark-mode dimming can recolor it — see below) so
+            it stays correct once a highlight's displayed color no longer looks "raw" to a brightness
+            heuristic. <strong>Auto-scroll</strong> scrolls the doc at your wpm (a{' '}
+            <Code>requestAnimationFrame</Code> loop) via a{' '}
+            <Code>docAdaptivePace</Code> Settings toggle (default on): off, a flat{' '}
+            <Code>scrollHeight / wordCount</Code> px/ms rate; on, <Code>buildSpeedProfile</Code>{' '}
+            attributes each spoken word to its paragraph and the loop paces itself to local
+            spoken-word density a bit ahead of the current scroll position — slower through dense
+            cards, faster through sparse context — clamped to 0.35×–3× the flat rate and eased with
+            per-frame exponential smoothing so pace changes read as a gradient, not a step. Total time
+            to the bottom stays the same either way; adaptive pacing only redistributes where that
+            time is spent. A floating control lets you pause / resume, change speed live, or stop.
           </P>
           <H3>Send to Flow</H3>
           <P>
@@ -2586,6 +2614,10 @@ export default function Documentation() {
               <div>
                 <span className="font-semibold text-ink">Outline layout in compare view</span>
                 <span className="ml-2 text-ink/60">Dedicated space (default) or Squish neighbor — see "Outline layout in compare view" above.</span>
+              </div>
+              <div>
+                <span className="font-semibold text-ink">Adaptive reading pace</span>
+                <span className="ml-2 text-ink/60">On by default. Auto-scroll varies speed with local spoken-content density instead of one flat rate — see "Reading time & auto-scroll" above.</span>
               </div>
             </div>
           </Card>

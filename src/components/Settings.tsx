@@ -904,8 +904,20 @@ export default function Settings() {
     setDocOutlineLayoutState(val);
     window.dispatchEvent(new CustomEvent('warroom-doc-outline-layout-changed', { detail: { method: val } }));
   }
+  // On (default): auto-scroll varies its speed with how much spoken content
+  // is actually in view — slower through dense cards, faster through sparse
+  // context — instead of one constant rate for the whole doc. Same
+  // renderer-only pattern as the other doc-viewer prefs above.
+  const [docAdaptivePace, setDocAdaptivePaceState] = useState(
+    () => localStorage.getItem('warroom-doc-adaptive-pace') !== 'false'
+  );
+  function setDocAdaptivePace(val: boolean) {
+    localStorage.setItem('warroom-doc-adaptive-pace', String(val));
+    setDocAdaptivePaceState(val);
+    window.dispatchEvent(new CustomEvent('warroom-doc-adaptive-pace-changed', { detail: { adaptivePace: val } }));
+  }
   const speechDocSettingsAreDefault =
-    docLightInDark && docMarginPct === 50 && docZoomPct === 100 && !docAutoOutline && !docStartFocus && docOutlineLayout === 'space';
+    docLightInDark && docMarginPct === 50 && docZoomPct === 100 && !docAutoOutline && !docStartFocus && docOutlineLayout === 'space' && docAdaptivePace;
   function resetSpeechDocSettings() {
     setDocLightInDark(true);
     setDocMarginPct(50);
@@ -913,6 +925,7 @@ export default function Settings() {
     setDocAutoOutline(false);
     setDocStartFocus(false);
     setDocOutlineLayout('space');
+    setDocAdaptivePace(true);
   }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
@@ -1479,6 +1492,7 @@ export default function Settings() {
         { label: 'Auto-open outline', current: fmtBool(docAutoOutline), def: 'Off' },
         { label: 'Start docs in Focus mode', current: fmtBool(docStartFocus), def: 'Off' },
         { label: 'Outline layout method', current: docOutlineLayout === 'squish' ? 'Squish' : 'Space', def: 'Space' },
+        { label: 'Adaptive reading pace', current: fmtBool(docAdaptivePace), def: 'On' },
       ],
       apply: resetSpeechDocSettings,
     },
@@ -1698,6 +1712,25 @@ export default function Settings() {
             <span
               className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
               style={{ transform: docStartFocus ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Adaptive reading pace</div>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>
+              Auto-scroll slows through dense highlighted cards and speeds up through sparse context, instead of one constant speed.
+            </p>
+          </div>
+          <button
+            onClick={() => setDocAdaptivePace(!docAdaptivePace)}
+            className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+            style={{ background: docAdaptivePace ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+          >
+            <span
+              className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: docAdaptivePace ? 'translateX(18px)' : 'translateX(2px)' }}
             />
           </button>
         </div>

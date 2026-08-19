@@ -35,6 +35,8 @@ export const SETTINGS_LOCALSTORAGE_KEYS = [
   'warroom-doc-auto-outline',
   'warroom-doc-start-focus',
   'warroom-doc-outline-layout',
+  'warroom-doc-adaptive-pace',
+  'warroom-highlight-readability',
   'warroom-flow-aff-color',
   'warroom-flow-neg-color',
   'warroom-sb-collapsed',

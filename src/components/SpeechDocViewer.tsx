@@ -1720,6 +1720,41 @@ function collectSpoken(
   return { count, ranges };
 }
 
+// One paragraph's vertical extent (in the scrollable container's own
+// coordinate space, i.e. comparable to `wrap.scrollTop`) plus how many spoken
+// words fall in it — the input to adaptive auto-scroll pacing below.
+interface SpeedSegment { top: number; bottom: number; words: number }
+
+/**
+ * Builds one SpeedSegment per paragraph from a single collectSpoken pass
+ * (`wantRanges: true`), so a doc's whole pacing profile costs one DOM walk,
+ * not one per paragraph. Each spoken Range is attributed to its containing
+ * `<p>`; positions are measured via getBoundingClientRect deltas against
+ * `wrap` rather than `offsetTop`, since a paragraph's offsetParent isn't
+ * guaranteed to be `wrap` itself.
+ */
+function buildSpeedProfile(wrap: HTMLElement, container: HTMLElement, ranges: Range[]): SpeedSegment[] {
+  const paras = Array.from(container.querySelectorAll<HTMLElement>('p'));
+  if (paras.length === 0) return [];
+  const wrapRect = wrap.getBoundingClientRect();
+  const wordsByPara = new Map<HTMLElement, number>();
+  for (const r of ranges) {
+    const startEl = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : r.startContainer) as HTMLElement | null;
+    const p = startEl?.closest('p') as HTMLElement | null;
+    if (!p) continue;
+    wordsByPara.set(p, (wordsByPara.get(p) ?? 0) + wordCount(r.toString()));
+  }
+  const segments: SpeedSegment[] = [];
+  for (const p of paras) {
+    const rect = p.getBoundingClientRect();
+    const top = wrap.scrollTop + (rect.top - wrapRect.top);
+    const bottom = wrap.scrollTop + (rect.bottom - wrapRect.top);
+    if (bottom <= top) continue; // collapsed/hidden paragraph — no vertical extent to attribute pace to
+    segments.push({ top, bottom, words: wordsByPara.get(p) ?? 0 });
+  }
+  return segments;
+}
+
 // ── Card credibility scoring ───────────────────────────────────────────────
 interface CredCard { id: string; tag: string; cite: string; highlightRatio?: number; warn?: 'over' | 'under' | null }
 
@@ -3212,6 +3247,30 @@ function DocPaneViewer({
   const autoAccRef = useRef(0);
   const autoLastRef = useRef(0);
   const autoLastSetRef = useRef(0);
+  // Per-paragraph "spoken words per pixel" profile for adaptive auto-scroll
+  // pace — built once per doc load (see applyRender), read every frame in
+  // autoStep. smoothedPxPerWordRef carries the exponentially-smoothed speed
+  // across frames so pace changes ease in/out at paragraph boundaries instead
+  // of visibly stepping.
+  const speedProfileRef = useRef<SpeedSegment[]>([]);
+  const smoothedPxPerWordRef = useRef(0);
+  // Settings → "Adaptive reading pace": on (default) varies auto-scroll speed
+  // with how much spoken (highlighted/underlined) content is actually in view
+  // — slower through dense cards, faster through sparse context — instead of
+  // one constant speed for the whole doc. Off falls back to the flat rate.
+  const [docAdaptivePace, setDocAdaptivePaceState] = useState(
+    () => localStorage.getItem('warroom-doc-adaptive-pace') !== 'false'
+  );
+  const docAdaptivePaceRef = useRef(docAdaptivePace);
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent).detail?.adaptivePace;
+      if (typeof v === 'boolean') setDocAdaptivePaceState(v);
+    };
+    window.addEventListener('warroom-doc-adaptive-pace-changed', onChange);
+    return () => window.removeEventListener('warroom-doc-adaptive-pace-changed', onChange);
+  }, []);
+  useEffect(() => { docAdaptivePaceRef.current = docAdaptivePace; }, [docAdaptivePace]);
   useEffect(() => { wpmRef.current = wpm; }, [wpm]);
   useEffect(() => { docWordsRef.current = docWords; }, [docWords]);
 
@@ -3356,6 +3415,15 @@ function DocPaneViewer({
   }, []);
   const stopAuto = useCallback(() => { stopAutoRaf(); setAutoScroll(false); setAutoPaused(false); }, [stopAutoRaf]);
 
+  // How far the flat rate can be scaled by local content density before
+  // clamping — wide enough that dense cards and sparse context visibly move
+  // at different speeds, narrow enough that it never reads as erratic.
+  const ADAPTIVE_MIN_MULT = 0.35;
+  const ADAPTIVE_MAX_MULT = 3;
+  // Time constant for easing pace changes in/out at paragraph boundaries,
+  // so density shifts read as a gradient rather than a visible speed step.
+  const ADAPTIVE_SMOOTH_TAU_MS = 500;
+
   const autoStep = useCallback((now: number) => {
     const wrap = scrollWrapRef.current;
     if (!wrap) { stopAuto(); return; }
@@ -3363,7 +3431,23 @@ function DocPaneViewer({
     if (Math.abs(wrap.scrollTop - autoLastSetRef.current) > 3) autoAccRef.current = wrap.scrollTop;
     const dt = now - autoLastRef.current;
     autoLastRef.current = now;
-    const pxPerWord = wrap.scrollHeight / (docWordsRef.current || 1);
+    const globalPxPerWord = wrap.scrollHeight / (docWordsRef.current || 1);
+    let pxPerWord = globalPxPerWord;
+    const profile = speedProfileRef.current;
+    if (docAdaptivePaceRef.current && profile.length > 0) {
+      // A bit ahead of the very top edge — roughly where the eye is actually
+      // reading, not the sliver of text just now scrolling into view.
+      const y = autoAccRef.current + wrap.clientHeight * 0.35;
+      const seg = profile.find(s => y >= s.top && y < s.bottom) ?? profile[profile.length - 1];
+      const segHeight = Math.max(1, seg.bottom - seg.top);
+      const targetPxPerWord = seg.words > 0 ? segHeight / seg.words : globalPxPerWord * ADAPTIVE_MAX_MULT;
+      const clamped = Math.min(globalPxPerWord * ADAPTIVE_MAX_MULT, Math.max(globalPxPerWord * ADAPTIVE_MIN_MULT, targetPxPerWord));
+      const smoothFactor = 1 - Math.exp(-dt / ADAPTIVE_SMOOTH_TAU_MS);
+      smoothedPxPerWordRef.current = smoothedPxPerWordRef.current > 0
+        ? smoothedPxPerWordRef.current + (clamped - smoothedPxPerWordRef.current) * smoothFactor
+        : clamped;
+      pxPerWord = smoothedPxPerWordRef.current;
+    }
     autoAccRef.current += (wpmRef.current / 60000) * pxPerWord * dt;
     wrap.scrollTop = autoAccRef.current;
     autoLastSetRef.current = wrap.scrollTop;
@@ -3378,6 +3462,7 @@ function DocPaneViewer({
     autoAccRef.current = wrap.scrollTop;
     autoLastSetRef.current = wrap.scrollTop;
     autoLastRef.current = performance.now();
+    smoothedPxPerWordRef.current = 0; // fresh smoothing ramp each time playback (re)starts
     setAutoScroll(true);
     setAutoPaused(false);
     autoRafRef.current = requestAnimationFrame(autoStep);
@@ -4261,9 +4346,14 @@ function DocPaneViewer({
         // Reading-time word count for the freshly loaded doc — only words that
         // are actually read aloud (headings, tags, highlighted/underlined text,
         // and the bold author+date of cites), not every word in the file.
-        const words = collectSpoken(containerRef.current, { headingClasses }).count;
-        setDocWords(words);
-        docWordsRef.current = words;
+        // wantRanges also feeds the adaptive-auto-scroll pacing profile below,
+        // off the exact same pass rather than walking the doc a second time.
+        const spoken = collectSpoken(containerRef.current, { headingClasses, wantRanges: true });
+        setDocWords(spoken.count);
+        docWordsRef.current = spoken.count;
+        speedProfileRef.current = scrollWrapRef.current
+          ? buildSpeedProfile(scrollWrapRef.current, containerRef.current, spoken.ranges)
+          : [];
 
         // Restore this doc's last scroll position, now that it's actually painted.
         const restoreKey = viewingScrollKeyRef.current;
