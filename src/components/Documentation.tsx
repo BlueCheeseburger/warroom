@@ -1001,6 +1001,19 @@ export default function Documentation() {
             actually has content in its first few columns yet, instead of always drawing the same fixed
             decoration.
           </P>
+          <H3>Live writing vs. review</H3>
+          <P>
+            A <strong>brand-new</strong> flow skips the review step entirely: the flow is created
+            empty, opened, and then filled in front of you, with the tab switching on its own as
+            Warroom AI moves between positions. The wizard collapses to a small corner card with a{' '}
+            <strong>Skip animation</strong> button. Every frame is a real save, so closing mid-run
+            keeps whatever has landed.
+          </P>
+          <P>
+            Adding into an <strong>existing</strong> flow deliberately keeps the review step and
+            writes in one silent pass — that flow holds your own work, so a bad placement has a real
+            cost and approval stays opt-in.
+          </P>
           <H3>How Auto Flow creates and cleans up tabs</H3>
           <P>
             When Auto Flow needs a tab for a position it found, it <strong>makes a new one</strong>.

@@ -384,6 +384,10 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 
 **Optional: summarize each card with AI.** On the same step there's a toggle switch, **off by default**, called "Summarize each card with Warroom AI". Turn it on and instead of writing the tagline + cite, Auto Flow writes a **short AI summary of the card** — built from *both* its tagline and the actual evidence in the card, and always **fewer words than the tagline itself** (Warroom AI is told the tagline's exact word count and has to come in under it). No AI ring on the resulting cells — an AI-written summary standing in for the tagline is still a tagline, and taglines never get the ring. This is the one part of Auto Flow that reads card bodies, and it costs an extra Warroom AI call, which is why it's off unless you ask for it.
 
+**Watching it flow (new flows only).** When Auto Flow is building a **brand-new** flow, there's no review step — it opens the flow and fills it in front of you. Cards appear in waves, and the tab switches on its own as Warroom AI moves from one position to the next, so you can see where everything is landing. The wizard shrinks to a small card in the corner with a **Skip animation** button if you'd rather just have the finished flow. Everything is saved as it lands, so closing early doesn't lose anything.
+
+Adding into an **existing** flow works the opposite way: you always get the review step first, and the write happens in one go with no animation. That flow already has your own work in it, so a bad placement actually costs you something — it stays opt-in.
+
 **What Auto Flow does when it writes:**
 - **Cites are shortened.** Warroom AI turns a card's full cite paragraph into the way a debater actually writes it on a flow — author surname plus a 2-digit year, or an abbreviated source name if there's no individual author.
 - **New tabs use the doc's own shorthand.** If your case calls a position "Federalism DA" once but "Fism DA" everywhere after, the new tab is named "Fism DA" — the form you actually use.

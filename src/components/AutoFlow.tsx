@@ -25,7 +25,7 @@ import {
 // question-pause-resume pattern this file copies (runClassify/answerQuestion
 // mirror its runEmphasize/answerQuestion).
 
-type Step = 'upload' | 'extracting' | 'target' | 'classifying' | 'review' | 'writing' | 'done';
+type Step = 'upload' | 'extracting' | 'target' | 'classifying' | 'review' | 'writing' | 'live' | 'done';
 
 interface DocResult {
   fileName: string;
@@ -106,6 +106,13 @@ interface ClassifyCtx {
   existingSheetNames: string[];
   event: 'policy' | 'pf';
   variantLabel: string;
+  /**
+   * Where the result is going. Carried here (rather than read from `targetCtx`
+   * state) so the write can start in the same tick classification finishes,
+   * before React has flushed — and so the clarifying-question resume path,
+   * which replays a stored ClassifyCtx, still knows the destination.
+   */
+  target: TargetCtx;
 }
 
 interface AutoFlowProgress {
@@ -155,6 +162,73 @@ function buildCellHtml(tag: string, cite: string, summary?: string): string {
   if (style.italic) t = `<i>${t}</i>`;
   if (style.bold) t = `<b>${t}</b>`;
   return useSummary ? t : `${t}<br>${escapeHtml(cite)}`;
+}
+
+// ── Live write pacing ────────────────────────────────────────────────────────
+// A frame is one persist + one `warroom-flow-updated`, which makes the open
+// FlowView re-read and re-render. That's cheap but not free, so cards are
+// written in small groups rather than one at a time — a 800-card packet at one
+// card per frame would take minutes and hammer the disk. Grouping keeps the
+// whole run to roughly FILL_TARGET_MS regardless of size, while still reading as
+// "watching it fill in" rather than "it appeared".
+const FRAME_MS = 90;
+const FILL_TARGET_MS = 14_000;
+/** Extra beat when the write moves to a different tab, so the switch registers. */
+const TAB_SWITCH_MS = 320;
+
+/**
+ * Replay a finished Auto Flow write into the live flow, one group of cards at a
+ * time, switching tabs as the writes move between sheets.
+ *
+ * `activeSheetIdx` is part of the stored flow and FlowView restores it on every
+ * external-edit reload, so simply persisting the index of the sheet currently
+ * being written is what makes the user's view follow along — no extra plumbing.
+ *
+ * The finished `finalSheets` is written at the end regardless, so the result is
+ * byte-identical to a non-live run; the replay only controls what the user sees
+ * on the way there.
+ */
+async function replayIntoFlow(
+  flowId: string,
+  base: StoredFlowData,
+  writtenSheets: SheetData[],
+  finalSheets: SheetData[],
+  writeLog: { sheetIdx: number; cellKey: string; html: string }[],
+  skip: { current: boolean },
+) {
+  const live: SheetData[] = base.sheets.map((s) => ({ ...s, cells: { ...s.cells } }));
+  const perFrame = Math.max(1, Math.ceil(writeLog.length / Math.max(1, FILL_TARGET_MS / FRAME_MS)));
+
+  const flush = async (activeSheetIdx: number) => {
+    await window.warroom.storage.write(`flow_data_${flowId}`, {
+      ...base, sheets: live.map((s) => ({ ...s, cells: { ...s.cells } })), activeSheetIdx,
+    } as StoredFlowData);
+    window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId } }));
+  };
+
+  let lastSheetIdx = -1;
+  for (let i = 0; i < writeLog.length; i += perFrame) {
+    if (skip.current) break; // jump to the finished state below
+    const group = writeLog.slice(i, i + perFrame);
+    for (const w of group) {
+      if (live[w.sheetIdx]) live[w.sheetIdx].cells[w.cellKey] = w.html;
+    }
+    const sheetIdx = group[group.length - 1].sheetIdx;
+    const switched = sheetIdx !== lastSheetIdx && lastSheetIdx !== -1;
+    lastSheetIdx = sheetIdx;
+    await flush(sheetIdx);
+    await new Promise((r) => setTimeout(r, switched ? TAB_SWITCH_MS : FRAME_MS));
+  }
+
+  // Land on the real finished state: arrows, AI-cell marks, tab summaries, and
+  // the cleanup of unused default tabs all arrive together at the end. The tab
+  // the user is left on is the last one written to, mapped through the prune.
+  const lastName = writtenSheets[lastSheetIdx]?.name;
+  const finalIdx = Math.max(0, finalSheets.findIndex((s) => s.name === lastName));
+  await window.warroom.storage.write(`flow_data_${flowId}`, {
+    ...base, sheets: finalSheets, activeSheetIdx: finalIdx,
+  } as StoredFlowData);
+  window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId } }));
 }
 
 export default function AutoFlow({ onClose }: { onClose: () => void }) {
@@ -325,6 +399,15 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         finally { setSummarizing(false); }
       }
       setPlacements(list);
+      // A BRAND-NEW flow goes straight to writing, live, with no review step:
+      // there's nothing in it to damage, so approving placements one by one is a
+      // formality. Adding into an EXISTING flow always stops at review first —
+      // that flow already holds the user's own work, and a bad placement there
+      // costs them something, so it stays opt-in and writes silently.
+      if (ctx.target.kind === 'new') {
+        await commitWrite(true, ctx.target, list);
+        return;
+      }
       setStep('review');
     } catch (e: any) {
       setError(humanizeGeminiError(e?.message) || e?.message || 'Warroom AI could not sort these cards.');
@@ -358,14 +441,16 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       const existingColumns = data.customColumns ?? columnsForEvent(data.event, data.pfOrder);
       const existingSheetNames = data.sheets.map((s) => s.name);
       const variantLabel = data.event === 'policy' ? data.variant : data.pfOrder;
-      setTargetCtx({ kind: 'existing', flowId: selectedFlowId });
-      await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: data.event, variantLabel });
+      const target: TargetCtx = { kind: 'existing', flowId: selectedFlowId };
+      setTargetCtx(target);
+      await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: data.event, variantLabel, target });
     } else {
       const existingColumns = columnsForEvent(newEvent, newPfOrder);
       const existingSheetNames = sheetsForVariant(newEvent, newVariant);
       const variantLabel = newEvent === 'policy' ? newVariant : newPfOrder;
-      setTargetCtx({ kind: 'new', event: newEvent, variant: newVariant, pfOrder: newPfOrder });
-      await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: newEvent, variantLabel });
+      const target: TargetCtx = { kind: 'new', event: newEvent, variant: newVariant, pfOrder: newPfOrder };
+      setTargetCtx(target);
+      await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: newEvent, variantLabel, target });
     }
   }
 
@@ -377,26 +462,43 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
 
   const acceptedCount = placements.filter((p) => !p.removed).length;
 
+  // While the replay runs the flow itself is the thing worth looking at, so the
+  // wizard collapses to a small corner card with no backdrop instead of sitting
+  // over the top of it.
+  const live = step === 'live';
+  // Set by "Skip animation" — the replay loop checks it each frame and jumps
+  // straight to the finished flow. A ref, not state: the loop reads it between
+  // awaits and would never see a re-rendered value.
+  const skipLive = useRef(false);
+
   // ── Step 5: write ────────────────────────────────────────────────────────────
 
-  async function commitWrite() {
-    if (!targetCtx) return;
+  /**
+    * `ctx` and `list` are passed explicitly by the live path, which runs
+    * immediately after `setTargetCtx`/`setPlacements` in the same tick — React
+    * state hasn't flushed yet at that point, so reading it here would use the
+    * previous render's values (null / empty). The review path omits both and
+    * gets the committed state, which is what it wants.
+    */
+  async function commitWrite(live = false, ctxIn?: TargetCtx, listIn?: Placement[]) {
+    const ctx = ctxIn ?? targetCtx;
+    if (!ctx) return;
     setStep('writing');
     setError('');
     try {
-      const accepted = placements.filter((p) => !p.removed);
+      const accepted = (listIn ?? placements).filter((p) => !p.removed);
       let flowId: string;
       let data: StoredFlowData;
       let isNewFlow = false;
 
-      if (targetCtx.kind === 'existing') {
-        flowId = targetCtx.flowId;
+      if (ctx.kind === 'existing') {
+        flowId = ctx.flowId;
         const fresh: StoredFlowData | null = await window.warroom.storage.read(`flow_data_${flowId}`);
         if (!fresh) throw new Error('That flow no longer exists.');
         data = fresh;
       } else {
         flowId = crypto.randomUUID();
-        data = makeDefaultData(targetCtx.event, targetCtx.variant, targetCtx.pfOrder);
+        data = makeDefaultData(ctx.event, ctx.variant, ctx.pfOrder);
         isNewFlow = true;
       }
 
@@ -418,6 +520,10 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // into that sheet's `aiSummary` once writing is done, for the tab hover
       // tooltip. Reuses the summaries already generated above; no extra AI call.
       const summariesBySheet = new Map<number, string[]>();
+      // Every cell write, in the order it happened. A new flow replays this into
+      // an empty copy of the finished layout so the user watches the flow fill
+      // in; an existing flow ignores it and takes the finished sheets directly.
+      const writeLog: { sheetIdx: number; cellKey: string; html: string }[] = [];
 
       // Need a sheet that doesn't exist? MAKE one. It is never a rename of some
       // unused default tab ("Off 3" → "Fism DA").
@@ -441,6 +547,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       };
       const writeCard = (sheetIdx: number, ri: number, ci: number, p: Placement) => {
         const cellKey = `${ri}-${ci}`;
+        // Recorded in placement order so a live run can replay the same writes,
+        // one at a time, into an initially-empty copy of these sheets.
+        writeLog.push({ sheetIdx, cellKey, html: buildCellHtml(p.tag, p.cite, p.summary) });
         sheets[sheetIdx].cells[cellKey] = buildCellHtml(p.tag, p.cite, p.summary);
         if (p.summary && p.summary.trim()) {
           const ai = sheets[sheetIdx].aiCells ?? [];
@@ -581,20 +690,36 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // lost: a sheet has to be literally empty to qualify.
       const finalSheets = pruneUnnamedEmptySheets(sheets);
 
-      const updated: StoredFlowData = { ...data, sheets: finalSheets };
-      await window.warroom.storage.write(`flow_data_${flowId}`, updated);
-
-      if (isNewFlow && targetCtx.kind === 'new') {
+      if (isNewFlow && ctx.kind === 'new') {
         const firstName = docs.find((d) => d.cards.length > 0)?.fileName?.replace(/\.docx$/i, '');
         const meta: FlowMeta = {
           id: flowId,
           name: firstName || `Auto Flow ${flowsIndex.length + 1}`,
-          event: targetCtx.event,
+          event: ctx.event,
           createdAt: new Date().toISOString(),
         };
         const newIndex = [...flowsIndex, meta];
         setFlowsIndex(newIndex);
         await window.warroom.storage.write('flows_index', newIndex);
+      }
+
+      if (live) {
+        // Put the (still empty) flow on screen first, then fill it in front of
+        // the user. Everything below writes through the SAME storage key the
+        // open FlowView reads, so each persist + event is a frame of animation.
+        const empty: StoredFlowData = {
+          ...data,
+          sheets: sheets.map((s) => ({ ...s, cells: {}, arrows: [], aiCells: [] })),
+          activeSheetIdx: 0,
+        };
+        await window.warroom.storage.write(`flow_data_${flowId}`, empty);
+        setView({ kind: 'flow', flowId });
+        setStep('live');
+        skipLive.current = false;
+        await replayIntoFlow(flowId, empty, sheets, finalSheets, writeLog, skipLive);
+      } else {
+        const updated: StoredFlowData = { ...data, sheets: finalSheets };
+        await window.warroom.storage.write(`flow_data_${flowId}`, updated);
       }
 
       setWriteSummary({ written, skipped });
@@ -618,17 +743,28 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const totalCards = docs.reduce((n, d) => n + d.cards.length, 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={step === 'writing' ? undefined : onClose}>
-      <div className="glass-elevated rounded-md w-full max-w-2xl max-h-[88vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={live
+        ? 'fixed bottom-4 right-4 z-50'
+        : 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6'}
+      onClick={(step === 'writing' || live) ? undefined : onClose}
+    >
+      <div
+        className={live
+          ? 'glass-elevated rounded-md shadow-xl flex flex-col'
+          : 'glass-elevated rounded-md w-full max-w-2xl max-h-[88vh] flex flex-col shadow-xl'}
+        style={live ? { width: 300 } : undefined}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="px-5 py-3 border-b border-line flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-base font-semibold">Auto Flow — sort speech docs into a flow</h2>
             <p className="text-xs text-ink/40">{stepLabel(step)}</p>
           </div>
-          <button className="text-ink/40 hover:text-ink text-lg leading-none" onClick={onClose}>✕</button>
+          {!live && <button className="text-ink/40 hover:text-ink text-lg leading-none" onClick={onClose}>✕</button>}
         </div>
 
-        <div className="flex-1 overflow-y-auto scroll-thin p-5">
+        <div className={live ? 'p-3' : 'flex-1 overflow-y-auto scroll-thin p-5'}>
           {error && (
             <div className="mb-3 border border-danger/30 rounded-sm bg-danger/5 p-2.5 text-sm text-danger">{error}</div>
           )}
@@ -890,6 +1026,15 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           )}
 
           {/* STEP: writing */}
+          {step === 'live' && (
+            <div className="space-y-2">
+              <p className="text-xs text-ink/60">
+                Flowing your docs in. The tabs switch as Warroom AI moves between positions —
+                everything is already saved as it lands.
+              </p>
+            </div>
+          )}
+
           {step === 'writing' && (
             <div className="py-14">
               <LoadingState messages={['Writing cards into the flow…']} />
@@ -915,7 +1060,18 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-line flex items-center gap-2 shrink-0">
+        <div className={live
+          ? 'px-3 pb-3 flex items-center gap-2 shrink-0'
+          : 'px-5 py-3 border-t border-line flex items-center gap-2 shrink-0'}>
+          {live && (
+            <button
+              className="btn text-xs ml-auto"
+              title="Jump to the finished flow"
+              onClick={() => { skipLive.current = true; }}
+            >
+              Skip animation
+            </button>
+          )}
           {step === 'upload' && (
             <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
           )}
@@ -933,7 +1089,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           )}
           {step === 'review' && (
             <>
-              <button className="btn-primary text-sm" disabled={acceptedCount === 0} onClick={commitWrite}>
+              <button className="btn-primary text-sm" disabled={acceptedCount === 0} onClick={() => commitWrite()}>
                 Write {acceptedCount} card{acceptedCount === 1 ? '' : 's'} to the flow
               </button>
               <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
@@ -959,6 +1115,7 @@ function stepLabel(step: Step): string {
     case 'classifying': return 'Sorting…';
     case 'review': return 'Step 3 — review placements, then write';
     case 'writing': return 'Writing…';
+    case 'live': return 'Flowing it in front of you…';
     case 'done': return 'Done';
   }
 }
