@@ -8,6 +8,7 @@ import { humanizeGeminiError } from '../utils/geminiError';
 import { escapeHtml } from '../lib/cellHtml';
 import { useDragActive } from '../hooks/useDragActive';
 import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
+import { pruneUnnamedEmptySheets } from '../lib/flowSheetNaming';
 import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
 import {
   StoredFlowData, SheetData, PolicyVariant, PFOrder,
@@ -418,62 +419,22 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // tooltip. Reuses the summaries already generated above; no extra AI call.
       const summariesBySheet = new Map<number, string[]>();
 
-      // Numbered slot names from the default layouts ("Off 2", "Adv 1",
-      // "Contention 2") are placeholders, not topics. When the AI proposes a new
-      // position sheet ("Fism DA", "Warming"), rename the first UNTOUCHED
-      // placeholder to it instead of appending a tab at the end — that's what
-      // names each case/off-case position's tab after the position, and keeps a
-      // fresh Auto Flow from ending up as named tabs stacked after a row of dead
-      // "Off 1…Off 4" defaults. Only a placeholder with zero written cells is
-      // ever taken over, so nothing a user (or an earlier pass) wrote can be
-      // absorbed into a rename.
-      const PLACEHOLDER_RE = /^(off|adv|advantage|contention)\s*\d+$/i;
-      // The default tabs that are STRUCTURAL, not numbered placeholders — kept even
-      // when they end up blank (RFD/Notes; the stock-issues aff tabs; PF's Turns).
-      // Captured now, from the still-default sheet names, before the pre-pass below
-      // renames any placeholder slots. Everything else that ends up blank on a NEW
-      // flow gets pruned at the end (see the prune pass), so a 2-advantage doc
-      // doesn't leave a dead "Adv 3" tab and a skipped card can't strand a
-      // named-but-empty sheet.
-      const structuralKeepNames = new Set(
-        sheets.filter((s) => !PLACEHOLDER_RE.test(s.name.trim())).map((s) => s.name.trim().toLowerCase())
-      );
-      // Role of each proposed sheet name, so a sheet that reaches ensureSheet
-      // without having been slotted by the pre-pass below still lands in the
-      // right FAMILY of placeholder. Without this, an off-case position could
-      // take an empty "Adv 2" slot (first placeholder wins), putting a DA in
-      // among the advantages and breaking the advantages-first ordering.
-      const roleByName = new Map<string, 'advantage' | 'offcase'>();
-      for (const p of accepted) {
-        const k = p.sheetName.trim().toLowerCase();
-        if (p.sheetRole && !roleByName.has(k)) roleByName.set(k, p.sheetRole);
-      }
-      const emptySlot = (s: SheetData) =>
-        !Object.values(s.cells).some((v) => String(v ?? '').trim());
+      // Need a sheet that doesn't exist? MAKE one. It is never a rename of some
+      // unused default tab ("Off 3" → "Fism DA").
+      //
+      // The old behavior hunted for an empty placeholder and renamed it, which
+      // quietly repurposed a slot the user might have been holding, and made tab
+      // ORDER depend on which placeholder happened to be free rather than on the
+      // order positions actually came up in the document. Appending, then
+      // dropping the leftover defaults at the very end (see the cleanup pass
+      // below), reaches the same layout with neither problem. See
+      // src/lib/flowSheetNaming.ts for the shared rule.
       const ensureSheet = (name: string): number => {
         const key = name.trim().toLowerCase();
         let idx = sheetIndexByName.get(key);
         if (idx === undefined) {
-          const role = roleByName.get(key);
-          const familyRe = role === 'advantage' ? /^(adv|advantage|contention)\s*\d+$/i
-            : role === 'offcase' ? /^off\s*\d+$/i
-            : null;
-          // Prefer a slot of this position's own family; fall back to any free
-          // placeholder, then to appending a brand-new tab.
-          let slot = familyRe
-            ? sheets.findIndex((s) => familyRe.test(s.name.trim()) && emptySlot(s))
-            : -1;
-          if (slot === -1) {
-            slot = sheets.findIndex((s) => PLACEHOLDER_RE.test(s.name.trim()) && emptySlot(s));
-          }
-          if (slot !== -1) {
-            sheetIndexByName.delete(sheets[slot].name.trim().toLowerCase());
-            sheets[slot] = { ...sheets[slot], name };
-            idx = slot;
-          } else {
-            sheets.push({ id: crypto.randomUUID(), name, cells: {} });
-            idx = sheets.length - 1;
-          }
+          sheets.push({ id: crypto.randomUUID(), name, cells: {} });
+          idx = sheets.length - 1;
           sheetIndexByName.set(key, idx);
         }
         return idx;
@@ -499,47 +460,28 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       };
 
       // Tab-ORDER pre-pass — advantages first, in 1AC order, then off-case.
+      //
       // The AI returns placements in document (1AC) order and tags each with a
       // sheetRole, so the distinct new 'advantage' sheets in first-appearance
-      // order ARE the aff's advantages 1..N: they claim the leftmost aff
-      // placeholder slots ("Adv N" for policy, "Contention N" for PF), and the
-      // distinct new 'offcase' sheets claim the "Off N" slots after them. Since
-      // those aff slots come before the off slots in every default layout, this
-      // is what makes advantage tabs sit first, in the order they came up in the
-      // 1AC. Runs BEFORE any card is placed, so it only ever renames still-empty
-      // placeholder slots; once a name is slotted here, ensureSheet finds it as
-      // an existing sheet and won't re-slot it. Names that don't cleanly fit a
-      // role (or spill past the available slots) fall through to ensureSheet's
-      // own placeholder-or-append logic during Pass 1.
-      const AFF_SLOT_RE = /^(adv|advantage|contention)\s*\d+$/i;
-      const OFF_SLOT_RE = /^off\s*\d+$/i;
-      const distinctNewByRole = (role: 'advantage' | 'offcase'): string[] => {
-        const seen = new Set<string>();
-        const out: string[] = [];
+      // order ARE the aff's advantages 1..N. Creating all of those before any of
+      // the off-case ones is what puts advantage tabs to the left of off-case
+      // tabs, in the order they came up in the 1AC.
+      //
+      // This runs as its own pass rather than letting Pass 1 create sheets
+      // incidentally: Pass 1 walks `accepted` in document order too, so it would
+      // usually produce the same order, but "usually" isn't a guarantee — a doc
+      // that opens with an off-case card would invert it. Ordering the tabs is a
+      // deliberate decision, so it gets a deliberate pass.
+      const createNewSheetsForRole = (role: 'advantage' | 'offcase') => {
         for (const p of accepted) {
           if (!p.isNewSheet || p.sheetRole !== role) continue;
-          const key = p.sheetName.trim().toLowerCase();
-          if (!key || seen.has(key) || sheetIndexByName.has(key)) continue;
-          seen.add(key);
-          out.push(p.sheetName.trim());
-        }
-        return out;
-      };
-      const slotInto = (names: string[], slotRe: RegExp) => {
-        for (const name of names) {
-          const key = name.toLowerCase();
-          if (sheetIndexByName.has(key)) continue; // already slotted
-          const slot = sheets.findIndex((s) =>
-            slotRe.test(s.name.trim()) &&
-            !Object.values(s.cells).some((v) => String(v ?? '').trim()));
-          if (slot === -1) continue; // no empty slot of this family left — ensureSheet appends it later
-          sheetIndexByName.delete(sheets[slot].name.trim().toLowerCase());
-          sheets[slot] = { ...sheets[slot], name };
-          sheetIndexByName.set(key, slot);
+          const name = p.sheetName.trim();
+          if (!name || sheetIndexByName.has(name.toLowerCase())) continue;
+          ensureSheet(name);
         }
       };
-      slotInto(distinctNewByRole('advantage'), AFF_SLOT_RE);
-      slotInto(distinctNewByRole('offcase'), OFF_SLOT_RE);
+      createNewSheetsForRole('advantage');
+      createNewSheetsForRole('offcase');
 
       // Pass 0 — the plan text (policy) always goes to the very first cell of the
       // very first sheet, regardless of what column/sheet the AI proposed for it.
@@ -624,20 +566,20 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         sheets[sheetIdx].aiSummary = joined.length > 160 ? joined.slice(0, 159) + '…' : joined;
       }
 
-      // Prune leftover blank tabs — only on a NEW flow (an existing flow's empty
-      // tabs are the user's own, never touched). Drops any sheet that ended up
-      // with no written cell AND isn't a structural keep (RFD/Notes, stock aff
-      // tabs, PF Turns): a 2-advantage doc's unused "Adv 3", the unused "Off 3"/
-      // "Off 4" slots, and any named-but-empty sheet a skipped card left behind.
-      // Guards against ever emptying the flow to zero sheets.
-      let finalSheets = sheets;
-      if (isNewFlow) {
-        const kept = sheets.filter((s) => {
-          const hasContent = Object.values(s.cells).some((v) => String(v ?? '').trim());
-          return hasContent || structuralKeepNames.has(s.name.trim().toLowerCase());
-        });
-        if (kept.length > 0) finalSheets = kept;
-      }
+      // Cleanup — the second half of "always create, never rename". Now that all
+      // the writing is done, drop the default tabs nothing landed on: the unused
+      // "Off 3"/"Off 4" slots, a 2-advantage doc's spare "Adv 3", any blank
+      // "Sheet 2" sitting around. Only sheets that are BOTH still default-named
+      // and completely empty go; a real name is always kept, even when blank,
+      // because an empty "Politics DA" tab is telling you the position existed
+      // but nothing landed on it. See src/lib/flowSheetNaming.ts.
+      //
+      // This runs for an existing flow too, not just a new one. Under the old
+      // rename-a-placeholder scheme it couldn't — the user's spare slots were
+      // theirs. Now that positions are appended instead, leaving them would mean
+      // every run stacks named tabs after a row of dead defaults. Nothing is
+      // lost: a sheet has to be literally empty to qualify.
+      const finalSheets = pruneUnnamedEmptySheets(sheets);
 
       const updated: StoredFlowData = { ...data, sheets: finalSheets };
       await window.warroom.storage.write(`flow_data_${flowId}`, updated);

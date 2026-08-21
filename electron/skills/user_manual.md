@@ -387,6 +387,8 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 **What Auto Flow does when it writes:**
 - **Cites are shortened.** Warroom AI turns a card's full cite paragraph into the way a debater actually writes it on a flow — author surname plus a 2-digit year, or an abbreviated source name if there's no individual author.
 - **New tabs use the doc's own shorthand.** If your case calls a position "Federalism DA" once but "Fism DA" everywhere after, the new tab is named "Fism DA" — the form you actually use.
+- **New positions get brand-new tabs.** Auto Flow never takes over one of the blank numbered tabs a flow starts with ("Off 3", "Adv 2") — it makes a fresh tab for each position it finds. Advantages are created first, in the order they appear in the 1AC, then off-case, so tabs read left to right the way the round does.
+- **Unused blank tabs are cleaned up at the end.** Once everything is written, any tab still carrying a default name ("Off 4", "Adv 3", "Sheet 2") *and* still completely empty is removed. A tab with a real name is always kept even if it's empty — an empty "Politics DA" tab tells you the position was there but nothing landed on it.
 - **Answers line up with what they answer.** When a card directly answers another (a perm, a no-link, an impact defense), Auto Flow puts it on the **same row** as the argument it answers. If two cards answer the same one, the second goes on the next row with an **arrow drawn back** to it, so the connection stays clear.
 - **The plan goes first.** For policy, the plan text always lands in the very first cell of the first sheet.
 - If a column is completely full, a card is skipped and listed at the end instead of silently vanishing.

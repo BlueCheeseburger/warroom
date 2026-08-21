@@ -1001,6 +1001,21 @@ export default function Documentation() {
             actually has content in its first few columns yet, instead of always drawing the same fixed
             decoration.
           </P>
+          <H3>How Auto Flow creates and cleans up tabs</H3>
+          <P>
+            When Auto Flow needs a tab for a position it found, it <strong>makes a new one</strong>.
+            It never takes over one of the blank numbered tabs a flow starts with ("Off 3", "Adv 2")
+            and renames it — that used to repurpose slots you might have been holding, and it made
+            tab order depend on which slot happened to be free rather than on the order positions
+            actually came up in the doc.
+          </P>
+          <P>
+            Then, once everything is written, any tab that is <em>both</em> still carrying a default
+            name (<Code>Off 4</Code>, <Code>Adv 3</Code>, <Code>Sheet 2</Code>) <em>and</em>{' '}
+            completely empty is removed. A tab with a real name is always kept even when it's blank —
+            an empty "Politics DA" tab tells you the position was there but nothing landed on it.
+            Cleanup runs on existing flows too, and a flow is never left with zero tabs.
+          </P>
           <H3>Importing a flow</H3>
           <P>
             An <strong>import button</strong> sits next to the <Code>+</Code> in the sidebar's Flow
