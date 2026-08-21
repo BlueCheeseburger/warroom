@@ -419,6 +419,16 @@ declare global {
         impactLibraryReview: (params: { entry: ImpactLibraryDraft; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
           Promise<{ ok: true; review: ImpactLibraryReview } | { ok: false; error: string }>;
       };
+      aiInput: {
+        /**
+         * An input was too long to send in full. `capForPrompt` in main.ts is
+         * BLOCKED on the answer, so every ask must get a `respondTruncation`.
+         * Returns its own unsubscribe function (hence not in the `ai` namespace).
+         */
+        onTruncationAsk: (cb: (p: { id: number; label: string; kept: number; total: number }) => void) => () => void;
+        /** `proceed: false` aborts the AI call entirely. */
+        respondTruncation: (id: number, proceed: boolean) => Promise<boolean>;
+      };
       autoFlow: {
         /**
          * Per-batch progress while Auto Flow sorts (and optionally summarizes)

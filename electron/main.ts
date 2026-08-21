@@ -852,6 +852,30 @@ async function fetchWithRetry(url: string, init: RequestInit, opts?: { timeoutMs
 // once after 8s, once more after 30s if that also fails, and a final time
 // after 60s — 4 attempts total — before finally letting the error through
 // (which the renderer surfaces as a toast; see preload.ts's `ai` wrapper).
+/**
+ * Retry a failing call after 8s, then 30s, then 60s (4 attempts, ~100s of
+ * silence in the worst case).
+ *
+ * ONLY for AI calls the user has no way to retry themselves. If the failure path
+ * puts them back on a screen where the trigger button still exists, do NOT wrap
+ * it — they'd sit through a minute and a half of nothing before seeing an error
+ * they could have re-fired in one click. Every handler was audited against this;
+ * the only three that still qualify are:
+ *
+ *   - `ai:summarizeFlowSheet`   — fires on tab hover, no button, silently falls
+ *                                 back to the plain tag list.
+ *   - `ai:crossExTraps`         — auto-runs from a useEffect when the drill opens.
+ *   - `chat:generateGeminiTitle`— names a chat session in the background; the
+ *                                 user never sees it run.
+ *
+ * Everything else (Auto Flow, Round Analysis, card cutter, cross-ex questions,
+ * scouting, Impact Calc, Outweigh, Impact Library, flow import, …) renders its
+ * error next to a live retry control and calls the model directly.
+ *
+ * This sits ABOVE `fetchWithRetry`, which already absorbs a single transient
+ * 429/5xx inside one request. See CLAUDE.md's "AI call retries + error
+ * surfacing" rule.
+ */
 async function withDelayedRetry<T>(fn: () => Promise<T>, delaysMs: number[] = [8_000, 30_000, 60_000]): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
@@ -908,14 +932,43 @@ function isTruncatedResponse(e: unknown): boolean {
  * `label` is what the user calls this input ("your speech doc", "the article"),
  * not an internal field name.
  */
-function capForPrompt(text: string, limit: number, label: string): string {
+let nextTruncationAskId = 1;
+const pendingTruncationAsks = new Map<number, (proceed: boolean) => void>();
+
+ipcMain.handle('ai:truncationChoice', (_e, { id, proceed }: { id: number; proceed: boolean }) => {
+  const resolve = pendingTruncationAsks.get(id);
+  if (resolve) { pendingTruncationAsks.delete(id); resolve(!!proceed); }
+  return true;
+});
+
+/**
+ * Thrown when the user declines to send a shortened input. This is a CHOICE, not
+ * a failure: preload matches this opening phrase and suppresses the AI error
+ * toast for it, so the only feedback is the feature's own inline message.
+ */
+const TRUNCATION_DECLINED =
+  'Cancelled — the input was too long to send in full and you chose not to send a shortened version. Nothing was sent to Warroom AI.';
+
+async function capForPrompt(text: string, limit: number, label: string): Promise<string> {
   const s = String(text ?? '');
   if (s.length <= limit) return s;
-  mainWin?.webContents.send('ai:inputTruncated', {
-    label,
-    kept: limit,
-    total: s.length,
+
+  // No window to ask (shouldn't happen — these are all renderer-initiated), so
+  // don't hang forever waiting on an answer nobody can give.
+  if (!mainWin) return s.slice(0, limit);
+
+  const id = nextTruncationAskId++;
+  const proceed = await new Promise<boolean>((resolve) => {
+    pendingTruncationAsks.set(id, resolve);
+    mainWin!.webContents.send('ai:confirmTruncation', { id, label, kept: limit, total: s.length });
+    // If the window goes away mid-question, fail closed rather than silently
+    // spending the call on partial input.
+    mainWin!.once('closed', () => {
+      if (pendingTruncationAsks.delete(id)) resolve(false);
+    });
   });
+
+  if (!proceed) throw new Error(TRUNCATION_DECLINED);
   return s.slice(0, limit);
 }
 
@@ -2526,8 +2579,8 @@ ipcMain.handle('ai:extractCards', async (_e, filePath: string) => {
   checkPath(filePath);
   const text = await extractText(filePath);
   if (!text.trim()) throw new Error('Could not extract text from file');
-  const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: capForPrompt(text, 60000, 'this document') });
-  const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
+  const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: await capForPrompt(text, 60000, 'this document') });
+  const raw = await callAI(prompt, 'balanced');
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
 
@@ -2660,7 +2713,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 
   const skill = (await readSkill('card_cutting')) ?? '';
   const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const numbered = capForPrompt(rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n'), 90000, 'this article');
+  const numbered = await capForPrompt(rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n'), 90000, 'this article');
   const imgList = images.length ? images.map((im, i) => `[${i}] ${im.alt ? 'alt: ' + im.alt : '(no alt text)'}`).join('\n') : '(none)';
 
   const { provider: balancedProvider } = await getProviderForTask('balanced');
@@ -2680,7 +2733,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     IMAGES: imgList,
   });
 
-  const parsed = parseJsonLoose(await withDelayedRetry(() => callGeminiWithSearch(prompt))) || {};
+  const parsed = parseJsonLoose(await callGeminiWithSearch(prompt)) || {};
   const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
     ? parsed.bodyIndices.filter((n: any) => Number.isInteger(n) && n >= 0 && n < rawParagraphs.length)
     : [];
@@ -2718,12 +2771,12 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     CARD_CUTTING_SKILL: skill,
     CITE_NOTE: cite ? ` (cite: ${cite})` : '',
     INTENT_NOTE: intent ? `"${intent}"` : '(not specified — infer the strongest argument)',
-    BODY_TEXT: capForPrompt(text, 40000, 'the card body'),
+    BODY_TEXT: await capForPrompt(text, 40000, 'the card body'),
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
     QUESTIONS_ASKED: String(clar.length),
   });
 
-  const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'best', { maxOutputTokens: 32768 }))) || {};
+  const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
 
   // Ambiguity escape hatch, shared with Auto Flow / Round Analysis (AIQuestion in
   // src/types.ts) — the prompt is instructed to return a `question` field instead
@@ -2770,16 +2823,22 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
   const clar = clarifications ?? [];
   const docList = docs ?? [];
 
+  // Capped per doc AND across all docs together — ten 20k docs would otherwise
+  // blow past what the outer prompt can carry. Hoisted out of the renderPrompt
+  // object literal because each cap may stop to ask the user first.
+  const flowSummaryText = await capForPrompt(summary, 60000, 'your flow');
+  const cappedDocs: string[] = [];
+  for (const d of docList) {
+    cappedDocs.push(`--- ${d.fileName} ---\n${await capForPrompt(String(d.text ?? ''), 20000, d.fileName)}`);
+  }
+  const docsText = docList.length
+    ? await capForPrompt(cappedDocs.join('\n\n'), 100000, 'your uploaded docs')
+    : '(none uploaded)';
+
   const prompt = await renderPrompt('analyze_round', {
     EVENT: event === 'pf' ? 'Public Forum' : 'Policy',
-    FLOW_SUMMARY: capForPrompt(summary, 60000, 'your flow'),
-    // Capped per doc AND across all docs together — ten 20k docs would otherwise
-    // blow past what the outer prompt can carry. Both caps report themselves.
-    DOCS_TEXT: docList.length
-      ? capForPrompt(
-          docList.map((d) => `--- ${d.fileName} ---\n${capForPrompt(String(d.text ?? ''), 20000, d.fileName)}`).join('\n\n'),
-          100000, 'your uploaded docs')
-      : '(none uploaded)',
+    FLOW_SUMMARY: flowSummaryText,
+    DOCS_TEXT: docsText,
     NOTES: notes?.trim() ? notes.trim() : '(none provided)',
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
     QUESTIONS_ASKED: String(clar.length),
@@ -2791,7 +2850,7 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
   // was enough for prose but not for a full round's worth of JSON — a large
   // round would get cut off mid-generation, fail to parse, and land on the
   // generic "did not return an analysis" error below with no clue why.
-  const raw = await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }));
+  const raw = await callAI(prompt, 'balanced', { maxOutputTokens: 32768 });
   const parsed = parseJsonLoose(raw) || {};
 
   if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
@@ -2914,9 +2973,9 @@ ipcMain.handle('ai:teamSummary', async (_e, {
       NEG_SECTION: negSection,
     });
 
-  // No withDelayedRetry: on failure AnalyzeRound.tsx drops the user back on the
-  // setup step with the "Analyze round →" button, so they can retry themselves —
-  // see CLAUDE.md's "AI call retries + error surfacing" rule.
+  // No withDelayedRetry: on failure OpponentProfile.tsx keeps the scout card's
+  // "Regenerate" button on screen next to the error, so the user can retry
+  // themselves — see CLAUDE.md's "AI call retries + error surfacing" rule.
   //
   // The prompt is NOT sliced here. It used to be (`prompt.slice(0, 120000)`) on
   // top of the per-input caps above, which cut the END of the assembled prompt —
@@ -3037,7 +3096,7 @@ ipcMain.handle('ai:suggestBlocks', async (_e, opponentPositions: string, blockLi
     OPPONENT_POSITIONS: opponentPositions,
     BLOCK_LIST: blockList.map(b => `${b.id}: ${b.title}`).join('\n'),
   });
-  const raw = await withDelayedRetry(() => callAI(prompt, 'user'));
+  const raw = await callAI(prompt, 'user');
   const ids = JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
   if (!Array.isArray(ids)) throw new Error('Unexpected AI response');
   return ids.slice(0, 4) as string[];
@@ -3076,7 +3135,7 @@ ipcMain.handle('ai:missionBrief', async (_e, {
       JUDGE_SECTION: judgeSection,
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'user'));
+    const raw = await callAI(prompt, 'user');
     return { ok: true, text: raw };
   } catch (e: any) {
     return { ok: false, error: e.message };
@@ -3207,8 +3266,8 @@ ipcMain.handle('ai:crossExQuestions', async (_e, {
     const { skillName, eventLabel } = cxEventBits(event);
     const skill = (await readSkill(skillName)) ?? '';
 
-    const highlighted = capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
-    const full = capForPrompt(fullText ?? '', 60000, 'this document');
+    const highlighted = await capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
+    const full = await capForPrompt(fullText ?? '', 60000, 'this document');
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
     const skillBlock = skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : '';
@@ -3231,7 +3290,7 @@ ${full}`;
         SIDE_LINE: sideLine,
         SEED: basedOn.slice(0, 500),
       });
-      const questions = cxParseQuestions(await withDelayedRetry(() => callAI(prompt, 'balanced'))).slice(0, 3);
+      const questions = cxParseQuestions(await callAI(prompt, 'balanced')).slice(0, 3);
       if (questions.length === 0) throw new Error('No questions returned — try again.');
       return { ok: true, questions };
     }
@@ -3245,7 +3304,7 @@ ${full}`;
       CX_SIDE_GUIDANCE: await getCxSideGuidance(),
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
+    const raw = await callAI(prompt, 'balanced');
     const parsed = parseAIJson(raw);
 
     let groups: { side: string; questions: CxParsedQuestion[] }[] = [];
@@ -3285,8 +3344,8 @@ ipcMain.handle('ai:crossExTraps', async (_e, {
   try {
     const { skillName, eventLabel } = cxEventBits(event);
     const skill = (await readSkill(skillName)) ?? '';
-    const highlighted = capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
-    const full = capForPrompt(fullText ?? '', 60000, 'this document');
+    const highlighted = await capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
+    const full = await capForPrompt(fullText ?? '', 60000, 'this document');
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
     const prompt = await renderPrompt('cross_ex_traps', {
@@ -3341,7 +3400,7 @@ ipcMain.handle('ai:crossExGradeTrap', async (_e, {
       USER_ANSWER: (userAnswer ?? '').slice(0, 1500),
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'lite'));
+    const raw = await callAI(prompt, 'lite');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     const verdict = ['avoided', 'fell', 'partial'].includes(parsed?.verdict) ? parsed.verdict : 'partial';
@@ -3379,7 +3438,7 @@ ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
       CARD_COUNT: String(list.length),
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
+    const raw = await callAI(prompt, 'balanced');
     const parsed = parseAIJson(raw);
     if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape.');
 
@@ -3430,7 +3489,7 @@ ipcMain.handle('gemini:compareImpacts', async (
       TEXT_B: textB,
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try {
@@ -3464,7 +3523,7 @@ ipcMain.handle('ai:compareImpactsText', async (
       TEXT_B: textB,
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try {
@@ -3537,7 +3596,7 @@ ipcMain.handle('ai:outweighScenario', async (_e, params: {
       TIER_LINE: tierLine,
       CUSTOM_BLOCK: customBlock,
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let scenario: any;
     try { scenario = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3568,7 +3627,7 @@ ipcMain.handle('ai:outweighRebuttal', async (_e, params: {
       USER_IMPACT: userImpact,
       USER_CALC: userCalc,
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const speech = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     return { ok: true, speech };
   } catch (e: any) {
@@ -3603,7 +3662,7 @@ ipcMain.handle('ai:outweighJudge', async (_e, params: {
       REBUTTAL: rebuttal,
       USER_FINAL: userFinal || '(the user did not write a final shot)',
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let result: any;
     try { result = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3629,13 +3688,13 @@ const IMPACT_LIB_EVENT: Record<string, string> = {
 
 ipcMain.handle('ai:impactLibraryDraft', async (_e, params: { source: string; event?: string }) => {
   try {
-    const source = capForPrompt(params?.source ?? '', 60000, 'the source text');
+    const source = await capForPrompt(params?.source ?? '', 60000, 'the source text');
     const eventLine = IMPACT_LIB_EVENT[params?.event ?? 'general'] ?? IMPACT_LIB_EVENT.general;
     const prompt = await renderPrompt('impact_library_draft', {
       EVENT_LINE: eventLine,
       SOURCE: source || '(no source provided — the user only gave an idea; infer a sensible impact)',
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let draft: any;
     try { draft = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3653,7 +3712,7 @@ ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
 }) => {
   try {
     const entry = params?.entry ?? {};
-    const source = capForPrompt(params?.source ?? '', 60000, 'the source text');
+    const source = await capForPrompt(params?.source ?? '', 60000, 'the source text');
     const existing = Array.isArray(params?.existing) ? params!.existing!.slice(0, 60) : [];
     const prompt = await renderPrompt('impact_library_review', {
       DRIFT_CHECK_INSTRUCTION: source
@@ -3663,7 +3722,7 @@ ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
       SOURCE_BLOCK: source ? `\nSOURCE MATERIAL:\n---\n${source}\n---\n` : '',
       EXISTING_ENTRIES: existing.length ? existing.map((x) => `- id=${x.id} | ${x.title}: ${x.claim}`).join('\n') : '(the library is empty)',
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let review: any;
     try { review = JSON.parse(cleaned); } catch { return { ok: false, error: 'parse_failed' }; }
@@ -3687,16 +3746,18 @@ ipcMain.handle('gemini:importFlow', async (
     if (sheetsIn.length === 0) return { ok: false, error: 'no_sheets' };
 
     // Build a size-capped JSON view of each sheet: max 60 data rows + ~12000 chars.
-    const sheetBlocks = sheetsIn.map((s) => {
+    // Sequential, not .map() — each cap may stop to ask the user first.
+    const sheetBlockList: string[] = [];
+    for (const s of sheetsIn) {
       const name = String(s?.name ?? '');
       const grid = Array.isArray(s?.grid) ? s.grid : [];
       const capped = grid.slice(0, 60).map((row) =>
         (Array.isArray(row) ? row : []).map((c) => String(c ?? '')),
       );
-      let json = JSON.stringify(capped);
-      if (json.length > 12000) json = capForPrompt(json, 12000, 'this spreadsheet');
-      return `SHEET "${name}":\n${json}`;
-    }).join('\n\n');
+      const json = await capForPrompt(JSON.stringify(capped), 12000, `the "${name}" sheet`);
+      sheetBlockList.push(`SHEET "${name}":\n${json}`);
+    }
+    const sheetBlocks = sheetBlockList.join('\n\n');
 
     const eventInstruction = input?.event
       ? `The caller's best guess for the event is "${input.event}". Use that event.`
@@ -3707,7 +3768,7 @@ ipcMain.handle('gemini:importFlow', async (
       SHEET_BLOCKS: sheetBlocks,
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best'));
+    const raw = await callAI(prompt, 'best');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     let parsed: any;
     try {
@@ -6971,9 +7032,9 @@ ipcMain.handle('speechdoc:summarizeForAttachment', async (_e, docText: string, f
     const prompt = await renderPrompt('speechdoc_summarize_attachment', {
       CX_SKILL_BLOCK: cxSkill ? `Reference — cross-ex / debate document knowledge:\n${cxSkill}\n\n---\n\n` : '',
       FILE_NAME: fileName,
-      DOC_TEXT: capForPrompt(docText, 400000, 'this document'),
+      DOC_TEXT: await capForPrompt(docText, 400000, 'this document'),
     });
-    const raw = await withDelayedRetry(() => callAI(prompt, 'best', { maxOutputTokens: 32768 }));
+    const raw = await callAI(prompt, 'best', { maxOutputTokens: 32768 });
     return sbOk(raw);
   } catch (e) { return sbErr(e); }
 });

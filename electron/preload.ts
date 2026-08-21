@@ -136,6 +136,18 @@ const api = {
   // at the bottom of this file wraps every `api.ai` method in an async
   // error-toast shim, which would turn this subscribe call's synchronous
   // unsubscribe return value into a Promise and break `const off = …; off()`.
+  // An input is too long to send in full — ask before spending the call on a
+  // shortened version. Own namespace for the same reason as `autoFlow` below:
+  // `onAsk` returns a synchronous unsubscribe function.
+  aiInput: {
+    onTruncationAsk: (cb: (p: { id: number; label: string; kept: number; total: number }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('ai:confirmTruncation', handler);
+      return () => ipcRenderer.removeListener('ai:confirmTruncation', handler);
+    },
+    respondTruncation: (id: number, proceed: boolean) =>
+      ipcRenderer.invoke('ai:truncationChoice', { id, proceed }),
+  },
   autoFlow: {
     onProgress: (cb: (p: {
       phase: 'classifying' | 'summarizing';
@@ -602,22 +614,32 @@ const api = {
 // already has its own error channel (`onGeminiError`) and its tool-call loop
 // can have side effects, so blind retry-and-toast isn't a safe fit there; see
 // CLAUDE.md's "AI call retries" rule for the reasoning.
+// Matches the message `capForPrompt` throws in main.ts when the user declines to
+// send a shortened input. Duplicated rather than imported because preload and
+// main are separate bundles.
+const CANCELLED_PREFIX = 'Cancelled —';
+
 for (const ns of [api.ai, api.gemini] as const) {
   for (const key of Object.keys(ns) as (keyof typeof ns)[]) {
     const original = (ns as any)[key] as (...args: any[]) => Promise<any>;
     (ns as any)[key] = async (...args: any[]) => {
       try {
         const res = await original(...args);
-        if (res && typeof res === 'object' && (res as any).ok === false) {
+        if (res && typeof res === 'object' && (res as any).ok === false
+            && !String((res as any).error ?? '').startsWith(CANCELLED_PREFIX)) {
           window.dispatchEvent(new CustomEvent('warroom:ai-error', {
             detail: { source: String(key), message: (res as any).error || 'Warroom AI ran into a problem.' },
           }));
         }
         return res;
       } catch (e: any) {
-        window.dispatchEvent(new CustomEvent('warroom:ai-error', {
-          detail: { source: String(key), message: e?.message || 'Warroom AI ran into a problem.' },
-        }));
+        // A user-initiated cancel (declining to send a shortened input) is not a
+        // failure — the feature's own inline message is the only feedback wanted.
+        if (!String(e?.message ?? '').startsWith(CANCELLED_PREFIX)) {
+          window.dispatchEvent(new CustomEvent('warroom:ai-error', {
+            detail: { source: String(key), message: e?.message || 'Warroom AI ran into a problem.' },
+          }));
+        }
         throw e;
       }
     };

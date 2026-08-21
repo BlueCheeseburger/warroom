@@ -2757,9 +2757,9 @@ export default function Documentation() {
           </P>
           <H3>AI call retries</H3>
           <P>
-            AI calls you <em>can't</em> retry yourself — ones with no button of their own (card
-            cutting, cross-ex questions, Impact Calc, the Outweigh game, scouting, tab-summary
-            tooltips, and more) — retry automatically before giving up: if a model call fails, it's
+            AI calls you <em>can't</em> retry yourself — the handful with no button of their own
+            (flow-tab summary tooltips, cross-ex trap generation, chat-session naming) — retry
+            automatically before giving up: if a model call fails, it's
             retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong>, then{' '}
             <strong>60 seconds</strong> — 4 attempts total — before the error is surfaced. A small
             toast then appears at the bottom of the screen with the{' '}
@@ -2768,10 +2768,14 @@ export default function Documentation() {
             addition to whatever that feature already shows inline.
           </P>
           <P>
-            Calls that <em>do</em> put a retry in front of you deliberately skip the backoff —{' '}
-            <strong>Auto Flow</strong> and <strong>Round Analysis</strong> both drop you back on
-            their setup step with the run button still there. Waiting ~100 seconds in silence before
-            showing an error you could fix in one click is worse than failing fast.
+            Calls that <em>do</em> put a retry in front of you deliberately skip the backoff. That's
+            almost everything — Auto Flow, Round Analysis, the card cutter, cross-ex, card scoring,
+            scouting, Mission Brief, Impact Calc, the Outweigh game, the Impact Library, flow import
+            — because each one either returns you to the step you launched from or shows its error
+            right next to the button you pressed. Waiting ~100 seconds in silence before showing an
+            error you could fix in one click is worse than failing fast. Only three background jobs
+            you never see still retry quietly: flow-tab summaries, cross-ex trap generation, and
+            naming a chat session.
           </P>
           <P>
             The same reasoning excludes the <strong>Warroom AI chat/agent panel</strong> — a chat
@@ -2787,9 +2791,12 @@ export default function Documentation() {
             smaller batches instead.
           </P>
           <P>
-            And if something you gave Warroom AI is <strong>too long to send in full</strong>, you
-            get an amber warning toast saying exactly how much was sent — for example "Only the first
-            60,000 of 412,000 characters (15%) of your flow were sent to Warroom AI". You'll never
+            And if something you give Warroom AI is <strong>too long to send in full</strong>, you're
+            asked <em>before</em> anything is sent — a dialog says exactly how much would make it
+            ("sending 60,000 of 412,000 characters (15%) of your flow") and lets you{' '}
+            <strong>Cancel</strong> or <strong>Send shortened anyway</strong>. Cancelling means no
+            call is made and nothing is spent. If one action would shorten several things at once,
+            they're listed together in a single dialog rather than asking repeatedly. You'll never
             get a confident answer that was quietly based on a fraction of your document.
           </P>
         </section>
