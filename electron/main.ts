@@ -28,6 +28,9 @@ import {
 } from './updater';
 import { extractFlowCardsFromXml, ExtractedFlowCard } from './docxFlowCards';
 import {
+  FlatFlowCard, flattenDocs, regroupBatch, chunkCards, mergeSheetNames, normalizePlacements,
+} from './autoFlowBatch';
+import {
   LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
   buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
   looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText,
@@ -732,8 +735,10 @@ async function callLMStudio(prompt: string, extraConfig?: { maxOutputTokens?: nu
     maxTokens: extraConfig?.maxOutputTokens ?? 8192,
   }));
   if (!res.ok) throw lmstudioHttpError(res.status, await res.text().catch(() => ''), cfg.baseUrl);
-  const text = readLmStudioText(await res.json());
+  const payload = await res.json();
+  const text = readLmStudioText(payload);
   if (text === null) throw new Error('Unexpected LM Studio response shape (no message content)');
+  if ((payload as any)?.choices?.[0]?.finish_reason === 'length') throw truncatedResponseError('LM Studio', text);
   return text;
 }
 
@@ -860,6 +865,60 @@ async function withDelayedRetry<T>(fn: () => Promise<T>, delaysMs: number[] = [8
   throw lastErr;
 }
 
+/**
+ * A response the provider CUT OFF mid-generation because it hit the output-token
+ * cap. Every provider signals this in its own field (Gemini `finishReason:
+ * MAX_TOKENS`, OpenAI/Grok `finish_reason: 'length'`, Anthropic `stop_reason:
+ * 'max_tokens'`) and then returns the partial text anyway — which reads exactly
+ * like a complete response to a caller that doesn't look. That is how Auto Flow
+ * silently turned a cut-off answer into "didn't propose any placements": the
+ * partial JSON failed to parse, the failure was swallowed, and the handler
+ * reported success with zero results.
+ *
+ * Callers that parse JSON MUST let this propagate rather than treating the
+ * partial text as a bad answer — the fix is a smaller batch, not a retry.
+ * `TRUNCATED:` is the marker `isTruncatedResponse` matches on.
+ */
+function truncatedResponseError(provider: string, partial: string): Error {
+  const chars = (partial ?? '').length;
+  return new Error(
+    `TRUNCATED: ${provider} cut the response off at its output-token limit ` +
+    `(got ${chars.toLocaleString()} characters, ending: “…${(partial ?? '').slice(-80).trim()}”). ` +
+    `The request was too large to answer in one call.`,
+  );
+}
+
+function isTruncatedResponse(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith('TRUNCATED:');
+}
+
+/**
+ * Cap a piece of text before it goes into a prompt — and TELL THE USER when that
+ * actually cut something off.
+ *
+ * Some prompts genuinely can't be batched the way Auto Flow's classify step is
+ * (a card cutter needs one coherent article body; a round analysis needs the
+ * whole flow in one head), so a cap is the honest fallback. What is NOT
+ * acceptable is doing it invisibly: a bare `text.slice(0, 60000)` silently
+ * drops most of a long document and the user gets a confidently wrong answer
+ * with no indication that two-thirds of their evidence was never sent.
+ *
+ * Every cap goes through here so truncation is always reported, once, in one
+ * place — the renderer turns it into a warning toast next to the AI error toast.
+ * `label` is what the user calls this input ("your speech doc", "the article"),
+ * not an internal field name.
+ */
+function capForPrompt(text: string, limit: number, label: string): string {
+  const s = String(text ?? '');
+  if (s.length <= limit) return s;
+  mainWin?.webContents.send('ai:inputTruncated', {
+    label,
+    kept: limit,
+    total: s.length,
+  });
+  return s.slice(0, limit);
+}
+
 // ─── OpenAI ───────────────────────────────────────────────────────────────────
 
 // Every provider's error message here is the EXACT text that provider sent
@@ -881,7 +940,7 @@ function openaiHttpError(status: number, body: string): Error {
   return new Error(`OpenAI request failed (HTTP ${status}) — try again shortly.`);
 }
 
-async function callOpenAI(apiKey: string, prompt: string, modelId: string): Promise<string> {
+async function callOpenAI(apiKey: string, prompt: string, modelId: string, extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -889,13 +948,14 @@ async function callOpenAI(apiKey: string, prompt: string, modelId: string): Prom
       model: modelId,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 8192,
+      max_tokens: extraConfig?.maxOutputTokens ?? 8192,
     }),
   });
   if (!res.ok) throw openaiHttpError(res.status, await res.text().catch(() => ''));
   const data = await res.json() as any;
   const text = data?.choices?.[0]?.message?.content;
   if (typeof text !== 'string') throw new Error('Unexpected OpenAI response shape');
+  if (data?.choices?.[0]?.finish_reason === 'length') throw truncatedResponseError('OpenAI', text);
   return text;
 }
 
@@ -932,7 +992,7 @@ function anthropicHttpError(status: number, body: string): Error {
   return new Error(`Anthropic request failed (HTTP ${status}) — try again shortly.`);
 }
 
-async function callAnthropic(apiKey: string, prompt: string, modelId: string): Promise<string> {
+async function callAnthropic(apiKey: string, prompt: string, modelId: string, extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -943,13 +1003,14 @@ async function callAnthropic(apiKey: string, prompt: string, modelId: string): P
     body: JSON.stringify({
       model: modelId,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 8192,
+      max_tokens: extraConfig?.maxOutputTokens ?? 8192,
     }),
   });
   if (!res.ok) throw anthropicHttpError(res.status, await res.text().catch(() => ''));
   const data = await res.json() as any;
   const text = data?.content?.[0]?.text;
   if (typeof text !== 'string') throw new Error('Unexpected Anthropic response shape');
+  if (data?.stop_reason === 'max_tokens') throw truncatedResponseError('Anthropic', text);
   return text;
 }
 
@@ -967,7 +1028,7 @@ function grokHttpError(status: number, body: string): Error {
   return new Error(`Grok request failed (HTTP ${status}) — try again shortly.`);
 }
 
-async function callGrok(apiKey: string, prompt: string, modelId: string): Promise<string> {
+async function callGrok(apiKey: string, prompt: string, modelId: string, extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const res = await fetchWithRetry('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -975,13 +1036,14 @@ async function callGrok(apiKey: string, prompt: string, modelId: string): Promis
       model: modelId,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 8192,
+      max_tokens: extraConfig?.maxOutputTokens ?? 8192,
     }),
   });
   if (!res.ok) throw grokHttpError(res.status, await res.text().catch(() => ''));
   const data = await res.json() as any;
   const text = data?.choices?.[0]?.message?.content;
   if (typeof text !== 'string') throw new Error('Unexpected Grok response shape');
+  if (data?.choices?.[0]?.finish_reason === 'length') throw truncatedResponseError('Grok', text);
   return text;
 }
 
@@ -991,9 +1053,9 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?
   const { provider, modelId, apiKey } = await getProviderForTask(taskTier);
   if (!apiKey) throw new Error('NO_KEY');
   if (provider === 'lmstudio')  return callLMStudio(prompt, extraConfig);
-  if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId);
-  if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId);
-  if (provider === 'grok')      return callGrok(apiKey, prompt, modelId);
+  if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId, extraConfig);
+  if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId, extraConfig);
+  if (provider === 'grok')      return callGrok(apiKey, prompt, modelId, extraConfig);
   // Gemini
   const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
     method: 'POST',
@@ -1005,8 +1067,18 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?
   });
   if (!res.ok) throw geminiHttpError(res.status, await res.text().catch(() => ''));
   const data = await res.json() as any;
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text !== 'string') throw new Error('Unexpected Gemini response shape');
+  const candidate = data?.candidates?.[0];
+  // Join EVERY text part, not just parts[0] — a long answer can come back split
+  // across several, and taking only the first silently drops the rest (which
+  // reads downstream as a mysteriously truncated response). Mirrors what
+  // callGeminiWithSearch has always done.
+  const parts: any[] = candidate?.content?.parts ?? [];
+  const text = parts.filter((p: any) => typeof p?.text === 'string').map((p: any) => p.text).join('');
+  const finish = candidate?.finishReason;
+  if (typeof text !== 'string' || (!text && !finish)) throw new Error('Unexpected Gemini response shape');
+  if (finish === 'MAX_TOKENS') throw truncatedResponseError('Warroom AI', text);
+  // A blocked/empty candidate is a real failure, not an empty answer — say which.
+  if (!text) throw new Error(`Warroom AI returned no text (finishReason: ${finish}).`);
   return text;
 }
 
@@ -1783,6 +1855,113 @@ ipcMain.handle('speechdoc:extractBlocks', async (_e, filePath: string) => {
 // batch is genuinely ambiguous, capped at one question per whole batch and
 // never once 2+ clarifications are already in hand. See the "Auto Flow" section
 // of DEBATE_DOC_STRUCTURE.md-adjacent docs for what this feature does overall.
+// How many cards to send in one classify call. Deliberately optimistic rather
+// than conservative: a real case packet is hundreds of cards, and a small batch
+// size would mean dozens of slow sequential calls. If a batch turns out to be
+// too big, `classifyBatch` halves it and retries — so this is a starting guess
+// the run self-corrects from, not a limit that has to be right up front.
+const CLASSIFY_BATCH_SIZE = 120;
+
+// Summaries carry the card BODY into the prompt, so a batch is far heavier than
+// a classify batch of the same card count — hence the much smaller number.
+const SUMMARIZE_BATCH_SIZE = 25;
+
+/**
+ * Classify one batch, splitting it in half and retrying if the model couldn't
+ * answer it in one response.
+ *
+ * This is what replaced the old `DOCS_JSON.slice(0, 60000)` truncation. That cut
+ * the prompt mid-object at a fixed CHARACTER count, so on any real packet most
+ * cards were never sent and the JSON the model did see was malformed — and when
+ * the reply came back cut off, `parseJsonLoose(...) || {}` turned it into an
+ * empty placement list that the handler reported as `ok: true`. A 3-minute wait
+ * ending in "Warroom AI didn't propose any placements", with no error anywhere.
+ *
+ * Both halves of that are fixed here: nothing is truncated, and a response that
+ * can't be parsed THROWS (with the provider's own reason and a sample of what
+ * came back) instead of being laundered into a successful empty result.
+ */
+async function classifyBatch(
+  batch: FlatFlowCard[],
+  ctx: {
+    event: 'policy' | 'pf';
+    variant: string;
+    existingColumns: string[];
+    clar: { question: string; answer: string }[];
+    /** Sheet names the flow already had PLUS any earlier batches proposed. */
+    knownSheets: string[];
+    /** Batches after the first may not stop to ask a clarifying question. */
+    allowQuestion: boolean;
+  },
+  onSplit?: (extraBatchesAdded: number) => void,
+): Promise<{ question?: any; placements: any[]; dropped: number }> {
+  const prompt = await renderPrompt('auto_flow_classify', {
+    EVENT: ctx.event,
+    VARIANT: ctx.variant || '',
+    EXISTING_COLUMNS_JSON: JSON.stringify(ctx.existingColumns ?? []),
+    EXISTING_SHEETS_JSON: JSON.stringify(ctx.knownSheets ?? []),
+    DOCS_JSON: JSON.stringify(regroupBatch(batch)),
+    CLARIFICATIONS_JSON: ctx.clar.length ? JSON.stringify(ctx.clar) : '(none yet)',
+    // The prompt only offers the clarifying question when this reads 0. Batches
+    // after the first pass a non-zero count so a mid-run batch can't stop to ask
+    // — by then the user has already answered (or declined) for this run.
+    QUESTIONS_ASKED: String(ctx.allowQuestion ? ctx.clar.length : Math.max(1, ctx.clar.length)),
+  });
+
+  let raw: string;
+  try {
+    // No withDelayedRetry: Auto Flow puts the user back on step 2 with the
+    // "Sort with Warroom AI" button on failure, so they can retry themselves —
+    // see CLAUDE.md's "AI call retries + error surfacing" rule.
+    raw = await callAI(prompt, 'balanced', { maxOutputTokens: 32768 });
+  } catch (e) {
+    // Too big to answer in one response — halve it. One card that still can't be
+    // answered is a genuine failure and propagates.
+    if (isTruncatedResponse(e) && batch.length > 1) {
+      return splitAndClassify(batch, ctx, onSplit);
+    }
+    throw e;
+  }
+
+  const parsed = parseJsonLoose(raw);
+  if (!parsed) {
+    // Unparseable but NOT flagged as truncated — most often a model that trailed
+    // off or wrapped the JSON in prose. Halving usually fixes the former.
+    if (batch.length > 1) return splitAndClassify(batch, ctx, onSplit);
+    throw new Error(
+      `Warroom AI returned something that isn't valid JSON for "${batch[0]?.card?.tag ?? 'this card'}". ` +
+      `First 300 characters: ${JSON.stringify(raw.slice(0, 300))}`,
+    );
+  }
+
+  if (ctx.allowQuestion && parsed?.question?.question && Array.isArray(parsed.question.options)) {
+    return { question: parsed.question, placements: [], dropped: 0 };
+  }
+
+  const rawList = Array.isArray(parsed.placements) ? parsed.placements : [];
+  const placements = normalizePlacements(rawList);
+  return { placements, dropped: rawList.length - placements.length };
+}
+
+async function splitAndClassify(
+  batch: FlatFlowCard[],
+  ctx: Parameters<typeof classifyBatch>[1],
+  onSplit?: (extraBatchesAdded: number) => void,
+): Promise<{ question?: any; placements: any[]; dropped: number }> {
+  const mid = Math.ceil(batch.length / 2);
+  onSplit?.(1); // one batch became two — the caller bumps its own total
+  const first = await classifyBatch(batch.slice(0, mid), ctx, onSplit);
+  if (first.question) return first;
+  // Sheets the first half invented are "existing" as far as the second half is
+  // concerned, so the two halves can't name the same position two different ways.
+  const nextCtx = { ...ctx, knownSheets: mergeSheetNames(ctx.knownSheets, first.placements), allowQuestion: false };
+  const second = await classifyBatch(batch.slice(mid), nextCtx, onSplit);
+  return {
+    placements: [...first.placements, ...second.placements],
+    dropped: first.dropped + second.dropped,
+  };
+}
+
 ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   docs: { fileName: string; cards: ExtractedFlowCard[] }[];
   existingSheetNames: string[];
@@ -1794,44 +1973,56 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   const { docs, existingSheetNames, existingColumns, event, variant, clarifications } = params;
   const clar = clarifications ?? [];
 
-  const prompt = await renderPrompt('auto_flow_classify', {
-    EVENT: event,
-    VARIANT: variant || '',
-    EXISTING_COLUMNS_JSON: JSON.stringify(existingColumns ?? []),
-    EXISTING_SHEETS_JSON: JSON.stringify(existingSheetNames ?? []),
-    DOCS_JSON: JSON.stringify(docs ?? []).slice(0, 60000),
-    CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
-    QUESTIONS_ASKED: String(clar.length),
+  const flat = flattenDocs(docs);
+  if (flat.length === 0) return { ok: true, placements: [], stats: { cardsIn: 0, placed: 0, dropped: 0, batches: 0 } };
+
+  const batches = chunkCards(flat, CLASSIFY_BATCH_SIZE);
+
+  let knownSheets = [...(existingSheetNames ?? [])];
+  const all: any[] = [];
+  let dropped = 0;
+  let cardsDone = 0;
+  // Not `batches.length` — a batch that gets halved adds to the total mid-run,
+  // so the progress denominator has to be able to grow.
+  let totalBatches = batches.length;
+  let batchesDone = 0;
+
+  const emit = () => mainWin?.webContents.send('ai:autoFlowProgress', {
+    phase: 'classifying' as const,
+    batchesDone, totalBatches,
+    cardsDone, cardsTotal: flat.length,
   });
+  emit();
 
-  const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }))) || {};
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const res = await classifyBatch(batch, {
+      event, variant: variant || '',
+      existingColumns: existingColumns ?? [],
+      clar, knownSheets,
+      allowQuestion: i === 0,
+    }, (added) => { totalBatches += added; emit(); });
 
-  if (parsed?.question?.question && Array.isArray(parsed.question.options)) {
-    return { ok: true, question: parsed.question, placements: [] };
+    // A clarifying question aborts the whole run — the renderer re-invokes this
+    // handler from the top once the user answers, so partial work is discarded
+    // rather than stitched onto placements made under a different assumption.
+    if (res.question) return { ok: true, question: res.question, placements: [] };
+
+    all.push(...res.placements);
+    dropped += res.dropped;
+    knownSheets = mergeSheetNames(knownSheets, res.placements);
+    cardsDone += batch.length;
+    batchesDone += 1;
+    emit();
   }
 
-  const placements = (Array.isArray(parsed.placements) ? parsed.placements : [])
-    .filter((p: any) => p && typeof p.tag === 'string' && typeof p.column === 'string' && typeof p.sheetName === 'string')
-    .map((p: any) => ({
-      fileName: String(p.fileName ?? ''),
-      tag: String(p.tag ?? '').trim(),
-      cite: String(p.cite ?? '').trim(),
-      column: String(p.column ?? '').trim(),
-      sheetName: String(p.sheetName ?? '').trim(),
-      isNewSheet: !!p.isNewSheet,
-      // Best-effort hints for the write step's same-row/arrow placement and the
-      // plan-goes-first convention — both optional, both degrade gracefully to
-      // "place normally" if the model left them out or they don't resolve.
-      respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
-      isPlan: !!p.isPlan,
-      // Which family of sheet this card's position belongs to, so the write step
-      // can order tabs — aff advantages first (in 1AC order), then off-case.
-      // 'advantage' = a 1AC aff case position (advantage/contention), 'offcase' =
-      // a neg off-case position (DA/CP/K/T…), null = an existing/structural match.
-      sheetRole: p.sheetRole === 'advantage' || p.sheetRole === 'offcase' ? p.sheetRole : null,
-    }));
-
-  return { ok: true, placements };
+  return {
+    ok: true,
+    placements: all,
+    // Surfaced on the review step so a silent shortfall is visible rather than
+    // looking like the docs simply had fewer cards than they do.
+    stats: { cardsIn: flat.length, placed: all.length, dropped, batches: totalBatches },
+  };
 });
 
 // Opt-in Auto Flow summaries: for each card, an ultra-short AI summary built from
@@ -1876,14 +2067,29 @@ ipcMain.handle('ai:autoFlowSummarize', async (_e, params: {
       maxWords: Math.max(2, Number(c.maxWords) || 2),
     }));
 
-    const prompt = await renderPrompt('auto_flow_summarize', {
-      CARDS_JSON: JSON.stringify(items).slice(0, 100000),
-    });
-    const parsed = parseJsonLoose(await withDelayedRetry(() => callAI(prompt, 'balanced', { maxOutputTokens: 32768 }))) || {};
-    const raw = Array.isArray(parsed.summaries) ? parsed.summaries : [];
+    // Batched for the same reason classify is: this used to send one prompt
+    // truncated at 100k characters and cap the reply at 32k tokens, so on a real
+    // packet most cards were never sent and the answer was cut off. Summaries are
+    // independent per card, so a failed batch only costs THOSE cards their
+    // summary (they fall back to tag+cite) instead of failing the whole run.
     const byTag = new Map<string, string>();
-    for (const s of raw) {
-      if (s && typeof s.tag === 'string' && typeof s.summary === 'string') byTag.set(s.tag.trim().toLowerCase(), s.summary.trim());
+    let summarizeDone = 0;
+    for (let i = 0; i < items.length; i += SUMMARIZE_BATCH_SIZE) {
+      const slice = items.slice(i, i + SUMMARIZE_BATCH_SIZE);
+      try {
+        const prompt = await renderPrompt('auto_flow_summarize', { CARDS_JSON: JSON.stringify(slice) });
+        const parsed = parseJsonLoose(await callAI(prompt, 'balanced', { maxOutputTokens: 32768 }));
+        for (const s of (Array.isArray(parsed?.summaries) ? parsed.summaries : [])) {
+          if (s && typeof s.tag === 'string' && typeof s.summary === 'string') byTag.set(s.tag.trim().toLowerCase(), s.summary.trim());
+        }
+      } catch { /* this batch keeps tag+cite; the rest still get summaries */ }
+      summarizeDone += slice.length;
+      mainWin?.webContents.send('ai:autoFlowProgress', {
+        phase: 'summarizing' as const,
+        batchesDone: Math.ceil(summarizeDone / SUMMARIZE_BATCH_SIZE),
+        totalBatches: Math.ceil(items.length / SUMMARIZE_BATCH_SIZE),
+        cardsDone: summarizeDone, cardsTotal: items.length,
+      });
     }
 
     const summaries = cards.map((c) => {
@@ -2320,7 +2526,7 @@ ipcMain.handle('ai:extractCards', async (_e, filePath: string) => {
   checkPath(filePath);
   const text = await extractText(filePath);
   if (!text.trim()) throw new Error('Could not extract text from file');
-  const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: text.slice(0, 60000) });
+  const prompt = await renderPrompt('card_extraction', { DOCUMENT_TEXT: capForPrompt(text, 60000, 'this document') });
   const raw = await withDelayedRetry(() => callAI(prompt, 'balanced'));
   return JSON.parse(raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim());
 });
@@ -2454,7 +2660,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 
   const skill = (await readSkill('card_cutting')) ?? '';
   const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const numbered = rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n').slice(0, 90000);
+  const numbered = capForPrompt(rawParagraphs.map((p, i) => `[${i}] ${p}`).join('\n'), 90000, 'this article');
   const imgList = images.length ? images.map((im, i) => `[${i}] ${im.alt ? 'alt: ' + im.alt : '(no alt text)'}`).join('\n') : '(none)';
 
   const { provider: balancedProvider } = await getProviderForTask('balanced');
@@ -2512,7 +2718,7 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     CARD_CUTTING_SKILL: skill,
     CITE_NOTE: cite ? ` (cite: ${cite})` : '',
     INTENT_NOTE: intent ? `"${intent}"` : '(not specified — infer the strongest argument)',
-    BODY_TEXT: text.slice(0, 40000),
+    BODY_TEXT: capForPrompt(text, 40000, 'the card body'),
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
     QUESTIONS_ASKED: String(clar.length),
   });
@@ -2566,9 +2772,13 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
 
   const prompt = await renderPrompt('analyze_round', {
     EVENT: event === 'pf' ? 'Public Forum' : 'Policy',
-    FLOW_SUMMARY: summary.slice(0, 60000),
+    FLOW_SUMMARY: capForPrompt(summary, 60000, 'your flow'),
+    // Capped per doc AND across all docs together — ten 20k docs would otherwise
+    // blow past what the outer prompt can carry. Both caps report themselves.
     DOCS_TEXT: docList.length
-      ? docList.map((d) => `--- ${d.fileName} ---\n${String(d.text ?? '').slice(0, 20000)}`).join('\n\n')
+      ? capForPrompt(
+          docList.map((d) => `--- ${d.fileName} ---\n${capForPrompt(String(d.text ?? ''), 20000, d.fileName)}`).join('\n\n'),
+          100000, 'your uploaded docs')
       : '(none uploaded)',
     NOTES: notes?.trim() ? notes.trim() : '(none provided)',
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
@@ -2704,7 +2914,17 @@ ipcMain.handle('ai:teamSummary', async (_e, {
       NEG_SECTION: negSection,
     });
 
-    const raw = await withDelayedRetry(() => callAI(prompt.slice(0, 120000), 'balanced'));
+  // No withDelayedRetry: on failure AnalyzeRound.tsx drops the user back on the
+  // setup step with the "Analyze round →" button, so they can retry themselves —
+  // see CLAUDE.md's "AI call retries + error surfacing" rule.
+  //
+  // The prompt is NOT sliced here. It used to be (`prompt.slice(0, 120000)`) on
+  // top of the per-input caps above, which cut the END of the assembled prompt —
+  // i.e. the instructions and the required output format, not the evidence. Every
+  // input that can actually run long is bounded and reported by capForPrompt
+  // before it gets here; if the total still exceeds the model's context window,
+  // the provider says so in a 400 and that message is shown verbatim.
+  const raw = await callAI(prompt, 'balanced');
     const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/m, '').trim();
     const parsed = JSON.parse(cleaned);
     if (typeof parsed.aff !== 'string' || typeof parsed.neg !== 'string') {
@@ -2987,8 +3207,8 @@ ipcMain.handle('ai:crossExQuestions', async (_e, {
     const { skillName, eventLabel } = cxEventBits(event);
     const skill = (await readSkill(skillName)) ?? '';
 
-    const highlighted = (highlightedText ?? '').slice(0, 40000);
-    const full = (fullText ?? '').slice(0, 60000);
+    const highlighted = capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
+    const full = capForPrompt(fullText ?? '', 60000, 'this document');
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
     const skillBlock = skill ? `Event guide:\n${skill.slice(0, 8000)}\n\n---\n\n` : '';
@@ -3065,8 +3285,8 @@ ipcMain.handle('ai:crossExTraps', async (_e, {
   try {
     const { skillName, eventLabel } = cxEventBits(event);
     const skill = (await readSkill(skillName)) ?? '';
-    const highlighted = (highlightedText ?? '').slice(0, 40000);
-    const full = (fullText ?? '').slice(0, 60000);
+    const highlighted = capForPrompt(highlightedText ?? '', 40000, 'the highlighted text');
+    const full = capForPrompt(fullText ?? '', 60000, 'this document');
     if (!highlighted.trim()) throw new Error('The document has no highlighted text to question.');
 
     const prompt = await renderPrompt('cross_ex_traps', {
@@ -3409,7 +3629,7 @@ const IMPACT_LIB_EVENT: Record<string, string> = {
 
 ipcMain.handle('ai:impactLibraryDraft', async (_e, params: { source: string; event?: string }) => {
   try {
-    const source = (params?.source ?? '').slice(0, 60000);
+    const source = capForPrompt(params?.source ?? '', 60000, 'the source text');
     const eventLine = IMPACT_LIB_EVENT[params?.event ?? 'general'] ?? IMPACT_LIB_EVENT.general;
     const prompt = await renderPrompt('impact_library_draft', {
       EVENT_LINE: eventLine,
@@ -3433,7 +3653,7 @@ ipcMain.handle('ai:impactLibraryReview', async (_e, params: {
 }) => {
   try {
     const entry = params?.entry ?? {};
-    const source = (params?.source ?? '').slice(0, 60000);
+    const source = capForPrompt(params?.source ?? '', 60000, 'the source text');
     const existing = Array.isArray(params?.existing) ? params!.existing!.slice(0, 60) : [];
     const prompt = await renderPrompt('impact_library_review', {
       DRIFT_CHECK_INSTRUCTION: source
@@ -3474,7 +3694,7 @@ ipcMain.handle('gemini:importFlow', async (
         (Array.isArray(row) ? row : []).map((c) => String(c ?? '')),
       );
       let json = JSON.stringify(capped);
-      if (json.length > 12000) json = json.slice(0, 12000);
+      if (json.length > 12000) json = capForPrompt(json, 12000, 'this spreadsheet');
       return `SHEET "${name}":\n${json}`;
     }).join('\n\n');
 
@@ -6751,7 +6971,7 @@ ipcMain.handle('speechdoc:summarizeForAttachment', async (_e, docText: string, f
     const prompt = await renderPrompt('speechdoc_summarize_attachment', {
       CX_SKILL_BLOCK: cxSkill ? `Reference — cross-ex / debate document knowledge:\n${cxSkill}\n\n---\n\n` : '',
       FILE_NAME: fileName,
-      DOC_TEXT: docText.slice(0, 400000),
+      DOC_TEXT: capForPrompt(docText, 400000, 'this document'),
     });
     const raw = await withDelayedRetry(() => callAI(prompt, 'best', { maxOutputTokens: 32768 }));
     return sbOk(raw);

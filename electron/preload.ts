@@ -132,6 +132,21 @@ const api = {
     impactLibraryReview: (params: { entry: any; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
       ipcRenderer.invoke('ai:impactLibraryReview', params),
   },
+  // Auto Flow batch progress. Its own namespace, NOT part of `api.ai`: the loop
+  // at the bottom of this file wraps every `api.ai` method in an async
+  // error-toast shim, which would turn this subscribe call's synchronous
+  // unsubscribe return value into a Promise and break `const off = …; off()`.
+  autoFlow: {
+    onProgress: (cb: (p: {
+      phase: 'classifying' | 'summarizing';
+      batchesDone: number; totalBatches: number;
+      cardsDone: number; cardsTotal: number;
+    }) => void) => {
+      const handler = (_e: any, p: any) => cb(p);
+      ipcRenderer.on('ai:autoFlowProgress', handler);
+      return () => ipcRenderer.removeListener('ai:autoFlowProgress', handler);
+    },
+  },
   // Local LM Studio server probes, used by the Settings screen. Deliberately its
   // own namespace and NOT part of `api.ai` — the loop at the bottom of this file
   // turns every `api.ai` method into a retry-and-toast call, which is wrong for a
@@ -564,10 +579,14 @@ const api = {
   },
 };
 
-// Every `ai:*`/`gemini:*` handler in electron/main.ts now retries its own model
-// call (see `withDelayedRetry` there: 8s, then 30s, then 60s — 4 attempts
-// total) before finally giving up, so by the time a call here actually fails,
-// it's a real, retried-out failure worth surfacing. Wrap every method on
+// Most `ai:*`/`gemini:*` handlers in electron/main.ts retry their own model call
+// (see `withDelayedRetry` there: 8s, then 30s, then 60s — 4 attempts total)
+// before giving up. The ones the user can retry themselves from the UI —
+// Auto Flow's classify/summarize, which drop the user back on step 2 with the
+// "Sort with Warroom AI" button — deliberately do NOT, so a failure surfaces in
+// seconds rather than after ~100s of invisible backoff (CLAUDE.md's "AI call
+// retries + error surfacing" rule). Either way, a call that fails here is a real
+// failure worth surfacing. Wrap every method on
 // `api.ai` and `api.gemini` once, centrally, instead of adding error-toast
 // boilerplate to every one of the ~20+ call sites across the renderer: on a
 // thrown error OR a resolved `{ ok: false, error }`, dispatch a plain DOM
@@ -604,6 +623,15 @@ for (const ns of [api.ai, api.gemini] as const) {
     };
   }
 }
+
+// An input the main process had to cut down before sending it to the model.
+// Forwarded as a DOM event so `AiErrorToast.tsx` can show it the same way it
+// shows AI errors, with no per-feature wiring — see `capForPrompt` in main.ts.
+// This is a warning, not a failure: the call still ran, just on less than the
+// user gave it, and they need to know that before trusting the answer.
+ipcRenderer.on('ai:inputTruncated', (_e, p: { label: string; kept: number; total: number }) => {
+  window.dispatchEvent(new CustomEvent('warroom:ai-warning', { detail: p }));
+});
 
 contextBridge.exposeInMainWorld('warroom', api);
 export type WarroomApi = typeof api;

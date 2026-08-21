@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/19/26
+          Last updated: 8/20/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -2757,22 +2757,40 @@ export default function Documentation() {
           </P>
           <H3>AI call retries</H3>
           <P>
-            Background AI calls — ones fired off with no retry button of the user's own (card
-            cutting, Auto Flow, Round Analysis, cross-ex questions, Impact Calc, the Outweigh game,
-            scouting, and more) — retry automatically before giving up: if a model call fails, it's
-            retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong> if that also
-            fails, then <strong>60 seconds</strong> for a last try — 4 attempts total — before the
-            error is finally surfaced. If all four attempts fail, a small toast appears at the bottom
-            of the screen with the <strong>exact error the AI provider returned</strong> — not a
-            simplified summary — so you can see precisely what happened (a rate limit, a rejected
-            key, an overloaded server, etc.), in addition to whatever that feature already shows
-            inline.
+            AI calls you <em>can't</em> retry yourself — ones with no button of their own (card
+            cutting, cross-ex questions, Impact Calc, the Outweigh game, scouting, tab-summary
+            tooltips, and more) — retry automatically before giving up: if a model call fails, it's
+            retried after <strong>8 seconds</strong>, then <strong>30 seconds</strong>, then{' '}
+            <strong>60 seconds</strong> — 4 attempts total — before the error is surfaced. A small
+            toast then appears at the bottom of the screen with the{' '}
+            <strong>exact error the AI provider returned</strong> — not a simplified summary — so you
+            can see precisely what happened (a rate limit, a rejected key, an overloaded server), in
+            addition to whatever that feature already shows inline.
           </P>
           <P>
-            This deliberately does <strong>not</strong> apply to the <strong>Warroom AI chat/agent
-            panel</strong> — a chat turn can trigger real actions (saving a card, opening a panel),
-            and the user already has an obvious retry of their own (resend the message), so it isn't
-            blindly retried the same way.
+            Calls that <em>do</em> put a retry in front of you deliberately skip the backoff —{' '}
+            <strong>Auto Flow</strong> and <strong>Round Analysis</strong> both drop you back on
+            their setup step with the run button still there. Waiting ~100 seconds in silence before
+            showing an error you could fix in one click is worse than failing fast.
+          </P>
+          <P>
+            The same reasoning excludes the <strong>Warroom AI chat/agent panel</strong> — a chat
+            turn can trigger real actions (saving a card, opening a panel), and resending the message
+            is an obvious retry of your own, so it isn't blindly retried either.
+          </P>
+          <H3>Nothing is truncated silently</H3>
+          <P>
+            Two things used to be cut off invisibly. If the AI's <strong>answer</strong> ran past its
+            length limit, the partial reply looked identical to a complete one — so a request too big
+            to answer could end in an empty result with no error at all. That's now detected and
+            reported, and where the work can be split (Auto Flow) it's automatically retried in
+            smaller batches instead.
+          </P>
+          <P>
+            And if something you gave Warroom AI is <strong>too long to send in full</strong>, you
+            get an amber warning toast saying exactly how much was sent — for example "Only the first
+            60,000 of 412,000 characters (15%) of your flow were sent to Warroom AI". You'll never
+            get a confident answer that was quietly based on a fraction of your document.
           </P>
         </section>
 

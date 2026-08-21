@@ -27,6 +27,12 @@ interface AiToast {
   source: string;
   message: string;
   count: number;
+  /**
+   * 'warning' = the call SUCCEEDED but on less input than the user supplied
+   * (see `capForPrompt` in main.ts). Worth telling them before they trust the
+   * answer, but it isn't a failure, so it reads differently from an error.
+   */
+  kind: 'error' | 'warning';
 }
 
 const MAX_TOASTS = 2;
@@ -70,10 +76,32 @@ export default function AiErrorToast() {
       }
       const id = nextId++;
       arm(id);
-      setToasts((prev) => [...prev, { id, source, message, count: 1 }].slice(-MAX_TOASTS));
+      setToasts((prev) => [...prev, { id, source, message, count: 1, kind: 'error' as const }].slice(-MAX_TOASTS));
     }
+
+    // Input had to be cut down to fit — the answer is real but partial.
+    function onAiWarning(e: Event) {
+      const d = (e as CustomEvent).detail as { label?: string; kept?: number; total?: number } | undefined;
+      const total = d?.total ?? 0;
+      const kept = d?.kept ?? 0;
+      const pct = total > 0 ? Math.round((kept / total) * 100) : 0;
+      const message =
+        `Only the first ${kept.toLocaleString()} of ${total.toLocaleString()} characters ` +
+        `(${pct}%) of ${d?.label || 'your input'} were sent to Warroom AI — it was too long to send in full, ` +
+        `so this answer is based on part of it.`;
+      const dup = shown.current.find((t) => t.message === message);
+      if (dup) { arm(dup.id); return; }
+      const id = nextId++;
+      arm(id);
+      setToasts((prev) => [...prev, { id, source: 'Input shortened', message, count: 1, kind: 'warning' as const }].slice(-MAX_TOASTS));
+    }
+
     window.addEventListener('warroom:ai-error', onAiError);
-    return () => window.removeEventListener('warroom:ai-error', onAiError);
+    window.addEventListener('warroom:ai-warning', onAiWarning);
+    return () => {
+      window.removeEventListener('warroom:ai-error', onAiError);
+      window.removeEventListener('warroom:ai-warning', onAiWarning);
+    };
   }, []);
 
   useEffect(() => { shown.current = toasts; }, [toasts]);
@@ -121,7 +149,8 @@ export default function AiErrorToast() {
             style={{
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border-med)',
-              borderLeft: '2px solid var(--danger, #e5484d)',
+              // Amber for "ran, but on partial input"; red for an outright failure.
+              borderLeft: `2px solid ${t.kind === 'warning' ? 'rgb(var(--warn-rgb))' : 'var(--danger, #e5484d)'}`,
               borderRadius: 8,
               padding: '6px 8px 6px 10px',
               maxWidth: isOpen ? 420 : 340,
@@ -135,7 +164,7 @@ export default function AiErrorToast() {
           >
             <span
               onClick={() => setExpanded(isOpen ? null : t.id)}
-              title={isOpen ? 'Show less' : 'Show the full error'}
+              title={isOpen ? 'Show less' : t.kind === 'warning' ? 'Show what was cut' : 'Show the full error'}
               style={{
                 flex: 1, cursor: 'pointer',
                 ...(isOpen

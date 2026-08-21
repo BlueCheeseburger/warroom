@@ -419,6 +419,19 @@ declare global {
         impactLibraryReview: (params: { entry: ImpactLibraryDraft; source?: string; existing?: { id: string; title: string; claim: string }[] }) =>
           Promise<{ ok: true; review: ImpactLibraryReview } | { ok: false; error: string }>;
       };
+      autoFlow: {
+        /**
+         * Per-batch progress while Auto Flow sorts (and optionally summarizes)
+         * cards. Returns its own unsubscribe function — deliberately outside the
+         * `ai` namespace so preload's error-toast wrapper doesn't turn that
+         * return value into a Promise. See electron/preload.ts.
+         */
+        onProgress: (cb: (p: {
+          phase: 'classifying' | 'summarizing';
+          batchesDone: number; totalBatches: number;
+          cardsDone: number; cardsTotal: number;
+        }) => void) => () => void;
+      };
       lmstudio: {
         /** Models LM Studio currently has available. `baseUrl` probes an unsaved URL. */
         listModels: (baseUrl?: string) =>

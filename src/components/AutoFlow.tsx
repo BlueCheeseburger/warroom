@@ -3,6 +3,7 @@ import { useApp, FlowMeta } from '../store/appStore';
 import { AIQuestion, AIClarification, ExtractedFlowCard } from '../types';
 import AIQuestionPrompt from './AIQuestionPrompt';
 import { LoadingState } from './Spinner';
+import ProgressBar from './ProgressBar';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { escapeHtml } from '../lib/cellHtml';
 import { useDragActive } from '../hooks/useDragActive';
@@ -106,6 +107,23 @@ interface ClassifyCtx {
   variantLabel: string;
 }
 
+interface AutoFlowProgress {
+  phase: 'classifying' | 'summarizing';
+  batchesDone: number;
+  totalBatches: number;
+  cardsDone: number;
+  cardsTotal: number;
+}
+
+/** Returned by ai:autoFlowClassify — see the handler's `stats` field. */
+interface ClassifyStats {
+  cardsIn: number;
+  placed: number;
+  /** Placement objects the AI returned that were missing tag/column/sheetName. */
+  dropped: number;
+  batches: number;
+}
+
 interface SkippedPlacement {
   tag: string;
   sheetName: string;
@@ -175,8 +193,20 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const [answering, setAnswering] = useState(false);
   const [targetCtx, setTargetCtx] = useState<TargetCtx | null>(null);
 
+  // Batch progress, pushed from the main process as each classify/summarize
+  // batch lands — so a long run shows real movement instead of a blank spinner.
+  const [progress, setProgress] = useState<AutoFlowProgress | null>(null);
+  useEffect(() => {
+    const off = window.warroom.autoFlow?.onProgress?.((p) => setProgress(p));
+    return () => off?.();
+  }, []);
+
   // Review
   const [placements, setPlacements] = useState<Placement[]>([]);
+  // How many cards went in vs. how many placements came back — shown on the
+  // review step so a shortfall is visible instead of silently looking like the
+  // docs just had fewer cards.
+  const [classifyStats, setClassifyStats] = useState<ClassifyStats | null>(null);
 
   // Writing / done
   const [writeSummary, setWriteSummary] = useState<{ written: number; skipped: SkippedPlacement[] } | null>(null);
@@ -242,6 +272,8 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     setClarifications(clars);
     setStep('classifying');
     setError('');
+    setProgress(null);
+    setClassifyStats(null);
     try {
       const res = await (window.warroom as any).ai.autoFlowClassify({
         docs: ctx.docs,
@@ -253,6 +285,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       });
       if (!res?.ok) throw new Error(res?.error || 'Could not sort these cards.');
       if (res.question) { setPendingQuestion(res.question); return; }
+      if (res.stats) setClassifyStats(res.stats as ClassifyStats);
       let list: Placement[] = (res.placements || []).map((p: any) => ({
         id: crypto.randomUUID(),
         fileName: p.fileName,
@@ -295,6 +328,8 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     } catch (e: any) {
       setError(humanizeGeminiError(e?.message) || e?.message || 'Warroom AI could not sort these cards.');
       setStep('target');
+    } finally {
+      setProgress(null);
     }
   }
 
@@ -826,6 +861,18 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                 'Matching pockets to columns…',
                 'Matching hats and blocks to sheets…',
               ]} />
+              {progress && progress.cardsTotal > 0 && (
+                <div className="mt-6 mx-auto max-w-sm space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-ink/55">
+                    <span>
+                      {progress.phase === 'summarizing' ? 'Summarizing' : 'Sorting'} batch{' '}
+                      {Math.min(progress.batchesDone + 1, progress.totalBatches)} of {progress.totalBatches}
+                    </span>
+                    <span>{progress.cardsDone.toLocaleString()} / {progress.cardsTotal.toLocaleString()} cards</span>
+                  </div>
+                  <ProgressBar pct={(progress.cardsDone / progress.cardsTotal) * 100} />
+                </div>
+              )}
             </div>
           )}
 
@@ -835,6 +882,21 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
               <p className="text-xs text-ink/50">
                 Review where each card will land. Uncheck any you don't want, then confirm.
               </p>
+              {classifyStats && (
+                <p className="text-[11px] text-ink/45">
+                  {classifyStats.placed.toLocaleString()} of {classifyStats.cardsIn.toLocaleString()} cards sorted
+                  {classifyStats.batches > 1 ? ` across ${classifyStats.batches} batches` : ''}
+                  {classifyStats.dropped > 0 && (
+                    <span className="text-danger"> · {classifyStats.dropped} returned incomplete and were dropped</span>
+                  )}
+                  {classifyStats.placed < classifyStats.cardsIn - classifyStats.dropped && (
+                    <span className="text-danger">
+                      {' '}· {(classifyStats.cardsIn - classifyStats.dropped - classifyStats.placed).toLocaleString()} didn't come back —
+                      cancel and sort again to retry them
+                    </span>
+                  )}
+                </p>
+              )}
               {groupBySheet(placements).map(([sheetName, isNewSheet, items]) => (
                 <div key={sheetName} className="rounded-sm border border-line">
                   <div className="px-3 py-1.5 flex items-center gap-2 border-b border-line" style={{ background: 'var(--bg-elevated)' }}>
@@ -871,7 +933,16 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                 </div>
               ))}
               {placements.length === 0 && (
-                <p className="text-sm text-ink/50 py-6 text-center">Warroom AI didn't propose any placements.</p>
+                <div className="py-8 text-center space-y-3">
+                  <p className="text-sm text-ink/60">Warroom AI didn't place any of these cards.</p>
+                  <p className="text-xs text-ink/45 max-w-md mx-auto">
+                    Every card came back unusable — usually a one-off model hiccup rather than
+                    anything wrong with your docs. Sorting again normally fixes it.
+                  </p>
+                  <button className="ai-glow-ring btn-primary text-sm" onClick={() => setStep('target')}>
+                    Back to sort again
+                  </button>
+                </div>
               )}
             </div>
           )}

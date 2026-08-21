@@ -391,6 +391,10 @@ Turn a stack of speech docs into a flow automatically — Warroom AI reads the t
 - **The plan goes first.** For policy, the plan text always lands in the very first cell of the first sheet.
 - If a column is completely full, a card is skipped and listed at the end instead of silently vanishing.
 
+**Big files are fine.** A full case packet (a real 1AC can carry 700+ cards) is sorted in batches rather than one huge request, with a progress bar showing which batch it's on and how many cards are done. If a batch turns out to be too big for Warroom AI to answer in one go, it's automatically split in half and retried — you don't have to do anything. Later batches are told which tabs earlier ones created, so the same position can't end up as two differently-named tabs.
+
+**You're told when something doesn't make it.** The review step shows "N of M cards sorted", plus a count of anything that came back incomplete. If Warroom AI fails outright you get the exact error it returned and land back on step 2 with the sort button, so you can just try again — there's no long invisible wait before the error appears. And if any input was too long to send in full, a warning toast tells you exactly how much was sent, so you never get a confident answer that was secretly based on part of your document.
+
 **Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
 
 ---
