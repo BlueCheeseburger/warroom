@@ -735,6 +735,22 @@ export default function Settings() {
   // electron/main.ts's cutter_read_source prompt), not localStorage, for the
   // same reason as the notify categories above. Default 'month-day' matches
   // the card_cutting skill's long-standing built-in convention.
+  // Long inputs — what happens when something is too big for one prompt.
+  // Master switch off by default: the safe behavior (cap and ask) is what the
+  // user already agreed to, so going past the limit is opt-in.
+  const [longInputAllowed, setLongInputAllowedState] = useState(false);
+  const [longInputMethod, setLongInputMethodState] = useState<'sample' | 'passes'>('sample');
+  async function saveLongInput(next: { allowed?: boolean; method?: 'sample' | 'passes' }) {
+    if (next.allowed !== undefined) setLongInputAllowedState(next.allowed);
+    if (next.method !== undefined) setLongInputMethodState(next.method);
+    const cur = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', {
+      ...cur,
+      longInputAllowed: next.allowed !== undefined ? next.allowed : longInputAllowed,
+      longInputMethod: next.method !== undefined ? next.method : longInputMethod,
+    });
+  }
+
   const [citeYearFormat, setCiteYearFormatState] = useState<'month-day' | 'year'>('month-day');
   async function setCiteYearFormat(val: 'month-day' | 'year') {
     setCiteYearFormatState(val);
@@ -1046,6 +1062,8 @@ export default function Settings() {
         notifyOpponents: (s as any)?.notifyOpponents !== false,
       });
       setCiteYearFormatState((s as any)?.citeYearFormat === 'year' ? 'year' : 'month-day');
+      setLongInputAllowedState((s as any)?.longInputAllowed === true);
+      setLongInputMethodState((s as any)?.longInputMethod === 'passes' ? 'passes' : 'sample');
       setAutoUpdateCheckState((s as any)?.autoUpdateCheck !== false);
       setDictationUseOfflineState(!!(s as any)?.dictationUseOffline);
       const keys: Record<string, string> = { gemini: k ?? '', openai: oai ?? '', anthropic: ant ?? '', grok: grok ?? '' };
@@ -2729,6 +2747,95 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {/* Long inputs — the three controls: one master switch, then which method. */}
+      {loaded && (
+        <div id="settings-long-input" className="glass-card rounded-sm p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Work past the length limit</div>
+              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                Warroom AI can only read so much at once. <strong>Off</strong> (default): anything over the
+                limit is trimmed and you're asked first — whatever fits is sent in full, the rest isn't sent
+                at all. <strong>On</strong>: it handles the extra using the method below instead of dropping it.
+              </p>
+            </div>
+            <button
+              title={longInputAllowed ? 'Turn off' : 'Turn on'}
+              onClick={() => saveLongInput({ allowed: !longInputAllowed })}
+              className="ml-4 shrink-0 w-9 h-5 rounded-full relative transition-colors duration-200"
+              style={{ background: longInputAllowed ? '#4285F4' : 'var(--border-med)', border: 'none', cursor: 'pointer' }}
+            >
+              <span
+                className="absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                style={{ transform: longInputAllowed ? 'translateX(18px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </div>
+
+          {longInputAllowed && (
+            <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+              <p className="text-[11px] mb-2.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                <strong>The trade-off:</strong> neither option gives you everything. One reads your real flow
+                but not all of it; the other covers all of it but reads its own notes at the end. Pick which
+                loss you'd rather take.
+              </p>
+              <div className="space-y-2">
+                {([
+                  {
+                    id: 'sample' as const,
+                    title: 'Even sampling',
+                    short: 'Real text, less of it.',
+                    body: 'Takes a fair share from every sheet instead of everything from the first few, and tells Warroom AI how many cards it is not seeing on each one. What it reads is your actual flow, word for word — but it never sees the whole round, so a link between two trimmed cards is invisible.',
+                  },
+                  {
+                    id: 'passes' as const,
+                    title: 'Read everything in passes',
+                    short: 'Everything covered, in less detail.',
+                    body: 'Reads the round in several passes, then writes the analysis from those readings. Nothing is skipped — but the final answer works from its own notes rather than your flow, so fine detail ("they conceded this exact warrant") can get smoothed away. Costs several API calls instead of one.',
+                  },
+                ]).map((opt) => {
+                  const active = longInputMethod === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      title={opt.title}
+                      onClick={() => saveLongInput({ method: opt.id })}
+                      className="w-full text-left rounded-sm p-3 transition"
+                      style={{
+                        background: active ? 'var(--nav-active-bg)' : 'transparent',
+                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="shrink-0 rounded-full"
+                          style={{
+                            width: 11, height: 11,
+                            border: `2px solid ${active ? 'var(--accent)' : 'var(--border-med)'}`,
+                            background: active ? 'var(--accent)' : 'transparent',
+                            boxShadow: active ? 'inset 0 0 0 2px var(--bg-elevated)' : 'none',
+                          }}
+                        />
+                        <span className="text-xs font-medium" style={{ color: 'var(--ink)' }}>{opt.title}</span>
+                        <span className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>— {opt.short}</span>
+                      </div>
+                      <p className="text-[11px] mt-1.5 leading-relaxed pl-[19px]" style={{ color: 'var(--nav-inactive-color)' }}>
+                        {opt.body}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] mt-2.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
+                Either way, if something is bigger than Warroom AI can physically read, it's refused outright
+                and nothing is sent — you'll be told how far over it was.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* OpenCaselist */}
       <div id="settings-opencaselist" className="glass-card rounded-sm p-4 space-y-3 mb-4">

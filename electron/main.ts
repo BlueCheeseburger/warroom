@@ -31,6 +31,10 @@ import {
   FlatFlowCard, flattenDocs, regroupBatch, chunkCards, mergeSheetNames, normalizePlacements,
 } from './autoFlowBatch';
 import {
+  LongInputMethod, splitFlowSummaryIntoSheets, sampleSections, buildCoverageNote,
+  chunkSections, overContextLimit,
+} from './longInput';
+import {
   LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
   buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
   looksLikeToolUnsupported, parseLmStudioModels, readLmStudioText,
@@ -932,6 +936,22 @@ function isTruncatedResponse(e: unknown): boolean {
  * `label` is what the user calls this input ("your speech doc", "the article"),
  * not an internal field name.
  */
+/**
+ * Settings → Warroom AI behavior → long inputs.
+ *
+ * `allowed` off (the default) means "never go past the length limit": the input
+ * is capped and the user is asked first. On, `method` picks HOW the extra is
+ * handled — see LONG_INPUT_DILEMMA in electron/longInput.ts, which is the same
+ * explanation the Settings screen shows.
+ */
+async function readLongInputPrefs(): Promise<{ allowed: boolean; method: LongInputMethod }> {
+  const s = await readJson('app_settings').catch(() => null) as any;
+  return {
+    allowed: s?.longInputAllowed === true,
+    method: s?.longInputMethod === 'passes' ? 'passes' : 'sample',
+  };
+}
+
 let nextTruncationAskId = 1;
 const pendingTruncationAsks = new Map<number, (proceed: boolean) => void>();
 
@@ -1105,6 +1125,11 @@ async function callGrok(apiKey: string, prompt: string, modelId: string, extraCo
 async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask(taskTier);
   if (!apiKey) throw new Error('NO_KEY');
+  // Hard stop BEFORE the request. The provider would reject this anyway with a
+  // raw 400; refusing here means the user hears it in their own terms, with the
+  // real numbers and what to do about it, and no tokens are spent.
+  const overLimit = overContextLimit(prompt, modelId);
+  if (overLimit) throw new Error(overLimit);
   if (provider === 'lmstudio')  return callLMStudio(prompt, extraConfig);
   if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId, extraConfig);
   if (provider === 'anthropic') return callAnthropic(apiKey, prompt, modelId, extraConfig);
@@ -2823,10 +2848,12 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
   const clar = clarifications ?? [];
   const docList = docs ?? [];
 
-  // Capped per doc AND across all docs together — ten 20k docs would otherwise
-  // blow past what the outer prompt can carry. Hoisted out of the renderPrompt
-  // object literal because each cap may stop to ask the user first.
-  const flowSummaryText = await capForPrompt(summary, 60000, 'your flow');
+  const FLOW_BUDGET = 60_000;
+  const eventLabel = event === 'pf' ? 'Public Forum' : 'Policy';
+  const notesText = notes?.trim() ? notes.trim() : '(none provided)';
+
+  // Docs are capped the same way regardless of method — they're supplementary
+  // context, not the round itself.
   const cappedDocs: string[] = [];
   for (const d of docList) {
     cappedDocs.push(`--- ${d.fileName} ---\n${await capForPrompt(String(d.text ?? ''), 20000, d.fileName)}`);
@@ -2835,11 +2862,62 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     ? await capForPrompt(cappedDocs.join('\n\n'), 100000, 'your uploaded docs')
     : '(none uploaded)';
 
+  const { allowed: overLimitAllowed, method } = await readLongInputPrefs();
+  const sheets = splitFlowSummaryIntoSheets(summary);
+  const tooBig = summary.length > FLOW_BUDGET;
+
+  let flowSummaryText: string;
+  let coverageNote: string;
+  let inputKind: string;
+
+  if (!tooBig) {
+    flowSummaryText = summary;
+    coverageNote = buildCoverageNote(sheets.map((s) => ({ label: s.label, kept: s.items, total: s.items })));
+    inputKind = 'The debater\'s own flow, in full.';
+  } else if (!overLimitAllowed) {
+    // "Work past the length limit" is off — cap and ask, as before. The model is
+    // still told what it's missing, which the old silent slice never did.
+    flowSummaryText = await capForPrompt(summary, FLOW_BUDGET, 'your flow');
+    const shown = splitFlowSummaryIntoSheets(flowSummaryText);
+    const seen = new Map(shown.map((s) => [s.label, s.items]));
+    coverageNote = buildCoverageNote(sheets.map((s) => ({ label: s.label, kept: seen.get(s.label) ?? 0, total: s.items })));
+    inputKind = 'PART of the debater\'s flow — it was too long to send whole.';
+  } else if (method === 'sample') {
+    const sampled = sampleSections(sheets, FLOW_BUDGET);
+    flowSummaryText = sampled.text;
+    coverageNote = buildCoverageNote(sampled.coverage);
+    inputKind = 'An even sample of the debater\'s flow — every sheet is represented, but not every card.';
+  } else {
+    // 'passes' — read the whole round in chunks, then analyze from those notes.
+    const chunks = chunkSections(sheets, FLOW_BUDGET);
+    const notesFromPasses: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      mainWin?.webContents.send('ai:analyzeRoundProgress', { pass: i + 1, total: chunks.length });
+      const passPrompt = await renderPrompt('analyze_round_pass', {
+        EVENT: eventLabel,
+        PART_NUMBER: String(i + 1),
+        PART_TOTAL: String(chunks.length),
+        SHEET_NAMES: chunks[i].map((s) => `- ${s.label} (${s.items} cards)`).join('\n'),
+        FLOW_PART: chunks[i].map((s) => s.text).join('\n'),
+        NOTES: notesText,
+      });
+      notesFromPasses.push(`--- Notes from part ${i + 1} of ${chunks.length} ---\n${await callAI(passPrompt, 'balanced', { maxOutputTokens: 32768 })}`);
+    }
+    flowSummaryText = notesFromPasses.join('\n\n');
+    coverageNote = `You are seeing the WHOLE round — every sheet was read across ${chunks.length} passes. Nothing was withheld.`;
+    inputKind =
+      `NOTES taken while reading the complete flow across ${chunks.length} passes — not the raw flow itself. ` +
+      `Every card was read, but you are working from those readings, so prefer claims the notes state explicitly ` +
+      `and avoid inventing detail they don't contain.`;
+  }
+
   const prompt = await renderPrompt('analyze_round', {
-    EVENT: event === 'pf' ? 'Public Forum' : 'Policy',
+    EVENT: eventLabel,
+    INPUT_KIND: inputKind,
+    COVERAGE_NOTE: coverageNote,
     FLOW_SUMMARY: flowSummaryText,
     DOCS_TEXT: docsText,
-    NOTES: notes?.trim() ? notes.trim() : '(none provided)',
+    NOTES: notesText,
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
     QUESTIONS_ASKED: String(clar.length),
   });

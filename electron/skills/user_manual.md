@@ -654,6 +654,25 @@ Topics screen (sidebar or Settings).
 
 ---
 
+## When something is too long for Warroom AI
+
+Warroom AI can only read so much at once. What happens past that point is up to you — **Settings → Work past the length limit**.
+
+**Off (the default).** Anything over the limit is trimmed and you're asked before it's sent, with the exact numbers ("sending 60,000 of 412,000 characters of your flow"). Cancel and nothing is sent at all. Whatever does get sent is your real text in full — the rest simply isn't sent.
+
+**On.** Instead of dropping the extra, it gets handled one of two ways. Neither gives you everything, which is the whole reason it's a choice:
+
+| Method | What you get | What you give up |
+|--------|--------------|------------------|
+| **Even sampling** | A fair share of *every* sheet rather than all of the first few. Warroom AI is told exactly how many cards it can't see on each sheet, so it says "I can't tell on the Politics DA, 19 cards aren't visible" instead of wrongly calling something dropped. What it reads is your actual flow, word for word. | It still never sees the whole round, so a connection between two cards that both got trimmed is invisible. |
+| **Read everything in passes** | Nothing is skipped — the round is read across several passes, then analyzed. | The final answer works from its own notes rather than your flow, so fine detail ("they conceded this exact warrant") can get smoothed away. Costs several API calls instead of one. |
+
+Rough rule: **even sampling** when detail matters more than coverage, **passes** when you'd rather it saw everything.
+
+**The hard stop.** If something is bigger than Warroom AI can physically read, it's refused outright — nothing is sent, and you're told how far over it was. That's a real limit of the model, not a Warroom setting, so no toggle gets around it.
+
+---
+
 ## Settings
 Gear icon at bottom of sidebar. A list of section jump-links runs down the left side — type in the filter box above it to narrow that list down live. A handful of sections (Appearance, Speech docs & cases, General, Flow, Auto Flow style) show a small "Reset to defaults" link once you've changed something in them.
 
@@ -667,6 +686,7 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Reduce motion | Turns off transitions and animations across the app |
 | Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
 | Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |
+| Work past the length limit | Off by default. Controls what happens when something is too long for Warroom AI to read at once — see "When something is too long" below |
 | AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
 | Gemini API key | From aistudio.google.com. Required for all AI features. |
 | Gemini model | Flash Lite / Flash (default) / 3.5 Flash |

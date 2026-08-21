@@ -2810,6 +2810,30 @@ export default function Documentation() {
             turn can trigger real actions (saving a card, opening a panel), and resending the message
             is an obvious retry of your own, so it isn't blindly retried either.
           </P>
+          <H3>When something is too long</H3>
+          <P>
+            <strong>Settings → Work past the length limit</strong> decides what happens when input
+            exceeds what Warroom AI can read at once. <strong>Off</strong> (default) trims and asks
+            first. <strong>On</strong> picks between two methods, and the point of offering a choice
+            is that neither is strictly better:
+          </P>
+          <UL>
+            <LI>
+              <strong>Even sampling</strong> — a fair share of every sheet instead of all of the
+              first few, with Warroom AI told how many cards it can't see on each one (so it reports
+              "I can't tell here" rather than wrongly calling something dropped). Real text, but
+              never the whole round.
+            </LI>
+            <LI>
+              <strong>Read everything in passes</strong> — the round is read across several passes
+              and analyzed from those readings. Full coverage, but the final answer works from notes
+              rather than your flow, so fine detail can smooth away. Costs several calls.
+            </LI>
+          </UL>
+          <P>
+            Above the model's real capacity nothing is sent at all — the request is refused with the
+            actual token numbers. That's a model limit, so no setting bypasses it.
+          </P>
           <H3>Nothing is truncated silently</H3>
           <P>
             Two things used to be cut off invisibly. If the AI's <strong>answer</strong> ran past its
