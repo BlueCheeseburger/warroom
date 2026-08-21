@@ -127,6 +127,16 @@ For EVERY card, decide all of the following:
    in exactly this 1AC order, with off-case tabs after them — so getting the
    "advantage" role and the 1AC order right is what makes the flow read correctly.
 
+7. FLOW NAME — name the round after THE AFF BEING READ, since that is how a
+   debater refers to a round ("the Single Payer round"), whichever side they are
+   on. Read the 1AC's plan text, advantage names, and recurring shorthand and
+   return a SHORT name for the aff — two to four words, no "Aff"/"AC" suffix, no
+   file extension, no tournament or round number. Prefer the doc's own shorthand
+   over a formal title. If the cards give you no usable read on what the aff is
+   (a neg-only upload, or a doc with no 1AC content), return null — do NOT guess
+   from the file name and do NOT invent one. This is the "flowName" field, and it
+   is one name for the whole batch, not per card.
+
 ASKING INSTEAD OF GUESSING: you may ask ONE clarifying question for the WHOLE
 batch instead of guessing — but ONLY if "Questions already asked" above is 0, and
 only when genuinely warranted: a chunk of cards has no usable pocket label at all
@@ -140,7 +150,7 @@ object and nothing else:
 Each option must be a short, concrete choice, not a yes/no.
 
 Otherwise, return ONLY one JSON object (no markdown, no prose) with this shape:
-{"placements": [{"fileName": "<source file name, verbatim>", "tag": "<card tag, verbatim>", "cite": "<SHORT cite — Author 'YY, per rule 3, NOT verbatim>", "column": "<one of the existing columns above, verbatim>", "sheetName": "<an existing sheet name verbatim, OR your proposed new sheet name>", "isNewSheet": <true if sheetName is not one of the existing sheet names listed above>, "respondsTo": "<exact tag text of the card this answers, or null>", "isPlan": <true or false, per rule 5>, "sheetRole": "<'advantage', 'offcase', or null, per rule 6>"}]}
+{"flowName": "<the AFF being read, per rule 7 — or null>", "placements": [{"fileName": "<source file name, verbatim>", "tag": "<card tag, verbatim>", "cite": "<SHORT cite — Author 'YY, per rule 3, NOT verbatim>", "column": "<one of the existing columns above, verbatim>", "sheetName": "<an existing sheet name verbatim, OR your proposed new sheet name>", "isNewSheet": <true if sheetName is not one of the existing sheet names listed above>, "respondsTo": "<exact tag text of the card this answers, or null>", "isPlan": <true or false, per rule 5>, "sheetRole": "<'advantage', 'offcase', or null, per rule 6>"}]}
 Keep the placements in the SAME ORDER the cards were given (document order), so the
 first advantage's cards come before the second advantage's, and the 1AC before the
 off-case — the app relies on this order to lay out advantage tabs first, in 1AC order.

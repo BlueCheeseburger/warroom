@@ -1001,6 +1001,20 @@ export default function Documentation() {
             actually has content in its first few columns yet, instead of always drawing the same fixed
             decoration.
           </P>
+          <H3>Naming, and when nothing gets written</H3>
+          <P>
+            A new flow is named after the <strong>aff being read</strong> — Warroom AI reads it off
+            the 1AC — since that's how a debater refers to a round whichever side they were on. When
+            the docs give no usable read on the aff (a neg-only upload) it returns nothing rather
+            than guessing, and the flow is named after today's date instead. Never the file name.
+          </P>
+          <P>
+            If Warroom AI comes back without a usable placement for a single card, <strong>no flow is
+            created</strong> — the run fails with an explanation and returns to the sort step. This
+            previously produced an empty flow with one blank tab and no error, because the default
+            layout's tabs are all numbered placeholders and the cleanup pass correctly removed every
+            one of them.
+          </P>
           <H3>Live writing vs. review</H3>
           <P>
             A <strong>brand-new</strong> flow skips the review step entirely: the flow is created

@@ -229,6 +229,58 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
   return null;
 }
 
+/** Free-text fallback below each provider's preset buttons — lets the user point
+ *  Warroom at a model id that isn't one of the presets yet (a preview/dated
+ *  snapshot, an org-specific deployment). Mirrors LM Studio's free-text field:
+ *  once set, that one id is used for every task tier (electron/main.ts's
+ *  getProviderForTask), same as LM Studio's single loaded model. */
+function CustomModelIdField({
+  provider, active, savedId, onSave, placeholder,
+}: {
+  provider: AIProvider; active: boolean; savedId: string; onSave: (id: string) => void; placeholder: string;
+}) {
+  const [draft, setDraft] = useState(savedId);
+  useEffect(() => { setDraft(savedId); }, [savedId]);
+  return (
+    <div
+      className="rounded-xl border px-3 py-2.5 mt-1.5"
+      style={{
+        borderColor: active ? 'var(--item-selected-bg)' : 'var(--border-med)',
+        background: 'var(--bg-input)',
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent text-sm outline-none min-w-0"
+          style={{ color: 'rgb(var(--ink-rgb))' }}
+        />
+        <button
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40"
+          style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)' }}
+          disabled={!draft.trim()}
+          onClick={() => onSave(draft)}
+          title="Use this exact model ID for every request to this provider"
+        >
+          Use custom ID
+        </button>
+      </div>
+      {active ? (
+        <p className="text-[11px] mt-1.5 opacity-60">
+          Using this exact model ID for every task — no automatic lite/balanced/best switching, including chat titles.
+        </p>
+      ) : (
+        <p className="text-[11px] mt-1.5 opacity-60">
+          Not one of the presets above? Type the exact model ID your provider expects.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Settings outline nav ───────────────────────────────────────────────────
 // Jump-to-section list down the left side, mirroring the `settings-*` ids on
 // each card below in document order. Highlights whichever section is nearest
@@ -718,6 +770,7 @@ export default function Settings() {
   })();
   const [geminiModel, setGeminiModel] = useState('flash');
   const [geminiModelSaved, setGeminiModelSaved] = useState(false);
+  const [geminiCustomModelId, setGeminiCustomModelId] = useState('');
   const [tokenSavingDefault, setTokenSavingDefault] = useState(false);
   const [autoRenameChat, setAutoRenameChat] = useState(false);
   // Background notification categories — main-process state (electron/main.ts's
@@ -945,10 +998,13 @@ export default function Settings() {
   }
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
+  const [openaiCustomModelId, setOpenaiCustomModelId] = useState('');
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
   const [anthropicModelSaved, setAnthropicModelSaved] = useState(false);
+  const [anthropicCustomModelId, setAnthropicCustomModelId] = useState('');
   const [grokModel, setGrokModel] = useState('grok-3-mini');
   const [grokModelSaved, setGrokModelSaved] = useState(false);
+  const [grokCustomModelId, setGrokCustomModelId] = useState('');
   const [ocUser, setOcUser] = useState('');
   const [ocPass, setOcPass] = useState('');
   const [ocSavedUser, setOcSavedUser] = useState('');
@@ -1035,6 +1091,10 @@ export default function Settings() {
       if ((s as any)?.openaiModel) setOpenaiModel((s as any).openaiModel);
       if ((s as any)?.anthropicModel) setAnthropicModel((s as any).anthropicModel);
       if ((s as any)?.grokModel) setGrokModel((s as any).grokModel);
+      if ((s as any)?.geminiCustomModelId) setGeminiCustomModelId((s as any).geminiCustomModelId);
+      if ((s as any)?.openaiCustomModelId) setOpenaiCustomModelId((s as any).openaiCustomModelId);
+      if ((s as any)?.anthropicCustomModelId) setAnthropicCustomModelId((s as any).anthropicCustomModelId);
+      if ((s as any)?.grokCustomModelId) setGrokCustomModelId((s as any).grokCustomModelId);
       if ((s as any)?.tokenSavingDefault !== undefined) {
         setTokenSavingDefault((s as any).tokenSavingDefault);
       } else {
@@ -1303,6 +1363,39 @@ export default function Settings() {
     setTimeout(() => setGrokModelSaved(false), 2000);
   }
 
+  /** Switches a provider to a user-typed model id instead of one of the presets —
+   *  same idea as LM Studio's free-text field, since a provider can ship a model
+   *  (a preview, a dated snapshot, an org-specific deployment) before Warroom's
+   *  presets are updated to include it. Stored as `{provider}Model: 'custom'` +
+   *  `{provider}CustomModelId`, and getProviderForTask (electron/main.ts) uses the
+   *  id for every task tier — there's only one model, nothing to tier-split. */
+  async function saveCustomModelId(provider: AIProvider, id: string) {
+    const trimmed = id.trim();
+    if (!trimmed) return;
+    const s = await window.warroom?.storage.read('app_settings') as any ?? {};
+    if (provider === 'gemini') {
+      setGeminiModel('custom'); setGeminiCustomModelId(trimmed);
+      await window.warroom?.storage.write('app_settings', { ...s, geminiModel: 'custom', geminiCustomModelId: trimmed });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { geminiModel: 'custom', geminiCustomModelId: trimmed } }));
+      setGeminiModelSaved(true); setTimeout(() => setGeminiModelSaved(false), 2000);
+    } else if (provider === 'openai') {
+      setOpenaiModel('custom'); setOpenaiCustomModelId(trimmed);
+      await window.warroom?.storage.write('app_settings', { ...s, openaiModel: 'custom', openaiCustomModelId: trimmed });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { openaiModel: 'custom', openaiCustomModelId: trimmed } }));
+      setOpenaiModelSaved(true); setTimeout(() => setOpenaiModelSaved(false), 2000);
+    } else if (provider === 'anthropic') {
+      setAnthropicModel('custom'); setAnthropicCustomModelId(trimmed);
+      await window.warroom?.storage.write('app_settings', { ...s, anthropicModel: 'custom', anthropicCustomModelId: trimmed });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { anthropicModel: 'custom', anthropicCustomModelId: trimmed } }));
+      setAnthropicModelSaved(true); setTimeout(() => setAnthropicModelSaved(false), 2000);
+    } else if (provider === 'grok') {
+      setGrokModel('custom'); setGrokCustomModelId(trimmed);
+      await window.warroom?.storage.write('app_settings', { ...s, grokModel: 'custom', grokCustomModelId: trimmed });
+      window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { grokModel: 'custom', grokCustomModelId: trimmed } }));
+      setGrokModelSaved(true); setTimeout(() => setGrokModelSaved(false), 2000);
+    }
+  }
+
   async function saveOC() {
     if (!ocUser.trim() || !ocPass.trim()) return;
     setOcLoading(true); setOcError(''); setTabroomWarning('');
@@ -1442,10 +1535,10 @@ export default function Settings() {
       section: 'AI API key',
       items: [
         { label: 'Active AI provider', current: apiProvider, def: 'gemini' },
-        { label: 'Gemini model', current: geminiModel, def: 'flash' },
-        { label: 'OpenAI model', current: openaiModel, def: 'gpt-4.1-mini' },
-        { label: 'Anthropic model', current: anthropicModel, def: 'claude-3-5-sonnet-20241022' },
-        { label: 'Grok model', current: grokModel, def: 'grok-3-mini' },
+        { label: 'Gemini model', current: geminiModel === 'custom' ? `custom: ${geminiCustomModelId}` : geminiModel, def: 'flash' },
+        { label: 'OpenAI model', current: openaiModel === 'custom' ? `custom: ${openaiCustomModelId}` : openaiModel, def: 'gpt-4.1-mini' },
+        { label: 'Anthropic model', current: anthropicModel === 'custom' ? `custom: ${anthropicCustomModelId}` : anthropicModel, def: 'claude-3-5-sonnet-20241022' },
+        { label: 'Grok model', current: grokModel === 'custom' ? `custom: ${grokCustomModelId}` : grokModel, def: 'grok-3-mini' },
         { label: 'LM Studio connection', current: lmCustomized ? 'Customized' : 'Default', def: 'Default' },
       ],
       apply: () => {
@@ -2536,7 +2629,16 @@ export default function Settings() {
               {openaiModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
-              <ModelExceptionNote provider="openai" tier={getModelTier('openai', openaiModel)} />
+              <CustomModelIdField
+                provider="openai"
+                active={openaiModel === 'custom'}
+                savedId={openaiCustomModelId}
+                onSave={(id) => saveCustomModelId('openai', id)}
+                placeholder="Custom model ID (e.g. gpt-5.1)"
+              />
+              {openaiModel !== 'custom' && (
+                <ModelExceptionNote provider="openai" tier={getModelTier('openai', openaiModel)} />
+              )}
             </div>
           </div>
         )}
@@ -2583,7 +2685,16 @@ export default function Settings() {
               {anthropicModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
-              <ModelExceptionNote provider="anthropic" tier={getModelTier('anthropic', anthropicModel)} />
+              <CustomModelIdField
+                provider="anthropic"
+                active={anthropicModel === 'custom'}
+                savedId={anthropicCustomModelId}
+                onSave={(id) => saveCustomModelId('anthropic', id)}
+                placeholder="Custom model ID (e.g. claude-opus-4-6)"
+              />
+              {anthropicModel !== 'custom' && (
+                <ModelExceptionNote provider="anthropic" tier={getModelTier('anthropic', anthropicModel)} />
+              )}
             </div>
           </div>
         )}
@@ -2634,7 +2745,16 @@ export default function Settings() {
               {grokModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
-              <ModelExceptionNote provider="grok" tier={getModelTier('grok', grokModel)} />
+              <CustomModelIdField
+                provider="grok"
+                active={grokModel === 'custom'}
+                savedId={grokCustomModelId}
+                onSave={(id) => saveCustomModelId('grok', id)}
+                placeholder="Custom model ID (e.g. grok-4)"
+              />
+              {grokModel !== 'custom' && (
+                <ModelExceptionNote provider="grok" tier={getModelTier('grok', grokModel)} />
+              )}
             </div>
           </div>
         )}
@@ -2681,7 +2801,16 @@ export default function Settings() {
               {geminiModelSaved && (
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
-              <ModelExceptionNote provider="gemini" tier={getModelTier('gemini', geminiModel)} />
+              <CustomModelIdField
+                provider="gemini"
+                active={geminiModel === 'custom'}
+                savedId={geminiCustomModelId}
+                onSave={(id) => saveCustomModelId('gemini', id)}
+                placeholder="Custom model ID (e.g. gemini-3.0-pro-preview)"
+              />
+              {geminiModel !== 'custom' && (
+                <ModelExceptionNote provider="gemini" tier={getModelTier('gemini', geminiModel)} />
+              )}
             </div>
           </div>
         )}

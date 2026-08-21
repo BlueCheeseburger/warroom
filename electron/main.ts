@@ -660,6 +660,9 @@ async function getGeminiModelId(): Promise<string> {
   try {
     const s = await readJson('app_settings');
     const key = s?.geminiModel as string | undefined;
+    if (key === 'custom' && (s?.geminiCustomModelId as string | undefined)?.trim()) {
+      return (s.geminiCustomModelId as string).trim();
+    }
     return GEMINI_MODEL_IDS[key ?? ''] ?? GEMINI_MODEL_IDS['flash'];
   } catch {
     return GEMINI_MODEL_IDS['flash'];
@@ -777,6 +780,20 @@ async function getProviderForTask(
   : provider === 'grok'      ? (s?.grokModel      ?? 'grok-3-mini')
   :                             (s?.anthropicModel ?? 'claude-3-5-sonnet-20241022');
 
+  const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
+  const apiKey = (await getSecure(secureKey)) ?? '';
+
+  // A custom model ID replaces the tier system entirely for that provider —
+  // like LM Studio, there's just one model, so every task tier uses it as-is.
+  if (userModelKey === 'custom') {
+    const customId: string | undefined =
+      provider === 'gemini'    ? s?.geminiCustomModelId
+    : provider === 'openai'    ? s?.openaiCustomModelId
+    : provider === 'grok'      ? s?.grokCustomModelId
+    :                             s?.anthropicCustomModelId;
+    if (customId?.trim()) return { provider, modelId: customId.trim(), apiKey };
+  }
+
   const userTier = resolveUserTier(provider, userModelKey);
 
   const effectiveTier: ModelTier =
@@ -785,8 +802,6 @@ async function getProviderForTask(
   : taskTier;
 
   const modelId = MODEL_TIER_IDS[provider][effectiveTier];
-  const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
-  const apiKey = (await getSecure(secureKey)) ?? '';
   return { provider, modelId, apiKey };
 }
 
@@ -1972,7 +1987,7 @@ async function classifyBatch(
     allowQuestion: boolean;
   },
   onSplit?: (extraBatchesAdded: number) => void,
-): Promise<{ question?: any; placements: any[]; dropped: number }> {
+): Promise<{ question?: any; placements: any[]; dropped: number; flowName?: string }> {
   const prompt = await renderPrompt('auto_flow_classify', {
     EVENT: ctx.event,
     VARIANT: ctx.variant || '',
@@ -2018,14 +2033,17 @@ async function classifyBatch(
 
   const rawList = Array.isArray(parsed.placements) ? parsed.placements : [];
   const placements = normalizePlacements(rawList);
-  return { placements, dropped: rawList.length - placements.length };
+  const flowName = typeof parsed.flowName === 'string' && parsed.flowName.trim()
+    ? parsed.flowName.trim().slice(0, 60)
+    : undefined;
+  return { placements, dropped: rawList.length - placements.length, flowName };
 }
 
 async function splitAndClassify(
   batch: FlatFlowCard[],
   ctx: Parameters<typeof classifyBatch>[1],
   onSplit?: (extraBatchesAdded: number) => void,
-): Promise<{ question?: any; placements: any[]; dropped: number }> {
+): Promise<{ question?: any; placements: any[]; dropped: number; flowName?: string }> {
   const mid = Math.ceil(batch.length / 2);
   onSplit?.(1); // one batch became two — the caller bumps its own total
   const first = await classifyBatch(batch.slice(0, mid), ctx, onSplit);
@@ -2037,6 +2055,8 @@ async function splitAndClassify(
   return {
     placements: [...first.placements, ...second.placements],
     dropped: first.dropped + second.dropped,
+    // The first half saw the 1AC, so its read on the aff is the one to keep.
+    flowName: first.flowName ?? second.flowName,
   };
 }
 
@@ -2059,6 +2079,7 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   let knownSheets = [...(existingSheetNames ?? [])];
   const all: any[] = [];
   let dropped = 0;
+  let flowName: string | undefined;
   let cardsDone = 0;
   // Not `batches.length` — a batch that gets halved adds to the total mid-run,
   // so the progress denominator has to be able to grow.
@@ -2088,15 +2109,32 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
 
     all.push(...res.placements);
     dropped += res.dropped;
+    // Batch 1 carries the 1AC, so the first name offered is the best one.
+    if (!flowName && res.flowName) flowName = res.flowName;
     knownSheets = mergeSheetNames(knownSheets, res.placements);
     cardsDone += batch.length;
     batchesDone += 1;
     emit();
   }
 
+  // Zero placements out of a non-empty input is a FAILURE, not an empty result.
+  // Returning `{ ok: true, placements: [] }` here is what let a run end with a
+  // silently-created flow containing one blank tab — see CLAUDE.md's "never
+  // launder a failure into a success" rule.
+  if (all.length === 0) {
+    throw new Error(
+      dropped > 0
+        ? `Warroom AI returned ${dropped} placement${dropped === 1 ? '' : 's'} for ${flat.length} cards, but every one was missing the sheet or column it belongs to, so none could be used.`
+        : `Warroom AI did not return a placement for any of the ${flat.length} cards it was sent.`,
+    );
+  }
+
   return {
     ok: true,
     placements: all,
+    // The aff being read, per the prompt's rule 7 — used to name a new flow.
+    // Undefined when the docs gave no usable read on what the aff is.
+    flowName,
     // Surfaced on the review step so a silent shortfall is visible rather than
     // looking like the docs simply had fewer cards than they do.
     stats: { cardsIn: flat.length, placed: all.length, dropped, batches: totalBatches },

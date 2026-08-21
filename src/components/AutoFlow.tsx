@@ -164,6 +164,15 @@ function buildCellHtml(tag: string, cite: string, summary?: string): string {
   return useSummary ? t : `${t}<br>${escapeHtml(cite)}`;
 }
 
+// The stages of a run, shown as a checklist while it works so the wait is
+// legible instead of being one spinner that could mean anything.
+const STAGES = [
+  { i: 0, label: 'Reading your docs', what: 'pulling out every tag and cite' },
+  { i: 1, label: 'Sorting with Warroom AI', what: 'deciding the sheet and column for each card' },
+  { i: 2, label: 'Summarizing cards', what: 'only when summary mode is on' },
+  { i: 3, label: 'Writing into the flow', what: 'placing cards and drawing answer arrows' },
+] as const;
+
 // ── Live write pacing ────────────────────────────────────────────────────────
 // A frame is one persist + one `warroom-flow-updated`, which makes the open
 // FlowView re-read and re-render. That's cheap but not free, so cards are
@@ -282,6 +291,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // review step so a shortfall is visible instead of silently looking like the
   // docs just had fewer cards.
   const [classifyStats, setClassifyStats] = useState<ClassifyStats | null>(null);
+  // The aff Warroom AI read off the 1AC, used to name a new flow. Null when it
+  // couldn't tell, in which case the flow is named after today's date.
+  const [aiFlowName, setAiFlowName] = useState<string | null>(null);
 
   // Writing / done
   const [writeSummary, setWriteSummary] = useState<{ written: number; skipped: SkippedPlacement[] } | null>(null);
@@ -361,6 +373,8 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       if (!res?.ok) throw new Error(res?.error || 'Could not sort these cards.');
       if (res.question) { setPendingQuestion(res.question); return; }
       if (res.stats) setClassifyStats(res.stats as ClassifyStats);
+      const suggestedName: string | undefined = typeof res.flowName === 'string' ? res.flowName : undefined;
+      setAiFlowName(suggestedName ?? null);
       let list: Placement[] = (res.placements || []).map((p: any) => ({
         id: crypto.randomUUID(),
         fileName: p.fileName,
@@ -405,7 +419,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // that flow already holds the user's own work, and a bad placement there
       // costs them something, so it stays opt-in and writes silently.
       if (ctx.target.kind === 'new') {
-        await commitWrite(true, ctx.target, list);
+        await commitWrite(true, ctx.target, list, suggestedName);
         return;
       }
       setStep('review');
@@ -466,6 +480,23 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // wizard collapses to a small corner card with no backdrop instead of sitting
   // over the top of it.
   const live = step === 'live';
+  const cardsBeingSorted = docs.reduce((n, d) => n + d.cards.length, 0);
+
+  // What the progress panel says, derived from the real run state — never a
+  // generic "working…". `stagePct` is null only before the first progress event
+  // arrives, which renders the bar indeterminate for that brief window.
+  const stageIndex = step === 'extracting' ? 0
+    : summarizing ? 2
+    : (step === 'writing' || step === 'live') ? 3
+    : 1;
+  const stagePct = progress && progress.cardsTotal > 0
+    ? (progress.cardsDone / progress.cardsTotal) * 100
+    : null;
+  const stageTitle = summarizing ? 'Summarizing cards' : 'Sorting with Warroom AI';
+  const stageDetail = progress && progress.cardsTotal > 0
+    ? `Batch ${Math.min(progress.batchesDone + 1, progress.totalBatches)} of ${progress.totalBatches} · `
+      + `${progress.cardsDone.toLocaleString()} of ${progress.cardsTotal.toLocaleString()} cards done`
+    : `Sending ${cardsBeingSorted.toLocaleString()} card${cardsBeingSorted === 1 ? '' : 's'} to Warroom AI…`;
   // Set by "Skip animation" — the replay loop checks it each frame and jumps
   // straight to the finished flow. A ref, not state: the loop reads it between
   // awaits and would never see a re-rendered value.
@@ -480,13 +511,23 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     * previous render's values (null / empty). The review path omits both and
     * gets the committed state, which is what it wants.
     */
-  async function commitWrite(live = false, ctxIn?: TargetCtx, listIn?: Placement[]) {
+  async function commitWrite(live = false, ctxIn?: TargetCtx, listIn?: Placement[], nameIn?: string) {
     const ctx = ctxIn ?? targetCtx;
     if (!ctx) return;
     setStep('writing');
     setError('');
     try {
       const accepted = (listIn ?? placements).filter((p) => !p.removed);
+      // Nothing to write. This USED to sail straight through: a flow was created,
+      // every default tab was pruned for being empty, and the user was dropped
+      // into a flow containing one blank "RFD/Notes" with the wizard already
+      // closed and no error anywhere. Never create a flow out of zero cards.
+      if (accepted.length === 0) {
+        throw new Error(
+          'Warroom AI didn\'t return a placement for a single card, so there\'s nothing to write — ' +
+          'no flow was created. This is almost always a one-off; sorting again usually fixes it.',
+        );
+      }
       let flowId: string;
       let data: StoredFlowData;
       let isNewFlow = false;
@@ -688,13 +729,27 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // theirs. Now that positions are appended instead, leaving them would mean
       // every run stacks named tabs after a row of dead defaults. Nothing is
       // lost: a sheet has to be literally empty to qualify.
+      // Every card was rejected during placement (unknown column, full column).
+      // Same rule as above: a flow with nothing in it is not a result.
+      if (written === 0) {
+        const why = skipped[0]?.reason ? ` Every card was skipped — first reason: "${skipped[0].reason}".` : '';
+        throw new Error(`None of the ${accepted.length} sorted cards could be placed, so no flow was created.${why}`);
+      }
+
       const finalSheets = pruneUnnamedEmptySheets(sheets);
 
       if (isNewFlow && ctx.kind === 'new') {
-        const firstName = docs.find((d) => d.cards.length > 0)?.fileName?.replace(/\.docx$/i, '');
+        // Named after the AFF being read — that's how a debater refers to a
+        // round ("the Single Payer round"), whichever side they were on. Warroom
+        // AI reads it off the 1AC (rule 7 of the classify prompt). When the docs
+        // give no usable read on the aff it returns null rather than guessing,
+        // and the fallback is today's date — a file name like
+        // "AFF---Single Payer---FINAL-v3" is a worse label than "8/20/26".
+        const aiName = (nameIn ?? aiFlowName ?? '').trim();
+        const dateName = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' });
         const meta: FlowMeta = {
           id: flowId,
-          name: firstName || `Auto Flow ${flowsIndex.length + 1}`,
+          name: aiName || dateName,
           event: ctx.event,
           createdAt: new Date().toISOString(),
         };
@@ -734,7 +789,11 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to write into the flow.');
-      setStep('review');
+      // A new-flow run has no meaningful review screen to fall back to (the
+      // placement list may be empty, which is often the failure itself), so send
+      // the user to the target step — the "Sort with Warroom AI" button is there
+      // and re-running is the fix for nearly everything that lands here.
+      setStep(live ? 'target' : 'review');
     }
   }
 
@@ -929,28 +988,50 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {step === 'classifying' && !pendingQuestion && (
-            <div className="py-14">
-              <LoadingState messages={summarizing ? [
-                'Warroom AI is summarizing each card…',
-                'Reading the evidence behind each tag…',
-                'Keeping every summary under its tagline…',
-              ] : [
-                'Warroom AI is sorting the cards…',
-                'Matching pockets to columns…',
-                'Matching hats and blocks to sheets…',
-              ]} />
-              {progress && progress.cardsTotal > 0 && (
-                <div className="mt-6 mx-auto max-w-sm space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] text-ink/55">
-                    <span>
-                      {progress.phase === 'summarizing' ? 'Summarizing' : 'Sorting'} batch{' '}
-                      {Math.min(progress.batchesDone + 1, progress.totalBatches)} of {progress.totalBatches}
-                    </span>
-                    <span>{progress.cardsDone.toLocaleString()} / {progress.cardsTotal.toLocaleString()} cards</span>
-                  </div>
-                  <ProgressBar pct={(progress.cardsDone / progress.cardsTotal) * 100} />
+            <div className="py-10 mx-auto" style={{ maxWidth: 420 }}>
+              {/*
+                A determinate bar with the real numbers, not a spinner. The old
+                spinner said "Matching pockets to columns…" for minutes with no
+                indication of whether anything was happening, how much was left,
+                or that a long run is normal — which is indistinguishable from
+                being hung. Every line here is a fact, not a mood.
+              */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-ink/80">{stageTitle}</span>
+                  <span className="text-ink/50 tabular-nums">{stagePct === null ? '' : `${Math.round(stagePct)}%`}</span>
                 </div>
-              )}
+                <ProgressBar pct={stagePct ?? undefined} />
+                <p className="text-[11px] text-ink/50 leading-relaxed">{stageDetail}</p>
+              </div>
+
+              <ol className="mt-5 space-y-1.5">
+                {STAGES.map((st) => {
+                  const state = stageIndex === st.i ? 'now' : stageIndex > st.i ? 'done' : 'todo';
+                  return (
+                    <li key={st.i} className="flex items-start gap-2 text-[11px]">
+                      <span
+                        className="shrink-0 mt-[3px] rounded-full"
+                        style={{
+                          width: 7, height: 7,
+                          background: state === 'done' ? 'var(--accent)'
+                            : state === 'now' ? 'var(--accent)' : 'var(--border-med)',
+                          opacity: state === 'todo' ? 0.6 : 1,
+                        }}
+                      />
+                      <span style={{ color: state === 'todo' ? 'var(--nav-inactive-color)' : 'rgb(var(--ink-rgb))', opacity: state === 'todo' ? 0.6 : 1 }}>
+                        <span className={state === 'now' ? 'font-medium' : ''}>{st.label}</span>
+                        <span className="text-ink/40"> — {st.what}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <p className="mt-4 text-[11px] text-ink/40 leading-relaxed">
+                Sorting a full case packet can take a few minutes — each batch is a separate request
+                to Warroom AI. Nothing is written to a flow until every card has been sorted.
+              </p>
             </div>
           )}
 
