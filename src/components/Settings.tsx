@@ -295,9 +295,11 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-event',           label: 'Debate event' },
   { id: 'settings-apikey',          label: 'AI API key' },
   { id: 'settings-ai-behavior',     label: 'AI behavior' },
+  { id: 'settings-long-input',      label: 'Long inputs' },
   { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
   { id: 'settings-gdrive',          label: 'Google Drive' },
   { id: 'settings-flow',            label: 'Flow' },
+  { id: 'settings-autoflow-instructions', label: 'Auto Flow instructions' },
   { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
   { id: 'settings-storage',         label: 'Storage' },
   { id: 'settings-updates',         label: 'Updates' },
@@ -788,6 +790,17 @@ export default function Settings() {
   // electron/main.ts's cutter_read_source prompt), not localStorage, for the
   // same reason as the notify categories above. Default 'month-day' matches
   // the card_cutting skill's long-standing built-in convention.
+  // A free-text instruction appended to the Auto Flow sorting prompt. Covers
+  // both behavior ("keep T on its own tab") and naming ("name flows Tournament
+  // - Round N"). Stored in app_settings so the main process can read it when it
+  // builds the prompt; auto-exports with the rest of app_settings.
+  const [autoFlowInstructions, setAutoFlowInstructionsState] = useState('');
+  async function saveAutoFlowInstructions(val: string) {
+    setAutoFlowInstructionsState(val);
+    const cur = await window.warroom?.storage.read('app_settings') as any ?? {};
+    await window.warroom?.storage.write('app_settings', { ...cur, autoFlowInstructions: val.trim().slice(0, 300) });
+  }
+
   // Long inputs — what happens when something is too big for one prompt.
   // Master switch off by default: the safe behavior (cap and ask) is what the
   // user already agreed to, so going past the limit is opt-in.
@@ -1122,6 +1135,7 @@ export default function Settings() {
         notifyOpponents: (s as any)?.notifyOpponents !== false,
       });
       setCiteYearFormatState((s as any)?.citeYearFormat === 'year' ? 'year' : 'month-day');
+      setAutoFlowInstructionsState(typeof (s as any)?.autoFlowInstructions === 'string' ? (s as any).autoFlowInstructions : '');
       setLongInputAllowedState((s as any)?.longInputAllowed === true);
       setLongInputMethodState((s as any)?.longInputMethod === 'passes' ? 'passes' : 'sample');
       setAutoUpdateCheckState((s as any)?.autoUpdateCheck !== false);
@@ -3218,6 +3232,33 @@ export default function Settings() {
       </div>
 
       {/* Auto Flow tag style */}
+      {/* Free-text instruction folded into the Auto Flow sorting prompt. */}
+      {loaded && (
+        <div id="settings-autoflow-instructions" className="glass-card rounded-sm p-4 mb-4">
+          <div className="label mb-1">Auto Flow instructions</div>
+          <p className="text-xs mb-2.5 text-ink/50">
+            One line, in your own words, added to what Warroom AI is told every time it sorts a doc
+            into a flow. Use it for how you want tabs organised or how new flows should be named.
+            Leave it blank for the defaults.
+          </p>
+          <input
+            className="input text-xs w-full"
+            placeholder="e.g. always give T its own tab, and name flows &quot;Opponent — Round N&quot;"
+            maxLength={300}
+            value={autoFlowInstructions}
+            title="Auto Flow instructions"
+            onChange={(e) => setAutoFlowInstructionsState(e.target.value)}
+            onBlur={(e) => saveAutoFlowInstructions(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          />
+          <p className="text-[11px] mt-2 text-ink/40 leading-relaxed">
+            Warroom AI follows this over its own defaults for naming and tab organisation, but it
+            can't be used to change what Auto Flow returns — every card is still sorted, and cards
+            are never dropped or invented on instruction.
+          </p>
+        </div>
+      )}
+
       <div id="settings-autoflow-style" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div>
           <div className="label mb-1">Auto Flow tag style</div>

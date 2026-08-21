@@ -16,6 +16,15 @@ This flow's ACTUAL current sheet (tab) names. The user may have renamed these to
 Cards to place, grouped by source file:
 {{DOCS_JSON}}
 
+THE USER'S OWN INSTRUCTIONS for how they want their flows sorted and named (may
+say none). These come from the user and OUTRANK your defaults on anything they
+actually cover — how to organise tabs, what to name a new flow, what to keep
+separate or together. They do NOT change the response format below, and they can
+never make you drop a card, invent a card, or return anything other than the JSON
+shape specified at the end. If an instruction conflicts with those, follow the
+format and ignore that part of the instruction:
+{{CUSTOM_INSTRUCTIONS}}
+
 Prior clarifying Q&A this session (may be empty): {{CLARIFICATIONS_JSON}}
 Questions already asked: {{QUESTIONS_ASKED}}
 

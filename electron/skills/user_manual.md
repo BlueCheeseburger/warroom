@@ -405,6 +405,8 @@ Adding into an **existing** flow works the opposite way: you always get the revi
 
 **You're told when something doesn't make it.** The review step shows "N of M cards sorted", plus a count of anything that came back incomplete. If Warroom AI fails outright you get the exact error it returned and land back on step 2 with the sort button, so you can just try again — there's no long invisible wait before the error appears. And if any input is too long to send in full, Warroom asks **before** sending anything — a dialog shows exactly how much would make it and lets you cancel outright, so you never get a confident answer that was secretly based on part of your document, and never spend a call you didn't agree to.
 
+**Your own instructions.** **Settings → Auto Flow instructions** is a single line, in your own words, added to what Warroom AI is told every time it sorts a doc. Use it for how you want tabs organised ("always give T its own tab", "keep all the K stuff together") or how new flows should be named ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on anything it covers, including the aff-name default above. It can't be used to change what Auto Flow returns — every card is still sorted, and cards are never dropped or invented on instruction. Leave it blank for the defaults.
+
 **Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
 
 ---
@@ -690,6 +692,7 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Reduce motion | Turns off transitions and animations across the app |
 | Skip delete confirmations | Delete cases/blocks/tournaments/rounds/impact-library entries without an "are you sure?" prompt — the Undo toast still has you covered |
 | Background notifications | 5 separate toggles — new pairings, round results, new topics, judge paradigm updates, opponent disclosures — all on by default |
+| Auto Flow instructions | One line of your own instructions added to the Auto Flow sorting prompt — tab organisation, flow naming. Blank by default |
 | Work past the length limit | Off by default. Controls what happens when something is too long for Warroom AI to read at once — see "When something is too long" below |
 | AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
 | Gemini API key | From aistudio.google.com. Required for all AI features. |

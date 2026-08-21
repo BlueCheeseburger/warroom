@@ -1983,6 +1983,8 @@ async function classifyBatch(
     clar: { question: string; answer: string }[];
     /** Sheet names the flow already had PLUS any earlier batches proposed. */
     knownSheets: string[];
+    /** Settings → Auto Flow instructions. Empty string when the user set none. */
+    customInstructions: string;
     /** Batches after the first may not stop to ask a clarifying question. */
     allowQuestion: boolean;
   },
@@ -1994,6 +1996,7 @@ async function classifyBatch(
     EXISTING_COLUMNS_JSON: JSON.stringify(ctx.existingColumns ?? []),
     EXISTING_SHEETS_JSON: JSON.stringify(ctx.knownSheets ?? []),
     DOCS_JSON: JSON.stringify(regroupBatch(batch)),
+    CUSTOM_INSTRUCTIONS: ctx.customInstructions || '(none — use your own defaults)',
     CLARIFICATIONS_JSON: ctx.clar.length ? JSON.stringify(ctx.clar) : '(none yet)',
     // The prompt only offers the clarifying question when this reads 0. Batches
     // after the first pass a non-zero count so a mid-run batch can't stop to ask
@@ -2071,6 +2074,9 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
   const { docs, existingSheetNames, existingColumns, event, variant, clarifications } = params;
   const clar = clarifications ?? [];
 
+  const appSettings = await readJson('app_settings').catch(() => null) as any;
+  const customInstructions = String(appSettings?.autoFlowInstructions ?? '').trim().slice(0, 300);
+
   const flat = flattenDocs(docs);
   if (flat.length === 0) return { ok: true, placements: [], stats: { cardsIn: 0, placed: 0, dropped: 0, batches: 0 } };
 
@@ -2098,7 +2104,7 @@ ipcMain.handle('ai:autoFlowClassify', async (_e, params: {
     const res = await classifyBatch(batch, {
       event, variant: variant || '',
       existingColumns: existingColumns ?? [],
-      clar, knownSheets,
+      clar, knownSheets, customInstructions,
       allowQuestion: i === 0,
     }, (added) => { totalBatches += added; emit(); });
 

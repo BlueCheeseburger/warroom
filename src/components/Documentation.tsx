@@ -1001,6 +1001,15 @@ export default function Documentation() {
             actually has content in its first few columns yet, instead of always drawing the same fixed
             decoration.
           </P>
+          <H3>Your own instructions</H3>
+          <P>
+            <strong>Settings → Auto Flow instructions</strong> is one line of free text folded into
+            the sorting prompt on every run — tab organisation ("always give T its own tab") or flow
+            naming ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on
+            anything it covers, including the aff-name default below. It deliberately cannot change
+            the response format, drop cards, or invent them; the prompt tells the model to follow the
+            format and ignore any part of an instruction that conflicts with it.
+          </P>
           <H3>Naming, and when nothing gets written</H3>
           <P>
             A new flow is named after the <strong>aff being read</strong> — Warroom AI reads it off
