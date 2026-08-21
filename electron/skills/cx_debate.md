@@ -2,6 +2,12 @@
 
 > **Assume expertise.** The user is an experienced competitive debater and already knows the basics below (stock issues, flowing, what a DA/CP/K is, etc). Do not explain foundational concepts or define jargon unless the user explicitly asks you to break down a specific part. Use this skill for quick structural reference and — especially — the topic-specific argument content in the "This Year's Topic" section, which is the part most worth pulling from unprompted.
 
+## My Case
+
+**Topic (2026-27):** Resolved: The United States federal government should establish national health insurance in the United States.
+
+*(My specific aff, CPs, DAs, and T args TBD — update this section as the case develops.)*
+
 ## Overview
 Two-on-two. Aff defends a plan under a year-long resolution. Neg opposes. Same resolution all season. Aff has burden of proof — if tied, Neg wins via presumption (status quo).
 
@@ -127,14 +133,64 @@ Chosen by NSDA ballot (health insurance beat out a nuclear weapons topic area, 2
 - **Body** — excerpt with key lines underlined/highlighted (read at speed)
 - Sources: academic papers, government reports, news organizations, think tanks
 - **Spreading** — extremely fast delivery to fit more arguments. National circuit standard. Know your judge.
+- Underlined/highlighted = what gets read aloud; rest is skipped context
+- Opponents can take and examine cards even during your speech; judges can "call for cards" after round to evaluate contested evidence
 
 ## Flowing
 Column-based note system, one column per speech, arguments tracked horizontally across the round. Each off-case argument (DA, CP, K, T) gets its own separate flow sheet. Use shorthand and symbols.
+
+## Verbatim & File Conventions
+
+All files should be produced using **Verbatim** styles via the Debate ribbon in MS Word. Never apply formatting directly to text — always modify the styles themselves (Verbatim > Settings > Styles).
+
+Key Verbatim styles:
+- **Analytic** — use for written blocks/analytics; stripped from the send document automatically
+- **Undertag** — use for notes on evidence; also stripped from send doc, doesn't appear in nav pane
+
+**File/header naming rules:**
+- Use **AT** (not "A2") for "Answers To"
+- Headers should not be heavily abbreviated — different people use different schemes, abbreviating breaks clarity mid-round
+- Speech names are **backloaded** in headers (put at the end, not the front) — what the card does matters more than when to read it
+- Extensions labeled with **Ext** in the header so debaters know what's "must-make" vs. optional
+- Header separator is `---` (triple dash)
+
+Example headers:
+```
+Aff: China War Good---2AC
+Link---AT: Royalties---1AR
+Perm---Do CP---AT: Peake
+
+Neg: Solvency---Standing---AT: Goldwater---2NC
+U---2NC
+Link---ICBMs---2NC
+```
+
+## Key Terms
+
+| Term | Meaning |
+|---|---|
+| Uniqueness | SQ doesn't already cause the harm |
+| Link | How the plan triggers the impact |
+| Impact | The bad thing that happens |
+| Solvency | Does the plan actually fix the problem? |
+| Perm | Do both plan AND counterplan — tests CP competitiveness |
+| Turn | Their argument actually helps you |
+| Conditionality | Neg can drop args without penalty (controversial) |
+| Going for | Collapsing to 1-2 args in late rebuttals |
+| Spreading | Speaking very fast to get more args in |
+| Flowing | Note-taking system — columns per speech, one flow per arg |
+| Card | A piece of evidence (tag + citation + body) |
+| Tag | 1-2 sentence summary of what a card says |
+| Drop | Failing to answer an argument (usually = losing it) |
+| Extend | Carrying an argument forward through rebuttals |
+| Weighing | Comparing your impacts to theirs (magnitude, probability, timeframe) |
+| AT | "Answers To" — correct shorthand (never "A2") |
 
 ## Judging Paradigms
 - **Policymaker** — who has the better policy outcome
 - **Stock Issues** — Aff must win all 4 traditional burdens
 - **Tabula Rasa** — judge evaluates whatever framework the debaters establish
+- **Games player** — offense/defense framework, fairness-focused
 - **Tech over Truth** — in-round argumentation > real-world accuracy
 - **Truth over Tech** — common sense > technical wins
 

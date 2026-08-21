@@ -2467,7 +2467,7 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     TODAY_STR: todayStr,
     CARD_CUTTING_SKILL: skill,
     CURRENT_YEAR: String(today.getFullYear()),
-    META_URL_OR_NOTE: metaUrl || '(none — omit the URL bracket)',
+    META_URL_OR_NOTE: metaUrl || '(none — omit the URL)',
     CREDENTIALS_INSTRUCTION: credentialsInstruction,
     CITE_YEAR_RULE: await citeYearRuleText(),
     PARAGRAPHS: numbered,
