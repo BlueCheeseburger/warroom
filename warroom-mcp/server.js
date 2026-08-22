@@ -1,26 +1,22 @@
 #!/usr/bin/env node
 /**
- * warroom-mcp — exposes Warroom's data and tools as an MCP server.
+ * warroom-mcp — exposes Warroom's data as a READ-ONLY MCP server for troubleshooting
+ * and reference. Deliberately has no write/mutate tools and no live external-site
+ * lookups (Tabroom judge/tournament search) — see CLAUDE.md's "Warroom MCP" section.
  *
  * Reads from the same userData directory the Electron app writes to, so
- * Claude always sees live data: current topic, saved cards, tournaments, etc.
+ * Claude always sees live data: current topic, saved cases, tournaments, etc.
  *
- * Tools mirror the in-app Warroom Agent:
- *   get_warroom_context   — topic, event, tournament/round history (same as system prompt)
- *   get_skill             — load a skill .md file by name
- *   cross_ex_questions    — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
- *   cross_ex_trap_drill   — prep a cross-ex trap drill (mirrors in-app "Harder questions")
- *   score_card_credibility — prep a credibility scoring pass for a speech doc's cards (mirrors in-app Card Credibility)
- *   search_warroom        — search across cases, opponents, judges, tournaments, and topics
- *   search_library        — fuzzy search saved cards
- *   get_cases / get_blocks / get_cards — browse the card library
- *   get_opponents         — saved opponent scouting notes
- *   get_tournaments       — saved tournament records
- *   save_card             — write a new card to the library
- *   fetch_article         — fetch readable text from a URL
- *   search_tabroom_tournament — search Tabroom by tournament name
- *   search_judge          — look up a judge paradigm on Tabroom
- *   import_flow           — import a flow spreadsheet (.xlsx) as a new flow (auto-detect layout, AI fallback)
+ * Tools:
+ *   get_warroom_context     — topic, event, tournament/round history (same as system prompt)
+ *   get_skill               — load a skill .md file by name
+ *   cross_ex_questions      — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
+ *   cross_ex_trap_drill     — prep a cross-ex trap drill (mirrors in-app "Harder questions")
+ *   score_card_credibility  — prep a credibility scoring pass for a speech doc's cards (mirrors in-app Card Credibility)
+ *   outweigh_practice_round — run one round of the in-app "Outweigh" impact-calculus drill
+ *   fetch_article           — fetch readable text from a URL
+ *   list_flows / read_flow  — browse the user's flow sheets
+ *   search_warroom          — search across cases, opponents, judges, tournaments, and topics
  *
  * Missing vs in-app agent (require Electron webview):
  *   search_logos, search_openevidence — use the in-app agent for those.
@@ -63,13 +59,6 @@ async function readJson(name) {
   } catch {
     return null;
   }
-}
-
-async function writeJson(name, data) {
-  const p = join(DATA_DIR, name);
-  const tmp = p + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  await fs.rename(tmp, p);
 }
 
 async function readSkill(name) {
@@ -147,113 +136,10 @@ async function buildContext() {
   return parts.join('\n\n');
 }
 
-// ─── Tabroom helpers (mirrors main.ts implementations) ─────────────────────────
-
-function tbSplitName(query) {
-  const tokens = query.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length <= 1) return { first: '', last: tokens[0] ?? '' };
-  return { first: tokens[0], last: tokens.slice(1).join(' ') };
-}
-
-async function tbRunParadigmSearch(first, last) {
-  const params = new URLSearchParams();
-  if (first) params.set('search_first', first);
-  if (last)  params.set('search_last',  last);
-  const res = await fetch(`https://www.tabroom.com/index/paradigm.mhtml?${params.toString()}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
-  if (!res.ok) throw new Error(`Tabroom HTTP ${res.status}`);
-  const html = await res.text();
-
-  const results = [];
-  const seen = new Set();
-
-  // Multi-match: results table with paradigm.mhtml?judge_person_id=ID links
-  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowM;
-  while ((rowM = rowRe.exec(html)) !== null) {
-    const row = rowM[1];
-    const idM = row.match(/paradigm\.mhtml\?judge_person_id=(\d+)/);
-    if (!idM) continue;
-    const personId = idM[1];
-    if (seen.has(personId)) continue;
-    const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m =>
-      m[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s{2,}/g, ' ').trim()
-    );
-    const name = `${cells[0] ?? ''} ${cells[1] ?? ''}`.trim();
-    if (!name) continue;
-    seen.add(personId);
-    results.push({ personId, name, institution: cells[2] ?? '' });
-  }
-
-  // Single exact match: Tabroom renders the paradigm page directly
-  if (results.length === 0) {
-    const prefM = html.match(/show_past_prefs\.mhtml\?judge_person_id=(\d+)/);
-    if (prefM) {
-      const personId = prefM[1];
-      const h3 = html.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-      const name = h3
-        ? h3[1].replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim()
-        : `${first} ${last}`.trim();
-      results.push({ personId, name, institution: '' });
-    }
-  }
-
-  return results;
-}
-
-async function tbFetchParadigm(personId) {
-  const res = await fetch(`https://www.tabroom.com/index/paradigm.mhtml?judge_person_id=${encodeURIComponent(personId)}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-    },
-  });
-  if (!res.ok) return null;
-  const html = await res.text();
-
-  const clean = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-    .replace(/<header[\s\S]*?<\/header>/gi, '')
-    .replace(/<footer[\s\S]*?<\/footer>/gi, '');
-
-  const fullText = clean
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s{2,}/g, ' ').trim();
-
-  // Extract text between "Paradigm Statement" and "Full Judging Record" (or disclaimer)
-  const STMT_MARKER   = 'Paradigm Statement';
-  const RECORD_MARKER = 'Full Judging Record';
-  const DISC_MARKER   = 'The paradigms published on Tabroom.com';
-
-  const stmtIdx   = fullText.indexOf(STMT_MARKER);
-  const recordIdx = fullText.indexOf(RECORD_MARKER);
-  const discIdx   = fullText.indexOf(DISC_MARKER);
-  const endIdx    = (recordIdx > stmtIdx && recordIdx > 0) ? recordIdx : discIdx;
-
-  if (stmtIdx >= 0 && endIdx > stmtIdx) {
-    let between = fullText.slice(stmtIdx + STMT_MARKER.length, endIdx).trim();
-    between = between.replace(/Last reviewed on\b.{0,60}?\b(?:PDT|PST|MDT|MST|CDT|CST|EDT|EST|UTC)\b\s*/i, '').trim();
-    if (between.length > 10) return between.slice(0, 4000);
-  }
-
-  return null;
-}
-
 // ─── Flow helpers (mirror of src/components/FlowView.tsx) ───────────────────────
 const POLICY_COLS = ['1AC', '1NC', '2AC', '2NC/1NR', '1AR', '2NR', '2AR'];
 const PF_PRO_FIRST_COLS = ['Pro Case', 'Con Case', 'Con Rebuttal', 'Pro Rebuttal', 'Pro Summary', 'Con Summary', 'Pro FF', 'Con FF'];
 const PF_CON_FIRST_COLS = ['Con Case', 'Pro Case', 'Pro Rebuttal', 'Con Rebuttal', 'Con Summary', 'Pro Summary', 'Con FF', 'Pro FF'];
-const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
-const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
 const FLOW_NUM_ROWS = 60;
 
 // Flow cells are stored as HTML (rich text). Strip tags for plain-text output.
@@ -273,17 +159,6 @@ function flowColumns(data) {
   if ((data?.event ?? 'policy') === 'pf')
     return data?.pfOrder === 'con-first' ? PF_CON_FIRST_COLS : PF_PRO_FIRST_COLS;
   return POLICY_COLS;
-}
-
-function makeDefaultFlowData(event) {
-  const ev = event === 'pf' ? 'pf' : 'policy';
-  const names = ev === 'pf' ? SHEETS_PF : SHEETS_STOCK_ISSUES;
-  const cols = ev === 'pf' ? PF_PRO_FIRST_COLS : POLICY_COLS;
-  return {
-    event: ev, variant: 'stock-issues', pfOrder: 'pro-first',
-    sheets: names.map((name) => ({ id: crypto.randomUUID(), name, cells: {} })),
-    columnWidths: cols.map(() => 185), customColumns: null, fontSize: 13, zoom: 100,
-  };
 }
 
 function findFlowMeta(index, query) {
@@ -501,193 +376,6 @@ Judge ONLY from what the cite text states — never invent credentials, dates, o
   }
 );
 
-// ── search_library ─────────────────────────────────────────────────────────────
-server.tool(
-  'search_library',
-  'Search all saved debate cards in the Warroom library. Returns matching cards with tag, cite, and body.',
-  {
-    query: z.string().describe('Text to search for in card tags, cites, and bodies'),
-    limit: z.number().optional().describe('Max results (default 10)'),
-  },
-  async ({ query, limit = 10 }) => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No library data found.' }] };
-    const q = query.toLowerCase();
-    const cards = Object.values(db.cards ?? {});
-    const matches = cards
-      .filter(c =>
-        (c.tag ?? '').toLowerCase().includes(q) ||
-        (c.cite ?? '').toLowerCase().includes(q) ||
-        (c.body ?? '').toLowerCase().includes(q)
-      )
-      .slice(0, limit);
-    if (matches.length === 0) return { content: [{ type: 'text', text: `No cards found matching "${query}".` }] };
-    const text = matches.map(c =>
-      `#### ${c.tag}\n**${c.cite}**\n${(c.body ?? '').slice(0, 600)}`
-    ).join('\n\n---\n\n');
-    return { content: [{ type: 'text', text: `Found ${matches.length} card(s):\n\n${text}` }] };
-  }
-);
-
-// ── get_cases ──────────────────────────────────────────────────────────────────
-server.tool(
-  'get_cases',
-  'List all cases in the Warroom library with names, sides, and block counts.',
-  {},
-  async () => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No data found.' }] };
-    const cases = Object.values(db.cases ?? {});
-    if (cases.length === 0) return { content: [{ type: 'text', text: 'No cases in library.' }] };
-    const text = cases.map(c =>
-      `${c.name} (${(c.side ?? '').toUpperCase()}) — ${(c.blocks ?? []).length} block(s) | id: ${c.id}`
-    ).join('\n');
-    return { content: [{ type: 'text', text: text }] };
-  }
-);
-
-// ── get_blocks ─────────────────────────────────────────────────────────────────
-server.tool(
-  'get_blocks',
-  'Get blocks for a case (or all blocks). Returns block titles and card counts.',
-  { case_id: z.string().optional().describe('Case ID to filter by (omit for all)') },
-  async ({ case_id }) => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No data found.' }] };
-    let blocks = Object.values(db.blocks ?? {});
-    if (case_id) blocks = blocks.filter(b => b.caseId === case_id);
-    if (blocks.length === 0) return { content: [{ type: 'text', text: 'No blocks found.' }] };
-    const text = blocks.map(b =>
-      `${b.title} — ${(b.cards ?? []).length} card(s) | id: ${b.id}`
-    ).join('\n');
-    return { content: [{ type: 'text', text: text }] };
-  }
-);
-
-// ── get_cards ──────────────────────────────────────────────────────────────────
-server.tool(
-  'get_cards',
-  'Get all cards inside a specific block.',
-  { block_id: z.string().describe('Block ID') },
-  async ({ block_id }) => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No data found.' }] };
-    const block = db.blocks?.[block_id];
-    if (!block) return { content: [{ type: 'text', text: `Block ${block_id} not found.` }] };
-    const cards = (block.cards ?? []).map(id => db.cards?.[id]).filter(Boolean);
-    if (cards.length === 0) return { content: [{ type: 'text', text: 'No cards in this block.' }] };
-    const text = cards.map(c =>
-      `#### ${c.tag}\n**${c.cite}**\n${c.body}`
-    ).join('\n\n---\n\n');
-    return { content: [{ type: 'text', text: `${block.title} (${cards.length} cards):\n\n${text}` }] };
-  }
-);
-
-// ── get_opponents ──────────────────────────────────────────────────────────────
-server.tool(
-  'get_opponents',
-  'List saved opponent teams with scouting notes.',
-  { query: z.string().optional().describe('Filter by team name or school (case-insensitive)') },
-  async ({ query }) => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No data found.' }] };
-    let opponents = Object.values(db.opponents ?? {});
-    if (query) {
-      const q = query.toLowerCase();
-      opponents = opponents.filter(o =>
-        (o.teamName ?? '').toLowerCase().includes(q) ||
-        (o.school ?? '').toLowerCase().includes(q)
-      );
-    }
-    if (opponents.length === 0) return { content: [{ type: 'text', text: 'No opponents found.' }] };
-    const text = opponents.map(o => {
-      const scout = o.disclosures?.aiScout;
-      const scoutText = scout
-        ? `\nAI Scout (generated ${scout.generatedAt}):\n  AFF: ${scout.aff}\n  NEG: ${scout.neg}`
-        : '';
-      return `**${o.teamName}** (${o.school ?? ''})\nNotes: ${o.notes ?? '(none)'}${scoutText}`;
-    }).join('\n\n');
-    return { content: [{ type: 'text', text: text }] };
-  }
-);
-
-// ── get_tournaments ────────────────────────────────────────────────────────────
-server.tool(
-  'get_tournaments',
-  "Get the user's saved tournament records with round-by-round results.",
-  {},
-  async () => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'No data found.' }] };
-    const tournaments = Object.values(db.tournaments ?? {});
-    if (tournaments.length === 0) return { content: [{ type: 'text', text: 'No tournaments saved.' }] };
-    const lines = [];
-    for (const t of tournaments) {
-      const roundIds = t.rounds ?? [];
-      const rounds = roundIds.map(id => db.rounds?.[id]).filter(Boolean);
-      const wins   = rounds.filter(r => r.result === 'win').length;
-      const losses = rounds.filter(r => r.result === 'loss').length;
-      lines.push(`**${t.name}** (${t.event_type ?? 'policy'}) | ${t.start ?? t.date ?? '?'} | ${wins}W-${losses}L`);
-      for (const r of rounds) {
-        const opp    = r.opponentId
-          ? (db.opponents?.[r.opponentId]?.teamName ?? r.opponentName ?? 'TBD')
-          : (r.opponentName ?? 'TBD');
-        const judge  = r.judgeName ? ` | Judge: ${r.judgeName}` : '';
-        const room   = r.room ? ` | Room: ${r.room}` : '';
-        lines.push(`  R${r.number}: ${(r.side ?? '?').toUpperCase()} vs ${opp} | ${r.result ?? 'pending'}${judge}${room}${r.isBye ? ' (BYE)' : ''}`);
-      }
-    }
-    return { content: [{ type: 'text', text: lines.join('\n') }] };
-  }
-);
-
-// ── save_card ──────────────────────────────────────────────────────────────────
-server.tool(
-  'save_card',
-  "Save a debate card to the Warroom library (Agent Inbox). The body must be the complete, verbatim card text — never a summary.",
-  {
-    tag:  z.string().describe('Short descriptive label for the card'),
-    cite: z.string().describe('Full citation: author, publication, date'),
-    body: z.string().describe('Complete verbatim card text'),
-    year: z.number().int().describe('Publication year (4-digit integer)'),
-  },
-  async ({ tag, cite, body, year }) => {
-    const db = await readJson('db.json');
-    if (!db) return { content: [{ type: 'text', text: 'Could not load database.' }] };
-
-    const AGENT_CASE_ID  = '__agent__';
-    const AGENT_BLOCK_ID = '__agent_inbox__';
-    const now    = new Date().toISOString();
-    const cardId = crypto.randomUUID();
-
-    // Mirror the same upsert logic as save_card_to_library in GeminiPanel
-    const existingCase = db.cases?.[AGENT_CASE_ID];
-    const agentCase = existingCase
-      ? (existingCase.blocks?.includes(AGENT_BLOCK_ID)
-          ? existingCase
-          : { ...existingCase, blocks: [...(existingCase.blocks ?? []), AGENT_BLOCK_ID] })
-      : { id: AGENT_CASE_ID, name: 'Agent Saves', side: 'aff', blocks: [AGENT_BLOCK_ID] };
-
-    const existingBlock = db.blocks?.[AGENT_BLOCK_ID];
-    const agentBlock = existingBlock
-      ? existingBlock
-      : { id: AGENT_BLOCK_ID, caseId: AGENT_CASE_ID, title: 'Agent Inbox', type: 'text', cards: [], createdAt: now, updatedAt: now };
-
-    await writeJson('db.json', {
-      ...db,
-      cases:  { ...db.cases,  [AGENT_CASE_ID]:  agentCase },
-      blocks: { ...db.blocks, [AGENT_BLOCK_ID]: { ...agentBlock, cards: [...(agentBlock.cards ?? []), cardId], updatedAt: now } },
-      cards:  { ...db.cards,  [cardId]: {
-        id: cardId, blockId: AGENT_BLOCK_ID, tag, cite, body, year,
-        flagged: new Date().getFullYear() - year > 4,
-        createdAt: now,
-      }},
-    });
-
-    return { content: [{ type: 'text', text: `Saved "${tag}" to Agent Inbox (card id: ${cardId}).` }] };
-  }
-);
-
 // ── fetch_article ──────────────────────────────────────────────────────────────
 server.tool(
   'fetch_article',
@@ -715,63 +403,10 @@ server.tool(
   }
 );
 
-// ── search_tabroom_tournament ──────────────────────────────────────────────────
-server.tool(
-  'search_tabroom_tournament',
-  'Search Tabroom for tournaments by name. Returns IDs, dates, and locations.',
-  { name: z.string().describe('Tournament name or partial name') },
-  async ({ name }) => {
-    const year = new Date().getFullYear();
-    const url = `https://api.tabroom.com/v1/tourn/index?name=${encodeURIComponent(name.trim())}&start=${year - 1}-01-01`;
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) return { content: [{ type: 'text', text: `Tabroom API error: HTTP ${res.status}` }] };
-    const raw = await res.json();
-    const list = Array.isArray(raw) ? raw : (raw?.tournaments ?? raw?.results ?? []);
-    if (list.length === 0) return { content: [{ type: 'text', text: `No tournaments found matching "${name}".` }] };
-    const text = list.slice(0, 12).map(t =>
-      `ID: ${t.id ?? t.tourn_id} | ${t.name} | ${t.start ?? '?'} – ${t.end ?? '?'} | ${[t.city, t.state].filter(Boolean).join(', ')}`
-    ).join('\n');
-    return { content: [{ type: 'text', text: text }] };
-  }
-);
-
-// ── search_judge ───────────────────────────────────────────────────────────────
-server.tool(
-  'search_judge',
-  "Look up a judge on Tabroom by name and return their judging paradigm.",
-  { name: z.string().describe('Judge full name or partial name') },
-  async ({ name }) => {
-    const { first, last } = tbSplitName(name);
-    let results = await tbRunParadigmSearch(first, last);
-    if (results.length === 0 && !first && last) {
-      results = await tbRunParadigmSearch(last, '');
-    }
-    if (results.length === 0) {
-      return { content: [{ type: 'text', text: `No Tabroom profile found for "${name}". Try a different name spelling.` }] };
-    }
-    const judge = results[0];
-    const paradigm = await tbFetchParadigm(judge.personId);
-    if (!paradigm) {
-      return {
-        content: [{
-          type: 'text',
-          text: `Found ${judge.name}${judge.institution ? ` (${judge.institution})` : ''} on Tabroom (ID ${judge.personId}) but no paradigm has been written yet.`,
-        }],
-      };
-    }
-    return {
-      content: [{
-        type: 'text',
-        text: `Paradigm for ${judge.name}${judge.institution ? ` (${judge.institution})` : ''}:\n\n${paradigm}`,
-      }],
-    };
-  }
-);
-
 // ── list_flows ──────────────────────────────────────────────────────────────────
 server.tool(
   'list_flows',
-  "List all of the user's flow sheets (name, debate event, id). Call before read_flow or edit_flow_cell.",
+  "List all of the user's flow sheets (name, debate event, id). Call before read_flow.",
   {},
   async () => {
     const index = await readJson('flows_index');
@@ -784,7 +419,7 @@ server.tool(
 // ── read_flow ───────────────────────────────────────────────────────────────────
 server.tool(
   'read_flow',
-  "Read a flow's sheets, column headers, and every filled-in cell. Call before edit_flow_cell so you target the right cell.",
+  "Read a flow's sheets, column headers, and every filled-in cell.",
   { flow: z.string().describe('Flow name or id (case-insensitive)') },
   async ({ flow }) => {
     const index = await readJson('flows_index');
@@ -807,148 +442,6 @@ server.tool(
       out.push(`\nSheet ${si + 1}: "${sh.name}"${rows.length ? '\n' + rows.join('\n') : ' (empty)'}`);
     });
     return { content: [{ type: 'text', text: out.join('\n') }] };
-  }
-);
-
-// ── edit_flow_cell ──────────────────────────────────────────────────────────────
-server.tool(
-  'edit_flow_cell',
-  "Set the value of a single cell in a flow sheet. Call read_flow first to learn column names and current contents. Columns are debate speeches (e.g. '1AC', '2NR'). Row is 1-based.",
-  {
-    flow:   z.string().describe('Flow name or id (case-insensitive)'),
-    sheet:  z.string().optional().describe("Sheet name or 1-based number. Defaults to the first sheet."),
-    column: z.string().describe("Column header name (e.g. '2NR') or 1-based column number."),
-    row:    z.number().int().describe('Row number, 1-based.'),
-    value:  z.string().describe('Text to put in the cell (overwrites existing content).'),
-  },
-  async ({ flow, sheet, column, row, value }) => {
-    const index = await readJson('flows_index');
-    const meta = findFlowMeta(index, flow);
-    if (!meta) return { content: [{ type: 'text', text: `No flow named "${flow}" found. Use list_flows.` }] };
-
-    let data = await readJson(`flow_data_${meta.id}`);
-    if (!data?.sheets?.length) data = makeDefaultFlowData(meta.event);
-    const cols = flowColumns(data);
-
-    // Resolve sheet
-    let sheetIdx = 0;
-    if (sheet != null && String(sheet).trim() !== '') {
-      const sArg = String(sheet).trim();
-      const asNum = Number(sArg);
-      if (Number.isInteger(asNum) && asNum >= 1 && asNum <= data.sheets.length) {
-        sheetIdx = asNum - 1;
-      } else {
-        const lc = sArg.toLowerCase();
-        let found = data.sheets.findIndex(sh => (sh.name ?? '').toLowerCase() === lc);
-        if (found < 0) found = data.sheets.findIndex(sh => (sh.name ?? '').toLowerCase().includes(lc));
-        if (found < 0) return { content: [{ type: 'text', text: `No sheet "${sArg}". Sheets: ${data.sheets.map(s => s.name).join(', ')}.` }] };
-        sheetIdx = found;
-      }
-    }
-
-    // Resolve column
-    let colIdx = -1;
-    const colArg = String(column).trim();
-    const colNum = Number(colArg);
-    if (Number.isInteger(colNum) && colNum >= 1 && colNum <= cols.length) colIdx = colNum - 1;
-    else {
-      colIdx = cols.findIndex(c => c.toLowerCase() === colArg.toLowerCase());
-      if (colIdx < 0) colIdx = cols.findIndex(c => c.toLowerCase().includes(colArg.toLowerCase()));
-    }
-    if (colIdx < 0) return { content: [{ type: 'text', text: `No column "${colArg}". Columns: ${cols.join(', ')}.` }] };
-
-    if (!Number.isInteger(row) || row < 1 || row > FLOW_NUM_ROWS) {
-      return { content: [{ type: 'text', text: `Row must be between 1 and ${FLOW_NUM_ROWS}.` }] };
-    }
-    const rowIdx = row - 1;
-
-    const sh = data.sheets[sheetIdx];
-    sh.cells = { ...(sh.cells ?? {}), [`${rowIdx}-${colIdx}`]: String(value ?? '') };
-    await writeJson(`flow_data_${meta.id}`, data);
-
-    return { content: [{ type: 'text', text: `Set ${cols[colIdx]} (column ${colIdx + 1}), row ${row} on sheet "${sh.name}" of flow "${meta.name}" to: "${value}".` }] };
-  }
-);
-
-// ── compare_impact_calc ────────────────────────────────────────────────────────
-// Mirrors the in-app Impact Calc panel: given two speech doc texts, extract every
-// impact claim, find clashes, and produce dimension-by-dimension winners + overall
-// verdict. The server has no LLM, so it returns the doc texts plus a structured
-// brief for the calling model to run the analysis from.
-server.tool(
-  'compare_impact_calc',
-  `Compare two speech doc file paths for policy debate impact calculus. Returns AI analysis of impact clashes, winners, and overall verdict.
-Pass the absolute paths to both .docx files (or their extracted plain text) and labels for each side. The tool reads the files and returns a brief that tells the calling model how to run a full impact calculus comparison: extract all impact claims, find clashes, determine a winner on magnitude, probability, timeframe, and reversibility for each clash, and deliver an overall verdict.`,
-  {
-    pathA:  z.string().describe('Absolute file path to your speech doc (.docx or .txt), or the extracted plain text of your doc'),
-    pathB:  z.string().describe('Absolute file path to the opponent speech doc (.docx or .txt), or the extracted plain text of their doc'),
-    labelA: z.string().optional().describe('Label for your doc (default: "Your Doc")'),
-    labelB: z.string().optional().describe('Label for their doc (default: "Their Doc")'),
-  },
-  async ({ pathA, pathB, labelA = 'Your Doc', labelB = 'Their Doc' }) => {
-    // Attempt to read each argument as a file path first; fall back to treating
-    // it as inline text (callers may pass extracted text directly).
-    async function resolveText(pathOrText) {
-      if (!pathOrText?.trim()) return '';
-      // If it looks like a file path (starts with / or drive letter), try reading it.
-      if (/^(\/|[A-Za-z]:\\)/.test(pathOrText.trim())) {
-        try {
-          const raw = await fs.readFile(pathOrText.trim());
-          // Return as utf-8; for binary .docx the caller should pass extracted text instead.
-          return raw.toString('utf-8').replace(/\0/g, '').slice(0, 60000);
-        } catch {
-          return `(Could not read file at path: ${pathOrText.trim()})`;
-        }
-      }
-      // Otherwise treat as inline extracted text.
-      return pathOrText.trim().slice(0, 60000);
-    }
-
-    const [textA, textB] = await Promise.all([resolveText(pathA), resolveText(pathB)]);
-
-    const out = [
-      `# Impact Calc — ${labelA} vs ${labelB}`,
-      ``,
-      `You are performing a full **policy debate impact calculus** comparison between two speech documents.`,
-      ``,
-      `## Steps`,
-      `1. Extract every distinct **impact claim** from each document: what the harm is, how big, how likely, how soon, and whether it can be undone.`,
-      `2. Identify **clashes** — pairs of impacts (one from each doc) that directly compete for the same "space" (e.g. both claim to control nuclear war, or one claims the plan causes an impact the other claims it solves).`,
-      `3. For each clash, call a **winner on each dimension**:`,
-      `   - **Magnitude**: how severe is the harm (deaths, civilizational scale, etc.)?`,
-      `   - **Probability**: how likely is the harm to actually occur (% chance, mechanism, link chain strength)?`,
-      `   - **Timeframe**: how soon does the harm happen (years/decades/centuries)?`,
-      `   - **Reversibility**: once it occurs, can it be undone?`,
-      `4. For each clash, call an **overall impact winner** (the side whose impact outweighs on balance).`,
-      `5. Deliver an **overall verdict**: which side wins the impact calc exchange, on what grounds, and what should go in the final rebuttal.`,
-      ``,
-      `## Format`,
-      `For each clash:`,
-      `- **Clash [N]: [brief description]**`,
-      `  - ${labelA} impact: [summary]`,
-      `  - ${labelB} impact: [summary]`,
-      `  - Magnitude winner: [label] — [one sentence why]`,
-      `  - Probability winner: [label] — [one sentence why]`,
-      `  - Timeframe winner: [label] — [one sentence why]`,
-      `  - Reversibility winner: [label] — [one sentence why]`,
-      `  - Overall clash winner: [label]`,
-      ``,
-      `Then write an **Overall Verdict** paragraph (3-5 sentences) summarising who wins the impact debate and why. Make it concrete enough to read into a rebuttal.`,
-      ``,
-      `No markdown emphasis (no **, *, __) inside the verdict or reasons — plain text only. Use single quotes around key phrases.`,
-      ``,
-      `---`,
-      ``,
-      `## ${labelA}`,
-      textA || '(No text provided)',
-      ``,
-      `---`,
-      ``,
-      `## ${labelB}`,
-      textB || '(No text provided)',
-    ].join('\n');
-
-    return { content: [{ type: 'text', text: out }] };
   }
 );
 
@@ -995,64 +488,6 @@ Pass a difficulty, an event (policy or pf), and optionally topic material (paste
       ``,
       `Do all four steps in order, pausing for the user's actual input at steps 2 and 4 rather than inventing what they'd say.`,
     ].filter(Boolean).join('\n');
-
-    return { content: [{ type: 'text', text: out }] };
-  }
-);
-
-// ── import_flow ────────────────────────────────────────────────────────────────
-// Mirrors the in-app "Import Flow" button next to the + in the Flow sidebar
-// section: read a flow spreadsheet (.xlsx) and create a new flow from it. The app
-// first auto-detects the layout (recognizing speech-column headers like 1AC/1NC/
-// 2AC/2NC-1NR/1AR/2NR/2AR for policy, plus PF layouts) and falls back to AI mapping
-// for unusual spreadsheets. The MCP server has no SheetJS or LLM, so it verifies the
-// file, names the flow after it, and returns a brief instructing the calling model to
-// read each worksheet, auto-detect (or AI-map) its layout, and write the cells via
-// edit_flow_cell.
-server.tool(
-  'import_flow',
-  `Import a flow spreadsheet (.xlsx) into Warroom as a new flow. Auto-detects the layout and falls back to AI mapping for unusual spreadsheets.`,
-  {
-    filePath: z.string().describe('Absolute path to the .xlsx flow spreadsheet to import'),
-  },
-  async ({ filePath }) => {
-    const path = (filePath ?? '').trim();
-    if (!path) return { content: [{ type: 'text', text: 'No file path provided.' }] };
-    if (!/\.xlsx$/i.test(path)) {
-      return { content: [{ type: 'text', text: `"${path}" is not a .xlsx file. Provide an absolute path to a flow spreadsheet.` }] };
-    }
-
-    // Confirm the file exists and is readable. The server can't parse the binary
-    // .xlsx itself (no SheetJS), so it returns a brief for the calling model.
-    try {
-      await fs.access(path);
-    } catch {
-      return { content: [{ type: 'text', text: `Could not read file at path: ${path}` }] };
-    }
-
-    // Name the new flow after the file (matches in-app behavior).
-    const base = path.split(/[\\/]/).pop() ?? 'Imported Flow';
-    const flowName = base.replace(/\.xlsx$/i, '').trim() || 'Imported Flow';
-
-    const out = [
-      `# Import Flow — ${flowName}`,
-      ``,
-      `Import the flow spreadsheet at \`${path}\` into Warroom as a new flow named "${flowName}".`,
-      `Each worksheet (tab) in the workbook becomes its own flow sheet.`,
-      ``,
-      `## Steps`,
-      `1. Read every worksheet in the .xlsx (e.g. with SheetJS \`XLSX.readFile\` → \`sheet_to_json({ header: 1 })\`).`,
-      `2. For EACH worksheet, work out the column layout:`,
-      `   - First AUTO-DETECT algorithmically: look for a header row whose cells match speech columns.`,
-      `     - Policy columns: ${POLICY_COLS.map((c) => `'${c}'`).join(', ')} (note 2NC + 1NR are merged into the single '2NC/1NR' neg-block column — an 8-speech source maps to these 7 columns).`,
-      `     - PF (pro-first) columns: ${PF_PRO_FIRST_COLS.map((c) => `'${c}'`).join(', ')}.`,
-      `     - PF (con-first) columns: ${PF_CON_FIRST_COLS.map((c) => `'${c}'`).join(', ')}.`,
-      `   - If a sheet's layout is unclear (no recognizable header, shifted/merged cells, custom labels), FALL BACK to interpreting the sheet yourself: infer which source column corresponds to each speech and map accordingly. This is the AI-fallback path the in-app importer uses.`,
-      `3. Pick the flow's overall event (policy or PF) from whichever layout the sheets match.`,
-      `4. Write the parsed content cell-by-cell into the new flow using \`edit_flow_cell\` (flow name "${flowName}", the sheet/tab name, the resolved column header, and a 1-based row). Rows beyond ${FLOW_NUM_ROWS} are out of range.`,
-      ``,
-      `Be robust: it must work no matter how the spreadsheet is laid out. Policy and PF flows are both supported.`,
-    ].join('\n');
 
     return { content: [{ type: 'text', text: out }] };
   }

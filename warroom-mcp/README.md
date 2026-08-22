@@ -4,7 +4,9 @@ Connects Claude (desktop app or Claude Code) directly to your Warroom data, givi
 
 ## What this does
 
-The in-app Warroom AI automatically knows your debate event, the current NSDA topic, your saved cards, tournament records, and opponent notes. This MCP server exposes all of that to Claude outside the app — so you can ask Claude questions about your case, look up judges, cut cards, and search your library from any Claude interface.
+The in-app Warroom AI automatically knows your debate event, the current NSDA topic, your saved cases, tournament records, and opponent notes. This MCP server exposes that same data to Claude outside the app, read-only — so you can ask Claude questions about your case, search your saved data, and run practice drills from any Claude interface.
+
+This server is intentionally read-only: it has no tools that write to your Warroom data or hit a live external site (Tabroom judge/tournament lookups). It's meant for reference and troubleshooting, not for driving the app.
 
 ## Requirements
 
@@ -48,33 +50,27 @@ After saving the config, quit and reopen Claude. The Warroom tools will appear i
 |---|---|
 | `get_warroom_context` | Your debate event + current NSDA topic + tournament/round history. Call this first in any debate conversation. |
 | `get_skill` | Load a knowledge file: `cx_debate`, `pf_debate`, `ld_debate`, `card_cutting`, `user_manual`, `documentation` |
-| `search_library` | Search your saved cards by tag, citation, or body text |
-| `get_cases` | List all your cases |
-| `get_blocks` | List blocks in a case |
-| `get_cards` | Get all cards in a block |
-| `get_opponents` | List saved opponent scouting notes |
-| `get_tournaments` | Your saved tournament records with round results |
-| `save_card` | Save a card to your Warroom library (writes to Agent Inbox) |
-| `fetch_article` | Fetch readable text from a URL (for cutting cards from links) |
-| `search_tabroom_tournament` | Search Tabroom.com for tournaments by name |
-| `search_judge` | Look up a judge's paradigm on Tabroom |
+| `search_warroom` | Search across cases, opponents, judges, tournaments, and current topics in one query |
+| `cross_ex_questions` | Generate cross-examination questions (with model answers) for a speech doc, like the in-app Cross-Ex Practice panel |
+| `cross_ex_trap_drill` | Generate a cross-ex trap drill for a speech doc, like the in-app "Harder questions" feature |
+| `score_card_credibility` | Score the credibility of a speech doc's cards, like the in-app Card Credibility panel |
+| `outweigh_practice_round` | Run one round of the in-app "Outweigh" impact-calculus practice game |
+| `fetch_article` | Fetch readable text from a URL (for reading a source or cutting a card from it) |
 | `list_flows` | List all saved flows |
 | `read_flow` | Read the contents of a specific flow |
-| `edit_flow_cell` | Edit a cell in a flow |
-| `cross_ex_questions` | Generate cross-examination questions for a speech doc |
 
-**Not available here** (require the in-app Electron webview): `search_logos`, `search_openevidence` — use the in-app Warroom AI panel for evidence searches.
+**Not available here** (require the in-app Electron webview): `search_logos`, `search_openevidence` — use the in-app Warroom AI panel for evidence searches. Also not available: anything that writes to your data (saving cards, editing flow cells, importing a flow) or hits a live external site (Tabroom judge/tournament search) — those stay in-app only.
 
 ## Example prompts
 
 Once connected, try asking Claude:
 
 - *"What's my debate event and current topic?"* — calls `get_warroom_context`
-- *"Look up judge Jane Smith's paradigm"* — calls `search_judge`
-- *"Search my library for cards on deterrence"* — calls `search_library`
-- *"Cut a card from [URL]"* — calls `fetch_article` then formats the card
-- *"Save this card to my library: [tag / cite / body]"* — calls `save_card`
-- *"What tournaments do I have saved?"* — calls `get_tournaments`
+- *"Search my saved data for anything on deterrence"* — calls `search_warroom`
+- *"What tournaments do I have saved?"* — calls `search_warroom`
+- *"Read my flow from the last round"* — calls `list_flows` then `read_flow`
+- *"Quiz me on cross-ex for this speech doc: [pasted text]"* — calls `cross_ex_questions`
+- *"Run an Outweigh practice round, varsity policy"* — calls `outweigh_practice_round`
 
 ## Custom data path
 
@@ -104,4 +100,4 @@ If your data is somewhere else, pass `WARROOM_DATA_DIR` in the config:
 
 ## How it works
 
-The server reads the same `db.json`, `topics.json`, and `app_settings` files that the Warroom Electron app writes to. Changes you make in the app (saving cards, adding rounds, updating opponent notes) are immediately visible to Claude — there's no sync step. Cards saved via `save_card` appear in the **Agent Inbox** block inside Warroom the next time you open the app.
+The server reads the same `db.json`, `topics.json`, and `app_settings` files that the Warroom Electron app writes to. Changes you make in the app (adding rounds, updating opponent notes, saving a case) are immediately visible to Claude — there's no sync step. The server never writes back to those files.
