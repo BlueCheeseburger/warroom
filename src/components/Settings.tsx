@@ -235,46 +235,37 @@ function ModelExceptionNote({ provider, tier }: { provider: AIProvider; tier: Mo
  *  once set, that one id is used for every task tier (electron/main.ts's
  *  getProviderForTask), same as LM Studio's single loaded model. */
 function CustomModelIdField({
-  provider, active, savedId, onSave, placeholder,
+  active, savedId, onSave, placeholder,
 }: {
-  provider: AIProvider; active: boolean; savedId: string; onSave: (id: string) => void; placeholder: string;
+  active: boolean; savedId: string; onSave: (id: string) => void; placeholder: string;
 }) {
   const [draft, setDraft] = useState(savedId);
   useEffect(() => { setDraft(savedId); }, [savedId]);
   return (
-    <div
-      className="rounded-xl border px-3 py-2.5 mt-1.5"
-      style={{
-        borderColor: active ? 'var(--item-selected-bg)' : 'var(--border-med)',
-        background: 'var(--bg-input)',
-      }}
-    >
-      <div className="flex items-center gap-2">
+    <div className="mt-3">
+      <div className="label mb-1">Or enter any model id</div>
+      <p className="text-xs mb-2 text-ink/50">
+        Not limited to the presets above — type the exact model id your provider expects.
+      </p>
+      <div className="flex gap-2">
         <input
-          type="text"
+          className="input flex-1 font-mono text-xs"
+          placeholder={placeholder}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={placeholder}
-          className="flex-1 bg-transparent text-sm outline-none min-w-0"
-          style={{ color: 'rgb(var(--ink-rgb))' }}
+          onKeyDown={(e) => e.key === 'Enter' && draft.trim() && onSave(draft)}
         />
         <button
-          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40"
-          style={{ background: 'var(--item-selected-bg)', color: 'var(--item-selected-text)' }}
-          disabled={!draft.trim()}
+          className="btn text-xs"
           onClick={() => onSave(draft)}
-          title="Use this exact model ID for every request to this provider"
+          disabled={!draft.trim()}
         >
-          Use custom ID
+          Use
         </button>
       </div>
-      {active ? (
+      {active && (
         <p className="text-[11px] mt-1.5 opacity-60">
-          Using this exact model ID for every task — no automatic lite/balanced/best switching, including chat titles.
-        </p>
-      ) : (
-        <p className="text-[11px] mt-1.5 opacity-60">
-          Not one of the presets above? Type the exact model ID your provider expects.
+          Using this exact model id for every task — no automatic lite/balanced/best switching, including chat titles.
         </p>
       )}
     </div>
@@ -2644,7 +2635,6 @@ export default function Settings() {
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
               <CustomModelIdField
-                provider="openai"
                 active={openaiModel === 'custom'}
                 savedId={openaiCustomModelId}
                 onSave={(id) => saveCustomModelId('openai', id)}
@@ -2700,7 +2690,6 @@ export default function Settings() {
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
               <CustomModelIdField
-                provider="anthropic"
                 active={anthropicModel === 'custom'}
                 savedId={anthropicCustomModelId}
                 onSave={(id) => saveCustomModelId('anthropic', id)}
@@ -2760,7 +2749,6 @@ export default function Settings() {
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
               <CustomModelIdField
-                provider="grok"
                 active={grokModel === 'custom'}
                 savedId={grokCustomModelId}
                 onSave={(id) => saveCustomModelId('grok', id)}
@@ -2816,7 +2804,6 @@ export default function Settings() {
                 <p className="text-xs text-emerald-500 pt-0.5">Model saved ✓</p>
               )}
               <CustomModelIdField
-                provider="gemini"
                 active={geminiModel === 'custom'}
                 savedId={geminiCustomModelId}
                 onSave={(id) => saveCustomModelId('gemini', id)}
