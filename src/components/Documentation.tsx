@@ -1001,6 +1001,20 @@ export default function Documentation() {
             actually has content in its first few columns yet, instead of always drawing the same fixed
             decoration.
           </P>
+          <H3>Two engines</H3>
+          <P>
+            Auto Flow's step 2 offers a choice, remembered between runs:{' '}
+            <strong>Read the document</strong> or <strong>Warroom AI</strong>. The parser uses the
+            doc's own heading structure — the speech heading gives the column, the position heading
+            gives the tab — so it is instant, makes no API call, and has <em>no length limit at any
+            file size</em>. On real speech docs it places about 98% of cards unaided.
+          </P>
+          <P>
+            Warroom AI is for the case the parser can't do: a doc that labels every off-case block
+            with the same generic header, so the headings never say what the positions are. Rather
+            than guess, the parser groups those cards on one tab and reports the count on the review
+            step, suggesting the AI instead.
+          </P>
           <H3>Your own instructions</H3>
           <P>
             <strong>Settings → Auto Flow instructions</strong> is one line of free text folded into

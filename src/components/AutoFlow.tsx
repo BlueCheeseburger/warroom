@@ -9,6 +9,7 @@ import { escapeHtml } from '../lib/cellHtml';
 import { useDragActive } from '../hooks/useDragActive';
 import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { pruneUnnamedEmptySheets } from '../lib/flowSheetNaming';
+import { parseAutoFlow } from '../lib/autoFlowParse';
 import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
 import {
   StoredFlowData, SheetData, PolicyVariant, PFOrder,
@@ -24,6 +25,8 @@ import {
 // document model this is built against, and CardCutter.tsx for the AI
 // question-pause-resume pattern this file copies (runClassify/answerQuestion
 // mirror its runEmphasize/answerQuestion).
+
+const ENGINE_KEY = 'warroom-autoflow-engine';
 
 type Step = 'upload' | 'extracting' | 'target' | 'classifying' | 'review' | 'writing' | 'live' | 'done';
 
@@ -268,6 +271,18 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // (built from tag + body), capped under the tagline's own word count. Off by
   // default — it reads card bodies (sent to the AI) and costs an extra call.
   const [summarize, setSummarize] = useState(false);
+
+  // Which engine sorts the cards. Persisted so the choice survives the dialog
+  // closing — this is a working preference, not a per-run decision, and having
+  // to re-pick it every time is exactly the sort of friction that makes people
+  // stop using the faster path.
+  const [engine, setEngineState] = useState<'ai' | 'parser'>(() => {
+    try { return localStorage.getItem(ENGINE_KEY) === 'parser' ? 'parser' : 'ai'; } catch { return 'ai'; }
+  });
+  function setEngine(next: 'ai' | 'parser') {
+    setEngineState(next);
+    try { localStorage.setItem(ENGINE_KEY, next); } catch {}
+  }
   const [summarizing, setSummarizing] = useState(false);
 
   // Classify / question-pause-resume (mirrors CardCutter's runEmphasize/answerQuestion)
@@ -305,6 +320,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // The aff Warroom AI read off the 1AC, used to name a new flow. Null when it
   // couldn't tell, in which case the flow is named after today's date.
   const [aiFlowName, setAiFlowName] = useState<string | null>(null);
+  // Parser-run shortfalls, surfaced on review: cards it could place but not
+  // separate into a named position, and cards it couldn't place at all.
+  const [parserNotes, setParserNotes] = useState<{ unresolved: number; skipped: number } | null>(null);
 
   // Writing / done
   const [writeSummary, setWriteSummary] = useState<{ written: number; skipped: SkippedPlacement[] } | null>(null);
@@ -372,6 +390,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     setError('');
     setProgress(null);
     setClassifyStats(null);
+    setParserNotes(null);
     try {
       const res = await (window.warroom as any).ai.autoFlowClassify({
         docs: ctx.docs,
@@ -450,6 +469,44 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     setAnswering(false);
   }
 
+  /**
+   * Parser engine. No IPC and no model — the cards are already in memory here,
+   * so this is a synchronous pass over them and the run is effectively instant.
+   * Feeds the identical `Placement[]` the AI path produces, so review, live
+   * writing, and the write step itself are all unchanged downstream.
+   */
+  async function runParser(
+    docsIn: { fileName: string; cards: ExtractedFlowCard[] }[],
+    columns: string[],
+    existingSheets: string[],
+    event: 'policy' | 'pf',
+    target: TargetCtx,
+  ) {
+    setStep('classifying');
+    setError('');
+    setProgress(null);
+    try {
+      const res = parseAutoFlow({ docs: docsIn, columns, existingSheets, event });
+      if (res.placements.length === 0) {
+        throw new Error(
+          'The parser couldn\'t place a single card — none of these docs had a recognisable speech label ' +
+          'on their headings or filenames. Switch to Warroom AI for these docs.',
+        );
+      }
+      const list: Placement[] = res.placements.map((p) => ({ ...p, id: crypto.randomUUID(), removed: false }));
+      const cardsIn = docsIn.reduce((n, d) => n + d.cards.length, 0);
+      setClassifyStats({ cardsIn, placed: list.length, dropped: res.skipped.length, batches: 0 });
+      setParserNotes({ unresolved: res.unresolved, skipped: res.skipped.length });
+      setPlacements(list);
+      setAiFlowName(res.flowName ?? null);
+      if (target.kind === 'new') { await commitWrite(true, target, list, res.flowName); return; }
+      setStep('review');
+    } catch (e: any) {
+      setError(e?.message || 'The parser could not sort these cards.');
+      setStep('target');
+    }
+  }
+
   async function confirmTarget() {
     setError('');
     const usableDocs = docs.filter((d) => d.cards.length > 0);
@@ -468,6 +525,10 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       const variantLabel = data.event === 'policy' ? data.variant : data.pfOrder;
       const target: TargetCtx = { kind: 'existing', flowId: selectedFlowId };
       setTargetCtx(target);
+      if (engine === 'parser') {
+        await runParser(docsForClassify, existingColumns, existingSheetNames, data.event, target);
+        return;
+      }
       await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: data.event, variantLabel, target });
     } else {
       const existingColumns = columnsForEvent(newEvent, newPfOrder);
@@ -475,6 +536,10 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       const variantLabel = newEvent === 'policy' ? newVariant : newPfOrder;
       const target: TargetCtx = { kind: 'new', event: newEvent, variant: newVariant, pfOrder: newPfOrder };
       setTargetCtx(target);
+      if (engine === 'parser') {
+        await runParser(docsForClassify, existingColumns, existingSheetNames, newEvent, target);
+        return;
+      }
       await runClassify(clarifications, { docs: docsForClassify, existingColumns, existingSheetNames, event: newEvent, variantLabel, target });
     }
   }
@@ -503,7 +568,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const stagePct = progress && progress.cardsTotal > 0
     ? (progress.cardsDone / progress.cardsTotal) * 100
     : null;
-  const stageTitle = summarizing ? 'Summarizing cards' : 'Sorting with Warroom AI';
+  const stageTitle = summarizing ? 'Summarizing cards'
+    : engine === 'parser' ? 'Reading the documents'
+    : 'Sorting with Warroom AI';
   const stageDetail = progress && progress.cardsTotal > 0
     ? `Batch ${Math.min(progress.batchesDone + 1, progress.totalBatches)} of ${progress.totalBatches} · `
       + `${progress.cardsDone.toLocaleString()} of ${progress.cardsTotal.toLocaleString()} cards done`
@@ -954,9 +1021,59 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              {/* Which engine sorts the cards. Lives here rather than in Settings
+                  because it is a per-document decision — a clean Verbatim doc
+                  parses perfectly, a doc that hats everything "OFF" needs the
+                  model — and the choice sticks between runs. */}
+              <div className="rounded-sm border border-line p-3">
+                <div className="text-xs font-medium text-ink/80 mb-0.5">How should the cards be sorted?</div>
+                <p className="text-[11px] text-ink/45 mb-2.5">
+                  Your choice is remembered for next time.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { id: 'parser' as const, title: 'Read the document', sub: 'Instant · no API call',
+                      body: 'Uses the doc\u2019s own headings \u2014 the speech gives the column, the position gives the tab. No length limit, however big the file.' },
+                    { id: 'ai' as const, title: 'Warroom AI', sub: 'Slower · costs a call',
+                      body: 'Reads the taglines. Needed when a doc labels every off\u2011case block the same thing, so the headings don\u2019t say what the positions are.' },
+                  ]).map((opt) => {
+                    const on = engine === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        title={opt.title}
+                        onClick={() => setEngine(opt.id)}
+                        className={`text-left rounded-sm p-2.5 transition ${opt.id === 'ai' ? 'ai-glow-ring' : ''}`}
+                        style={{
+                          background: on ? 'var(--nav-active-bg)' : 'transparent',
+                          border: `1px solid ${on ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="shrink-0 rounded-full" style={{
+                            width: 10, height: 10,
+                            border: `2px solid ${on ? 'var(--accent)' : 'var(--border-med)'}`,
+                            background: on ? 'var(--accent)' : 'transparent',
+                            boxShadow: on ? 'inset 0 0 0 1.5px var(--bg-elevated)' : 'none',
+                          }} />
+                          <span className="text-xs font-medium text-ink/85">{opt.title}</span>
+                        </div>
+                        <div className="text-[10px] text-ink/40 mt-0.5 pl-[16px]">{opt.sub}</div>
+                        <p className="text-[11px] text-ink/50 mt-1.5 leading-relaxed">{opt.body}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Opt-in AI summary mode. The ai-glow-ring marks it as an AI action
                   — it adds a Warroom AI call and reads card bodies. A real switch
-                  (not a plain checkbox) so the on/off state reads unambiguously. */}
+                  (not a plain checkbox) so the on/off state reads unambiguously.
+                  Hidden in parser mode: it is itself a Warroom AI call, and the
+                  point of that mode is not making one. */}
+              {engine === 'ai' && (
               <div className="ai-glow-ring flex items-start gap-3 rounded-sm border border-line p-3">
                 <button
                   type="button"
@@ -989,6 +1106,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                   </div>
                 </button>
               </div>
+              )}
             </div>
           )}
 
@@ -1069,10 +1187,30 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
               <p className="text-xs text-ink/50">
                 Review where each card will land. Uncheck any you don't want, then confirm.
               </p>
+              {parserNotes && (parserNotes.unresolved > 0 || parserNotes.skipped > 0) && (
+                <div className="text-[11px] rounded-sm p-2.5 leading-relaxed"
+                  style={{ color: 'rgb(var(--warn-rgb))', background: 'rgba(var(--warn-rgb), 0.08)', border: '1px solid rgba(var(--warn-rgb), 0.25)' }}>
+                  {parserNotes.unresolved > 0 && (
+                    <>
+                      <strong>{parserNotes.unresolved} card{parserNotes.unresolved === 1 ? '' : 's'}</strong>{' '}
+                      couldn't be separated into named positions — the doc labels those blocks with a
+                      generic header, so they're grouped on one tab. Sorting with Warroom AI instead
+                      would read the taglines and split them.{' '}
+                    </>
+                  )}
+                  {parserNotes.skipped > 0 && (
+                    <>
+                      <strong>{parserNotes.skipped}</strong> had no recognisable speech and were left out.
+                    </>
+                  )}
+                </div>
+              )}
+
               {classifyStats && (
                 <p className="text-[11px] text-ink/45">
                   {classifyStats.placed.toLocaleString()} of {classifyStats.cardsIn.toLocaleString()} cards sorted
                   {classifyStats.batches > 1 ? ` across ${classifyStats.batches} batches` : ''}
+                  {classifyStats.batches === 0 ? ' straight from the document — no AI call' : ''}
                   {classifyStats.dropped > 0 && (
                     <span className="text-danger"> · {classifyStats.dropped} returned incomplete and were dropped</span>
                   )}
@@ -1187,11 +1325,12 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           {step === 'target' && (
             <>
               <button
-                className="ai-glow-ring btn-primary text-sm"
+                className={`btn-primary text-sm ${engine === 'ai' ? 'ai-glow-ring' : ''}`}
+                title={engine === 'ai' ? 'Sort with Warroom AI' : 'Sort from the document'}
                 disabled={totalCards === 0 || (targetMode === 'existing' && !selectedFlowId)}
                 onClick={confirmTarget}
               >
-                Sort with Warroom AI →
+                {engine === 'ai' ? 'Sort with Warroom AI →' : 'Sort from the document →'}
               </button>
               <button className="btn text-sm ml-auto" onClick={onClose}>Cancel</button>
             </>

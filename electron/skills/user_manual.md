@@ -407,6 +407,17 @@ Adding into an **existing** flow works the opposite way: you always get the revi
 
 **You're told when something doesn't make it.** The review step shows "N of M cards sorted", plus a count of anything that came back incomplete. If Warroom AI fails outright you get the exact error it returned and land back on step 2 with the sort button, so you can just try again — there's no long invisible wait before the error appears. And if any input is too long to send in full, Warroom asks **before** sending anything — a dialog shows exactly how much would make it and lets you cancel outright, so you never get a confident answer that was secretly based on part of your document, and never spend a call you didn't agree to.
 
+**Two ways to sort — pick one on the Auto Flow screen.** Step 2 has a choice, and it's remembered for next time:
+
+| | What it does | When to use it |
+|---|---|---|
+| **Read the document** | Uses the doc's own headings — the speech heading gives the column, the position heading gives the tab. **Instant, no API call, no length limit** however big the file. | Clean Verbatim docs, which is most of them. Measured on real speech docs, it handles about 98% of cards on its own. |
+| **Warroom AI** | Reads the taglines to work out where each card goes. | Docs that label every off-case block the same thing ("OFF", "1NC"), so the headings don't say what the positions actually are. |
+
+Whichever you pick, the review step is the same. If the parser can place a card but can't tell which position it belongs to, it says so — "12 cards couldn't be separated into named positions" — and suggests sorting with Warroom AI instead, rather than quietly lumping them together. Cards with no recognisable speech at all are left out and counted.
+
+The AI card-summary toggle only appears in Warroom AI mode, since it is itself an API call.
+
 **Your own instructions.** **Settings → Auto Flow instructions** is a single line, in your own words, added to what Warroom AI is told every time it sorts a doc. Use it for how you want tabs organised ("always give T its own tab", "keep all the K stuff together") or how new flows should be named ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on anything it covers, including the aff-name default above. It can't be used to change what Auto Flow returns — every card is still sorted, and cards are never dropped or invented on instruction. Leave it blank for the defaults.
 
 **Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.

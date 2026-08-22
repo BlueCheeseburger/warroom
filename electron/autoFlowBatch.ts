@@ -16,7 +16,9 @@
 // Run the tests:  npx tsx scripts/test-auto-flow-batch.ts
 
 import type { ExtractedFlowCard } from './docxFlowCards';
-import { shortCite } from './citeShort';
+// Shared with the renderer's parser-only Auto Flow path (src/lib/autoFlowParse.ts),
+// so a cite is shortened the same way whichever engine produced the placement.
+import { shortCite } from '../src/lib/citeShort';
 
 /**
  * One (fileName, card) pair, flattened out of the per-doc grouping so batches can

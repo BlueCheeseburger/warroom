@@ -15,7 +15,7 @@
 //
 // Run:  npx tsx scripts/test-cite-short.ts
 
-import { shortCite } from '../electron/citeShort';
+import { shortCite } from '../src/lib/citeShort';
 import { decodeXmlEntities } from '../electron/docxFlowCards';
 
 let pass = 0, fail = 0;
