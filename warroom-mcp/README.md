@@ -51,13 +51,15 @@ After saving the config, quit and reopen Claude. The Warroom tools will appear i
 | `get_warroom_context` | Your debate event + current NSDA topic + tournament/round history. Call this first in any debate conversation. |
 | `get_skill` | Load a knowledge file: `cx_debate`, `pf_debate`, `ld_debate`, `card_cutting`, `user_manual`, `documentation` |
 | `search_warroom` | Search across cases, opponents, judges, tournaments, and current topics in one query |
-| `cross_ex_questions` | Rules for writing cross-examination questions (with model answers), like the in-app Cross-Ex Practice panel. Doesn't take a doc — returns the rules for Claude to apply to a speech doc already in the conversation. |
-| `cross_ex_trap_drill` | Rules for a cross-ex trap drill, like the in-app "Harder questions" feature. Same shape as above — apply to a doc already in the conversation. |
-| `score_card_credibility` | Rubric for scoring evidence card credibility, like the in-app Card Credibility panel. Apply to cards already in the conversation. |
-| `outweigh_practice_round` | Run one round of the in-app "Outweigh" impact-calculus practice game |
+| `cross_ex_questions_prompt` | Rules for writing cross-examination questions (with model answers), like the in-app Cross-Ex Practice panel. Doesn't take a doc — returns the rules for Claude to apply to a speech doc already in the conversation. |
+| `cross_ex_trap_drill_prompt` | Rules for a cross-ex trap drill, like the in-app "Harder questions" feature. Same shape as above — apply to a doc already in the conversation. |
+| `score_card_credibility_prompt` | Rubric for scoring evidence card credibility, like the in-app Card Credibility panel. Apply to cards already in the conversation. |
+| `outweigh_practice_round_prompt` | Instructions for running one round of the in-app "Outweigh" impact-calculus practice game — invent an opposing impact, react, rebut, then judge, following the returned brief. |
 | `fetch_article` | Fetch readable text from a URL (for reading a source or cutting a card from it) |
 | `list_flows` | List all saved flows |
 | `read_flow` | Read the contents of a specific flow |
+
+The four tools ending in `_prompt` don't generate anything themselves — this server has no LLM. Each just returns instructions for Claude to carry out using content already in the conversation; the suffix makes that explicit instead of implying the tool hands back a finished result.
 
 **Not available here** (require the in-app Electron webview): `search_logos`, `search_openevidence` — use the in-app Warroom AI panel for evidence searches. Also not available: anything that writes to your data (saving cards, editing flow cells, importing a flow) or hits a live external site (Tabroom judge/tournament search) — those stay in-app only.
 
@@ -69,8 +71,8 @@ Once connected, try asking Claude:
 - *"Search my saved data for anything on deterrence"* — calls `search_warroom`
 - *"What tournaments do I have saved?"* — calls `search_warroom`
 - *"Read my flow from the last round"* — calls `list_flows` then `read_flow`
-- *"Quiz me on cross-ex for this speech doc: [pasted text]"* — Claude calls `cross_ex_questions` for the rules, then applies them to the pasted text itself
-- *"Run an Outweigh practice round, varsity policy"* — calls `outweigh_practice_round`
+- *"Quiz me on cross-ex for this speech doc: [pasted text]"* — Claude calls `cross_ex_questions_prompt` for the rules, then applies them to the pasted text itself
+- *"Run an Outweigh practice round, varsity policy"* — Claude calls `outweigh_practice_round_prompt` for the brief, then runs the round itself
 
 ## Custom data path
 

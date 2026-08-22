@@ -8,15 +8,21 @@
  * Claude always sees live data: current topic, saved cases, tournaments, etc.
  *
  * Tools:
- *   get_warroom_context     — topic, event, tournament/round history (same as system prompt)
- *   get_skill               — load a skill .md file by name
- *   cross_ex_questions      — reusable rules for writing cross-ex questions (mirrors in-app Cross-Ex Practice); apply to a doc already in context, doesn't take one
- *   cross_ex_trap_drill     — reusable rules for a cross-ex trap drill (mirrors in-app "Harder questions"); apply to a doc already in context, doesn't take one
- *   score_card_credibility  — reusable rubric for scoring card credibility (mirrors in-app Card Credibility); apply to cards already in context, doesn't take them
- *   outweigh_practice_round — run one round of the in-app "Outweigh" impact-calculus drill
- *   fetch_article           — fetch readable text from a URL
- *   list_flows / read_flow  — browse the user's flow sheets
- *   search_warroom          — search across cases, opponents, judges, tournaments, and topics
+ *   get_warroom_context            — topic, event, tournament/round history (same as system prompt)
+ *   get_skill                      — load a skill .md file by name
+ *   cross_ex_questions_prompt      — reusable rules for writing cross-ex questions (mirrors in-app Cross-Ex Practice); apply to a doc already in context, doesn't take one
+ *   cross_ex_trap_drill_prompt     — reusable rules for a cross-ex trap drill (mirrors in-app "Harder questions"); apply to a doc already in context, doesn't take one
+ *   score_card_credibility_prompt  — reusable rubric for scoring card credibility (mirrors in-app Card Credibility); apply to cards already in context, doesn't take them
+ *   outweigh_practice_round_prompt — run one round of the in-app "Outweigh" impact-calculus drill
+ *   fetch_article                  — fetch readable text from a URL
+ *   list_flows / read_flow         — browse the user's flow sheets
+ *   search_warroom                 — search across cases, opponents, judges, tournaments, and topics
+ *
+ * The "_prompt" suffix on cross_ex_questions_prompt / cross_ex_trap_drill_prompt /
+ * score_card_credibility_prompt / outweigh_practice_round_prompt is deliberate: none
+ * of these four generate anything themselves (no LLM in this server) — each just
+ * returns instructions for the calling model to execute. The name makes that
+ * explicit instead of implying the tool hands back a finished result.
  *
  * Missing vs in-app agent (require Electron webview):
  *   search_logos, search_openevidence — use the in-app agent for those.
@@ -215,13 +221,13 @@ Built-in skills: cx_debate, pf_debate, ld_debate, card_cutting, user_manual, doc
   }
 );
 
-// ── cross_ex_questions ──────────────────────────────────────────────────────────
+// ── cross_ex_questions_prompt ──────────────────────────────────────────────────────────
 // Mirrors the in-app "Cross-Ex Practice" panel in the speech doc viewer, but doesn't
 // take the document — the calling model already has that in its own context. The
 // server has no LLM, so this just returns the reusable rules + the skill for the
 // user's event; the calling model applies them to whatever doc text it's holding.
 server.tool(
-  'cross_ex_questions',
+  'cross_ex_questions_prompt',
   `Return the reusable instructions for writing targeted cross-examination questions (with model answers) for a speech document, the same way the in-app Cross-Ex Practice panel does. Doesn't take the document itself — apply the returned rules to the doc text you already have.
 Use 'based_on' to generate more questions like a specific one.`,
   {
@@ -271,12 +277,12 @@ Use 'based_on' to generate more questions like a specific one.`,
   }
 );
 
-// ── cross_ex_trap_drill ─────────────────────────────────────────────────────────
+// ── cross_ex_trap_drill_prompt ─────────────────────────────────────────────────────────
 // Mirrors the in-app "Harder questions" trap drill, but doesn't take the document —
 // the calling model already has that in its own context. Just returns the reusable
 // rules + the skill for the user's event.
 server.tool(
-  'cross_ex_trap_drill',
+  'cross_ex_trap_drill_prompt',
   `Return the reusable instructions for running a cross-ex TRAP DRILL for a speech document, like the in-app "Harder questions" feature. Doesn't take the document itself — apply the returned instructions to the doc text you already have.`,
   {
     event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
@@ -306,13 +312,13 @@ server.tool(
   }
 );
 
-// ── score_card_credibility ──────────────────────────────────────────────────────
+// ── score_card_credibility_prompt ──────────────────────────────────────────────────────
 // Mirrors the in-app "Card Credibility" panel, but doesn't take the cards — the
 // calling model already has that doc/those cards in its own context. Just returns
 // the reusable scoring rubric. Fully static (no event/settings dependency either),
 // so it takes no arguments at all.
 server.tool(
-  'score_card_credibility',
+  'score_card_credibility_prompt',
   `Return the reusable rubric for scoring the credibility of evidence cards in a speech document, the same way the in-app Card Credibility panel does. Doesn't take the cards themselves — apply the rubric to whichever cards you already have (each card's tag + cite text).
 Judge ONLY from what the cite text states — never invent credentials, dates, or outlets that are not present.`,
   {},
@@ -411,7 +417,7 @@ server.tool(
   }
 );
 
-// ── outweigh_practice_round ──────────────────────────────────────────────────────
+// ── outweigh_practice_round_prompt ──────────────────────────────────────────────────────
 // Mirrors the in-app "Outweigh" game: the server has no LLM, so it returns a brief
 // telling the calling model how to run one full round of the impact-calc drill —
 // present an opposing impact, react to the user's impact + calc, deliver a short
@@ -420,7 +426,7 @@ server.tool(
 // (in-app, that grading is a separate stateless callAI() request that's never told
 // it authored the rebuttal — here, the calling model should apply the same discipline).
 server.tool(
-  'outweigh_practice_round',
+  'outweigh_practice_round_prompt',
   `Run one round of Warroom's "Outweigh" impact-calculus practice game for a policy or Public Forum debater. Returns a brief telling the calling model how to invent an opposing impact, react to the user's impact + calc, deliver a short rebuttal, and then judge the exchange — including a separate, blind grade of its own rebuttal so the score isn't biased by self-recognition.
 Pass a difficulty, an event (policy or pf), and optionally topic material (pasted case/card text, the current resolution, a side preference, or notes) to ground the scenario in something real instead of leaving it fully improvised.`,
   {
