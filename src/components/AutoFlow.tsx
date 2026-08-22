@@ -280,6 +280,17 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // Batch progress, pushed from the main process as each classify/summarize
   // batch lands — so a long run shows real movement instead of a blank spinner.
   const [progress, setProgress] = useState<AutoFlowProgress | null>(null);
+  // Seconds since sorting began. The bar only advances when a whole batch lands,
+  // and one batch can take a while — without a second-by-second number on screen
+  // there is nothing to distinguish "working" from "hung", which is exactly how
+  // a long first batch read.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (step !== 'classifying') { setElapsed(0); return; }
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [step]);
   useEffect(() => {
     const off = window.warroom.autoFlow?.onProgress?.((p) => setProgress(p));
     return () => off?.();
@@ -1002,7 +1013,10 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                   <span className="text-ink/50 tabular-nums">{stagePct === null ? '' : `${Math.round(stagePct)}%`}</span>
                 </div>
                 <ProgressBar pct={stagePct ?? undefined} />
-                <p className="text-[11px] text-ink/50 leading-relaxed">{stageDetail}</p>
+                <div className="flex items-center justify-between text-[11px] text-ink/50">
+                  <span className="leading-relaxed">{stageDetail}</span>
+                  <span className="tabular-nums shrink-0 pl-3">{formatElapsed(elapsed)}</span>
+                </div>
               </div>
 
               <ol className="mt-5 space-y-1.5">
@@ -1010,15 +1024,29 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
                   const state = stageIndex === st.i ? 'now' : stageIndex > st.i ? 'done' : 'todo';
                   return (
                     <li key={st.i} className="flex items-start gap-2 text-[11px]">
+                      {/* Done, current, and not-yet must be tellable apart at a
+                          glance — a filled dot for both done and current made
+                          the checklist say nothing about where the run is. */}
                       <span
-                        className="shrink-0 mt-[3px] rounded-full"
-                        style={{
-                          width: 7, height: 7,
-                          background: state === 'done' ? 'var(--accent)'
-                            : state === 'now' ? 'var(--accent)' : 'var(--border-med)',
-                          opacity: state === 'todo' ? 0.6 : 1,
-                        }}
-                      />
+                        className="shrink-0 mt-[2px] flex items-center justify-center"
+                        style={{ width: 9, height: 9 }}
+                      >
+                        {state === 'done' ? (
+                          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                            <path d="M1.5 5.2l2.2 2.2L8.5 2.6" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        ) : (
+                          <span
+                            className="rounded-full"
+                            style={{
+                              width: state === 'now' ? 8 : 6,
+                              height: state === 'now' ? 8 : 6,
+                              background: state === 'now' ? 'var(--accent)' : 'transparent',
+                              border: state === 'now' ? 'none' : '1.5px solid var(--border-med)',
+                            }}
+                          />
+                        )}
+                      </span>
                       <span style={{ color: state === 'todo' ? 'var(--nav-inactive-color)' : 'rgb(var(--ink-rgb))', opacity: state === 'todo' ? 0.6 : 1 }}>
                         <span className={state === 'now' ? 'font-medium' : ''}>{st.label}</span>
                         <span className="text-ink/40"> — {st.what}</span>
@@ -1199,6 +1227,12 @@ function stepLabel(step: Step): string {
     case 'live': return 'Flowing it in front of you…';
     case 'done': return 'Done';
   }
+}
+
+function formatElapsed(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const sec = secs % 60;
+  return m > 0 ? `${m}m ${String(sec).padStart(2, '0')}s` : `${sec}s`;
 }
 
 function truncate(s: string, n: number): string {

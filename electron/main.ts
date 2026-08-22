@@ -2035,7 +2035,7 @@ async function classifyBatch(
   }
 
   const rawList = Array.isArray(parsed.placements) ? parsed.placements : [];
-  const placements = normalizePlacements(rawList);
+  const placements = normalizePlacements(rawList, batch);
   const flowName = typeof parsed.flowName === 'string' && parsed.flowName.trim()
     ? parsed.flowName.trim().slice(0, 60)
     : undefined;

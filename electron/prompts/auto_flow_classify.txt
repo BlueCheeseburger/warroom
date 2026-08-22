@@ -13,7 +13,9 @@ policy/PF names:
 This flow's ACTUAL current sheet (tab) names. The user may have renamed these too:
 {{EXISTING_SHEETS_JSON}}
 
-Cards to place, grouped by source file:
+Cards to place, grouped by source file. Each card has an "i" — its NUMBER. You
+answer with that number. Never retype a card's tag or file name back at us; we
+already have them, and retyping is both slow and a chance to get them wrong:
 {{DOCS_JSON}}
 
 THE USER'S OWN INSTRUCTIONS for how they want their flows sorted and named (may
@@ -107,7 +109,7 @@ For EVERY card, decide all of the following:
    another specific card in THIS SAME batch (not a general topic, an actual
    specific rebuttal — e.g. "Perm do both", "No link — the CP doesn't solve",
    "Their impact is empirically denied"), set "respondsTo" to that other card's
-   tag text EXACTLY as it appears in the batch. Otherwise set it to null. Only
+   NUMBER ("i"). Otherwise set it to null. Only
    set this when you're actually confident which specific card it answers — most
    cards (original constructive arguments, cards not directly rebutting anything
    in this batch) should have "respondsTo": null. Do not force a match.
@@ -159,15 +161,19 @@ object and nothing else:
 Each option must be a short, concrete choice, not a yes/no.
 
 Otherwise, return ONLY one JSON object (no markdown, no prose) with this shape:
-{"flowName": "<the AFF being read, per rule 7 — or null>", "placements": [{"fileName": "<source file name, verbatim>", "tag": "<card tag, verbatim>", "cite": "<SHORT cite — Author 'YY, per rule 3, NOT verbatim>", "column": "<one of the existing columns above, verbatim>", "sheetName": "<an existing sheet name verbatim, OR your proposed new sheet name>", "isNewSheet": <true if sheetName is not one of the existing sheet names listed above>, "respondsTo": "<exact tag text of the card this answers, or null>", "isPlan": <true or false, per rule 5>, "sheetRole": "<'advantage', 'offcase', or null, per rule 6>"}]}
+{"flowName": "<the AFF being read, per rule 7 — or null>", "placements": [{"i": <the card's number from the list above>, "cite": "<SHORT cite — Author 'YY, per rule 3>", "column": "<one of the existing columns above, verbatim>", "sheetName": "<an existing sheet name verbatim, OR your proposed new sheet name>", "isNewSheet": <true if sheetName is not one of the existing sheet names listed above>, "respondsTo": <the NUMBER of the card this one answers, or null>, "isPlan": <true or false, per rule 5>, "sheetRole": "<'advantage', 'offcase', or null, per rule 6>"}]}
+
+"i" and "respondsTo" are NUMBERS, not text. Do not include a "tag" or "fileName"
+field at all — we look those up from the number. "cite" is the only text you
+write per card, and it is the SHORTENED form per rule 3, never the verbatim cite.
+
 Keep the placements in the SAME ORDER the cards were given (document order), so the
 first advantage's cards come before the second advantage's, and the 1AC before the
 off-case — the app relies on this order to lay out advantage tabs first, in 1AC order.
 
-Include EVERY card from every file in "placements" — never drop one, even if
-you're unsure; make your best call instead. "tag" must be copied verbatim from
-the card data above, "cite" must be SHORTENED per rule 3 (never verbatim), and
-"fileName" must match the source file it came from exactly.
+Include EVERY card from the list above — one entry per "i", never drop one, even
+if you're unsure; make your best call instead. A card you leave out is simply
+missing from the user's flow.
 
 If clarifying Q&A is present above, use the user's answer to resolve the
 ambiguity instead of asking again.

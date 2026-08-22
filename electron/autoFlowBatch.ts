@@ -28,7 +28,7 @@ export type FlatFlowCard = { fileName: string; card: ExtractedFlowCard };
 
 export interface DocGroup {
   fileName: string;
-  cards: ExtractedFlowCard[];
+  cards: (ExtractedFlowCard & { i?: number })[];
 }
 
 export function flattenDocs(docs: DocGroup[]): FlatFlowCard[] {
@@ -44,14 +44,21 @@ export function flattenDocs(docs: DocGroup[]): FlatFlowCard[] {
  * expects. Files appear in the order they're first seen in the slice, and each
  * file's cards keep their relative order, so a batch reads as a contiguous chunk
  * of the original documents rather than a reshuffle.
+ *
+ * Every card carries an `i` — its index within THIS batch. The model answers
+ * with that number instead of echoing the tagline back, which is the difference
+ * between ~130 output tokens per card and ~25. It also removes a whole class of
+ * failure: a tagline the model retyped slightly differently used to break
+ * `respondsTo` matching silently, and could fail the placement filter outright.
+ * We already hold the exact text — there is no reason to make it repeat it.
  */
 export function regroupBatch(batch: FlatFlowCard[]): DocGroup[] {
   const order: string[] = [];
-  const byFile = new Map<string, ExtractedFlowCard[]>();
-  for (const { fileName, card } of batch) {
+  const byFile = new Map<string, (ExtractedFlowCard & { i: number })[]>();
+  batch.forEach(({ fileName, card }, i) => {
     if (!byFile.has(fileName)) { byFile.set(fileName, []); order.push(fileName); }
-    byFile.get(fileName)!.push(card);
-  }
+    byFile.get(fileName)!.push({ ...card, i });
+  });
   return order.map((fileName) => ({ fileName, cards: byFile.get(fileName)! }));
 }
 
@@ -97,30 +104,48 @@ export interface NormalizedPlacement {
 }
 
 /**
- * Coerce the model's raw placement objects into the shape the write step relies
- * on, dropping any that are missing the three fields a card genuinely can't be
- * placed without. The DROPPED COUNT is reported to the user rather than hidden —
- * a silently shorter list used to be indistinguishable from a smaller document.
+ * Turn the model's index-keyed answers back into full placements, using `batch`
+ * as the source of truth for every piece of text the model was never asked to
+ * repeat (fileName, tag, and the tagline a `respondsTo` index points at).
+ *
+ * A row is dropped only when its `i` doesn't identify a real card in this batch,
+ * or it names no column/sheet — the three things a card genuinely cannot be
+ * placed without. The dropped count is reported to the user, never hidden.
  */
-export function normalizePlacements(rawList: any[]): NormalizedPlacement[] {
-  return (Array.isArray(rawList) ? rawList : [])
-    .filter((p: any) => p && typeof p.tag === 'string' && typeof p.column === 'string' && typeof p.sheetName === 'string')
-    .map((p: any) => ({
-      fileName: String(p.fileName ?? ''),
-      tag: String(p.tag ?? '').trim(),
-      cite: String(p.cite ?? '').trim(),
-      column: String(p.column ?? '').trim(),
-      sheetName: String(p.sheetName ?? '').trim(),
+export function normalizePlacements(rawList: any[], batch: FlatFlowCard[]): NormalizedPlacement[] {
+  const cards = batch ?? [];
+  const at = (n: unknown): FlatFlowCard | undefined => {
+    const idx = typeof n === 'number' ? n : Number(n);
+    return Number.isInteger(idx) && idx >= 0 && idx < cards.length ? cards[idx] : undefined;
+  };
+  const out: NormalizedPlacement[] = [];
+  for (const p of (Array.isArray(rawList) ? rawList : [])) {
+    if (!p) continue;
+    const src = at(p.i);
+    const column = String(p.column ?? '').trim();
+    const sheetName = String(p.sheetName ?? '').trim();
+    if (!src || !column || !sheetName) continue;
+    // An index pointing at a card outside this batch just means "no target" —
+    // the write step already places an unresolved answer normally.
+    const answered = p.respondsTo === null || p.respondsTo === undefined ? undefined : at(p.respondsTo);
+    out.push({
+      fileName: src.fileName,
+      tag: String(src.card.tag ?? '').trim(),
+      cite: String(p.cite ?? '').trim() || String(src.card.cite ?? '').trim(),
+      column,
+      sheetName,
       isNewSheet: !!p.isNewSheet,
-      // Best-effort hints for the write step's same-row/arrow placement and the
-      // plan-goes-first convention — both optional, both degrade gracefully to
-      // "place normally" if the model left them out or they don't resolve.
-      respondsTo: typeof p.respondsTo === 'string' && p.respondsTo.trim() ? p.respondsTo.trim() : null,
+      // Resolved back to the ACTUAL tagline text, so the write step's
+      // tag-keyed same-row/arrow lookup matches exactly instead of relying on
+      // the model having retyped it character for character.
+      respondsTo: answered && answered !== src ? String(answered.card.tag ?? '').trim() || null : null,
       isPlan: !!p.isPlan,
       // Which family of sheet this card's position belongs to, so the write step
       // can order tabs — aff advantages first (in 1AC order), then off-case.
       // 'advantage' = a 1AC aff case position (advantage/contention), 'offcase' =
       // a neg off-case position (DA/CP/K/T…), null = an existing/structural match.
       sheetRole: p.sheetRole === 'advantage' || p.sheetRole === 'offcase' ? p.sheetRole : null,
-    }));
+    });
+  }
+  return out;
 }

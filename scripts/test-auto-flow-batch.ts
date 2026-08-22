@@ -103,31 +103,58 @@ console.log('\n[4] mergeSheetNames — later batches inherit tabs earlier ones i
   check('batch 2 is told about batch 1\'s new tab', afterBatch1.includes('Heg Adv'));
 }
 
-console.log('\n[5] normalizePlacements — incomplete rows are dropped, and countable');
+console.log('\n[5] normalizePlacements — answers are indices, text comes from our own data');
 {
+  // The model returns NUMBERS. Tag and fileName are looked up from the batch, so
+  // it can neither mistype a tagline nor break respondsTo matching by
+  // paraphrasing one — which is what the old verbatim-echo contract allowed.
+  const batch = flattenDocs([
+    { fileName: 'AFF.docx', cards: [card('heg 1'), card('econ 1')] },
+    { fileName: '1NC.docx', cards: [card('no link', '1NC')] },
+  ]);
   const raw = [
-    { tag: 'good', column: '1AC', sheetName: 'Case', cite: 'X 24', isNewSheet: true, sheetRole: 'advantage' },
-    { tag: 'no column', sheetName: 'Case' },
-    { column: '1AC', sheetName: 'Case' },
-    { tag: 'no sheet', column: '1AC' },
+    { i: 0, column: '1AC', sheetName: 'Case', cite: 'X 24', isNewSheet: true, sheetRole: 'advantage' },
+    { i: 2, column: '1NC', sheetName: 'Case', respondsTo: 0 },
+    { i: 1, sheetName: 'Case' },                 // no column   → dropped
+    { i: 1, column: '2AC' },                     // no sheet    → dropped
+    { i: 99, column: '1AC', sheetName: 'Case' }, // bad index   → dropped
     null,
-    { tag: 'ok2', column: '2AC', sheetName: 'Case' },
   ];
-  const out = normalizePlacements(raw);
-  check('only complete rows survive', out.length === 2, `got ${out.length}`);
+  const out = normalizePlacements(raw, batch);
+  check('only rows with a real index + column + sheet survive', out.length === 2, `got ${out.length}`);
   check('the dropped count is derivable', raw.length - out.length === 4);
-  check('fields are coerced and trimmed', out[0].tag === 'good' && out[0].cite === 'X 24');
+  check('tag is taken from OUR data, never the model', out[0].tag === 'heg 1');
+  check('fileName is taken from our data too', out[1].fileName === '1NC.docx');
+  check('the model-supplied short cite is used', out[0].cite === 'X 24');
+  check('a missing cite falls back to the card\'s own', out[1].cite === 'no link cite');
   check('sheetRole passes through when valid', out[0].sheetRole === 'advantage');
-  check('an invalid sheetRole becomes null', normalizePlacements([
-    { tag: 't', column: 'c', sheetName: 's', sheetRole: 'nonsense' },
-  ])[0].sheetRole === null);
-  check('a blank respondsTo becomes null', normalizePlacements([
-    { tag: 't', column: 'c', sheetName: 's', respondsTo: '   ' },
-  ])[0].respondsTo === null);
-  check('a real respondsTo is kept trimmed', normalizePlacements([
-    { tag: 't', column: 'c', sheetName: 's', respondsTo: '  answers this  ' },
-  ])[0].respondsTo === 'answers this');
-  check('non-array input does not throw', normalizePlacements(undefined as any).length === 0);
+  check('respondsTo index resolves to the real tagline',
+    out[1].respondsTo === 'heg 1', String(out[1].respondsTo));
+
+  const one = (p: any) => normalizePlacements([{ i: 0, column: 'c', sheetName: 's', ...p }], batch)[0];
+  check('an invalid sheetRole becomes null', one({ sheetRole: 'nonsense' }).sheetRole === null);
+  check('a null respondsTo stays null', one({ respondsTo: null }).respondsTo === null);
+  check('an omitted respondsTo is null', one({}).respondsTo === null);
+  check('an out-of-range respondsTo is null, not a crash', one({ respondsTo: 99 }).respondsTo === null);
+  check('a card cannot answer itself', one({ respondsTo: 0 }).respondsTo === null);
+  check('a string index still resolves', normalizePlacements([{ i: '1', column: 'c', sheetName: 's' }], batch)[0].tag === 'econ 1');
+  check('a non-integer index is dropped', normalizePlacements([{ i: 1.5, column: 'c', sheetName: 's' }], batch).length === 0);
+  check('non-array input does not throw', normalizePlacements(undefined as any, batch).length === 0);
+  check('an empty batch drops everything rather than throwing',
+    normalizePlacements([{ i: 0, column: 'c', sheetName: 's' }], []).length === 0);
+}
+
+console.log('\n[5b] regroupBatch numbers every card for the model to answer with');
+{
+  const batch = flattenDocs([
+    { fileName: 'AFF.docx', cards: [card('a'), card('b')] },
+    { fileName: '1NC.docx', cards: [card('c', '1NC')] },
+  ]);
+  const grouped = regroupBatch(batch);
+  const idx = grouped.flatMap((g) => g.cards.map((c: any) => c.i));
+  check('indices are 0..n-1 across the whole batch', idx.join(',') === '0,1,2', idx.join(','));
+  check('an index identifies the same card the batch holds',
+    (grouped[1].cards[0] as any).i === 2 && batch[2].card.tag === 'c');
 }
 
 console.log('\n[6] End-to-end shape — a 778-card packet batches without loss');
