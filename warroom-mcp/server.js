@@ -10,9 +10,9 @@
  * Tools:
  *   get_warroom_context     — topic, event, tournament/round history (same as system prompt)
  *   get_skill               — load a skill .md file by name
- *   cross_ex_questions      — prep targeted cross-ex questions for a speech doc (mirrors in-app Cross-Ex Practice; splits Aff/Neg)
- *   cross_ex_trap_drill     — prep a cross-ex trap drill (mirrors in-app "Harder questions")
- *   score_card_credibility  — prep a credibility scoring pass for a speech doc's cards (mirrors in-app Card Credibility)
+ *   cross_ex_questions      — reusable rules for writing cross-ex questions (mirrors in-app Cross-Ex Practice); apply to a doc already in context, doesn't take one
+ *   cross_ex_trap_drill     — reusable rules for a cross-ex trap drill (mirrors in-app "Harder questions"); apply to a doc already in context, doesn't take one
+ *   score_card_credibility  — reusable rubric for scoring card credibility (mirrors in-app Card Credibility); apply to cards already in context, doesn't take them
  *   outweigh_practice_round — run one round of the in-app "Outweigh" impact-calculus drill
  *   fetch_article           — fetch readable text from a URL
  *   list_flows / read_flow  — browse the user's flow sheets
@@ -216,26 +216,20 @@ Built-in skills: cx_debate, pf_debate, ld_debate, card_cutting, user_manual, doc
 );
 
 // ── cross_ex_questions ──────────────────────────────────────────────────────────
-// Mirrors the in-app "Cross-Ex Practice" panel in the speech doc viewer: given a
-// document's text, produce targeted cross-examination questions grounded in the
-// skill for the user's event. The server has no LLM, so it returns the event skill
-// + the doc + a generation brief for the calling model to write the questions from.
+// Mirrors the in-app "Cross-Ex Practice" panel in the speech doc viewer, but doesn't
+// take the document — the calling model already has that in its own context. The
+// server has no LLM, so this just returns the reusable rules + the skill for the
+// user's event; the calling model applies them to whatever doc text it's holding.
 server.tool(
   'cross_ex_questions',
-  `Prepare targeted cross-examination questions (with model answers) for a speech document, the same way the in-app Cross-Ex Practice panel does.
-Pass the document text. Returns the guide for the user's event plus a brief telling you to write pointed CX questions, each with the likely opponent answer (kept hidden until ready) and a separate one-line "Press next" follow-up to run after that answer.
+  `Return the reusable instructions for writing targeted cross-examination questions (with model answers) for a speech document, the same way the in-app Cross-Ex Practice panel does. Doesn't take the document itself — apply the returned rules to the doc text you already have.
 Use 'based_on' to generate more questions like a specific one.`,
   {
-    highlighted_text: z.string().describe('Highlighted/underlined text from the speech document (tags, cites, emphasized runs)'),
-    full_text: z.string().optional().describe('Full document text including un-highlighted body — only used to detect contradictions'),
     event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
     count: z.number().optional().describe('How many questions to write (default 4, max 6)'),
     based_on: z.string().optional().describe('Generate new questions in the same spirit as this seed question'),
   },
-  async ({ highlighted_text, full_text, event, count = 4, based_on }) => {
-    const text = (highlighted_text ?? '').trim();
-    if (!text) return { content: [{ type: 'text', text: 'No highlighted text provided.' }] };
-
+  async ({ event, count = 4, based_on }) => {
     // Resolve the event → skill, falling back to the user's saved setting.
     let ev = event;
     if (!ev) {
@@ -250,11 +244,7 @@ Use 'based_on' to generate more questions like a specific one.`,
 
     const brief = based_on
       ? `Write ${n} NEW cross-ex questions in the same spirit as this seed — same line of attack, fresh angles. Do not repeat it.\nSEED: ${based_on}`
-      : `Decide whether this doc contains AFF content, NEG content, or BOTH, then write 3-6 cross-ex questions TOTAL distributed across the sides present, in proportion to each side's highlighted content (a side with far less content gets 0-1 questions).`;
-
-    const fullSection = full_text?.trim()
-      ? `## Full card text (un-highlighted body — only reference if it DIRECTLY and COMPLETELY CONTRADICTS the highlighted text in the same card)\n${(full_text ?? '').slice(0, 60000)}\n`
-      : '';
+      : `Using the speech document text you already have, decide whether it contains AFF content, NEG content, or BOTH, then write 3-6 cross-ex questions TOTAL distributed across the sides present, in proportion to each side's highlighted content (a side with far less content gets 0-1 questions).`;
 
     const out = [
       `# Cross-Ex Practice — ${eventLabel}`,
@@ -275,8 +265,6 @@ Use 'based_on' to generate more questions like a specific one.`,
       `- Weight question counts by HIGHLIGHTED content per side, not small text. Group your output under Aff / Neg headers when both are present.`,
       ``,
       skill ? `## Event guide (${skillName})\n${skill.slice(0, 8000)}\n` : '',
-      `## Highlighted text (tags, cites, underlined/highlighted runs)\n${text.slice(0, 40000)}\n`,
-      fullSection,
     ].filter(Boolean).join('\n');
 
     return { content: [{ type: 'text', text: out }] };
@@ -284,21 +272,16 @@ Use 'based_on' to generate more questions like a specific one.`,
 );
 
 // ── cross_ex_trap_drill ─────────────────────────────────────────────────────────
-// Mirrors the in-app "Harder questions" trap drill: produce setup questions that
-// bait a wrong answer and spring a gotcha follow-up, for the calling model to run.
+// Mirrors the in-app "Harder questions" trap drill, but doesn't take the document —
+// the calling model already has that in its own context. Just returns the reusable
+// rules + the skill for the user's event.
 server.tool(
   'cross_ex_trap_drill',
-  `Prepare a cross-ex TRAP DRILL for a speech document, like the in-app "Harder questions" feature.
-Returns the event guide + doc + a brief telling you to write trap questions: a setup that looks innocent, the tempting wrong answer that springs it, the gotcha follow-up, the ideal trap-avoiding answer, and the lesson. Run the drill by asking the student the setup, then grading their typed answer.`,
+  `Return the reusable instructions for running a cross-ex TRAP DRILL for a speech document, like the in-app "Harder questions" feature. Doesn't take the document itself — apply the returned instructions to the doc text you already have.`,
   {
-    highlighted_text: z.string().describe('Highlighted/underlined text from the speech document'),
-    full_text: z.string().optional().describe('Full document text including un-highlighted body'),
     event: z.enum(['policy', 'pf', 'ld']).optional().describe('Override the debate event; defaults to the user\'s saved event'),
   },
-  async ({ highlighted_text, full_text, event }) => {
-    const text = (highlighted_text ?? '').trim();
-    if (!text) return { content: [{ type: 'text', text: 'No highlighted text provided.' }] };
-
+  async ({ event }) => {
     let ev = event;
     if (!ev) {
       const settings = await readJson('app_settings');
@@ -312,13 +295,11 @@ Returns the event guide + doc + a brief telling you to write trap questions: a s
     const out = [
       `# Cross-Ex Trap Drill — ${eventLabel}`,
       ``,
-      `Design 3 cross-ex TRAPS from the highlighted text. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.`,
+      `Using the speech document text you already have, design 3 cross-ex TRAPS from its highlighted text. A trap is a setup question that looks innocent but where a careless answer walks the student into a devastating follow-up.`,
       `For each trap give: the setup question, the tempting WRONG answer that springs it, the gotcha follow-up that exploits the wrong answer, the disciplined ideal answer that avoids the trap, and a one-sentence lesson.`,
       `Run the drill one trap at a time: ask the setup, let the student answer, then tell them whether they avoided the trap or fell for it (spring the gotcha), what went wrong, and how to fix it. Keep questions 1-3 sentences and answers/feedback short. No markdown emphasis.`,
       ``,
       skill ? `## Event guide (${skillName})\n${skill.slice(0, 8000)}\n` : '',
-      `## Highlighted text\n${text.slice(0, 40000)}\n`,
-      full_text?.trim() ? `## Full card text\n${(full_text ?? '').slice(0, 60000)}\n` : '',
     ].filter(Boolean).join('\n');
 
     return { content: [{ type: 'text', text: out }] };
@@ -326,32 +307,20 @@ Returns the event guide + doc + a brief telling you to write trap questions: a s
 );
 
 // ── score_card_credibility ──────────────────────────────────────────────────────
-// Mirrors the in-app "Card Credibility" panel in the speech doc viewer: given the
-// doc's cards (tag + cite), score each one's evidentiary credibility. The server has
-// no LLM, so it returns the cards plus a scoring brief for the calling model.
+// Mirrors the in-app "Card Credibility" panel, but doesn't take the cards — the
+// calling model already has that doc/those cards in its own context. Just returns
+// the reusable scoring rubric. Fully static (no event/settings dependency either),
+// so it takes no arguments at all.
 server.tool(
   'score_card_credibility',
-  `Score the credibility of every evidence card in a speech document, the same way the in-app Card Credibility panel does.
-Pass the cards as a list of { tag, cite } objects (the card's tag/headline plus the cite text that follows it). Returns a brief telling you to grade each card and a numbered list of the cards to score.
+  `Return the reusable rubric for scoring the credibility of evidence cards in a speech document, the same way the in-app Card Credibility panel does. Doesn't take the cards themselves — apply the rubric to whichever cards you already have (each card's tag + cite text).
 Judge ONLY from what the cite text states — never invent credentials, dates, or outlets that are not present.`,
-  {
-    cards: z.array(z.object({
-      tag: z.string().describe('The card tag/headline'),
-      cite: z.string().describe('The cite text that follows the tag (author, date, source, body)'),
-    })).describe('The cards to score, in document order'),
-  },
-  async ({ cards }) => {
-    const list = (cards ?? []).filter((c) => (c?.tag ?? '').trim() || (c?.cite ?? '').trim());
-    if (!list.length) return { content: [{ type: 'text', text: 'No cards provided.' }] };
-
-    const numbered = list
-      .map((c, i) => `### Card ${i + 1}\nTAG: ${(c.tag ?? '').trim().slice(0, 600)}\nCITE: ${(c.cite ?? '').trim().slice(0, 600)}`)
-      .join('\n\n');
-
+  {},
+  async () => {
     const out = [
       `# Card Credibility`,
       ``,
-      `Score the credibility of each numbered card below as evidence. Return your results in the SAME ORDER as the cards are listed.`,
+      `Score the credibility of each card as evidence, in the same order they were given to you.`,
       ``,
       `For EACH card give:`,
       `- An OVERALL score from 0 to 10.`,
@@ -367,9 +336,6 @@ Judge ONLY from what the cite text states — never invent credentials, dates, o
       `4. Score SOURCE by a publication hierarchy: peer-reviewed journal > government report > established think tank > major newspaper > trade publication > op-ed > blog/unknown.`,
       `5. Score CLAIM FIT by whether the cite's apparent subject actually supports the tag — penalize tags that overclaim relative to what the source likely says.`,
       `6. Keep the reason and press line short and plain. No markdown emphasis (no **, *, __). Use single quotes around key phrases.`,
-      ``,
-      `## Cards to score (${list.length})`,
-      numbered,
     ].join('\n');
 
     return { content: [{ type: 'text', text: out }] };

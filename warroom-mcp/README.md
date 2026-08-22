@@ -51,9 +51,9 @@ After saving the config, quit and reopen Claude. The Warroom tools will appear i
 | `get_warroom_context` | Your debate event + current NSDA topic + tournament/round history. Call this first in any debate conversation. |
 | `get_skill` | Load a knowledge file: `cx_debate`, `pf_debate`, `ld_debate`, `card_cutting`, `user_manual`, `documentation` |
 | `search_warroom` | Search across cases, opponents, judges, tournaments, and current topics in one query |
-| `cross_ex_questions` | Generate cross-examination questions (with model answers) for a speech doc, like the in-app Cross-Ex Practice panel |
-| `cross_ex_trap_drill` | Generate a cross-ex trap drill for a speech doc, like the in-app "Harder questions" feature |
-| `score_card_credibility` | Score the credibility of a speech doc's cards, like the in-app Card Credibility panel |
+| `cross_ex_questions` | Rules for writing cross-examination questions (with model answers), like the in-app Cross-Ex Practice panel. Doesn't take a doc — returns the rules for Claude to apply to a speech doc already in the conversation. |
+| `cross_ex_trap_drill` | Rules for a cross-ex trap drill, like the in-app "Harder questions" feature. Same shape as above — apply to a doc already in the conversation. |
+| `score_card_credibility` | Rubric for scoring evidence card credibility, like the in-app Card Credibility panel. Apply to cards already in the conversation. |
 | `outweigh_practice_round` | Run one round of the in-app "Outweigh" impact-calculus practice game |
 | `fetch_article` | Fetch readable text from a URL (for reading a source or cutting a card from it) |
 | `list_flows` | List all saved flows |
@@ -69,7 +69,7 @@ Once connected, try asking Claude:
 - *"Search my saved data for anything on deterrence"* — calls `search_warroom`
 - *"What tournaments do I have saved?"* — calls `search_warroom`
 - *"Read my flow from the last round"* — calls `list_flows` then `read_flow`
-- *"Quiz me on cross-ex for this speech doc: [pasted text]"* — calls `cross_ex_questions`
+- *"Quiz me on cross-ex for this speech doc: [pasted text]"* — Claude calls `cross_ex_questions` for the rules, then applies them to the pasted text itself
 - *"Run an Outweigh practice round, varsity policy"* — calls `outweigh_practice_round`
 
 ## Custom data path
