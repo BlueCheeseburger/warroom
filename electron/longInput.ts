@@ -222,55 +222,40 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Input-token capacity per model, matched on the longest key that prefixes the
- * model id. Deliberately conservative: these are the published windows minus
- * room for the response, so "fits" here means "fits with space to answer".
+ * `null` when the prompt fits, or when `limit` is null.
+ *
+ * WHY `limit` CAN BE NULL, AND WHY THAT MEANS "DON'T BLOCK":
+ *
+ * This used to consult a hard-coded table of context windows keyed by model-id
+ * prefix, with a 100,000-token default for anything unrecognised. Both halves
+ * were wrong in the same direction — they REFUSED requests that would have
+ * worked. `claude-opus` was listed at 180,000 when an Opus model may carry a
+ * million; every LM Studio model, and every model released after the table was
+ * written, fell to the 100,000 default. And because this guard runs inside
+ * `callAI`, a wrong entry silently broke every AI feature in the app, not just
+ * the one being worked on.
+ *
+ * The costs here are asymmetric:
+ *
+ *   - Guess too LOW and a legitimate request is refused locally, with no
+ *     override and no way for the user to tell the refusal is bogus.
+ *   - Guess too HIGH and the provider returns a 400 that says exactly what the
+ *     real limit is — which the `*HttpError` parsers already surface verbatim.
+ *
+ * So the rule is: **only block on a limit the provider actually told us.**
+ * `resolveContextLimit` in main.ts asks Gemini and LM Studio, which report it;
+ * for providers with no such endpoint it returns null and no pre-flight block
+ * happens at all. Nothing is lost in that case — the request goes out and the
+ * provider's own error is what the user sees, which is authoritative and always
+ * current in a way a table in this file can never be.
  */
-const CONTEXT_LIMITS: Record<string, number> = {
-  'gemini-1.5-flash': 900_000,
-  'gemini-1.5-pro': 1_800_000,
-  'gemini-2': 900_000,
-  'gemini-3': 900_000,
-  'gemini': 900_000,
-  'gpt-4o': 110_000,
-  'gpt-4.1': 900_000,
-  'gpt-5': 350_000,
-  'gpt': 110_000,
-  'o1': 180_000,
-  'o3': 180_000,
-  'claude-3': 180_000,
-  'claude-haiku': 180_000,
-  'claude-sonnet': 180_000,
-  'claude-opus': 180_000,
-  'claude': 180_000,
-  'grok': 120_000,
-};
-
-/** Anything unrecognised — including a local LM Studio model — gets this. */
-export const DEFAULT_CONTEXT_LIMIT = 100_000;
-
-export function contextLimitFor(modelId: string): number {
-  const id = String(modelId ?? '').toLowerCase();
-  let best = '';
-  for (const key of Object.keys(CONTEXT_LIMITS)) {
-    if (id.startsWith(key) && key.length > best.length) best = key;
-  }
-  return best ? CONTEXT_LIMITS[best] : DEFAULT_CONTEXT_LIMIT;
-}
-
-/**
- * `null` when the prompt fits. Otherwise a message naming the real numbers —
- * this is a hard stop, not a warning: the provider would reject the request
- * anyway, and doing it here means the user hears why in their own terms instead
- * of reading a raw 400.
- */
-export function overContextLimit(prompt: string, modelId: string): string | null {
+export function overContextLimit(prompt: string, limit: number | null): string | null {
+  if (!limit || limit <= 0) return null;
   const tokens = estimateTokens(prompt);
-  const limit = contextLimitFor(modelId);
   if (tokens <= limit) return null;
   return (
     `This is too big for Warroom AI to read at once — roughly ${tokens.toLocaleString()} tokens ` +
-    `against a limit of about ${limit.toLocaleString()}. Nothing was sent. ` +
+    `against this model's limit of ${limit.toLocaleString()}. Nothing was sent. ` +
     `Remove some documents, or turn on Settings → Warroom AI behavior → "Work past the length limit" ` +
     `so it can be read in pieces.`
   );

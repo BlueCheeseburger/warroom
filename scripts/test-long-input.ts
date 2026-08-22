@@ -10,8 +10,8 @@
 
 import {
   splitFlowSummaryIntoSheets, countCardLines, sampleSections, trimToLines,
-  buildCoverageNote, chunkSections, estimateTokens, contextLimitFor,
-  overContextLimit, DEFAULT_CONTEXT_LIMIT, Section,
+  buildCoverageNote, chunkSections, estimateTokens,
+  overContextLimit, Section,
 } from '../electron/longInput';
 
 let pass = 0, fail = 0;
@@ -135,25 +135,35 @@ console.log('\n[7] chunkSections — whole sheets only');
   check('empty input yields no chunks', chunkSections([], 100).length === 0);
 }
 
-console.log('\n[8] Context guard — a hard stop before anything is sent');
+console.log('\n[8] Context guard — blocks only against a limit the provider gave us');
 {
   check('token estimate scales with length', estimateTokens('x'.repeat(3500)) === 1000);
   check('empty text is zero tokens', estimateTokens('') === 0);
 
-  check('gemini maps to its big window', contextLimitFor('gemini-2.5-flash') === 900_000);
-  check('claude maps to 180k', contextLimitFor('claude-sonnet-4') === 180_000);
-  check('longest-prefix wins over a shorter one', contextLimitFor('gpt-4.1-mini') === 900_000);
-  check('an unknown model gets the conservative default',
-    contextLimitFor('some-local-llama') === DEFAULT_CONTEXT_LIMIT);
-  check('an empty model id does not throw', contextLimitFor('') === DEFAULT_CONTEXT_LIMIT);
+  // The core rule. Guessing LOW refuses a request that would have worked, with
+  // no override — that is how a hard-coded table listing claude-opus at 180k
+  // broke every AI feature at once. Guessing high just means the provider's own
+  // 400 answers, and that error is already surfaced verbatim.
+  check('an unknown limit never blocks, however big the prompt',
+    overContextLimit('x'.repeat(5_000_000), null) === null);
+  check('a zero limit is treated as unknown, not as "block everything"',
+    overContextLimit('x'.repeat(5_000_000), 0) === null);
+  check('a negative limit is treated as unknown too',
+    overContextLimit('x'.repeat(5_000_000), -1) === null);
 
-  check('a normal prompt passes', overContextLimit('hello', 'gemini-2.5-flash') === null);
-  // 1,000,000 chars ≈ 285,000 tokens, comfortably past Claude's 180k.
-  const over = overContextLimit('x'.repeat(1_000_000), 'claude-sonnet-4');
-  check('an oversized prompt is blocked', over !== null);
-  check('the block names the real numbers', !!over && over.includes('180,000'));
+  check('a prompt inside a known limit passes', overContextLimit('hello', 200_000) === null);
+  check('a prompt exactly at the limit passes', overContextLimit('x'.repeat(3500), 1000) === null);
+
+  const over = overContextLimit('x'.repeat(1_000_000), 200_000);
+  check('a prompt past a known limit is blocked', over !== null);
+  check('the block names the model\'s real limit', !!over && over.includes('200,000'));
+  check('the block names the estimated size', !!over && over.includes('285,715'));
   check('the block says nothing was sent', !!over && over.includes('Nothing was sent'));
   check('the block points at the setting', !!over && over.includes('Work past the length limit'));
+
+  // A million-token model must not be blocked at a smaller model's ceiling.
+  check('a 1M-context model accepts what a 200k one would refuse',
+    overContextLimit('x'.repeat(1_000_000), 1_000_000) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

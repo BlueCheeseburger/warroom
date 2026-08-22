@@ -2855,7 +2855,11 @@ export default function Documentation() {
           </UL>
           <P>
             Above the model's real capacity nothing is sent at all — the request is refused with the
-            actual token numbers. That's a model limit, so no setting bypasses it.
+            actual token numbers. That's a model limit, so no setting bypasses it. Warroom{' '}
+            <em>asks your provider</em> what the limit is rather than assuming one, so switching to a
+            model with a larger context window raises the ceiling immediately. Where a provider
+            doesn't publish its limits, Warroom doesn't guess — it sends the request and shows you
+            the provider's own error, which is always right and always current.
           </P>
           <H3>Nothing is truncated silently</H3>
           <P>

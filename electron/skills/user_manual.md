@@ -677,7 +677,7 @@ Warroom AI can only read so much at once. What happens past that point is up to 
 
 Rough rule: **even sampling** when detail matters more than coverage, **passes** when you'd rather it saw everything.
 
-**The hard stop.** If something is bigger than Warroom AI can physically read, it's refused outright — nothing is sent, and you're told how far over it was. That's a real limit of the model, not a Warroom setting, so no toggle gets around it.
+**The hard stop.** If something is bigger than the model you're using can physically read, it's refused outright — nothing is sent, and you're told how far over it was. That's a real limit of the model, not a Warroom setting, so no toggle gets around it. Warroom asks your provider what the actual limit is rather than assuming, so switching to a model with a bigger context window (or loading a local model with more context) immediately raises the ceiling. On providers that don't publish their limits, Warroom doesn't guess — it sends the request and shows you the provider's own error if it's too big.
 
 ---
 

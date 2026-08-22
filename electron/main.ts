@@ -34,6 +34,57 @@ import {
   LongInputMethod, splitFlowSummaryIntoSheets, sampleSections, buildCoverageNote,
   chunkSections, overContextLimit,
 } from './longInput';
+
+/**
+ * The model's real input-token capacity, asked of the provider — or null when
+ * the provider has no way to tell us, which means "don't pre-flight block".
+ *
+ * Only Gemini and LM Studio expose this. OpenAI, Anthropic, and Grok have no
+ * endpoint reporting a context window, so rather than guess (the old table said
+ * `claude-opus` was 180k and defaulted every unrecognised model to 100k, which
+ * refused perfectly valid requests across every AI feature in the app) we send
+ * the request and let their own 400 be the authority — it names the true limit
+ * and is already surfaced verbatim by the `*HttpError` parsers.
+ *
+ * Cached per model id for the process lifetime: a model's window doesn't change
+ * under us, and this would otherwise add a round-trip to every single AI call.
+ */
+const contextLimitCache = new Map<string, number | null>();
+
+async function resolveContextLimit(provider: Provider, modelId: string, apiKey: string): Promise<number | null> {
+  const key = `${provider}:${modelId}`;
+  if (contextLimitCache.has(key)) return contextLimitCache.get(key)!;
+
+  let limit: number | null = null;
+  try {
+    if (provider === 'gemini') {
+      // models.get reports inputTokenLimit / outputTokenLimit for the exact model.
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}`, {
+        headers: geminiHeaders(apiKey),
+      });
+      if (res.ok) {
+        const n = Number((await res.json() as any)?.inputTokenLimit);
+        if (Number.isFinite(n) && n > 0) limit = n;
+      }
+    } else if (provider === 'lmstudio') {
+      // LM Studio's native endpoint reports the context length the model was
+      // actually LOADED with, which is the number that matters locally — a
+      // model card's theoretical max is irrelevant if it was loaded smaller.
+      const cfg = await lmstudioConfig();
+      const base = cfg.baseUrl.replace(/\/v1\/?$/, '');
+      const res = await fetch(`${base}/api/v0/models`);
+      if (res.ok) {
+        const list = (await res.json() as any)?.data;
+        const hit = Array.isArray(list) ? list.find((m: any) => m?.id === modelId) : null;
+        const n = Number(hit?.loaded_context_length ?? hit?.max_context_length);
+        if (Number.isFinite(n) && n > 0) limit = n;
+      }
+    }
+  } catch { /* unreachable provider — fall through to "unknown", i.e. don't block */ }
+
+  contextLimitCache.set(key, limit);
+  return limit;
+}
 import {
   LMSTUDIO_TIMEOUT_MS, LmStudioConfig, resolveLmStudioConfig, normalizeLmStudioUrl,
   buildLmStudioChatBody, lmstudioHttpError, lmstudioConnError, lmstudioHeaders,
@@ -1140,10 +1191,10 @@ async function callGrok(apiKey: string, prompt: string, modelId: string, extraCo
 async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?: { maxOutputTokens?: number }): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask(taskTier);
   if (!apiKey) throw new Error('NO_KEY');
-  // Hard stop BEFORE the request. The provider would reject this anyway with a
-  // raw 400; refusing here means the user hears it in their own terms, with the
-  // real numbers and what to do about it, and no tokens are spent.
-  const overLimit = overContextLimit(prompt, modelId);
+  // Hard stop BEFORE the request, but ONLY against a limit the provider actually
+  // told us (null = unknown = don't block; see overContextLimit's comment for
+  // why guessing low is the dangerous direction).
+  const overLimit = overContextLimit(prompt, await resolveContextLimit(provider, modelId, apiKey));
   if (overLimit) throw new Error(overLimit);
   if (provider === 'lmstudio')  return callLMStudio(prompt, extraConfig);
   if (provider === 'openai')    return callOpenAI(apiKey, prompt, modelId, extraConfig);
