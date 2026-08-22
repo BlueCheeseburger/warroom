@@ -69,7 +69,13 @@ function loadSessionPanes(forView: View): [string | undefined, string | undefine
     const raw = localStorage.getItem(SESSION_PANES_KEY);
     if (!raw) return [undefined, undefined];
     const p = JSON.parse(raw);
-    return Array.isArray(p) && p.length === 2 ? (p as [string | undefined, string | undefined]) : [undefined, undefined];
+    if (!Array.isArray(p) || p.length !== 2) return [undefined, undefined];
+    // Normalize falsy-but-defined entries (e.g. '') to undefined. A pre-fix
+    // version of "+ compare doc" used to persist an empty-string placeholder
+    // for a pane awaiting a drop, which a fresh launch would resurrect as a
+    // phantom empty pane forever — this heals any such value already saved,
+    // regardless of when it was written.
+    return p.map((v: unknown) => (typeof v === 'string' && v ? v : undefined)) as [string | undefined, string | undefined];
   } catch { return [undefined, undefined]; }
 }
 
