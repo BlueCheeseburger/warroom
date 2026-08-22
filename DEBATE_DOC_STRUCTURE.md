@@ -58,6 +58,17 @@ order. (The outline UI does exactly this in `SpeechDocViewer.tsx`.)
 
 ---
 
+**XML entities must be decoded, not just tag-stripped.** Paragraph text in OOXML
+is entity-encoded, so removing `<w:...>` tags is only half the job — `&amp;`,
+`&lt;`, `&#8217;` all survive a naive strip. `extractFlowCardsFromXml` runs
+`decodeXmlEntities` (exported from `electron/docxFlowCards.ts`) inside its
+`strip`. This matters more than it looks: since Auto Flow placements became
+index-keyed, this parser is the **only** source of tag and cite text (the model
+no longer retypes them), so an undecoded `&` reaches the flow cell, gets escaped
+again by `buildCellHtml`, and renders as a literal `&amp;`. Measured on real
+speech docs before the fix: 116 of 833 cites and 3 taglines. `&amp;` is decoded
+last so `&amp;lt;` yields the literal text `&lt;` rather than `<`.
+
 ## 2. Inside a single card
 
 After a tag, the following paragraphs are `Normal` / `NormalWeb`:
@@ -126,6 +137,38 @@ cite + body paragraph, emphasis flattened to plain text). Cross-ex generation ru
 highlighted text in the same card.
 
 ---
+
+## 4b. Short cites (`electron/citeShort.ts`)
+
+The cite paragraph under a tag carries the full quals — author, job title,
+institution, date, sometimes the article title and URL. What goes on a flow is
+the **short cite** a debater says out loud: `Cutler & Klarnet '26`.
+
+Real cites come in two dominant shapes, both putting the short cite first:
+
+| Shape | Example | Cut at |
+|---|---|---|
+| Bracket | `Toth ’16 [Federico; May; University of Bologna…` | `[` or `(` |
+| Comma | `Ralph Nader 25, Former presidential candidate…` | `,` |
+
+`shortCite(full)` takes the head before that delimiter, drops honorifics
+(`Dr.`, `Prof.`) and post-nominals (`PhD`, `JD`), pulls a trailing year, and
+reduces the remaining name run to a surname — the LAST token, walking back over
+particles so `van der Berg` survives whole. `&`/`and` keeps both surnames;
+`et al` is preserved. Year forms include `’26`, `26`, `2026`, Verbatim's
+month-day current-year form (`'7/1`, `’6-25`), and the `'2k` shorthand.
+
+Two deliberate refusals, both returning `''` rather than a placeholder:
+`<<… FOR REFERENCE >>` markers (a card already read — no author to cite), and a
+head with **no year and no delimiter**, which is arbitrary prose rather than a
+cite head. Without that second rule an analytic sitting in the cite slot
+(`"1. Uniqueness. COVID thumps any benefits…"`) yields a nonsense surname.
+
+Measured over 833 real cites: **95% shortened**, the remainder reference markers
+plus a handful of analytics correctly rejected. Auto Flow still asks Warroom AI
+for the short cite (it handles organisations better — `PAHF '23`); this is the
+fallback when the model omits it, replacing an older fallback that wrote the
+**entire cite paragraph** into the flow cell.
 
 ## 5. Aff vs neg detection
 

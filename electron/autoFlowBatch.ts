@@ -16,6 +16,7 @@
 // Run the tests:  npx tsx scripts/test-auto-flow-batch.ts
 
 import type { ExtractedFlowCard } from './docxFlowCards';
+import { shortCite } from './citeShort';
 
 /**
  * One (fileName, card) pair, flattened out of the per-doc grouping so batches can
@@ -131,7 +132,12 @@ export function normalizePlacements(rawList: any[], batch: FlatFlowCard[]): Norm
     out.push({
       fileName: src.fileName,
       tag: String(src.card.tag ?? '').trim(),
-      cite: String(p.cite ?? '').trim() || String(src.card.cite ?? '').trim(),
+      // The model's short cite when it gave one; otherwise PARSE one out of the
+      // full cite. The old fallback was the raw cite paragraph — the exact wall
+      // of quals, job titles, and dates the prompt tells it to strip, dumped
+      // into a flow cell. `shortCite` handles 95% of real cites; the rest are
+      // `<<FOR REFERENCE>>` markers, which correctly yield nothing.
+      cite: String(p.cite ?? '').trim() || shortCite(src.card.cite ?? ''),
       column,
       sheetName,
       isNewSheet: !!p.isNewSheet,

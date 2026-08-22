@@ -25,7 +25,9 @@ function check(name: string, cond: boolean, extra = '') {
   else { fail++; console.log(`  ✗ ${name}${extra ? '  →  ' + extra : ''}`); }
 }
 
-const card = (tag: string, pocket = '1AC'): any => ({ pocket, hat: null, block: null, tag, cite: `${tag} cite` });
+// A realistic Verbatim cite, so the shortCite fallback has something to work on.
+const card = (tag: string, pocket = '1AC'): any =>
+  ({ pocket, hat: null, block: null, tag, cite: `${tag} Smith '24 [Jane; March; Professor of Things]` });
 
 const docs: DocGroup[] = [
   { fileName: 'AFF.docx', cards: [card('heg 1'), card('heg 2'), card('econ 1')] },
@@ -126,7 +128,11 @@ console.log('\n[5] normalizePlacements — answers are indices, text comes from 
   check('tag is taken from OUR data, never the model', out[0].tag === 'heg 1');
   check('fileName is taken from our data too', out[1].fileName === '1NC.docx');
   check('the model-supplied short cite is used', out[0].cite === 'X 24');
-  check('a missing cite falls back to the card\'s own', out[1].cite === 'no link cite');
+  // The fallback SHORTENS the card's own cite — it does not copy the raw
+  // paragraph in, which used to dump every qual and job title into a flow cell.
+  check('a missing cite falls back to a SHORTENED form of the card\'s own',
+    out[1].cite === "Smith '24", `got "${out[1].cite}"`);
+  check('the fallback never contains the quals', !/Professor|March/.test(out[1].cite));
   check('sheetRole passes through when valid', out[0].sheetRole === 'advantage');
   check('respondsTo index resolves to the real tagline',
     out[1].respondsTo === 'heg 1', String(out[1].respondsTo));

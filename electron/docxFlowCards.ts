@@ -36,12 +36,38 @@ export interface ExtractedFlowCard {
 
 const BODY_CAP = 4000; // chars per card — enough for a good summary, bounds payload
 
+/**
+ * Decode the five XML predefined entities plus numeric character references.
+ * `&amp;` is deliberately decoded LAST so `&amp;lt;` yields the literal text
+ * `&lt;` rather than being double-decoded into `<`.
+ */
+export function decodeXmlEntities(s: string): string {
+  return String(s ?? '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => safeCodePoint(parseInt(d, 10)))
+    .replace(/&amp;/g, '&');
+}
+
+function safeCodePoint(n: number): string {
+  return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+}
+
 export function extractFlowCardsFromXml(
   xml: string,
   headingLevels: Map<string, number>,
   includeBody = false,
 ): ExtractedFlowCard[] {
-  const strip = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  // Tags must come OFF and entities must come OUT. Stripping tags without
+  // decoding entities leaves `&amp;` / `&lt;&lt;` sitting in the text, and this
+  // is the only source of tag and cite text now that placements are index-keyed
+  // (the model no longer retypes them) — so an undecoded `&` reaches the flow
+  // cell, gets escaped again by buildCellHtml, and renders as a literal
+  // "&amp;". Measured on real speech docs: 116 of 833 cites and 3 taglines.
+  const strip = (s: string) => decodeXmlEntities(s.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
   const getStyle = (p: string) => (p.match(/w:pStyle\s+w:val="([^"]+)"/) ?? [])[1] ?? 'Normal';
   const levelOfStyle = (style: string) => headingLevels.get(style) ?? 0;
 
