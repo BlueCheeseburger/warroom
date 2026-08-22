@@ -677,6 +677,8 @@ Warroom AI can only read so much at once. What happens past that point is up to 
 
 Rough rule: **even sampling** when detail matters more than coverage, **passes** when you'd rather it saw everything.
 
+**Card credibility scores are never invented.** If Warroom AI doesn't return a rating for a card, that card is left out of the list rather than shown a made-up score — and the panel tells you how many were skipped ("47 of 60 cards scored"). Previously an unscored card was displayed as **0 / Weak**, which is indistinguishable from a real bottom rating. Long documents are scored in batches, with no cap on how many cards you can score.
+
 **The hard stop.** If something is bigger than the model you're using can physically read, it's refused outright — nothing is sent, and you're told how far over it was. That's a real limit of the model, not a Warroom setting, so no toggle gets around it. Warroom asks your provider what the actual limit is rather than assuming, so switching to a model with a bigger context window (or loading a local model with more context) immediately raises the ceiling. On providers that don't publish their limits, Warroom doesn't guess — it sends the request and shows you the provider's own error if it's too big.
 
 ---

@@ -1930,7 +1930,7 @@ function hashCards(cards: CredCard[]): string {
 }
 
 const credKey = (path: string) => `warroom-cred-${path}`;
-function loadCred(path: string, hash: string): CardScore[] | null {
+function loadCred(path: string, hash: string): (CardScore | null)[] | null {
   if (!path) return null;
   try {
     const v = JSON.parse(localStorage.getItem(credKey(path)) ?? 'null');
@@ -1938,7 +1938,7 @@ function loadCred(path: string, hash: string): CardScore[] | null {
   } catch { /* ignore */ }
   return null;
 }
-function saveCred(path: string, hash: string, scores: CardScore[]) {
+function saveCred(path: string, hash: string, scores: (CardScore | null)[]) {
   if (!path) return;
   try { localStorage.setItem(credKey(path), JSON.stringify({ hash, scores })); } catch { /* ignore */ }
 }
@@ -2231,7 +2231,7 @@ function CommentThread({ root, replies, currentUserId, teamMembers, onScrollTo, 
 
 function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCard, onClose, dismissed, onDismiss }: {
   cards: CredCard[];
-  scores: CardScore[] | null;
+  scores: (CardScore | null)[] | null;
   loading: boolean;
   error: string;
   onScore: () => void;
@@ -2241,9 +2241,13 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
   onDismiss: (tag: string) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const avg = scores && scores.length
-    ? Math.round((scores.reduce((s, x) => s + x.score, 0) / scores.length) * 10) / 10
+  // Average only what was actually scored — folding nulls in as zeroes would
+  // drag the whole doc's rating down for cards that were never rated at all.
+  const rated = (scores ?? []).filter((x): x is CardScore => !!x);
+  const avg = rated.length
+    ? Math.round((rated.reduce((s, x) => s + x.score, 0) / rated.length) * 10) / 10
     : null;
+  const unscored = (scores?.length ?? 0) - rated.length;
 
   return (
     <div className="shrink-0 flex flex-col h-full" style={{ width: 'min(300px, 85%)', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-side)' }}>
@@ -2265,6 +2269,16 @@ function CredibilityPanel({ cards, scores, loading, error, onScore, onScrollToCa
         {error && (
           <div className="text-[12px] rounded-lg p-2.5" style={{ color: 'rgb(var(--danger-rgb))', background: 'rgba(var(--danger-rgb), 0.08)', border: '1px solid rgba(var(--danger-rgb), 0.25)' }}>
             {error}
+          </div>
+        )}
+
+        {/* A card Warroom AI skipped is left out of the list entirely rather than
+            shown a made-up rating — so the count has to be stated, or the list
+            silently looks like the doc simply had fewer cards. */}
+        {!loading && unscored > 0 && (
+          <div className="text-[11px] rounded-lg p-2.5" style={{ color: 'rgb(var(--warn-rgb))', background: 'rgba(var(--warn-rgb), 0.08)', border: '1px solid rgba(var(--warn-rgb), 0.25)' }}>
+            {rated.length} of {scores?.length} cards scored — {unscored} didn't come back and{' '}
+            {unscored === 1 ? 'is' : 'are'} left out rather than given a made-up rating. Re-score to try again.
           </div>
         )}
 
@@ -3206,7 +3220,10 @@ function DocPaneViewer({
   // Card credibility
   const [credOpen, setCredOpen] = useState(false);
   const [credCards, setCredCards] = useState<CredCard[]>([]);
-  const [credScores, setCredScores] = useState<CardScore[] | null>(null);
+  // A slot is null when Warroom AI didn't return a score for that card. It is
+  // deliberately NOT zero — a fabricated "0 / Weak" is indistinguishable from a
+  // real bottom rating, which is exactly how this used to mislead.
+  const [credScores, setCredScores] = useState<(CardScore | null)[] | null>(null);
   const [credLoading, setCredLoading] = useState(false);
   const [credError, setCredError] = useState('');
   const credHashRef = useRef('');

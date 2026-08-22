@@ -2861,6 +2861,19 @@ export default function Documentation() {
             doesn't publish its limits, Warroom doesn't guess — it sends the request and shows you
             the provider's own error, which is always right and always current.
           </P>
+          <H3>An empty answer is never dressed up as a real one</H3>
+          <P>
+            Several features used to turn "the AI didn't answer" into a plausible-looking result:
+            the card cutter produced <em>"Untitled card"</em> with no emphasis, card credibility
+            scored unreached cards as <strong>0 / Weak</strong>, and source reading produced a blank
+            citation with the current year filled in — all reported as success.
+          </P>
+          <P>
+            Each of those now fails loudly instead. Credibility scoring in particular leaves an
+            unscored card <em>out</em> of the list rather than rating it, and tells you how many were
+            skipped — a fabricated bottom score is indistinguishable from a real one, which made it
+            the most misleading of the set.
+          </P>
           <H3>Nothing is truncated silently</H3>
           <P>
             Two things used to be cut off invisibly. If the AI's <strong>answer</strong> ran past its

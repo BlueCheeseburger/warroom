@@ -2853,7 +2853,18 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
     IMAGES: imgList,
   });
 
-  const parsed = parseJsonLoose(await callGeminiWithSearch(prompt)) || {};
+  // No `|| {}` fallback: an unparseable answer here used to become a card with a
+  // blank cite, blank author, and the current year silently substituted, all
+  // reported as `ok: true`. See CLAUDE.md's "never launder a failure into a
+  // success" rule.
+  const readRaw = await callGeminiWithSearch(prompt);
+  const parsed = parseJsonLoose(readRaw);
+  if (!parsed) {
+    throw new Error(
+      `Warroom AI could not read this source — its reply wasn't valid JSON. ` +
+      `First 300 characters: ${JSON.stringify(readRaw.slice(0, 300))}`,
+    );
+  }
   const bodyIndices: number[] = Array.isArray(parsed.bodyIndices)
     ? parsed.bodyIndices.filter((n: any) => Number.isInteger(n) && n >= 0 && n < rawParagraphs.length)
     : [];
@@ -2896,7 +2907,19 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     QUESTIONS_ASKED: String(clar.length),
   });
 
-  const parsed = parseJsonLoose(await callAI(prompt, 'best', { maxOutputTokens: 32768 })) || {};
+  // No `|| {}` fallback. That turned an unparseable reply into a card titled
+  // "Untitled card" with NO underlining and NO highlighting, returned as
+  // `ok: true` — which reads as a bad cut rather than a failed call, so the user
+  // has no reason to retry. See CLAUDE.md's "never launder a failure into a
+  // success" rule.
+  const emphRaw = await callAI(prompt, 'best', { maxOutputTokens: 32768 });
+  const parsed = parseJsonLoose(emphRaw);
+  if (!parsed) {
+    throw new Error(
+      `Warroom AI could not cut this card — its reply wasn't valid JSON. ` +
+      `First 300 characters: ${JSON.stringify(emphRaw.slice(0, 300))}`,
+    );
+  }
 
   // Ambiguity escape hatch, shared with Auto Flow / Round Analysis (AIQuestion in
   // src/types.ts) — the prompt is instructed to return a `question` field instead
@@ -2909,6 +2932,12 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
 
   const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
   let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
+  // Parsed fine but said nothing: no tagline AND nothing to underline is not a
+  // cut card, it's an empty answer wearing one. Fail so the user can re-cut,
+  // rather than handing them "Untitled card" with no emphasis.
+  if (taglines.length === 0 && arr(parsed.underline).length === 0) {
+    throw new Error('Warroom AI returned no tagline and nothing to underline for this card. Try cutting it again.');
+  }
   if (taglines.length === 0) taglines = ['Untitled card'];
   return {
     ok: true,
@@ -3045,16 +3074,17 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     reason: str(parsed.verdict?.reason),
   };
   if (!verdict.reason) {
-    // Most likely cause even after the token bump above: a non-Gemini provider
-    // (OpenAI/Anthropic/Grok) — callAI's extraConfig.maxOutputTokens only
-    // reaches the Gemini branch; the other three providers hardcode 8192 with
-    // no override path, so a large round can still truncate mid-JSON for those.
-    // Surface *why* instead of a bare "didn't work" so this is diagnosable if
-    // it recurs, rather than a dead end.
+    // Every provider now honours extraConfig.maxOutputTokens (they used to
+    // hardcode 8192 and ignore it, which is what this branch was originally
+    // written for), and callAI throws truncatedResponseError when a provider
+    // reports it cut the reply off — so a truncation normally never reaches
+    // here. A response that still lands here parsed but carried no verdict.
+    // The shape check stays as a last resort for a model that trails off
+    // without its provider flagging it.
     const looksTruncated = raw.trim().length > 0 && !/[}\]]\s*$/.test(raw.trim());
     throw new Error(
       looksTruncated
-        ? 'Warroom AI\'s response got cut off before it finished — this round may have too much on it. Try again, or switch to a Gemini model in Settings (it has more headroom for a large flow).'
+        ? 'Warroom AI\'s response got cut off before it finished — this round may have too much on it. Try again, or turn on Settings → Work past the length limit so a big round can be read in pieces.'
         : 'Warroom AI did not return a usable analysis. Try again.'
     );
   }
@@ -3593,46 +3623,75 @@ ipcMain.handle('ai:crossExGradeTrap', async (_e, {
 // a score array in the same order. Uses the 'balanced' tier — the user's selected
 // model, but never the cheapest lite model (lite → balanced; e.g. Gemini Flash
 // Lite is bumped to Flash) for a more reliable judgment.
+// Cards are scored independently, so this batches cleanly. Sized so a batch's
+// structured output (six numbers plus two short strings per card) sits well
+// inside the request budget rather than relying on the model to stop in time.
+const SCORE_CARDS_BATCH_SIZE = 40;
+
 ipcMain.handle('ai:scoreCards', async (_e, { cards }: {
   cards: { tag: string; cite: string }[];
 }) => {
   try {
-    const list = Array.isArray(cards) ? cards.slice(0, 150) : [];
+    const list = Array.isArray(cards) ? cards : [];
     if (list.length === 0) throw new Error('No cards found to score.');
 
     const today = new Date().toISOString().slice(0, 10);
-    const cardLines = list.map((c, i) =>
-      `${i + 1}. TAG: ${String(c.tag ?? '').slice(0, 300)} | CITE: ${String(c.cite ?? '').slice(0, 600) || '(no citation text)'}`,
-    ).join('\n');
-
-    const prompt = await renderPrompt('card_credibility_scoring', {
-      TODAY: today,
-      CARD_LINES: cardLines,
-      CARD_COUNT: String(list.length),
-    });
-
-    const raw = await callAI(prompt, 'balanced');
-    const parsed = parseAIJson(raw);
-    if (!Array.isArray(parsed)) throw new Error('Unexpected AI response shape.');
-
     const clamp = (n: any) => Math.max(0, Math.min(10, Math.round(Number(n))));
     const verdictFor = (s: number) => s >= 8 ? 'Strong' : s >= 6 ? 'Solid' : s >= 4 ? 'Shaky' : 'Weak';
-    const scores = list.map((_c, i) => {
-      const r = parsed[i] ?? {};
-      const score = Number.isFinite(Number(r.score)) ? clamp(r.score) : 0;
-      const verdict = ['Strong', 'Solid', 'Shaky', 'Weak'].includes(r.verdict) ? r.verdict : verdictFor(score);
-      return {
-        score,
-        verdict,
-        author: Number.isFinite(Number(r.author)) ? clamp(r.author) : 0,
-        recency: Number.isFinite(Number(r.recency)) ? clamp(r.recency) : 0,
-        source: Number.isFinite(Number(r.source)) ? clamp(r.source) : 0,
-        claim: Number.isFinite(Number(r.claim)) ? clamp(r.claim) : 0,
-        reason: typeof r.reason === 'string' ? r.reason.slice(0, 160) : '',
-        press: typeof r.press === 'string' ? r.press.slice(0, 200) : '',
-      };
-    });
-    return { ok: true, scores };
+
+    // Batched, and `null` for anything that didn't come back.
+    //
+    // This used to send up to 150 cards in one call on the default 8192-token
+    // budget — roughly 18,000 tokens of structured output asked for — and then
+    // index-fill the gaps with `parsed[i] ?? {}`, which scored every card the
+    // model never reached as **0 / "Weak" with no reason**. A perfectly good
+    // card was shown a real-looking bottom rating, so nothing about it read as
+    // a failure. Cards past 150 were silently dropped on top of that.
+    //
+    // Now: no cap, batches sized to fit the budget, and a card the model
+    // skipped comes back as null so the UI can leave it out rather than invent
+    // a rating for it. The shortfall is counted and shown.
+    const scores: (any | null)[] = new Array(list.length).fill(null);
+    let scored = 0;
+
+    for (let start = 0; start < list.length; start += SCORE_CARDS_BATCH_SIZE) {
+      const batch = list.slice(start, start + SCORE_CARDS_BATCH_SIZE);
+      const cardLines = batch.map((c, i) =>
+        `${i + 1}. TAG: ${String(c.tag ?? '').slice(0, 300)} | CITE: ${String(c.cite ?? '').slice(0, 600) || '(no citation text)'}`,
+      ).join('\n');
+
+      const prompt = await renderPrompt('card_credibility_scoring', {
+        TODAY: today,
+        CARD_LINES: cardLines,
+        CARD_COUNT: String(batch.length),
+      });
+
+      const raw = await callAI(prompt, 'balanced', { maxOutputTokens: 32768 });
+      const parsed = parseAIJson(raw);
+      if (!Array.isArray(parsed)) throw new Error('Warroom AI returned something other than a list of scores.');
+
+      for (let i = 0; i < batch.length; i++) {
+        const r = parsed[i];
+        // Not scored — leave it null. Never substitute a zero: a fabricated
+        // "0 / Weak" is indistinguishable from a real bottom rating.
+        if (!r || !Number.isFinite(Number(r.score))) continue;
+        const score = clamp(r.score);
+        scores[start + i] = {
+          score,
+          verdict: ['Strong', 'Solid', 'Shaky', 'Weak'].includes(r.verdict) ? r.verdict : verdictFor(score),
+          author: Number.isFinite(Number(r.author)) ? clamp(r.author) : 0,
+          recency: Number.isFinite(Number(r.recency)) ? clamp(r.recency) : 0,
+          source: Number.isFinite(Number(r.source)) ? clamp(r.source) : 0,
+          claim: Number.isFinite(Number(r.claim)) ? clamp(r.claim) : 0,
+          reason: typeof r.reason === 'string' ? r.reason.slice(0, 160) : '',
+          press: typeof r.press === 'string' ? r.press.slice(0, 200) : '',
+        };
+        scored++;
+      }
+    }
+
+    if (scored === 0) throw new Error(`Warroom AI didn't score any of the ${list.length} cards. Try again.`);
+    return { ok: true, scores, scored, total: list.length };
   } catch (e: any) {
     const msg = e?.message === 'NO_KEY'
       ? 'No AI API key configured — add one in Settings.'
