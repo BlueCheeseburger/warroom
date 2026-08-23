@@ -235,6 +235,16 @@ export function sheetForCard(card: ParseCard, _speech: string | null): { name: s
   if (hat && !isGenericHeader(hat)) return { name: hat, generic: false };
   const block = stripSpeechMarkers(card.block ?? '');
   if (block && !isGenericHeader(block)) return { name: block, generic: false };
+  // The POCKET, last. Usually it is just the speech ("1AC") and generic, but a
+  // doc with only ONE ancestor heading level puts everything there — and what it
+  // puts there is the position. Measured across 90 real docs, three of them are
+  // shaped this way ("Miscalc. Adv.", "The Advantage", "1AC---Inhuman Matter"),
+  // 35 aff cards in total, every one of which was landing on "Unsorted" with a
+  // perfectly good tab name sitting in the heading right above it.
+  const pocketAdv = advantageName(card.pocket);
+  if (pocketAdv) return { name: pocketAdv, generic: false };
+  const pocket = stripSpeechMarkers(card.pocket ?? '');
+  if (pocket && !isGenericHeader(pocket) && !BARE_SPEECH.test(pocket)) return { name: pocket, generic: false };
   const fallback = (hat || block).trim();
   return { name: fallback && !BARE_SPEECH.test(fallback) ? fallback : 'Unsorted', generic: true };
 }

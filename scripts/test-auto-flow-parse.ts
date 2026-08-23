@@ -267,5 +267,27 @@ console.log('\n[12] Unresolved cards name the doc that caused it');
   check('one bucket, not one entry per card', res.unresolvedDocs.length === 1);
 }
 
+console.log('\n[13] The pocket is a tab source when it is the only heading');
+{
+  // Measured across 90 real docs: three put everything under a single ancestor
+  // heading, and what they put there is the position, not the speech. 35 aff
+  // cards were landing on "Unsorted" with the name sitting right above them.
+  check('a pocket that names a position is used',
+    sheetForCard(c({ pocket: 'Miscalc. Adv.' }), '1AC').name === 'Miscalc. Adv.');
+  check('and it is not counted as unresolved',
+    sheetForCard(c({ pocket: 'Miscalc. Adv.' }), '1AC').generic === false);
+  check('a speech-marked pocket is stripped first',
+    sheetForCard(c({ pocket: '1AC---Inhuman Matter' }), '1AC').name === 'Inhuman Matter');
+  // The guards that keep this from firing on the common case.
+  check('a bare speech pocket does NOT become a tab',
+    sheetForCard(c({ pocket: '1AC' }), '1AC').name === 'Unsorted');
+  check('a generic pocket does NOT become a tab',
+    sheetForCard(c({ pocket: 'OFF' }), '2AC').name === 'Unsorted');
+  check('a hat still outranks the pocket',
+    sheetForCard(c({ pocket: 'Case', hat: 'Cap K' }), '2AC').name === 'Cap K');
+  check('a block still outranks the pocket',
+    sheetForCard(c({ pocket: 'AT:OFF', block: '2AC---Texit DA' }), '2AC').name === 'Texit DA');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

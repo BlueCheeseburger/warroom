@@ -56,6 +56,58 @@ files routinely skip levels (e.g. jump H1 → H4 with no H3/Block). Don't assume
 Heading4 == tag; compute the max level present and collapse the gaps by relative
 order. (The outline UI does exactly this in `SpeechDocViewer.tsx`.)
 
+**The position is not at a fixed heading level — resolve most-specific-first.**
+Measured across 90 real docs. The table above says the hat names the position;
+that is the *common* case, not a rule, and three other shapes are all frequent:
+
+| Shape | Example | Where the position is |
+|---|---|---|
+| Numbered advantages | hat `1AC---Single Payer`, block `1AC---Advantage 1---Economy` | **block** — hat holds the AFF's name |
+| Unnumbered advantage | hat `1AC---Redundancy`, `Miscalc. Adv.`, `1AC---Inhuman Matter` | **hat** |
+| Off-case / neg | hat `Cap K`, block `Perm---AT: Do Both---2NC` | **hat** |
+| Single heading level | pocket `Miscalc. Adv.`, `The Advantage` | **pocket** |
+
+Two invariants held with **zero counterexamples** across every aff doc measured:
+
+1. **Explicit `Advantage N` numbering is always in the BLOCK, never the hat**
+   (7 docs / 0 contradictions). When a doc numbers its advantages, its hat holds
+   the aff's name instead — so reading the hat as the position collapses an
+   entire case onto one tab named after the aff and loses every advantage. The
+   advantage check must therefore run **before** the hat check.
+2. When a doc *doesn't* number them, the advantage is in the hat, and the plain
+   hat rule is correct.
+
+So the resolution order is: block-advantage → hat-advantage → hat → block →
+pocket → unknown (`sheetForCard` / `advantageName` in `src/lib/autoFlowParse.ts`).
+Don't hardcode a level.
+
+**The pocket is a real tab source, not only a speech divider.** A doc with only
+one ancestor heading level puts the position there — the deepest level present is
+the tag, so everything else collapses into the pocket. Three of the 90 docs are
+shaped this way (35 aff cards). Adding the pocket as the last fallback took the
+unresolved rate across all 90 docs from **15.3% to 3.9%** and the count of cards
+dumped on an "Unsorted" tab from 102 to 6, with no other placement changing.
+Guard it: skip a pocket that is a bare speech (`1AC`) or generic (`OFF`), which
+is what it is in the common case.
+
+**A speech label is not a position.** Pockets, and sometimes hats and blocks, are
+speech names ("1NC", "2NC---Extra"). A speech identifies *when* a card is read, so
+it can name a flow COLUMN — it can never name a flow TAB, which is a position. Any
+fallback chain that ends at "use the speech" is wrong; end it at an explicit
+unknown instead.
+
+**The same position is written differently in every doc it appears in.** The 2AC
+hats it `Midterms DA`, the 2NC hats the kick block `Midterms`. Matching heading
+text literally produces duplicate tabs. Compare on a key that drops a leading
+`AT:`/`A2:` and a trailing position-TYPE word (`DA`, `CP`, `K`, `T`, `Adv`), and
+nothing else — dropping a meaningful word merges the aff's `Economy` advantage
+into the neg's `Econ DA` (`sheetAliasKey`, same file).
+
+**Some docs name no position at all.** A 1NC that hats all 16 off-case blocks
+`OFF` has the positions only in the taglines. No parser can recover them; that is
+the boundary where a model is genuinely required. Report which document and which
+header, don't guess and don't hide it.
+
 ---
 
 **XML entities must be decoded, not just tag-stripped.** Paragraph text in OOXML

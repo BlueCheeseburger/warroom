@@ -419,6 +419,7 @@ Adding into an **existing** flow works the opposite way: you always get the revi
 Two rules follow from that:
 
 - **A speech is never a tab name.** A speech is a column here, so a doc with no headings at all lands on "Unsorted" rather than making a tab called "2NC".
+- **A section heading counts even when it's the only one.** Some docs put everything under a single heading — "Miscalc. Adv.", "The Advantage" — and that heading is the position. It's used as the tab rather than giving up.
 - **One position written two ways is one tab.** Your 2AC hats it "Midterms DA", your 2NC hats the kick block "Midterms" — they merge, keeping the fuller name. Only the position-type word (DA, CP, K, T) is ignored when matching, never a word that means something: your "Economy" advantage and their "Econ DA" still get their own tabs.
 
 If the parser can place a card but can't tell which position it belongs to, it says so — and it **names the document and the heading responsible**: "16 cards in 1NC---Practice.docx, all under 'OFF'". That tells you exactly which doc to re-run with Warroom AI. You see this when the run finishes as well as on the review step. Cards with no recognisable speech at all are left out and counted.

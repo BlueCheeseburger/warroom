@@ -1030,7 +1030,9 @@ export default function Documentation() {
           </P>
           <P>
             A <strong>speech is never a tab name</strong> — a speech is a column here, so a doc with
-            no headings at all lands on "Unsorted" rather than creating a tab called "2NC". And one
+            no headings at all lands on "Unsorted" rather than creating a tab called "2NC". A doc
+            that puts everything under a <em>single</em> heading ("Miscalc. Adv.", "The Advantage")
+            still gets that heading as its tab rather than being given up on. And one
             position written two ways is <strong>one tab</strong>: the 2AC's "Midterms DA" and the
             2NC's "Midterms" merge, keeping the fuller name. Only the position-type word (DA, CP, K,
             T) is ignored when matching, never a meaningful word — so your "Economy" advantage and
