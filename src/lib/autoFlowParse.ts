@@ -50,6 +50,8 @@ export interface ParseResult {
   flowName?: string;
   /** Cards placed on a tab named after a generic header because no position was named. */
   unresolved: number;
+  /** The same cards, grouped so the UI can name the doc and the header responsible. */
+  unresolvedDocs: { fileName: string; sheetName: string; count: number }[];
   /** Cards with no recognisable speech, which cannot be given a column. */
   skipped: { tag: string; reason: string }[];
 }
@@ -161,27 +163,91 @@ function stripSpeechMarkers(s: string): string {
 }
 
 /**
- * Which tab a card goes on. Hat first (it names the position), then block, then
- * the speech itself as a last resort — with `generic: true` whenever nothing
- * named an actual position, so the caller can report it instead of pretending.
+ * The advantage's NAME out of an "Advantage N---X" heading.
+ *
+ * This is what makes an aff case file flow correctly, and it has to outrank the
+ * hat. Measured on a real 1AC: every one of its 21 cards is hatted with the AFF
+ * ("1AC---Single Payer") and blocked with the advantage ("1AC---Advantage
+ * 1---Economy"). Reading the hat as the position — which is right for every neg
+ * doc — collapses the whole case onto one tab called "Single Payer", and the
+ * advantages, which are exactly what a flow tab is supposed to be, vanish.
  */
-export function sheetForCard(card: ParseCard, speech: string | null): { name: string; generic: boolean } {
+const ADVANTAGE_HEADING =
+  /^(?:advantage|adv|contention|cont)\.?\s*(?:\d+|one|two|three|four|five|six)?\s*(?:[-—–:.]{1,3}|\s)\s*(.+)$/i;
+
+export function advantageName(s: string | null | undefined): string | null {
+  const m = stripSpeechMarkers(String(s ?? '')).match(ADVANTAGE_HEADING);
+  const rest = (m?.[1] ?? '').replace(/^[\s—–:.-]+/, '').trim();
+  // Must contain a LETTER. The number group is optional (some docs write a bare
+  // "Advantage---Economy"), so without this a heading of just "Advantage 1"
+  // captures the "1" and names a tab "1".
+  return rest && /[a-z]/i.test(rest) && !isGenericHeader(rest) ? rest : null;
+}
+
+/** A heading that is nothing but a speech name — never a legal tab name. */
+const BARE_SPEECH = new RegExp(`^\\s*${SPEECH_MARKER}\\s*$`, 'i');
+
+/**
+ * The key two tab names are considered THE SAME under.
+ *
+ * A position is written a different way in every doc it appears in — the 2AC
+ * hats it "Midterms DA", the 2NC hats the kick block "Midterms". Matching on the
+ * literal string gives you both as separate tabs, which is how a real run ended
+ * up with a "Midterms DA" holding the 2AC and a "Midterms" holding the one 2NC
+ * card that answers it.
+ *
+ * Only the position-TYPE suffix is dropped, never a word that carries meaning:
+ * "Econ DA" → "econ" and "Economy" → "economy" stay distinct, which they must,
+ * because in that round they are the neg's DA and the aff's advantage.
+ */
+const POSITION_SUFFIX = /\s+(da|das|cp|cps|k|ks|t|adv|advantage|contention|turn|turns|block|blocks)$/i;
+
+export function sheetAliasKey(name: string): string {
+  let t = String(name ?? '').toLowerCase()
+    .replace(/^(at|a2|answers?\s+to)\s*[:\-—–]+\s*/i, '')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  for (let prev = ''; prev !== t; ) { prev = t; t = t.replace(POSITION_SUFFIX, '').trim(); }
+  return t || String(name ?? '').trim().toLowerCase();
+}
+
+/**
+ * Which tab a card goes on, most specific naming wins:
+ *
+ *   1. the block's advantage name   "1AC---Advantage 1---Economy" → "Economy"
+ *   2. the hat's advantage name     (some docs hat the advantage directly)
+ *   3. the hat                      "Cap K", "States CP", "Midterms DA"
+ *   4. the block                    when the hat said nothing
+ *   5. "Unsorted", flagged generic
+ *
+ * A SPEECH is never a tab name, at any step. It used to be the last-resort
+ * fallback, which produced a tab literally called "2NC" the moment a doc arrived
+ * with no headings at all — a speech is a column in this app, and a tab is a
+ * position, so that tab could never be right.
+ */
+export function sheetForCard(card: ParseCard, _speech: string | null): { name: string; generic: boolean } {
+  const blockAdv = advantageName(card.block);
+  if (blockAdv) return { name: blockAdv, generic: false };
+  const hatAdv = advantageName(card.hat);
+  if (hatAdv) return { name: hatAdv, generic: false };
   const hat = stripSpeechMarkers(card.hat ?? '');
   if (hat && !isGenericHeader(hat)) return { name: hat, generic: false };
   const block = stripSpeechMarkers(card.block ?? '');
   if (block && !isGenericHeader(block)) return { name: block, generic: false };
-  const fallback = hat || block || speech || 'Unsorted';
-  return { name: fallback, generic: true };
+  const fallback = (hat || block).trim();
+  return { name: fallback && !BARE_SPEECH.test(fallback) ? fallback : 'Unsorted', generic: true };
 }
 
 /**
- * Case-insensitive match returning the tab's ORIGINAL casing.
+ * Match by alias key, returning the tab's ORIGINAL casing and wording.
  *
- * The lookup key is lowercased but the value is not: returning the key would
- * rename "Heg Adv" to "heg adv" the moment a second card landed on it.
+ * The lookup key is normalised but the value is not: returning the key would
+ * rename "Heg Adv" to "heg adv" the moment a second card landed on it, and
+ * "Midterms DA" to "midterms" the moment the 2NC's "Midterms" block merged in.
  */
 function matchExistingSheet(name: string, existing: Map<string, string>): string | null {
-  return existing.get(name.trim().toLowerCase()) ?? null;
+  return existing.get(sheetAliasKey(name)) ?? null;
 }
 
 // ── The parse ───────────────────────────────────────────────────────────────
@@ -203,7 +269,11 @@ export function parseAutoFlow(input: ParseInput): ParseResult {
   // Sheets created during this run, so the second card of a position matches the
   // tab the first one made rather than being marked new again.
   const known = new Map<string, string>(
-    (existingSheets ?? []).map((s) => [s.trim().toLowerCase(), s]));
+    (existingSheets ?? []).map((s) => [sheetAliasKey(s), s]));
+
+  // Generic-header buckets, per doc, so the caller can say WHICH document and
+  // WHICH header defeated it instead of a bare count the user can't act on.
+  const unresolvedDocs = new Map<string, { fileName: string; sheetName: string; count: number }>();
 
   // The most recent card placed on each sheet, per role. An answer in a later
   // speech is aligned to the opposing side's last card on the same position —
@@ -221,19 +291,31 @@ export function parseAutoFlow(input: ParseInput): ParseResult {
       }
 
       const sheet = sheetForCard(card, speech);
-      if (sheet.generic) unresolved++;
+      if (sheet.generic) {
+        unresolved++;
+        const k = `${doc.fileName}\u0000${sheet.name}`;
+        const hit = unresolvedDocs.get(k);
+        if (hit) hit.count++;
+        else unresolvedDocs.set(k, { fileName: doc.fileName, sheetName: sheet.name, count: 1 });
+      }
 
       const existing = matchExistingSheet(sheet.name, known);
       const sheetName = existing ?? sheet.name;
       const isNewSheet = !existing;
-      if (isNewSheet) known.set(sheetName.trim().toLowerCase(), sheetName);
+      if (isNewSheet) known.set(sheetAliasKey(sheetName), sheetName);
 
       const role = roleForSpeech(speech);
-      const prev = lastOnSheet.get(sheetName.trim().toLowerCase());
+      const prev = lastOnSheet.get(sheetAliasKey(sheetName));
       const respondsTo = prev && prev.role && role && prev.role !== role ? prev.tag : null;
 
       const isPlan = looksLikePlan(card, speech);
-      if (!flowName && speech === '1AC' && !sheet.generic) flowName = sheet.name;
+      // The flow's name is the AFF, and the aff's name is the 1AC's HAT — not
+      // its tab, which is now (correctly) the advantage. "1AC---Single Payer"
+      // names the round; "Economy" names one tab inside it.
+      if (!flowName && speech === '1AC') {
+        const h = stripSpeechMarkers(card.hat ?? '');
+        if (h && !isGenericHeader(h) && !advantageName(h)) flowName = h;
+      }
 
       placements.push({
         fileName: doc.fileName,
@@ -246,9 +328,9 @@ export function parseAutoFlow(input: ParseInput): ParseResult {
         isPlan,
         sheetRole: role,
       });
-      lastOnSheet.set(sheetName.trim().toLowerCase(), { tag: card.tag.trim(), role });
+      lastOnSheet.set(sheetAliasKey(sheetName), { tag: card.tag.trim(), role });
     }
   }
 
-  return { placements, flowName, unresolved, skipped };
+  return { placements, flowName, unresolved, unresolvedDocs: [...unresolvedDocs.values()], skipped };
 }

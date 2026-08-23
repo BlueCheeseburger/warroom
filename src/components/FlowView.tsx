@@ -41,9 +41,9 @@ const PF_CON_FIRST_BLUE = new Set([1, 2, 5, 7]);
 
 // ─── Default sheet names ──────────────────────────────────────────────────────
 
-export const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
-export const SHEETS_ADVANTAGE = ['Adv 1', 'Adv 2', 'Adv 3', 'Off 1', 'Off 2', 'Off 3', 'Off 4', 'RFD/Notes'];
-export const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2', 'RFD/Notes'];
+export const SHEETS_STOCK_ISSUES = ['Inherency', 'Harms', 'Solvency', 'Off 1', 'Off 2', 'Off 3', 'Off 4'];
+export const SHEETS_ADVANTAGE = ['Adv 1', 'Adv 2', 'Adv 3', 'Off 1', 'Off 2', 'Off 3', 'Off 4'];
+export const SHEETS_PF = ['Contention 1', 'Contention 2', 'Turns', 'Off 1', 'Off 2'];
 
 export const NUM_ROWS = 60;
 const DEFAULT_COL_WIDTH = 185;
@@ -424,6 +424,22 @@ export default function FlowView() {
   }, [flowId, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live reload when Warroom AI (or another writer) edits this flow ─────────
+  //
+  // TWO channels, because they are two different events with two different costs:
+  //
+  //  'warroom-flow-updated'    — someone rewrote this flow's storage key. Do the
+  //                              full reload: drop the local buffer, re-read from
+  //                              disk, remount the cells.
+  //  'warroom-flow-live-patch' — a frame of Auto Flow's fill-in animation. The
+  //                              sheets ride ON the event, so nothing is read
+  //                              back and `loaded` is never cleared.
+  //
+  // Auto Flow's replay used to fire the first one ~150 times, once per frame.
+  // Each fire set `loaded` false, so every frame swapped the whole grid for the
+  // "Loading flow…" placeholder and then rebuilt it from an async disk read that
+  // landed after the next frame had already started. What the user saw was a
+  // strobing loading screen with nothing filling in — the animation was running,
+  // it just never had a frame long enough to be visible.
   useEffect(() => {
     if (!flowId) return;
     function onExternalEdit(e: Event) {
@@ -434,8 +450,29 @@ export default function FlowView() {
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       setReloadNonce((n) => n + 1);
     }
+    function onLivePatch(e: Event) {
+      const detail = (e as CustomEvent).detail as
+        { flowId?: string; sheets?: SheetData[]; activeSheetIdx?: number } | undefined;
+      if (!detail || detail.flowId !== flowId || !detail.sheets?.length) return;
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      const next = detail.sheets;
+      const idx = typeof detail.activeSheetIdx === 'number'
+        ? Math.max(0, Math.min(detail.activeSheetIdx, next.length - 1))
+        : snap.current.activeSheetIdx;
+      setSheets(next);
+      setActiveSheetIdx(idx);
+      // Keep the edit buffer pointed at the sheet on screen; the writer owns the
+      // content during a replay, so adopting its cells wholesale is correct.
+      cellsRef.current = { ...(next[idx]?.cells ?? {}) };
+      cellsOwnerId.current = next[idx]?.id ?? null;
+      setCellNonce((n) => n + 1);
+    }
     window.addEventListener('warroom-flow-updated', onExternalEdit as EventListener);
-    return () => window.removeEventListener('warroom-flow-updated', onExternalEdit as EventListener);
+    window.addEventListener('warroom-flow-live-patch', onLivePatch as EventListener);
+    return () => {
+      window.removeEventListener('warroom-flow-updated', onExternalEdit as EventListener);
+      window.removeEventListener('warroom-flow-live-patch', onLivePatch as EventListener);
+    };
   }, [flowId]);
 
   // ── Live-update default side colors when changed in Settings ────────────────
@@ -2401,12 +2438,16 @@ export default function FlowView() {
       </div>
 
       {/* ── Sheet tabs ── */}
+      {/* The OUTER row must not scroll — it used to also be overflow-x-auto, which
+          put a second scrollbar across the full 36px strip, drawn on top of the
+          tab labels. Only the sheet list scrolls, and it hides its bar: a 15px
+          scrollbar inside a 36px row covers the bottom of every tab name. */}
       <div
-        className="flex items-center flex-shrink-0 overflow-x-auto"
+        className="flex items-center flex-shrink-0 overflow-hidden"
         style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-sidebar)', height: 36 }}
       >
-        {/* Sheets (scrollable) */}
-        <div className="flex items-center flex-1 overflow-x-auto min-w-0">
+        {/* Sheets (scrollable, bar hidden) */}
+        <div className="flex items-center flex-1 overflow-x-auto min-w-0 scroll-none">
           {sheets.map((sheet, idx) => (
             <SheetTab
               key={sheet.id}

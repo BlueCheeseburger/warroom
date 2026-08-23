@@ -15,7 +15,7 @@
 
 import {
   parseAutoFlow, detectSpeech, columnForSpeech, roleForSpeech,
-  sheetForCard, isGenericHeader, looksLikePlan, ParseCard,
+  sheetForCard, isGenericHeader, looksLikePlan, advantageName, sheetAliasKey, ParseCard,
 } from '../src/lib/autoFlowParse';
 
 let pass = 0, fail = 0;
@@ -177,6 +177,94 @@ console.log('\n[8] Degenerate input never throws');
   check('a doc with no cards is fine', noCards.placements.length === 0);
   const noCols = parseAutoFlow({ event: 'policy', columns: [], existingSheets: [], docs: [{ fileName: '1AC.docx', cards: [c({ pocket: '1AC' })] }] });
   check('a flow with no columns skips rather than crashing', noCols.skipped.length === 1);
+}
+
+console.log('\n[9] Advantage names beat the hat, measured on a real 1AC');
+{
+  // Every card in the real "Single Payer 1AC.docx" is hatted with the AFF and
+  // blocked with the advantage. Reading the hat as the position put all 21 cards
+  // on one tab called "Single Payer" and lost both advantages entirely.
+  check('the advantage name comes out of the block',
+    advantageName('1AC---Advantage 1---Economy') === 'Economy',
+    String(advantageName('1AC---Advantage 1---Economy')));
+  check('"Adv 2" spelling works too', advantageName('Adv 2---Disease') === 'Disease');
+  check('a contention works too', advantageName('Contention 1: Warming') === 'Warming');
+  check('an ordinary heading is not an advantage', advantageName('States CP') === null);
+  check('a bare "Advantage 1" names nothing', advantageName('1AC---Advantage 1') === null);
+
+  const affCard = c({ pocket: '1AC', hat: '1AC---Single Payer', block: '1AC---Advantage 1---Economy' });
+  check('the block advantage outranks a perfectly good hat',
+    sheetForCard(affCard, '1AC').name === 'Economy', sheetForCard(affCard, '1AC').name);
+  // The neg side must NOT change: its hat is the position and its block is the
+  // sub-structure, so the hat has to keep winning there.
+  const negCard = c({ pocket: '2NC', hat: 'Cap K', block: 'Perm---AT: Do Both---2NC' });
+  check('a neg hat still outranks its block', sheetForCard(negCard, '2NC').name === 'Cap K');
+
+  const res = parseAutoFlow({
+    event: 'policy', columns: POLICY, existingSheets: [],
+    docs: [{ fileName: 'Single Payer 1AC.docx', cards: [
+      c({ pocket: '1AC', hat: '1AC---Single Payer', block: '1AC---Advantage 1---Economy', tag: 'econ 1' }),
+      c({ pocket: '1AC', hat: '1AC---Single Payer', block: '1AC---Advantage 2---Disease', tag: 'dis 1' }),
+    ] }],
+  });
+  check('the two advantages become two tabs',
+    res.placements.map((p) => p.sheetName).join('|') === 'Economy|Disease',
+    res.placements.map((p) => p.sheetName).join('|'));
+  check('the aff is still the FLOW name, not a tab', res.flowName === 'Single Payer', String(res.flowName));
+}
+
+console.log('\n[10] A speech is never a tab name');
+{
+  // 2NC---Extra.docx has one card and no headings at all. The speech came from
+  // the filename, and used to be used as the tab name — producing a tab called
+  // "2NC", which is a column in this app, never a position.
+  const res = parseAutoFlow({
+    event: 'policy', columns: POLICY, existingSheets: [],
+    docs: [{ fileName: '2NC---Extra.docx', cards: [c({})] }],
+  });
+  check('a headingless doc lands on "Unsorted", not "2NC"',
+    res.placements[0]?.sheetName === 'Unsorted', String(res.placements[0]?.sheetName));
+  check('and it is reported as unresolved', res.unresolved === 1);
+  check('a bare speech hat is not a tab name either',
+    sheetForCard(c({ pocket: '1NC', hat: '1NC' }), '1NC').name === 'Unsorted');
+}
+
+console.log('\n[11] The same position under two names is one tab');
+{
+  check('a DA suffix is dropped', sheetAliasKey('Midterms DA') === sheetAliasKey('Midterms'));
+  check('a CP suffix is dropped', sheetAliasKey('States CP') === sheetAliasKey('States'));
+  // The one that must NOT merge: in the measured round these are the aff's
+  // advantage and the neg's disad, two different tabs.
+  check('"Econ DA" and "Economy" stay apart', sheetAliasKey('Econ DA') !== sheetAliasKey('Economy'));
+  check('a leading position letter is kept', sheetAliasKey('T---NHI') === 't nhi', sheetAliasKey('T---NHI'));
+
+  const res = parseAutoFlow({
+    event: 'policy', columns: POLICY, existingSheets: [],
+    docs: [
+      { fileName: 'SEND_2AC.docx', cards: [c({ pocket: '2AC', hat: 'Midterms DA', tag: 'a' })] },
+      { fileName: 'SEND_2NC.docx', cards: [c({ pocket: '2NC', hat: 'Midterms', tag: 'b' })] },
+    ],
+  });
+  check('the 2NC kick block joins the 2AC tab',
+    res.placements[1]?.sheetName === 'Midterms DA', String(res.placements[1]?.sheetName));
+  check('and does not create a second tab', res.placements[1]?.isNewSheet === false);
+}
+
+console.log('\n[12] Unresolved cards name the doc that caused it');
+{
+  const res = parseAutoFlow({
+    event: 'policy', columns: POLICY, existingSheets: [],
+    docs: [{ fileName: '1NC---Practice.docx', cards: [
+      c({ pocket: '1NC', hat: 'OFF', block: '1NC---OFF', tag: 'a' }),
+      c({ pocket: '1NC', hat: 'OFF', block: '1NC---OFF', tag: 'b' }),
+      c({ pocket: '1NC', hat: 'Economy', block: 'AT: Solvency---1NC', tag: 'c' }),
+    ] }],
+  });
+  check('only the generic ones count', res.unresolved === 2);
+  check('the doc is named', res.unresolvedDocs[0]?.fileName === '1NC---Practice.docx');
+  check('the offending header is named', res.unresolvedDocs[0]?.sheetName === 'OFF');
+  check('with its count', res.unresolvedDocs[0]?.count === 2);
+  check('one bucket, not one entry per card', res.unresolvedDocs.length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -1223,9 +1223,15 @@ export default function Settings() {
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) perCallModels = parsed;
       } catch { /* ignored on purpose, same as lmstudioOptions */ }
     }
+    // Do NOT touch apiProvider here. This function runs from "Fetch models",
+    // "Test connection" and picking a model from the list — none of which is the
+    // user choosing a provider. It used to hard-set 'lmstudio', so probing the
+    // local server once silently switched every AI call in the app over to it,
+    // and the first thing the user heard about it was "Can't reach LM Studio at
+    // localhost:1234" from an unrelated feature. The provider is only ever set
+    // by the provider picker itself.
     const next = {
       ...s,
-      apiProvider: 'lmstudio',
       lmstudioBaseUrl: lmBaseUrl.trim() || LMSTUDIO_DEFAULT_BASE_URL,
       lmstudioModel: resolvedModel,
       lmstudioOptions: lmOptions,

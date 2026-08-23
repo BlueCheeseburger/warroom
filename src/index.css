@@ -713,6 +713,9 @@ html.reduce-motion *::after {
 
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */
 
+.scroll-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scroll-none::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-thin::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 .scroll-thin::-webkit-scrollbar-track { background: transparent; }

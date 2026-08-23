@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/20/26
+          Last updated: 8/22/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1012,8 +1012,29 @@ export default function Documentation() {
           <P>
             Warroom AI is for the case the parser can't do: a doc that labels every off-case block
             with the same generic header, so the headings never say what the positions are. Rather
-            than guess, the parser groups those cards on one tab and reports the count on the review
-            step, suggesting the AI instead.
+            than guess, the parser groups those cards on one tab and <strong>names the document and
+            the header responsible</strong> — "16 cards in 1NC---Practice.docx, all under 'OFF'" —
+            so you know exactly which doc to re-run with the AI. That report now appears when the run
+            finishes as well as on the review step; previously a new flow skipped review, and the
+            wizard closed itself whenever no card had been outright rejected, so a run that couldn't
+            split a sixth of your cards said nothing at all.
+          </P>
+          <H3>How the parser picks a tab</H3>
+          <P>
+            Most-specific heading wins. For a <strong>neg</strong> doc that's the position hat —
+            "Cap K", "States CP", "Midterms DA". For an <strong>aff case file</strong> it's the
+            block, because a case file inverts the hierarchy: every card is hatted with the aff
+            ("1AC---Single Payer") and blocked with the advantage ("1AC---Advantage 1---Economy").
+            So an advantage heading outranks the hat, your advantages become the tabs, and the aff
+            becomes the <strong>flow's name</strong>.
+          </P>
+          <P>
+            A <strong>speech is never a tab name</strong> — a speech is a column here, so a doc with
+            no headings at all lands on "Unsorted" rather than creating a tab called "2NC". And one
+            position written two ways is <strong>one tab</strong>: the 2AC's "Midterms DA" and the
+            2NC's "Midterms" merge, keeping the fuller name. Only the position-type word (DA, CP, K,
+            T) is ignored when matching, never a meaningful word — so your "Economy" advantage and
+            their "Econ DA" still get their own tabs.
           </P>
           <H3>Your own instructions</H3>
           <P>
@@ -1341,8 +1362,9 @@ export default function Documentation() {
             Tabs are also <strong>ordered</strong>: your advantages come first, as the leftmost tabs,
             in the order they came up in the 1AC, with off-case flows after them. On a new flow,
             leftover blank placeholder tabs are <strong>pruned</strong> — a two-advantage doc won't
-            leave a dead "Adv 3", and unused "Off 3"/"Off 4" slots are dropped (RFD/Notes and the
-            stock-issues aff tabs are always kept, blank or not). When a doc labels every off-case
+            leave a dead "Adv 3", and unused "Off 3"/"Off 4" slots are dropped (any tab with a real
+            name is always kept, blank or not). New flows no longer start with an{' '}
+            <strong>RFD/Notes</strong> tab at all — add one with "+" if you want it. When a doc labels every off-case
             block with the same generic header ("1NC", "Off", "1NC—OFF") instead of naming the
             position, it reads the actual tags to tell the positions apart, keeps distinct positions
             (a CP vs. a DA) on separate tabs instead of merging them, and — when you've pre-named

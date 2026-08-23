@@ -9,7 +9,7 @@ import { escapeHtml } from '../lib/cellHtml';
 import { useDragActive } from '../hooks/useDragActive';
 import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { pruneUnnamedEmptySheets } from '../lib/flowSheetNaming';
-import { parseAutoFlow } from '../lib/autoFlowParse';
+import { parseAutoFlow, sheetAliasKey } from '../lib/autoFlowParse';
 import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
 import {
   StoredFlowData, SheetData, PolicyVariant, PFOrder,
@@ -211,11 +211,18 @@ async function replayIntoFlow(
   const live: SheetData[] = base.sheets.map((s) => ({ ...s, cells: { ...s.cells } }));
   const perFrame = Math.max(1, Math.ceil(writeLog.length / Math.max(1, FILL_TARGET_MS / FRAME_MS)));
 
-  const flush = async (activeSheetIdx: number) => {
-    await window.warroom.storage.write(`flow_data_${flowId}`, {
-      ...base, sheets: live.map((s) => ({ ...s, cells: { ...s.cells } })), activeSheetIdx,
-    } as StoredFlowData);
-    window.dispatchEvent(new CustomEvent('warroom-flow-updated', { detail: { flowId } }));
+  // A frame is pushed straight into the open FlowView, NOT through storage.
+  //
+  // It used to persist the whole flow and fire 'warroom-flow-updated' on every
+  // frame — ~150 disk writes, each one making FlowView blank itself to "Loading
+  // flow…" and re-read from disk. The read landed after the next frame had
+  // already fired, so the grid strobed the loading screen and no cell was ever
+  // on screen long enough to be seen filling in. Frames are ephemeral by nature;
+  // only the finished state below is worth persisting.
+  const frame = (sheets: SheetData[], activeSheetIdx: number) => {
+    window.dispatchEvent(new CustomEvent('warroom-flow-live-patch', {
+      detail: { flowId, sheets, activeSheetIdx },
+    }));
   };
 
   let lastSheetIdx = -1;
@@ -228,7 +235,7 @@ async function replayIntoFlow(
     const sheetIdx = group[group.length - 1].sheetIdx;
     const switched = sheetIdx !== lastSheetIdx && lastSheetIdx !== -1;
     lastSheetIdx = sheetIdx;
-    await flush(sheetIdx);
+    frame(live.map((s) => ({ ...s, cells: { ...s.cells } })), sheetIdx);
     await new Promise((r) => setTimeout(r, switched ? TAB_SWITCH_MS : FRAME_MS));
   }
 
@@ -322,7 +329,9 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   const [aiFlowName, setAiFlowName] = useState<string | null>(null);
   // Parser-run shortfalls, surfaced on review: cards it could place but not
   // separate into a named position, and cards it couldn't place at all.
-  const [parserNotes, setParserNotes] = useState<{ unresolved: number; skipped: number } | null>(null);
+  const [parserNotes, setParserNotes] = useState<
+    { unresolved: number; skipped: number; docs: { fileName: string; sheetName: string; count: number }[] } | null
+  >(null);
 
   // Writing / done
   const [writeSummary, setWriteSummary] = useState<{ written: number; skipped: SkippedPlacement[] } | null>(null);
@@ -496,10 +505,11 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       const list: Placement[] = res.placements.map((p) => ({ ...p, id: crypto.randomUUID(), removed: false }));
       const cardsIn = docsIn.reduce((n, d) => n + d.cards.length, 0);
       setClassifyStats({ cardsIn, placed: list.length, dropped: res.skipped.length, batches: 0 });
-      setParserNotes({ unresolved: res.unresolved, skipped: res.skipped.length });
+      const notes = { unresolved: res.unresolved, skipped: res.skipped.length, docs: res.unresolvedDocs };
+      setParserNotes(notes);
       setPlacements(list);
       setAiFlowName(res.flowName ?? null);
-      if (target.kind === 'new') { await commitWrite(true, target, list, res.flowName); return; }
+      if (target.kind === 'new') { await commitWrite(true, target, list, res.flowName, notes); return; }
       setStep('review');
     } catch (e: any) {
       setError(e?.message || 'The parser could not sort these cards.');
@@ -589,8 +599,11 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
     * previous render's values (null / empty). The review path omits both and
     * gets the committed state, which is what it wants.
     */
-  async function commitWrite(live = false, ctxIn?: TargetCtx, listIn?: Placement[], nameIn?: string) {
+  async function commitWrite(live = false, ctxIn?: TargetCtx, listIn?: Placement[], nameIn?: string, notesIn?: typeof parserNotes) {
     const ctx = ctxIn ?? targetCtx;
+    // Same reason as ctxIn/listIn above: the new-flow path calls this in the tick
+    // that set the state, so reading `parserNotes` here would see the old value.
+    const notes = notesIn ?? parserNotes;
     if (!ctx) return;
     setStep('writing');
     setError('');
@@ -627,8 +640,12 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         arrows: s.arrows ? [...s.arrows] : undefined,
         aiCells: s.aiCells ? [...s.aiCells] : undefined,
       }));
+      // Keyed by ALIAS, not literal name, so "Midterms" written by the 2NC lands
+      // on the "Midterms DA" tab the 2AC made instead of starting a second one.
+      // See sheetAliasKey — only the position-TYPE suffix is dropped, so the
+      // aff's "Economy" and the neg's "Econ DA" still get their own tabs.
       const sheetIndexByName = new Map<string, number>();
-      sheets.forEach((s, i) => sheetIndexByName.set(s.name.trim().toLowerCase(), i));
+      sheets.forEach((s, i) => sheetIndexByName.set(sheetAliasKey(s.name), i));
 
       const skipped: SkippedPlacement[] = [];
       let written = 0;
@@ -655,7 +672,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // below), reaches the same layout with neither problem. See
       // src/lib/flowSheetNaming.ts for the shared rule.
       const ensureSheet = (name: string): number => {
-        const key = name.trim().toLowerCase();
+        const key = sheetAliasKey(name);
         let idx = sheetIndexByName.get(key);
         if (idx === undefined) {
           sheets.push({ id: crypto.randomUUID(), name, cells: {} });
@@ -704,7 +721,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
         for (const p of accepted) {
           if (!p.isNewSheet || p.sheetRole !== role) continue;
           const name = p.sheetName.trim();
-          if (!name || sheetIndexByName.has(name.toLowerCase())) continue;
+          if (!name || sheetIndexByName.has(sheetAliasKey(name))) continue;
           ensureSheet(name);
         }
       };
@@ -856,15 +873,12 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       }
 
       setWriteSummary({ written, skipped });
-      if (skipped.length === 0) {
-        setView({ kind: 'flow', flowId });
-        onClose();
-      } else {
-        setStep('done');
-        // Still navigate to the flow so the user can see what landed, but stay
-        // open with the skip summary rather than closing silently.
-        setView({ kind: 'flow', flowId });
-      }
+      // Navigate either way — the point of the run is the flow. Only close on a
+      // clean run: anything the user should know about (rejected cards OR cards
+      // the parser couldn't split) keeps the wizard up to say so.
+      setView({ kind: 'flow', flowId });
+      if (skipped.length === 0 && !(notes && notes.unresolved > 0)) onClose();
+      else setStep('done');
     } catch (e: any) {
       setError(e?.message || 'Failed to write into the flow.');
       // A new-flow run has no meaningful review screen to fall back to (the
@@ -878,6 +892,38 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const totalCards = docs.reduce((n, d) => n + d.cards.length, 0);
+
+  // Shown on BOTH the review step and the done step. It used to exist only on
+  // review — which a new flow skips entirely — and the wizard then closed itself
+  // whenever no card had been outright rejected. So a run that dumped 16 cards
+  // onto one generic "OFF" tab reported nothing at all: the user was left in a
+  // flow that looked sorted, with no way to know a sixth of it wasn't.
+  const parserWarning = parserNotes && (parserNotes.unresolved > 0 || parserNotes.skipped > 0) ? (
+    <div className="text-[11px] rounded-sm p-2.5 leading-relaxed"
+      style={{ color: 'rgb(var(--warn-rgb))', background: 'rgba(var(--warn-rgb), 0.08)', border: '1px solid rgba(var(--warn-rgb), 0.25)' }}>
+      {parserNotes.unresolved > 0 && (
+        <>
+          <strong>{parserNotes.unresolved} card{parserNotes.unresolved === 1 ? '' : 's'}</strong>{' '}
+          couldn't be split into positions — these documents label those blocks with a
+          generic header, so the parser has nothing to separate them by:
+          <ul className="mt-1.5 mb-1.5 ml-3 list-disc space-y-0.5">
+            {parserNotes.docs.map((d, i) => (
+              <li key={i}>
+                <strong>{d.count}</strong> card{d.count === 1 ? '' : 's'} in {d.fileName} — all under
+                {' '}"{d.sheetName}"
+              </li>
+            ))}
+          </ul>
+          Re-running those docs with Warroom AI reads the taglines and splits them.{' '}
+        </>
+      )}
+      {parserNotes.skipped > 0 && (
+        <>
+          <strong>{parserNotes.skipped}</strong> had no recognisable speech and were left out.
+        </>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div
@@ -1187,24 +1233,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
               <p className="text-xs text-ink/50">
                 Review where each card will land. Uncheck any you don't want, then confirm.
               </p>
-              {parserNotes && (parserNotes.unresolved > 0 || parserNotes.skipped > 0) && (
-                <div className="text-[11px] rounded-sm p-2.5 leading-relaxed"
-                  style={{ color: 'rgb(var(--warn-rgb))', background: 'rgba(var(--warn-rgb), 0.08)', border: '1px solid rgba(var(--warn-rgb), 0.25)' }}>
-                  {parserNotes.unresolved > 0 && (
-                    <>
-                      <strong>{parserNotes.unresolved} card{parserNotes.unresolved === 1 ? '' : 's'}</strong>{' '}
-                      couldn't be separated into named positions — the doc labels those blocks with a
-                      generic header, so they're grouped on one tab. Sorting with Warroom AI instead
-                      would read the taglines and split them.{' '}
-                    </>
-                  )}
-                  {parserNotes.skipped > 0 && (
-                    <>
-                      <strong>{parserNotes.skipped}</strong> had no recognisable speech and were left out.
-                    </>
-                  )}
-                </div>
-              )}
+              {parserWarning}
 
               {classifyStats && (
                 <p className="text-[11px] text-ink/45">
@@ -1292,16 +1321,22 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           {step === 'done' && writeSummary && (
             <div className="space-y-3">
               <p className="text-sm text-ink/70">
-                Wrote {writeSummary.written} card{writeSummary.written === 1 ? '' : 's'}. {writeSummary.skipped.length} didn't fit and were skipped:
+                Wrote {writeSummary.written} card{writeSummary.written === 1 ? '' : 's'} into the flow.
+                {writeSummary.skipped.length > 0
+                  ? ` ${writeSummary.skipped.length} didn't fit and were skipped:`
+                  : ''}
               </p>
-              <div className="rounded-sm border border-line divide-y divide-line">
-                {writeSummary.skipped.map((s, i) => (
-                  <div key={i} className="px-3 py-2 text-xs">
-                    <span className="text-ink/75">{truncate(s.tag, 90)}</span>
-                    <span className="block text-ink/40 mt-0.5">{s.sheetName} → {s.column} — {s.reason}</span>
-                  </div>
-                ))}
-              </div>
+              {parserWarning}
+              {writeSummary.skipped.length > 0 && (
+                <div className="rounded-sm border border-line divide-y divide-line">
+                  {writeSummary.skipped.map((s, i) => (
+                    <div key={i} className="px-3 py-2 text-xs">
+                      <span className="text-ink/75">{truncate(s.tag, 90)}</span>
+                      <span className="block text-ink/40 mt-0.5">{s.sheetName} → {s.column} — {s.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
