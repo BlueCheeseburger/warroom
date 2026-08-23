@@ -181,6 +181,15 @@ function findFlowMeta(index, query) {
 const server = new McpServer({
   name: 'warroom',
   version: '0.1.0',
+  instructions: `This server is READ-ONLY: no tool here writes to the user's Warroom data, and none hits a live external site (no Tabroom lookups). It's for reference and troubleshooting, not for driving the app — equivalent write/live-lookup capability lives in the in-app Warroom AI instead.
+
+Call get_warroom_context at the start of any debate-related conversation — it's the fastest way to pick up the user's debate event, current topic, and tournament/round history, the same context the in-app Warroom AI gets automatically.
+
+Call get_skill before answering questions about debate format/rules/strategy (cx_debate, pf_debate, ld_debate), card-cutting cite format (card_cutting), or Warroom app features/architecture (user_manual, documentation) — never answer those from general knowledge when a skill file exists for it.
+
+search_warroom, list_flows, and read_flow return real user data (cases, opponents, judges, tournaments, topics, flows) this server can see but you otherwise can't. fetch_article does real network I/O to pull readable text from a URL.
+
+cross_ex_questions_prompt, cross_ex_trap_drill_prompt, score_card_credibility_prompt, and outweigh_practice_round_prompt are different: this server has no LLM of its own, so none of them generate anything. Each just returns instructions (rules, a rubric, or a brief) for you to execute yourself. None of the first three take the document or cards as input — you already have that content in your own context, so apply the returned instructions directly to it instead of passing it through the tool. outweigh_practice_round_prompt does take a difficulty/event/optional topic material, since those genuinely shape the returned brief.`,
 });
 
 // ── get_warroom_context ───────────────────────────────────────────────────────
