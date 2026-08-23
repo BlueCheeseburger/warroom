@@ -187,7 +187,11 @@ This server is READ-ONLY: no tool here writes to the user's Warroom data, and no
 
 Call get_warroom_context at the start of any debate-related conversation — it's the fastest way to pick up the user's debate event, current topic, and tournament/round history, the same context the in-app Warroom AI gets automatically.
 
-Call get_skill before answering questions about debate format/rules/strategy (cx_debate, pf_debate, ld_debate), card-cutting cite format (card_cutting), or Warroom app features/architecture (user_manual, documentation) — never answer those from general knowledge when a skill file exists for it. IMPORTANT: these skill files were written for the in-app Warroom AI, which has capabilities this server does NOT have — a Settings screen, and an agent tool that saves a card straight to the user's library. If a skill mentions a Settings toggle or saving something, that's describing the app, not an action available here — don't try to act on it or claim you did; just note it's an in-app option if it's relevant, and carry on with the parts of the skill that are pure debate/format knowledge.
+card_cutting (Warroom's exact citation format), user_manual, and documentation are Warroom-specific with no general-knowledge substitute — always call get_skill for these before answering a related question, never answer from general knowledge.
+
+cx_debate, pf_debate, and ld_debate are different: skip calling get_skill for a purely general debate-knowledge question (jargon definitions, standard argument mechanics) you're already confident and accurate about. But still call it whenever the question could touch this specific user's saved case, this year's topic strategy, or Warroom's own header/file conventions — that content only exists in the skill file, not in your training.
+
+IMPORTANT: these skill files were written for the in-app Warroom AI, which has capabilities this server does NOT have — a Settings screen, and an agent tool that saves a card straight to the user's library. If a skill mentions a Settings toggle or saving something, that's describing the app, not an action available here — don't try to act on it or claim you did; just note it's an in-app option if it's relevant, and carry on with the parts of the skill that are pure debate/format knowledge.
 
 search_warroom, list_flows, and read_flow return real user data (cases, opponents, judges, tournaments, topics, flows) this server can see but you otherwise can't. fetch_article does real network I/O to pull readable text from a URL.
 
