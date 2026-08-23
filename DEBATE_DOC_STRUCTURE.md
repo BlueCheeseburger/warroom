@@ -134,17 +134,39 @@ After a tag, the following paragraphs are `Normal` / `NormalWeb`:
    The full quoted evidence.
 
 A bare tag with no Normal paragraph under it (another heading follows immediately)
-is an **analytic / label tag**, not an evidence card.
+is an **analytic / label tag**, not an evidence card. (This is Warroom's own term
+for the shape, not the Verbatim paragraph *style* named "Analytic" — see the note
+at the end of this section.)
 
 **Consumers of tag/cite detection**: `speechdoc:extract` (token saving / AI
-attach / aff-neg), and `extractDocxPriorityText` (`electron/main.ts`) — a
-lighter pass reusing the same heading-level + "first paragraph after a tag is
-the cite" logic, but only collecting headings + cite lines (not body/emphasis).
-Its output feeds `extractKeywords`' `priorityText` param
-(`src/lib/searchIndex.ts`) so every card's tagline and cite (author, date,
-publication) is guaranteed part of a case/speech-doc's ⌘K search keywords,
-regardless of word-frequency ranking. If the tag/cite detection rules above
-change, update both consumers.
+attach / aff-neg), `extractDocxPriorityText` (`electron/main.ts`) — a lighter pass
+reusing the same heading-level + "first paragraph after a tag is the cite" logic,
+but only collecting headings + cite lines (not body/emphasis). Its output feeds
+`extractKeywords`' `priorityText` param (`src/lib/searchIndex.ts`) so every card's
+tagline and cite (author, date, publication) is guaranteed part of a case/speech-doc's
+⌘K search keywords, regardless of word-frequency ranking. And `extractFlowCardsFromXml`
+(`electron/docxFlowCards.ts`, behind the `speechdoc:extractBlocks` IPC handler) —
+Auto Flow's extractor, which mirrors these same §1–2 rules but keeps the full
+pocket/hat/block ancestry per card (rather than flattening to one string) instead of
+just the tag, since Auto Flow needs the hierarchy to route a card to a sheet. It
+never reads the card body by default — Auto Flow routes tags, it doesn't re-cut
+cards — and only pulls it when the opt-in AI-summary path explicitly requests
+`includeBody`, capped at `BODY_CAP = 4000` chars per card and never sent anywhere
+outside the main process even then. If the tag/cite detection rules above change,
+update all three consumers.
+
+**Analytic / Undertag Verbatim styles.** `electron/skills/card_cutting.md` (the
+card-cutting skill) names two Verbatim paragraph *styles* — "Analytic" (written
+blocks/analytics) and "Undertag" (notes on a card) — both described there as
+"stripped from send doc automatically." Neither string appears anywhere in the
+extraction or viewer code (checked `speechdoc:extract`, `SpeechDocViewer.tsx`,
+`docxFlowCards.ts`). The working assumption is that Verbatim itself strips these
+paragraphs before producing the "send doc" a debater shares, so Warroom never
+receives them — but that's inferred from the skill's wording, not verified against
+a real doc that still has one. If a doc ever shows up with an Analytic- or
+Undertag-styled paragraph intact, it will be read as plain `Normal` text (folded
+into cite or body per the rules above) rather than specially recognized or
+stripped, since nothing in the parser currently checks for those style ids.
 
 ---
 
@@ -269,3 +291,21 @@ docx-preview's `'docx'` default, and `CasePreview.tsx` passes a per-item hashed
 class on purpose (docx-preview scopes all its generated CSS to that class, so
 sharing one class across many thumbnails would make them clobber each other's
 styles). Always check the call site's `className` before writing a selector.
+
+---
+
+## 7. Not handled: tables, hyperlinks, footnotes, numbered lists
+
+None of `speechdoc:extract`, `extractDocxPriorityText`, or `extractFlowCardsFromXml`
+have any code path for `<w:tbl>` (tables), `<w:hyperlink>`, `<w:footnote>`/`<w:endnote>`,
+or `<w:numPr>` (numbered/bulleted lists) — grepped for all four across
+`electron/main.ts` and `electron/docxFlowCards.ts`, zero references anywhere. This
+hasn't been verified against a real doc containing one of these, so the exact
+failure mode isn't confirmed — but given extraction works by walking `<w:p>`
+paragraphs, the likely behavior is that content inside a table (paragraphs nested in
+`<w:tbl><w:tr><w:tc>`) is silently absent from every extraction path, not merely
+mis-ordered or mis-emphasized like the emphasis markers in §3. That's a real
+silent-data-loss risk if a debater's evidence sits in a table (a comparison chart, a
+competing-authority table) rather than a plain paragraph — worth confirming against
+a real doc, and worth a decision on whether to support it, before this comes up as a
+support report that looks like "my card just isn't there."
