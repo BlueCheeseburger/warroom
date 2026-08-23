@@ -289,5 +289,35 @@ console.log('\n[13] The pocket is a tab source when it is the only heading');
     sheetForCard(c({ pocket: 'AT:OFF', block: '2AC---Texit DA' }), '2AC').name === 'Texit DA');
 }
 
+console.log('\n[14] Speech detection: earliest wins, "AT:" targets are ignored');
+{
+  // The bug: POLICY_SPEECHES lists '1AC' before '1NC', and the old code returned
+  // the first ARRAY match — so a whole 1NC doc was read as 1AC and landed in the
+  // aff's first column.
+  check('a doc that answers the 1AC is still a 1NC doc',
+    detectSpeech(null, '1NC---AT-1AC-Adv.docx', 'policy') === '1NC',
+    String(detectSpeech(null, '1NC---AT-1AC-Adv.docx', 'policy')));
+  check('the earliest speech in a heading wins',
+    detectSpeech('2AC vs 1NC Politics', 'x.docx', 'policy') === '2AC');
+  check('order in the string, not order in the array',
+    detectSpeech('1NC vs 2AC Politics', 'x.docx', 'policy') === '1NC');
+  // "AT:" attaches to whatever it immediately precedes. Here that's "Solvency",
+  // so the trailing 1NC is still this card's own speech.
+  check('a far-away "AT:" does not disqualify a speech',
+    detectSpeech('AT: Solvency---1NC', 'x.docx', 'policy') === '1NC');
+  check('"A2:" works the same as "AT:"',
+    detectSpeech(null, '2NR---A2-2AR.docx', 'policy') === '2NR');
+  // Every speech named is an answers-to target, so the pocket says nothing about
+  // this card's own speech — fall through to the filename rather than guess.
+  check('a pocket that only names its target falls through to the filename',
+    detectSpeech('AT: 2NC Cap', 'SEND_1AR.docx', 'policy') === '1AR',
+    String(detectSpeech('AT: 2NC Cap', 'SEND_1AR.docx', 'policy')));
+  // Regressions on the shapes that already worked.
+  check('the plain send-doc filename case still works',
+    detectSpeech('OFF', 'SEND_2AC---PR.8.20.docx', 'policy') === '2AC');
+  check('a plain pocket still works', detectSpeech('1AC', 'whatever.docx', 'policy') === '1AC');
+  check('"12AC" is still not a speech', detectSpeech('12AC', 'x.docx', 'policy') === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

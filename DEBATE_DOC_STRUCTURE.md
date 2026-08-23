@@ -155,18 +155,31 @@ cards — and only pulls it when the opt-in AI-summary path explicitly requests
 outside the main process even then. If the tag/cite detection rules above change,
 update all three consumers.
 
-**Analytic / Undertag Verbatim styles.** `electron/skills/card_cutting.md` (the
-card-cutting skill) names two Verbatim paragraph *styles* — "Analytic" (written
-blocks/analytics) and "Undertag" (notes on a card) — both described there as
-"stripped from send doc automatically." Neither string appears anywhere in the
-extraction or viewer code (checked `speechdoc:extract`, `SpeechDocViewer.tsx`,
-`docxFlowCards.ts`). The working assumption is that Verbatim itself strips these
-paragraphs before producing the "send doc" a debater shares, so Warroom never
-receives them — but that's inferred from the skill's wording, not verified against
-a real doc that still has one. If a doc ever shows up with an Analytic- or
-Undertag-styled paragraph intact, it will be read as plain `Normal` text (folded
-into cite or body per the rules above) rather than specially recognized or
-stripped, since nothing in the parser currently checks for those style ids.
+**Analytic / Undertag Verbatim styles — the strip happens on EXPORT, not in the
+format.** `electron/skills/card_cutting.md` names two Verbatim paragraph *styles*
+— "Analytic" (written blocks/analytics) and "Undertag" (notes on a card) — both
+described there as "stripped from send doc automatically." Neither string appears
+anywhere in the extraction or viewer code (`speechdoc:extract`,
+`SpeechDocViewer.tsx`, `docxFlowCards.ts`).
+
+Measured across 89 real docs, that description is right about send docs and wrong
+about everything else:
+
+- **Send docs: 0 of 5.** No `SEND_*.docx` contains an Analytic- or Undertag-styled
+  paragraph. Verbatim really does strip them on export.
+- **Everything else: 18 of 89 contain them** — `JLHS---Quantum Satellites---1AR`
+  (208 paragraphs), `Public Option Aff - Michigan 2026 BCFP` (67), `Kant Answers`
+  (46), `R5 2AC` (42). Only 1 doc carries Undertag.
+
+Most docs a user imports are *not* send docs — they are case files, 2AC files, and
+camp files, and those keep their analytics. So Warroom receives these routinely
+and reads them as plain `Normal` text, folded into cite or body per the rules
+above, since nothing in the parser checks for those style ids.
+
+The consequence is already documented one section down, in §4b: an analytic
+sitting in the **cite slot** (the first Normal paragraph after a tag) is why
+`shortCite` refuses a head with no year and no delimiter. That refusal exists
+precisely because this happens — these two notes used to contradict each other.
 
 ---
 
@@ -212,7 +225,7 @@ highlighted text in the same card.
 
 ---
 
-## 4b. Short cites (`electron/citeShort.ts`)
+## 4b. Short cites (`src/lib/citeShort.ts`)
 
 The cite paragraph under a tag carries the full quals — author, job title,
 institution, date, sometimes the article title and URL. What goes on a flow is
@@ -243,6 +256,41 @@ plus a handful of analytics correctly rejected. Auto Flow still asks Warroom AI
 for the short cite (it handles organisations better — `PAHF '23`); this is the
 fallback when the model omits it, replacing an older fallback that wrote the
 **entire cite paragraph** into the flow cell.
+
+## 4c. Which speech a card is in (and therefore which COLUMN)
+
+§5 below decides a whole document's *side*. This decides an individual card's
+*speech*, which is what picks its flow column. `detectSpeech` in
+`src/lib/autoFlowParse.ts`.
+
+**Pocket first, then the FILENAME.** The label genuinely isn't always in the
+document: `SEND_2AC---PR.8.20.docx` pockets all 29 of its cards under "OFF", and
+the only place the string "2AC" appears anywhere is the file's name. A parser that
+only reads headings gets nothing from that doc.
+
+**When a string names more than one speech, the EARLIEST one wins.** A heading
+reads left to right — what it leads with is what it *is*, and what follows is
+context. `2AC vs 1NC Politics` is a 2AC block. This used to return the first match
+in the `POLICY_SPEECHES` array, which is arbitrary ordering, not information: since
+`'1AC'` is listed before `'1NC'`, a doc named `1NC---AT-1AC-Adv.docx` came back as
+**1AC** and put an entire 1NC into the aff's first column.
+
+**A speech named right after `AT:` / `A2:` / `Answers To` is the TARGET, not the
+speech.** `1NC---AT-1AC-Adv` is a 1NC answering the 1AC. The marker must be
+*immediately* adjacent to count, or it would eat legitimate cases —
+`AT: Solvency---1NC` is a real 1NC block whose "AT:" attaches to "Solvency", and
+must still resolve to 1NC. When *every* speech in a pocket is an answers-to target
+(`AT: 2NC Cap`), the pocket says nothing about this card's own speech, so it falls
+through to the filename rather than guessing.
+
+**2NC and 1NR share one column** in this app's policy layout, so `columnForSpeech`
+also matches a speech against the parts of a merged column name (`2NC/1NR`).
+
+Note this is per-CARD, not per-document: one file can legitimately hold cards from
+several speeches, and each card's own pocket is consulted before the shared
+filename fallback.
+
+---
 
 ## 5. Aff vs neg detection
 
@@ -294,18 +342,51 @@ styles). Always check the call site's `className` before writing a selector.
 
 ---
 
-## 7. Not handled: tables, hyperlinks, footnotes, numbered lists
+## 7. Tables, hyperlinks, footnotes, numbered lists
 
 None of `speechdoc:extract`, `extractDocxPriorityText`, or `extractFlowCardsFromXml`
 have any code path for `<w:tbl>` (tables), `<w:hyperlink>`, `<w:footnote>`/`<w:endnote>`,
-or `<w:numPr>` (numbered/bulleted lists) — grepped for all four across
-`electron/main.ts` and `electron/docxFlowCards.ts`, zero references anywhere. This
-hasn't been verified against a real doc containing one of these, so the exact
-failure mode isn't confirmed — but given extraction works by walking `<w:p>`
-paragraphs, the likely behavior is that content inside a table (paragraphs nested in
-`<w:tbl><w:tr><w:tc>`) is silently absent from every extraction path, not merely
-mis-ordered or mis-emphasized like the emphasis markers in §3. That's a real
-silent-data-loss risk if a debater's evidence sits in a table (a comparison chart, a
-competing-authority table) rather than a plain paragraph — worth confirming against
-a real doc, and worth a decision on whether to support it, before this comes up as a
-support report that looks like "my card just isn't there."
+or `<w:numPr>` (numbered/bulleted lists) — zero references anywhere. This section
+used to *guess* the consequence. Measured across 89 real docs, the guess was wrong,
+and the four cases behave completely differently:
+
+**Tables — content survives, STRUCTURE does not.** 9 of 89 docs contain one (392
+cells total). The `<w:p>` walk is a global regex over the whole document XML, so it
+is indifferent to `<w:tbl><w:tr><w:tc>` nesting — paragraphs inside a table get
+walked exactly like any other paragraph:
+
+| Doc | Table paragraphs kept |
+|---|---|
+| `Econ And Case Addendum - JDI 2026 GFMM` | 54 / 54 |
+| `JLHS---Quantum Satellites---1AR` | 5 / 5 |
+| `Topicality Cards` | 0 / 6 |
+| `NHS CP---Pre-Season` | 0 / 6 |
+
+The two zeros are not a table problem: those tables sit *before any tagline*, and
+any paragraph before the first tag is dropped. So the real risk is the opposite of
+silent absence — it is **silent flattening**. Cell and row boundaries vanish, so a
+comparison chart or a competing-authority table becomes an unlabeled run of
+paragraphs glued onto whichever card was open. A tagline like "Chart inserted"
+(real, in a measured flow) is the shape to watch for.
+
+**Hyperlinks — a non-issue.** 53 of 89 docs contain them, and **452 of 473 link
+texts survive extraction**. `<w:hyperlink>` wraps runs *inside* a `<w:p>`, so
+stripping tags preserves the text. Only the URL itself is lost. Don't treat this
+as a risk.
+
+**Footnotes — 0 of 89 docs.** Not a real concern for this corpus.
+
+**Numbered lists — the one that actually loses data.** 26 of 89 docs use `<w:numPr>`,
+and **67 auto-numbered paragraphs are headings** (i.e. taglines) across 10 docs.
+Word stores the number in `numbering.xml` and generates it at render time; it is
+not in the paragraph text, so extraction never sees it:
+
+```
+R5 1NC.docx  →  "grant individuals who are not eligible for employer-sponsored heal…"
+R5 1NC.docx  →  "establish a sufficiently resourced entity tasked with centralized …"
+```
+
+Those are **counterplan plank mandates**. In Word they read "1) grant individuals…"
+and "2) establish…". A multi-plank CP loses its plank numbers on the flow, and a
+numbered tagline ("1. STAGNATION---is inevitable") loses its enumeration. Manually
+typed numbers are unaffected — only Word's auto-numbering is invisible.

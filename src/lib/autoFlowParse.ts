@@ -87,24 +87,56 @@ const PF_SPEECHES: [RegExp, string][] = [
 ];
 
 /**
+ * "AT:" / "A2:" / "Answers To", immediately before a speech token.
+ *
+ * A speech named right after one of these is the speech being ANSWERED, not the
+ * speech the card is in — `1NC---AT-1AC-Adv.docx` is a 1NC doc, and the "1AC" in
+ * it names its target. Matched against the text *preceding* a hit, and anchored
+ * to the end of it, so only an immediately-adjacent marker counts:
+ * `AT: Solvency---1NC` still resolves to 1NC, because there the "AT:" belongs to
+ * "Solvency", not to the speech.
+ */
+const ANSWERS_TO_BEFORE = /(^|[^A-Z0-9])(AT|A2|ANSWERS?\s*TO)\s*[:\-—–]?\s*$/i;
+
+/**
  * Which speech a card belongs to, from its pocket — falling back to the FILE
  * NAME, because the label genuinely isn't always in the document. A real send
  * doc measured here (`SEND_2AC---PR.8.20.docx`) pockets all 29 of its cards
  * under "OFF"; the only place the words "2AC" appear is the filename.
+ *
+ * When a string names more than one speech, the EARLIEST one wins. It used to
+ * return the first match in `POLICY_SPEECHES` array order, which is arbitrary —
+ * a doc named `1NC---AT-1AC-Adv.docx` came back as 1AC purely because '1AC' is
+ * listed before '1NC', putting a whole 1NC doc in the aff's first column. A
+ * heading reads left to right: what it leads with is what it is, and what comes
+ * after is context ("2AC vs 1NC Politics" is a 2AC block).
  */
 export function detectSpeech(pocket: string | null, fileName: string, event: 'policy' | 'pf'): string | null {
   const from = (s: string): string | null => {
     const t = String(s ?? '');
+    let bestAt = Infinity;
+    let bestLabel: string | null = null;
+    const take = (at: number, label: string) => {
+      if (at >= 0 && at < bestAt) { bestAt = at; bestLabel = label; }
+    };
     if (event === 'pf') {
-      for (const [re, label] of PF_SPEECHES) if (re.test(t)) return label;
-      return null;
+      for (const [re, label] of PF_SPEECHES) take(t.search(re), label);
+      return bestLabel;
     }
     const up = t.toUpperCase();
     for (const sp of POLICY_SPEECHES) {
       // Word-ish boundary: "2AC" in "SEND_2AC---PR" counts, "12AC" does not.
-      if (new RegExp(`(^|[^0-9A-Z])${sp}([^0-9A-Z]|$)`).test(up)) return sp;
+      const re = new RegExp(`(^|[^0-9A-Z])${sp}([^0-9A-Z]|$)`, 'g');
+      for (const m of up.matchAll(re)) {
+        // m[1] is the boundary char (empty at string start), so the token itself
+        // starts just past it.
+        const at = m.index! + (m[1] ? m[1].length : 0);
+        if (ANSWERS_TO_BEFORE.test(up.slice(0, at))) continue;
+        take(at, sp);
+        break; // earliest occurrence of THIS speech is enough
+      }
     }
-    return null;
+    return bestLabel;
   };
   return from(pocket ?? '') ?? from(fileName);
 }
