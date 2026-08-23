@@ -181,11 +181,13 @@ function findFlowMeta(index, query) {
 const server = new McpServer({
   name: 'warroom',
   version: '0.1.0',
-  instructions: `This server is READ-ONLY: no tool here writes to the user's Warroom data, and none hits a live external site (no Tabroom lookups). It's for reference and troubleshooting, not for driving the app — equivalent write/live-lookup capability lives in the in-app Warroom AI instead.
+  instructions: `Warroom is a desktop app for competitive policy/Public Forum/Lincoln-Douglas debaters — it manages their cases (speech docs), evidence cards, opponent scouting, tournament/round records, and flow sheets, and has its own built-in "Warroom AI" agent for prep work.
+
+This server is READ-ONLY: no tool here writes to the user's Warroom data, and none hits a live external site (no Tabroom lookups). It's for reference and troubleshooting, not for driving the app — equivalent write/live-lookup capability lives in the in-app Warroom AI instead.
 
 Call get_warroom_context at the start of any debate-related conversation — it's the fastest way to pick up the user's debate event, current topic, and tournament/round history, the same context the in-app Warroom AI gets automatically.
 
-Call get_skill before answering questions about debate format/rules/strategy (cx_debate, pf_debate, ld_debate), card-cutting cite format (card_cutting), or Warroom app features/architecture (user_manual, documentation) — never answer those from general knowledge when a skill file exists for it.
+Call get_skill before answering questions about debate format/rules/strategy (cx_debate, pf_debate, ld_debate), card-cutting cite format (card_cutting), or Warroom app features/architecture (user_manual, documentation) — never answer those from general knowledge when a skill file exists for it. IMPORTANT: these skill files were written for the in-app Warroom AI, which has capabilities this server does NOT have — a Settings screen, and an agent tool that saves a card straight to the user's library. If a skill mentions a Settings toggle or saving something, that's describing the app, not an action available here — don't try to act on it or claim you did; just note it's an in-app option if it's relevant, and carry on with the parts of the skill that are pure debate/format knowledge.
 
 search_warroom, list_flows, and read_flow return real user data (cases, opponents, judges, tournaments, topics, flows) this server can see but you otherwise can't. fetch_article does real network I/O to pull readable text from a URL.
 
