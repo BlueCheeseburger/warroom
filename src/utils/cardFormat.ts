@@ -45,6 +45,14 @@ export function emptyAttrs(len: number): CharAttr[] {
   return Array.from({ length: len }, () => ({ u: false, hl: null, fs: 11 as FontSize }));
 }
 
+// A match starting mid-word (e.g. "in" landing inside "administrative") is never
+// what the model intended — only accept matches that start at a word boundary.
+// This matters most for flow-style short letter fragments, which otherwise collide
+// with the same letters occurring inside unrelated words throughout the body.
+function isWordStart(text: string, idx: number): boolean {
+  return idx === 0 || !/[A-Za-z0-9']/.test(text[idx - 1]);
+}
+
 // Find every range of `sub` within `text`. Exact match first, then a
 // whitespace-flexible match so minor whitespace drift from the model still lands.
 function findRanges(text: string, sub: string): [number, number][] {
@@ -52,16 +60,17 @@ function findRanges(text: string, sub: string): [number, number][] {
   const s = sub.trim();
   if (!s) return ranges;
   let idx = text.indexOf(s);
-  if (idx !== -1) {
-    while (idx !== -1) { ranges.push([idx, idx + s.length]); idx = text.indexOf(s, idx + s.length); }
-    return ranges;
+  while (idx !== -1) {
+    if (isWordStart(text, idx)) ranges.push([idx, idx + s.length]);
+    idx = text.indexOf(s, idx + s.length);
   }
+  if (ranges.length) return ranges;
   const pattern = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
   try {
     const re = new RegExp(pattern, 'g');
     let m: RegExpExecArray | null;
     while ((m = re.exec(text))) {
-      ranges.push([m.index, m.index + m[0].length]);
+      if (isWordStart(text, m.index)) ranges.push([m.index, m.index + m[0].length]);
       if (m.index === re.lastIndex) re.lastIndex++;
     }
   } catch {/* ignore bad pattern */}
