@@ -15,7 +15,7 @@
     "dist:mac": "electron-vite build && electron-builder --mac --publish never",
     "dist:win": "electron-vite build && electron-builder --win --publish never",
     "typecheck": "tsc --noEmit",
-    "test:flows": "tsx scripts/test-live-flows.ts && tsx scripts/test-live-stress.ts && tsx scripts/test-cell-paste.ts && tsx scripts/test-docx-flow-cards.ts && tsx scripts/test-cite-short.ts && tsx scripts/test-auto-flow-placement.ts && tsx scripts/test-auto-flow-batch.ts && tsx scripts/test-auto-flow-parse.ts && tsx scripts/test-flow-sheet-naming.ts && tsx scripts/test-long-input.ts && tsx scripts/test-flow-cell-flush.ts && tsx scripts/test-doc-html.ts",
+    "test:flows": "tsx scripts/test-live-flows.ts && tsx scripts/test-live-stress.ts && tsx scripts/test-cell-paste.ts && tsx scripts/test-docx-flow-cards.ts && tsx scripts/test-cite-short.ts && tsx scripts/test-auto-flow-placement.ts && tsx scripts/test-auto-flow-batch.ts && tsx scripts/test-auto-flow-parse.ts && tsx scripts/test-flow-sheet-naming.ts && tsx scripts/test-stock-issue-suggest.ts && tsx scripts/test-long-input.ts && tsx scripts/test-flow-cell-flush.ts && tsx scripts/test-doc-html.ts",
     "test:lmstudio": "tsx scripts/test-lmstudio.ts"
   },
   "dependencies": {

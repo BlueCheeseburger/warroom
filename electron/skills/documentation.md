@@ -590,6 +590,16 @@ Tab-following needs no new plumbing: `activeSheetIdx` is part of `StoredFlowData
 
 **The sheet-tab strip does not show a scrollbar.** The 36px row and the sheet list inside it were *both* `overflow-x-auto`, so the outer one drew a second horizontal scrollbar across the full width of the strip, on top of the tab labels. The row is `overflow-hidden`; only the list scrolls, under `.scroll-none` (`src/index.css`) — a 15px scrollbar inside a 36px row covers the bottom of every tab name.
 
+**"That looks like a stock issue" — the rename suggestion.** `src/lib/stockIssueSuggest.ts` (pure, 30 assertions in `scripts/test-stock-issue-suggest.ts`). While a sheet-tab rename is open on a policy flow still using the **advantage** layout, `planStockIssueConversion(sheetNames, renamingIdx, typed)` watches the typed text; a ≥3-character prefix match against Inherency / Harms / Solvency surfaces a one-click "Switch to a stock-issues flow?" card above the tab strip.
+
+Design decisions worth keeping:
+
+- **Only default-named tabs are ever renamed** (`/^(adv|advantage|contention)\s*\d+$/i`). A tab the user named themselves is theirs; overwriting it would be the same class of bug as a keyboard shortcut that rebinds without asking. It also returns `null` when no OTHER default tab is left, since then the conversion renames only the tab the user is already renaming and saves them nothing.
+- **The typed tab keeps what was typed, in place.** The other default tabs take the remaining stock issues in canonical order. Assigning all three positionally would mean typing "Harms" into `Adv 1` produces "Inherency" there — the point is to save typing, not to argue with it.
+- **It is NOT `changeVariant`.** That rebuilds the sheet list from the layout defaults and so refuses to run once a flow has content. This only renames still-default tabs, so cells, arrows, off-case tabs, and user-named tabs all survive — it is safe mid-round.
+- **A dismissal is remembered for the flow** (reset when `flowId` changes). "Solvency" is the weak signal of the three — an advantage aff has a solvency contention too, which is exactly why `inferVariantFromHats` refuses to treat it as a layout signal. Including it anyway is only acceptable because a false positive costs one click, once.
+- **`skipNextRenameCommit`** guards the handoff: closing the rename input can fire its `onBlur`, and that handler still closes over the old `renamingSheet`/`renameValue`, so it would write the half-typed "inh" back over the "Inherency" the conversion just set.
+
 **New flows no longer ship an `RFD/Notes` tab.** `SHEETS_STOCK_ISSUES`, `SHEETS_ADVANTAGE`, and `SHEETS_PF` (`FlowView.tsx`) dropped it — a tab every new flow opens with and most rounds never touch is clutter, and it can still be added with "+". Existing flows keep theirs: it is a real name, so `pruneUnnamedEmptySheets` never removes it.
 
 `PLACEHOLDER_SHEET_RE` (`/^(off|adv|advantage|contention|sheet)\s*\d+$/i`) is what "default-named" means — the numbered slots the default layouts ship with, plus `Sheet N` from `FlowView`'s "+" button. Anything else ("Politics DA", "Case", "RFD/Notes", "Turns") is a real name and survives even when blank, because an empty tab with a real name is telling the user the position existed but nothing landed on it. `pruneUnnamedEmptySheets` never returns an empty array — if every sheet qualifies (a run where every card was skipped) it hands back the original list rather than leaving a flow with zero tabs.
@@ -911,6 +921,9 @@ Type `@` in the chat input to attach context from your local data:
 ### Token saving
 When attaching a speech doc, "token saving" mode sends only underlined text, citations, and headings (not small body text) to reduce token usage. Auto-enabled for Flash Lite. Can be toggled globally in Settings or per-conversation.
 
+### Context-attach toast
+If a speech doc, opponent profile, judge profile, or flow is open in the main view while you're in the AI panel, a small inline banner above the composer offers to attach it — "Attach all" if more than one speech doc is open (main pane + up to 2 compare panes; opponent/judge/flow are always exactly one, since `view` is a single tagged union). Dismissing or attaching remembers that combination (keyed by sorted `type:id` pairs) so it won't re-offer the same open item(s) again. Uses the same data-fetching as a manual `@mention`, just without the composer text insertion.
+
 ### Quote-reply
 Hovering any message (yours or Warroom AI's) reveals a Reply button next to Edit/Copy/Retry. Clicking it stores a `{ id, role, text }` snapshot in `replyingTo` state and shows a quote bar above the composer; sending attaches that snapshot to the new message as `GeminiMsg.replyTo` and injects a one-off `[The user is replying to ...]` context line into that turn's `userParts` (not into `m.text`, so the displayed message and later turns stay clean). Editing or retrying a message that has `replyTo` restores it into `replyingTo` so the requote isn't lost. Clicking a quoted snippet scrolls to and briefly highlights the original message via its `id="msg-<id>"` element, if still in the loaded history.
 
@@ -1079,7 +1092,7 @@ One card (`Settings.tsx`, `id="settings-flow"`) covering everything flow-related
 
 | Field | Default | Read by |
 |---|---|---|
-| `defaultVariant` (`'stock-issues' \| 'advantage'`) | `'stock-issues'` | The two lazy-create branches in `FlowView.tsx`'s load effect (a POLICY flow with no `flow_data_<id>` yet — i.e. made with the plain **+** button, never opened before) and `GeminiPanel.tsx`'s `edit_flow_cell` tool's own fallback layout for a never-opened flow. Auto Flow ignores this entirely — it infers its own layout per doc via `inferVariantFromHats`. |
+| `defaultVariant` (`'stock-issues' \| 'advantage'`) | `'advantage'` | The two lazy-create branches in `FlowView.tsx`'s load effect (a POLICY flow with no `flow_data_<id>` yet — i.e. made with the plain **+** button, never opened before) and `GeminiPanel.tsx`'s `edit_flow_cell` tool's own fallback layout for a never-opened flow. Auto Flow ignores this entirely — it infers its own layout per doc via `inferVariantFromHats`. Defaults to **advantage** because nearly every modern policy aff is an advantage aff; the stock-issues layout is one click away via the rename suggestion below. Note `readFlowPrefs` normalises toward `'advantage'` now, so a prefs blob saved before this field existed reads as advantage rather than silently pinning the old default. |
 | `defaultPfOrder` (`'pro-first' \| 'con-first'`) | `'pro-first'` | Same two `FlowView.tsx` branches and the same `GeminiPanel.tsx` fallback, for a brand-new PF flow. Same **+**-button-only scope as `defaultVariant` — Auto Flow infers its own speech order per doc. |
 | `defaultZoom` (50–150) | `100` | Same branches — the zoom a brand-new flow opens at, before "fit to window" or a manual zoom ever runs. An existing flow always keeps its own saved `zoom`; this never touches one retroactively. |
 | `defaultFontSize` (10–20) | `13` | Same branches — the cell text size (px) a brand-new flow opens at. Same never-retroactive rule as zoom. |

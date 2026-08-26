@@ -16,7 +16,10 @@ import type { PolicyVariant, PFOrder } from '../components/FlowView';
 
 export interface FlowPrefs {
   /** Stock issues vs Advantage for a brand-new POLICY flow made with the plain
-   * "+" button (Auto Flow ignores this — it infers its own layout per doc). */
+   * "+" button (Auto Flow ignores this — it infers its own layout per doc).
+   * Defaults to 'advantage': nearly every modern policy aff is an advantage aff,
+   * and a stock-issues flow is one click away from an advantage one via the
+   * rename suggestion in FlowView (see STOCK_ISSUES / suggestStockIssues). */
   defaultVariant: PolicyVariant;
   /** Pro-first vs Con-first for a brand-new PF flow, same "+"-button-only scope
    * as defaultVariant above (Auto Flow infers its own speech order per doc). */
@@ -41,7 +44,7 @@ export const FLOW_PREFS_KEY = 'warroom-flow-prefs';
 export const FLOW_PREFS_CHANGED_EVENT = 'warroom-flow-prefs-changed';
 
 export const FLOW_PREFS_DEFAULTS: FlowPrefs = {
-  defaultVariant: 'stock-issues',
+  defaultVariant: 'advantage',
   defaultPfOrder: 'pro-first',
   defaultZoom: 100,
   defaultFontSize: 13,
@@ -55,7 +58,7 @@ export function readFlowPrefs(): FlowPrefs {
     if (!raw) return { ...FLOW_PREFS_DEFAULTS };
     const p = JSON.parse(raw);
     return {
-      defaultVariant: p.defaultVariant === 'advantage' ? 'advantage' : 'stock-issues',
+      defaultVariant: p.defaultVariant === 'stock-issues' ? 'stock-issues' : 'advantage',
       defaultPfOrder: p.defaultPfOrder === 'con-first' ? 'con-first' : 'pro-first',
       defaultZoom: typeof p.defaultZoom === 'number' && p.defaultZoom >= 50 && p.defaultZoom <= 150
         ? p.defaultZoom : FLOW_PREFS_DEFAULTS.defaultZoom,

@@ -1585,7 +1585,7 @@ export default function Settings() {
       items: [
         { label: 'Aff flow color', current: flowAffColor, def: '#2563eb' },
         { label: 'Neg flow color', current: flowNegColor, def: '#16a34a' },
-        { label: 'Default new-flow layout', current: flowPrefs.defaultVariant === 'advantage' ? 'Advantage' : 'Stock issues', def: 'Stock issues' },
+        { label: 'Default new-flow layout', current: flowPrefs.defaultVariant === 'advantage' ? 'Advantage' : 'Stock issues', def: 'Advantage' },
         { label: 'Default new-PF-flow order', current: flowPrefs.defaultPfOrder === 'con-first' ? 'Con-first' : 'Pro-first', def: 'Pro-first' },
         { label: 'Default new-flow zoom', current: fmtPct(flowPrefs.defaultZoom), def: fmtPct(FLOW_PREFS_DEFAULTS.defaultZoom) },
         { label: 'Default new-flow font size', current: `${flowPrefs.defaultFontSize}px`, def: `${FLOW_PREFS_DEFAULTS.defaultFontSize}px` },

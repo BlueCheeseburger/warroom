@@ -14,6 +14,7 @@ import { flushCellsIntoSheets } from '../lib/flowCellFlush';
 import { flowDataToXlsxBase64 } from '../utils/flowImport';
 import { teamKeyFor, encryptText } from '../lib/chatCrypto';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
+import { planStockIssueConversion, StockIssuePlan } from '../lib/stockIssueSuggest';
 import TaggedInIndicator from './TaggedInIndicator';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
@@ -229,6 +230,10 @@ export default function FlowView() {
 
   const [renamingCol, setRenamingCol] = useState<number | null>(null);
   const [renamingSheet, setRenamingSheet] = useState<number | null>(null);
+  // Dismissed once = quiet for the rest of this flow. "Solvency" is a legitimate
+  // advantage-flow tab, so a false positive must cost one click, not a nag.
+  const [stockIssueDismissed, setStockIssueDismissed] = useState(false);
+  const skipNextRenameCommit = useRef(false);
   const [renamingFlow, setRenamingFlow] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [colMenu, setColMenu] = useState<number | null>(null);
@@ -345,6 +350,7 @@ export default function FlowView() {
     // up in another.
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     cellsRef.current = {}; cellsOwnerId.current = null;
+    setStockIssueDismissed(false);
     window.warroom?.storage.read(`flow_data_${flowId}`).then((data: StoredFlowData | null) => {
       // If live sync already took over, don't let this (possibly stale) local
       // mirror clobber the merged doc state.
@@ -1644,7 +1650,35 @@ export default function FlowView() {
   }
 
   function startRenameSheet(idx: number) { setRenamingSheet(idx); setRenameValue(sheets[idx]?.name ?? ''); }
+
+  /**
+   * Rename the still-default advantage tabs to the stock issues and flip the
+   * flow's layout, in one click.
+   *
+   * Deliberately NOT `changeVariant`: that rebuilds the sheet list from the
+   * layout defaults and so refuses to run once the flow has any content. This
+   * only ever *renames* tabs that still carry a default name, so cells, arrows,
+   * off-case tabs, and anything the user named themselves all survive — which
+   * means it is safe on a flow already part-way through a round.
+   */
+  function applyStockIssuePlan(plan: StockIssuePlan) {
+    // Closing the rename input can fire its onBlur on the way out, and that
+    // handler still closes over the OLD renamingSheet/renameValue — so it would
+    // write the half-typed "inh" straight back over the "Inherency" this just
+    // set. One-shot flag, cleared by the commit it suppresses.
+    skipNextRenameCommit.current = true;
+    const saved = flushAndGetSheets();
+    const next = saved.map((sh, i) => ({ ...sh, name: plan.names[i] ?? sh.name }));
+    setSheets(next);
+    setVariant('stock-issues');
+    setRenamingSheet(null);
+    snap.current = { ...snap.current, sheets: next, variant: 'stock-issues' };
+    persist({ sheets: next, variant: 'stock-issues' });
+    recordHistory();
+  }
+
   function commitRenameSheet() {
+    if (skipNextRenameCommit.current) { skipNextRenameCommit.current = false; return; }
     if (renamingSheet === null) return;
     const saved = flushAndGetSheets();
     const next = saved.map((s, i) => i === renamingSheet ? { ...s, name: renameValue.trim() || s.name } : s);
@@ -1853,8 +1887,15 @@ export default function FlowView() {
 
   const flowHasContent = flowHasAnyContent();
 
+  // Live while a tab rename is open: does what's being typed look like a stock
+  // issue, on a flow still using the advantage layout? Null the rest of the time.
+  const stockIssuePlan: StockIssuePlan | null =
+    (!stockIssueDismissed && flowEvent === 'policy' && variant === 'advantage' && renamingSheet !== null)
+      ? planStockIssueConversion(sheets.map((sh) => sh.name), renamingSheet, renameValue)
+      : null;
+
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
+    <div className="flex flex-col h-full relative" style={{ background: 'var(--bg-main)' }}>
 
       {/* ── Top bar ── */}
       <div
@@ -2438,6 +2479,45 @@ export default function FlowView() {
       </div>
 
       {/* ── Sheet tabs ── */}
+      {/* ── "That looks like a stock issue" ── */}
+      {stockIssuePlan && (
+        <div
+          className="absolute left-3 z-30 rounded-md shadow-xl px-3 py-2.5 glass-elevated"
+          style={{ bottom: 44, maxWidth: 320, border: '1px solid var(--border-subtle)' }}
+          // The rename input commits on blur, so anything clickable in here must
+          // not steal focus — same guard the tab's delete button uses.
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="text-xs font-medium mb-1" style={{ color: 'var(--nav-active-color)' }}>
+            Switch to a stock-issues flow?
+          </div>
+          <div className="text-[11px] leading-relaxed mb-2" style={{ color: 'var(--label-color)' }}>
+            {stockIssuePlan.renames.map((r) => r.to).join(', ')} — renames{' '}
+            {stockIssuePlan.renames.length} unused tab
+            {stockIssuePlan.renames.length === 1 ? '' : 's'}. Your other tabs and everything
+            already on the flow stay as they are.
+          </div>
+          <div className="flex items-center gap-1.5">
+            <FlowTooltip text="Rename the tabs">
+              <button
+                className="btn-primary text-[11px] px-2 py-0.5"
+                onClick={() => applyStockIssuePlan(stockIssuePlan)}
+              >
+                Switch
+              </button>
+            </FlowTooltip>
+            <FlowTooltip text="Keep the advantage layout">
+              <button
+                className="btn text-[11px] px-2 py-0.5"
+                onClick={() => setStockIssueDismissed(true)}
+              >
+                No thanks
+              </button>
+            </FlowTooltip>
+          </div>
+        </div>
+      )}
+
       {/* The OUTER row must not scroll — it used to also be overflow-x-auto, which
           put a second scrollbar across the full 36px strip, drawn on top of the
           tab labels. Only the sheet list scrolls, and it hides its bar: a 15px
