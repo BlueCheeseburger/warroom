@@ -862,6 +862,12 @@ export interface CutterSource {
   images: CutterImage[];
 }
 
+// tier 1 = single most essential highlight (always shown, even at the lowest
+// density); 2 = adds standard supporting emphasis; 3 = adds full/maximal emphasis.
+// Lets the highlight-density slider re-filter a single AI response locally —
+// no extra AI call per slider position.
+export interface HighlightSpan { text: string; tier: 1 | 2 | 3; }
+
 export interface CutterEmphasis {
   ok: boolean;
   error?: string;
@@ -871,10 +877,10 @@ export interface CutterEmphasis {
   // <AIQuestionPrompt>, then re-calls cutterEmphasize with the answer appended
   // to `clarifications`. See AIQuestion / AIQuestionOr above.
   question?: AIQuestion;
-  taglines: string[];   // 1–2 declarative tag options
-  underline: string[];  // verbatim substrings to read aloud
-  highlight: string[];  // verbatim substrings to emphasize
-  small: string[];      // verbatim substrings to keep but shrink (not read)
+  taglines: string[];         // 1–2 declarative tag options
+  underline: string[];        // verbatim substrings to read aloud
+  highlight: HighlightSpan[]; // verbatim substrings to emphasize, tiered by importance
+  small: string[];            // verbatim substrings to keep but shrink (not read)
 }
 
 // ─── AI clarifying questions (shared: card cutter, Auto Flow, Round Analysis) ──

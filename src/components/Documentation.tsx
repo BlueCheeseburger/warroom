@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/25/26
+          Last updated: 8/26/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -651,15 +651,17 @@ export default function Documentation() {
             (alt-text aware, ads/logos filtered). You <strong>highlight the passages you want</strong> (selections stack;
             hover and ✕ to remove one), optionally add pictures from the dropdown, type what you're using the card for, and
             pick a highlight color (<strong>yellow / cyan / neon green</strong>) and a <strong>cut style</strong>:{' '}
-            <strong>Flow</strong> (default) abbreviates highlights heavily — just the letters/fragments a competitive flower
-            needs (e.g. only "No" and "Ko" in "North Korea"), so the highlighted text won't read as a grammatical sentence —
-            versus <strong>Lay</strong>, which highlights whole words/phrases so the emphasis is readable by eye for a lay
-            judge. Warroom AI then decides what to underline (read aloud), highlight (most important, per the chosen style),
-            and shrink to small text (context), and proposes one or two taglines.
+            <strong>Flow</strong> (default) scatters highlights across many short whole words/phrases throughout the
+            underline, modeled on real competitive Verbatim cards — skipping only connector/filler words, never truncating a
+            word — versus <strong>Lay</strong>, which highlights fewer, whole contiguous phrases so the emphasis is readable
+            at a glance for a lay judge. Warroom AI then decides what to underline (read aloud), highlight (most important,
+            per the chosen style), and shrink to small text (context), and proposes one or two taglines.
             A mini editor lets you fix the emphasis — select text and hit Underline / Highlight / Small / Clear — without
-            changing the words (the body stays verbatim). Saved cards land in the <Code>Cut Cards</Code> case and render with
-            their formatting everywhere a card appears. Neon green highlight counts as “read aloud” across Warroom, alongside
-            yellow and cyan.
+            changing the words (the body stays verbatim). Each highlighted span also carries an importance tier, so the{' '}
+            <strong>Highlight density</strong> control (Less / Medium / More) can show just the essentials or the full set
+            instantly, with no extra AI call — though switching density resets any manual highlight/underline edits made
+            below it. Saved cards land in the <Code>Cut Cards</Code> case and render with their formatting everywhere a card
+            appears. Neon green highlight counts as “read aloud” across Warroom, alongside yellow and cyan.
           </P>
           <P>
             <strong>If Warroom AI is genuinely unsure</strong> how to cut a card — usually because you didn't say what it's

@@ -6,7 +6,7 @@ import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { FormattedBody } from './CardBody';
 import {
-  CharAttr, buildAttrsFromSpans, runsFromAttrs, selectionOffsets,
+  CharAttr, buildAttrsFromSpans, runsFromAttrs, selectionOffsets, HighlightLevel,
   HIGHLIGHT_SWATCH, HIGHLIGHT_CSS, HIGHLIGHT_RGB,
 } from '../utils/cardFormat';
 import { dimHighlightToHsl } from '../utils/docxViewerUtils';
@@ -54,6 +54,10 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   // editor (step 4)
   const [editText, setEditText] = useState('');
   const [editAttrs, setEditAttrs] = useState<CharAttr[]>([]);
+  // Raw AI result kept around (not just the baked-in editAttrs) so the highlight
+  // density control below can re-filter and re-render instantly — no AI call.
+  const [cutResult, setCutResult] = useState<{ underline: string[]; highlight: { text: string; tier: HighlightLevel }[]; small: string[] } | null>(null);
+  const [highlightLevel, setHighlightLevel] = useState<HighlightLevel>(3);
   const [taglines, setTaglines] = useState<string[]>([]);
   const [chosenTag, setChosenTag] = useState('');
   const [cite, setCite] = useState('');
@@ -82,9 +86,12 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     try {
       const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars, cutStyle });
       if (res.question) { setPendingQuestion(res.question); return; }
-      const attrs = buildAttrsFromSpans(bodyText, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
+      const result = { underline: res.underline, highlight: res.highlight, small: res.small };
+      const attrs = buildAttrsFromSpans(bodyText, result, color, 3);
       setEditText(bodyText);
       setEditAttrs(attrs);
+      setCutResult(result);
+      setHighlightLevel(3);
       setTaglines(res.taglines || []);
       setChosenTag((res.taglines && res.taglines[0]) || '');
       setClarifications([]);
@@ -159,6 +166,15 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   async function cut() {
     if (!selectedBody.trim()) return;
     await runEmphasize(selectedBody, intent, []);
+  }
+
+  // Re-filters the single AI response by tier and re-renders instantly —
+  // no AI call. Overwrites any manual highlight/underline tweaks made below,
+  // since it rebuilds attrs from scratch off the original result.
+  function applyHighlightLevel(level: HighlightLevel) {
+    if (!cutResult) return;
+    setHighlightLevel(level);
+    setEditAttrs(buildAttrsFromSpans(editText, cutResult, color, level));
   }
 
   function applyFormat(kind: 'underline' | 'highlight' | 'fontSize' | 'clear', fs?: FontSize) {
@@ -470,6 +486,28 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                   <span className="mx-0.5 text-ink/20 select-none">|</span>
                   <button className="btn text-xs" onClick={() => applyFormat('clear')} title="Remove all formatting from selection">Clear</button>
                 </div>
+                {cutResult && (
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs text-ink/55">Highlight density:</span>
+                    <div className="inline-flex rounded-sm border border-line overflow-hidden">
+                      {([1, 2, 3] as HighlightLevel[]).map((lvl) => (
+                        <button
+                          key={lvl}
+                          className={`px-2.5 py-1 text-xs transition ${lvl !== 1 ? 'border-l border-line' : ''}`}
+                          style={highlightLevel === lvl ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
+                          onClick={() => applyHighlightLevel(lvl)}
+                          title={
+                            lvl === 1 ? 'Show only the most essential highlights (resets manual highlight/underline edits below)'
+                            : lvl === 2 ? 'Show standard highlighting (resets manual highlight/underline edits below)'
+                            : 'Show full, maximal highlighting (resets manual highlight/underline edits below)'
+                          }
+                        >
+                          {lvl === 1 ? 'Less' : lvl === 2 ? 'Medium' : 'More'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div ref={editRef} className="text-sm text-ink/80 rounded-sm border border-line p-3 max-h-[34vh] overflow-y-auto scroll-thin select-text">
                   <FormattedBody runs={runsFromAttrs(editText, editAttrs)} />
                 </div>

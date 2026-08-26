@@ -2897,9 +2897,9 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 const ABBREVIATION_STYLES: Record<'lay' | 'flow', string> = {
   flow: `FLOW STYLE (default): highlight is scattered across MANY short, non-contiguous words and short phrases throughout the underlined text — like real competitive Verbatim cards, where nearly every substantive noun, verb, adjective, and proper noun that carries argumentative weight gets its own highlight, while purely grammatical connector words (a, the, of, to, in, on, at, that, which, and, or, is/are/was used as a plain copula) are skipped and left un-highlighted in between. A single long underlined sentence commonly has 5-10+ separate short highlight entries (often just 1-4 words each) — NOT one or two long contiguous blocks covering most of the sentence.
 Do NOT abbreviate or truncate any word — every highlight entry must be spelled out in full, exactly as it appears in the source. If an acronym already appears that way in the source (e.g. "NHI"), it's fine to highlight it as-is, but never invent your own shortened form of a word that isn't already written that way.
-Dense, scattered highlighting throughout the whole underlined passage is normal and expected for a well-cut card — do not hold back on highlighting for fear of highlighting "too much"; the skill is in WHICH words you skip (connectors, filler) not in using few highlights overall.
+Dense, scattered highlighting throughout the whole underlined passage is normal and expected for a well-cut card — do not hold back on highlighting for fear of highlighting "too much"; the skill is in WHICH words you skip (connectors, filler) not in using few highlights overall. Spread your entries realistically across all three tiers (see the tier definitions above) rather than marking everything tier 2 by default.
 Every highlight entry must still be an exact, unmodified, verbatim slice of the body text — copy it character-for-character.`,
-  lay: 'LAY STYLE: highlight whole words/phrases (e.g. all of "North Korea", all of "national health insurance") so the highlighted portion reads as a grammatical, complete phrase a lay judge can follow by eye. Do not fragment words into partial letters.',
+  lay: 'LAY STYLE: highlight whole words/phrases (e.g. all of "North Korea", all of "national health insurance") so the highlighted portion reads as a grammatical, complete phrase a lay judge can follow by eye. Do not fragment words into partial letters. Most lay-style cuts only need 1-3 entries total, all naturally essential — it is fine and normal for all of them to be tier 1.',
 };
 
 ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications, cutStyle }: {
@@ -2945,6 +2945,17 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
   }
 
   const arr = (v: any): string[] => Array.isArray(v) ? v.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim()) : [];
+  // Three flat string arrays (one per tier) rather than one array of {text,tier}
+  // objects — a long, uniform array of objects is exactly the shape where models
+  // sometimes lose track of boundaries and leak stray tokens (observed: a bare
+  // "tier" string and empty strings mixed into a 20-item object array on the
+  // very first test). Flat string arrays are the same reliable shape underline/
+  // small already use, so we combine them into HighlightSpan[] here instead.
+  const highlight: { text: string; tier: 1 | 2 | 3 }[] = [
+    ...arr(parsed.highlightTier1).map((text) => ({ text, tier: 1 as const })),
+    ...arr(parsed.highlightTier2).map((text) => ({ text, tier: 2 as const })),
+    ...arr(parsed.highlightTier3).map((text) => ({ text, tier: 3 as const })),
+  ];
   let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
   // Parsed fine but said nothing: no tagline AND nothing to underline is not a
   // cut card, it's an empty answer wearing one. Fail so the user can re-cut,
@@ -2957,7 +2968,7 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     ok: true,
     taglines,
     underline: arr(parsed.underline),
-    highlight: arr(parsed.highlight),
+    highlight,
     small: arr(parsed.small),
   };
 });

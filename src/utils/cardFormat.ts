@@ -83,12 +83,20 @@ function findRanges(text: string, sub: string): [number, number][] {
   return ranges;
 }
 
+// Importance tier per highlight span (see HighlightSpan in types.ts): 1 = the
+// handful of most-essential words, 2 = standard supporting emphasis, 3 = full/
+// maximal emphasis. `highlightLevel` is the density slider position — showing
+// tiers <= highlightLevel lets the density change re-render instantly from the
+// single stored AI response, with no extra AI call per slider position.
+export type HighlightLevel = 1 | 2 | 3;
+
 // Apply AI-returned emphasis substrings onto the verbatim body, producing runs.
 // small → fs=8 (standard Verbatim small text); underline/highlight override to normal.
 export function buildAttrsFromSpans(
   text: string,
-  spans: { underline?: string[]; highlight?: string[]; small?: string[] },
+  spans: { underline?: string[]; highlight?: { text: string; tier: HighlightLevel }[]; small?: string[] },
   color: HighlightColor,
+  highlightLevel: HighlightLevel = 3,
 ): CharAttr[] {
   const attrs = emptyAttrs(text.length);
   const mark = (subs: string[] | undefined, fn: (a: CharAttr) => void) => {
@@ -101,7 +109,8 @@ export function buildAttrsFromSpans(
   // small first, then underline/highlight (emphasis wins over shrunk context).
   mark(spans.small, (a) => { a.fs = 8; });
   mark(spans.underline, (a) => { a.u = true; a.fs = 11; });
-  mark(spans.highlight, (a) => { a.hl = color; a.u = true; a.fs = 11; });
+  const highlightAtLevel = (spans.highlight ?? []).filter((h) => h.tier <= highlightLevel).map((h) => h.text);
+  mark(highlightAtLevel, (a) => { a.hl = color; a.u = true; a.fs = 11; });
   return attrs;
 }
 
