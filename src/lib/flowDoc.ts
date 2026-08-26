@@ -22,12 +22,18 @@ import * as Y from 'yjs';
 export const LOCAL_ORIGIN = 'local';
 export const REMOTE_ORIGIN = 'remote';
 
+// The arrow shape is shared, not re-declared: a narrower local copy would type-
+// check while silently dropping a free arrow's fx/fy fields on the way through
+// live sync, so a hand-drawn arrow would vanish for everyone but its author.
+// flowArrowGeo imports nothing, so this creates no cycle.
+import type { FlowArrowLike } from './flowArrowGeo';
+
 // Mirrors StoredFlowData in FlowView (kept structural to avoid an import cycle).
 export interface FlowDocData {
   event: 'policy' | 'pf';
   variant: 'stock-issues' | 'advantage';
   pfOrder: 'pro-first' | 'con-first';
-  sheets: { id: string; name: string; cells: Record<string, string>; arrows?: { id: string; from: string; to: string }[] }[];
+  sheets: { id: string; name: string; cells: Record<string, string>; arrows?: FlowArrowLike[] }[];
   columnWidths: number[];
   customColumns: string[] | null;
   columnColors: (string | null)[];
@@ -135,7 +141,7 @@ export function docToData(doc: Y.Doc): FlowDocData | null {
     const cellsMap = sheetCells(sm);
     const cells: Record<string, string> = {};
     cellsMap.forEach((t, k) => { const v = t.toString(); if (v) cells[k] = v; });
-    const arrows = (sheetArrows(sm)?.toArray() ?? []) as { id: string; from: string; to: string }[];
+    const arrows = (sheetArrows(sm)?.toArray() ?? []) as FlowArrowLike[];
     outSheets.push({ id: sm.get('id'), name: sm.get('name'), cells, arrows });
   }
   return {

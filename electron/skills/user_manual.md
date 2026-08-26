@@ -303,7 +303,7 @@ If you have cells you pasted *before* this was fixed, they'll fix themselves the
 - **⌘9** always jumps to the **last** sheet, however many you have.
 - **⌘T** makes a **new sheet** — for when they read an off-case position you didn't predict.
 
-**Arrows are straight.** An arrow linking an argument to its answer is drawn as a straight line between the two cells. When both cells are in the same column (an answer that couldn't sit on its target's row), the line runs down the outside edge of the column so it never cuts across the arguments in between.
+**Arrows are straight, and go exactly where you put them.** A hand-drawn arrow is one straight line between the two points you clicked — it doesn't snap to the nearest cell, doesn't round to a row, and doesn't curve. Arrows Auto Flow draws for you are still tied to the two cards they link, so they follow along if you insert a row above them.
 
 **Your work stays on the tab you put it on.** Warroom tracks the tab you're typing in by its identity, not its position, so switching tabs, dragging tabs into a new order, or a teammate adding or deleting a tab while you're live can't cause what you typed to land on the wrong tab. If you're flowing live with a teammate, their tab changes also no longer slide you onto a different tab mid-round, and your zoom level stays yours (it isn't pushed to or pulled from anyone else).
 
@@ -313,19 +313,19 @@ If you have cells you pasted *before* this was fixed, they'll fix themselves the
 
 **Columns always fill the window.** Collapse the sidebar, resize the app window, or open/close the AI chat panel and your columns automatically stretch or shrink to meet the new edge — they never leave a dead gap on the right, and their sizes stay proportional to each other the whole time (a column you widened stays proportionally wider). There's also a manual **Fit to window** button in the toolbar if you ever want to force a re-fit.
 
-**Draw an arrow between cells.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
+**Draw an arrow.** This is the on-screen version of the line you'd draw on paper to link an argument to its answer.
 
-The fastest way, without leaving the keyboard:
-1. With your cursor in the **source cell** (the argument), press **⌘L**.
-2. Arrow-key over to the **target cell** (its answer) and press **⌘L** again — the arrow is drawn.
+1. Press **⌘L** (or click the arrow button in the toolbar).
+2. Click where the arrow should **start** — anywhere on the flow.
+3. Click where it should **end**.
 
-Or with the mouse:
-1. Click the **curved-arrow button** in the toolbar to enter draw mode.
-2. Click the **source cell**, then the **target cell** — an arrow is drawn between them, even across columns.
+That's it. The two points are wherever you click, full stop: it doesn't jump to the nearest cell, it doesn't snap to a row or a column edge, and the line between them is dead straight. So you can point at one word in a cell, at the gap between two arguments, or diagonally across four columns — wherever the line actually belongs. A dashed preview follows your cursor between the two clicks so you can see it before you commit.
 
-The two are interchangeable: you can start an arrow with ⌘L and finish it with a click, or vice versa. To remove an arrow, click the **×** on its midpoint. Press **Esc** anytime to cancel drawing.
+You don't need a cell selected first, and ⌘L works from anywhere in the flow. Clicking the same spot twice cancels instead of leaving a zero-length arrow.
 
-Arrows are saved with the sheet, so they're there when you reopen the flow.
+To remove an arrow, hover it — it fades so you can read what's underneath, and an **×** appears at its midpoint. Click either the × or the line itself to delete it. Press **Esc** any time to cancel drawing.
+
+Arrows are saved with the sheet, so they're there when you reopen the flow, and they stay put when you zoom or resize columns.
 
 **Insert a cell between two others.** Hover the line between two stacked cells in the same column and a tiny **+** appears on it. Click it to slot a blank cell in there — everything below shifts down one row in that column, so you can drop in an argument you missed without re-typing the ones under it. It's undoable with ⌘Z.
 

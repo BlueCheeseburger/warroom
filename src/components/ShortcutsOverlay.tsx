@@ -77,7 +77,7 @@ export const GROUPS: Group[] = [
       { id: 'flow-highlight', keys: [`${MOD}⇧H`], label: 'Highlight' },
       { id: 'flow-undo', keys: [`${MOD}Z`], label: 'Undo' },
       { id: 'flow-redo', keys: [`${MOD}⇧Z`], label: 'Redo' },
-      { id: 'flow-link', keys: [`${MOD}L`], label: 'Draw an arrow — press once in the source cell, again in the target cell' },
+      { id: 'flow-link', keys: [`${MOD}L`], label: 'Draw an arrow — then click its start and end anywhere on the flow' },
       { keys: ['Tab', '⇧Tab'], label: 'Move to the next / previous column' },
       { keys: ['Enter'], label: 'Move down a row' },
       { keys: ['⇧Enter'], label: 'New line within a cell' },

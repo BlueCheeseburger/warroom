@@ -15,6 +15,7 @@ import { flowDataToXlsxBase64 } from '../utils/flowImport';
 import { teamKeyFor, encryptText } from '../lib/chatCrypto';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
 import { planStockIssueConversion, StockIssuePlan } from '../lib/stockIssueSuggest';
+import { isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow } from '../lib/flowArrowGeo';
 import TaggedInIndicator from './TaggedInIndicator';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
@@ -57,8 +58,15 @@ export type PFOrder = 'pro-first' | 'con-first';
 
 export interface FlowArrow {
   id: string;
-  from: string; // "ri-ci"
-  to: string;   // "ri-ci"
+  /** Cell-anchored ("ri-ci") — Auto Flow's arrows, and anything drawn before
+   *  free-form endpoints existed. Follows its cells when a row is inserted. */
+  from?: string;
+  to?: string;
+  /** Free-form endpoints, as FRACTIONS of the grid content box. A hand-drawn
+   *  arrow lands exactly where it was clicked and snaps to nothing — see
+   *  src/lib/flowArrowGeo.ts for why fractions rather than pixels. */
+  fx1?: number; fy1?: number;
+  fx2?: number; fy2?: number;
 }
 
 export interface SheetData {
@@ -191,13 +199,12 @@ export default function FlowView() {
   const [sheets, setSheets] = useState<SheetData[]>([]);
   const [activeSheetIdx, setActiveSheetIdx] = useState(0);
 
-  // Cancel an in-progress arrow draw whenever the active sheet changes. Cell
-  // keys are plain "row-col" with no sheet in them, and arrow endpoints are
-  // resolved against whatever is currently mounted (see recomputeArrows) — so a
-  // source cell armed with ⌘L on one tab, finished on another after switching,
-  // silently links to whatever cell happens to sit at that same grid position on
-  // the new tab instead of the one the user actually pointed at.
-  useEffect(() => { setDrawMode(false); setArrowFrom(null); }, [activeSheetIdx]);
+  // Cancel an in-progress arrow draw whenever the active sheet changes. An
+  // endpoint is a position on THIS sheet — the same fraction of the content box
+  // on another tab lands next to a completely different argument — so a draw
+  // started here and finished after a tab switch would put the arrow somewhere
+  // the user never pointed at.
+  useEffect(() => { cancelDrawMode(); }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [customColumns, setCustomColumns] = useState<string[] | null>(null);
   const [columnColors, setColumnColors] = useState<(string | null)[]>([]);
@@ -222,7 +229,10 @@ export default function FlowView() {
 
   // Arrow draw mode
   const [drawMode, setDrawMode] = useState(false);
-  const [arrowFrom, setArrowFrom] = useState<string | null>(null);
+  // Free-form draw: the first clicked point (fractions of the content box) and
+  // where the cursor is now, for the rubber-band preview.
+  const [drawStart, setDrawStart] = useState<{ fx: number; fy: number } | null>(null);
+  const [drawCursor, setDrawCursor] = useState<{ x: number; y: number } | null>(null);
   const [arrowGeo, setArrowGeo] = useState<{ id: string; d: string; mx: number; my: number }[]>([]);
   const [hoveredArrow, setHoveredArrow] = useState<string | null>(null);
 
@@ -496,8 +506,14 @@ export default function FlowView() {
     function onKey(e: KeyboardEvent) {
       if (!flowId) return;
       if (e.key === 'Escape') {
-        if (drawMode) { setDrawMode(false); setArrowFrom(null); }
+        if (drawMode) { cancelDrawMode(); }
         else if (findOpen) closeFind();
+        return;
+      }
+      // ⌘L also works from outside a cell — the tool doesn't need a selection.
+      if (matchesShortcut(e, 'flow-link')) {
+        e.preventDefault();
+        if (drawMode) cancelDrawMode(); else startDrawMode();
         return;
       }
       if (matchesShortcut(e, 'find-page')) {
@@ -1035,10 +1051,12 @@ export default function FlowView() {
       cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
       return;
     }
-    // Arrow line — ⌘L from the source cell, then ⌘L (or click) on the target
+    // Arrow — ⌘L arms the draw layer; the arrow's two ends are the next two
+    // clicks, anywhere on the flow. It is deliberately NOT anchored to the cell
+    // the cursor happens to be in.
     if (matchesShortcut(e, 'flow-link')) {
       e.preventDefault();
-      linkCell(`${ri}-${ci}`);
+      startDrawMode();
       return;
     }
     // Move this cell's content up/down a row (swaps with its neighbour). Not
@@ -1138,7 +1156,7 @@ export default function FlowView() {
       i === s.activeSheetIdx
         ? {
             ...sh, cells: { ...cells },
-            arrows: (sh.arrows ?? []).map((a) => ({ ...a, from: bump(a.from), to: bump(a.to) })),
+            arrows: (sh.arrows ?? []).map((a) => bumpArrow(a, bump)),
             aiCells: sh.aiCells?.map(bump),
           }
         : sh
@@ -1258,24 +1276,42 @@ export default function FlowView() {
     persist({ sheets: updated }); recordHistory();
     requestAnimationFrame(recomputeArrows);
   }
-  function handleArrowCellClick(cellKey: string) {
-    if (!drawMode) return;
-    if (!arrowFrom) { setArrowFrom(cellKey); return; }
-    if (arrowFrom === cellKey) { setArrowFrom(null); setDrawMode(false); return; }
-    const from = arrowFrom;
-    setActiveSheetArrows((arr) => [...arr, { id: crypto.randomUUID(), from, to: cellKey }]);
-    setArrowFrom(null);
-    setDrawMode(false);
+  /** ⌘L / the toolbar button. Arms the draw layer; the next two clicks are the
+   *  arrow's two ends, wherever they land. */
+  function startDrawMode() {
+    setDrawMode(true);
+    setDrawStart(null);
+    setDrawCursor(null);
   }
-  // Keyboard arrow-drawing (⌘L): first call marks the source, second draws to
-  // the target. Draw mode stays on in between so the target can also be clicked.
-  function linkCell(cellKey: string) {
-    if (!arrowFrom) { setArrowFrom(cellKey); setDrawMode(true); return; }
-    if (arrowFrom === cellKey) { setArrowFrom(null); setDrawMode(false); return; }
-    const from = arrowFrom;
-    setActiveSheetArrows((arr) => [...arr, { id: crypto.randomUUID(), from, to: cellKey }]);
-    setArrowFrom(null);
+  function cancelDrawMode() {
     setDrawMode(false);
+    setDrawStart(null);
+    setDrawCursor(null);
+  }
+
+  /**
+   * A click on the draw layer. The point is taken from the pointer and nothing
+   * else — no nearest-cell search, no snapping, no rounding to a row. Stored as
+   * a fraction of the content box so it stays put when the grid is zoomed or the
+   * columns are resized (see src/lib/flowArrowGeo.ts).
+   */
+  function handleDrawClick(e: React.MouseEvent) {
+    const content = gridContentRef.current;
+    if (!content) return;
+    const base = content.getBoundingClientRect();
+    const fx = toFraction(e.clientX - base.left, base.width);
+    const fy = toFraction(e.clientY - base.top, base.height);
+    if (!drawStart) { setDrawStart({ fx, fy }); return; }
+    // A second click in the same spot is a cancel, not a zero-length arrow.
+    const dx = (fx - drawStart.fx) * base.width;
+    const dy = (fy - drawStart.fy) * base.height;
+    if (Math.hypot(dx, dy) < 4) { cancelDrawMode(); return; }
+    const from = drawStart;
+    setActiveSheetArrows((arr) => [
+      ...arr,
+      { id: crypto.randomUUID(), fx1: from.fx, fy1: from.fy, fx2: fx, fy2: fy },
+    ]);
+    cancelDrawMode();
   }
   function deleteArrow(id: string) {
     setActiveSheetArrows((arr) => arr.filter((a) => a.id !== id));
@@ -1287,8 +1323,18 @@ export default function FlowView() {
     const base = content.getBoundingClientRect();
     const geo: { id: string; d: string; mx: number; my: number }[] = [];
     for (const a of arrows) {
-      const fe = cellEls.current[a.from];
-      const te = cellEls.current[a.to];
+      // A hand-drawn arrow owns its endpoints outright — no cell lookup, no
+      // nearest-cell snap, no edge routing. Straight from point to point,
+      // exactly where it was clicked.
+      if (isFreeArrow(a)) {
+        const x1 = fromFraction(a.fx1!, base.width), y1 = fromFraction(a.fy1!, base.height);
+        const x2 = fromFraction(a.fx2!, base.width), y2 = fromFraction(a.fy2!, base.height);
+        geo.push({ id: a.id, d: straightPath(x1, y1, x2, y2), mx: (x1 + x2) / 2, my: (y1 + y2) / 2 });
+        continue;
+      }
+      if (!isCellArrow(a)) continue;
+      const fe = cellEls.current[a.from!];
+      const te = cellEls.current[a.to!];
       if (!fe || !te) continue;
       const fr = fe.getBoundingClientRect();
       const tr = te.getBoundingClientRect();
@@ -1316,7 +1362,7 @@ export default function FlowView() {
       }
       geo.push({
         id: a.id,
-        d: `M ${x1} ${y1} L ${x2} ${y2}`,
+        d: straightPath(x1, y1, x2, y2),
         mx: (x1 + x2) / 2,
         my: (y1 + y2) / 2,
       });
@@ -2008,9 +2054,9 @@ export default function FlowView() {
 
         {/* Draw arrow */}
         <ToolBtn
-          onClick={() => { setDrawMode((v) => !v); setArrowFrom(null); }}
+          onClick={() => { if (drawMode) cancelDrawMode(); else startDrawMode(); }}
           active={drawMode}
-          title={drawMode ? 'Click a source cell, then a target cell — Esc to cancel' : 'Draw an arrow linking two cells (⌘L)'}
+          title={drawMode ? 'Click the start, then the end — Esc to cancel' : 'Draw an arrow (⌘L)'}
         >
           <IcoArrow />
         </ToolBtn>
@@ -2113,8 +2159,8 @@ export default function FlowView() {
           style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', borderBottom: '1px solid var(--border-subtle)' }}
         >
           <IcoArrow />
-          {arrowFrom ? 'Now click the target cell — or arrow-key over to it and press ⌘L' : 'Click the source cell to start the arrow — or press ⌘L inside it'}
-          <button className="ml-auto btn px-2 py-0.5 text-xs" onClick={() => { setDrawMode(false); setArrowFrom(null); }}>Cancel</button>
+          {drawStart ? 'Now click where it should end — Esc to cancel' : 'Click anywhere to start the arrow — it snaps to nothing'}
+          <button className="ml-auto btn px-2 py-0.5 text-xs" onClick={cancelDrawMode}>Cancel</button>
         </div>
       )}
 
@@ -2171,8 +2217,8 @@ export default function FlowView() {
       >
         <div ref={gridContentRef} className="relative" style={{ minWidth: totalWidth + 'px' }}>
 
-          {/* Arrow overlay */}
-          {arrowGeo.length > 0 && (
+          {/* Arrow overlay — also carries the rubber-band preview while drawing */}
+          {(arrowGeo.length > 0 || (drawMode && !!drawStart)) && (
             <svg
               className="absolute inset-0"
               style={{ width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15, overflow: 'visible' }}
@@ -2189,7 +2235,7 @@ export default function FlowView() {
                     {/* Visible arrow — fades when hovered so content underneath is readable */}
                     <path
                       d={g.d} fill="none" stroke="var(--nav-active-color)" strokeWidth={2}
-                      markerEnd="url(#wr-arrowhead)" opacity={hov ? 0.18 : 0.85}
+                      markerEnd="url(#wr-arrowhead)" opacity={hov ? 0.35 : 0.85}
                       style={{ pointerEvents: 'none', transition: 'opacity 0.12s' }}
                     />
                     {/* Wide invisible hit area for hover/click */}
@@ -2217,7 +2263,40 @@ export default function FlowView() {
                   </g>
                 );
               })}
+
+              {/* Rubber band — where the arrow would land if you clicked now. */}
+              {drawMode && drawStart && drawCursor && (
+                <path
+                  d={straightPath(
+                    fromFraction(drawStart.fx, gridContentRef.current?.getBoundingClientRect().width ?? 0),
+                    fromFraction(drawStart.fy, gridContentRef.current?.getBoundingClientRect().height ?? 0),
+                    drawCursor.x, drawCursor.y,
+                  )}
+                  fill="none" stroke="var(--nav-active-color)" strokeWidth={2}
+                  strokeDasharray="5 4" opacity={0.6}
+                  markerEnd="url(#wr-arrowhead)"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
             </svg>
+          )}
+
+          {/* Draw layer — swallows every click while ⌘L is armed, so an endpoint
+              comes from the pointer alone. Above the cells (which is what stops
+              a click landing in a cell) and above the arrow overlay (so an
+              existing arrow's delete hit-area can't eat the click either). */}
+          {drawMode && (
+            <div
+              className="absolute inset-0"
+              style={{ zIndex: 25, cursor: 'crosshair' }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onClick={handleDrawClick}
+              onMouseMove={(e) => {
+                const base = gridContentRef.current?.getBoundingClientRect();
+                if (base) setDrawCursor({ x: e.clientX - base.left, y: e.clientY - base.top });
+              }}
+              onMouseLeave={() => setDrawCursor(null)}
+            />
           )}
 
           {/* Sticky header */}
@@ -2353,7 +2432,6 @@ export default function FlowView() {
               {columns.map((_, ci) => {
                 const cellKey = `${ri}-${ci}`;
                 const isHovered = hoveredCell?.ri === ri && hoveredCell?.ci === ci;
-                const isArrowSrc = drawMode && arrowFrom === cellKey;
                 const remoteCur = remoteCursorMap.get(cellKey);
                 return (
                   <div
@@ -2363,9 +2441,7 @@ export default function FlowView() {
                       background: colBg(colColor(ci), dark, false),
                       borderRight: ci < columns.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                       borderBottom: '1px solid var(--border-subtle)',
-                      boxShadow: isArrowSrc
-                        ? 'inset 0 0 0 2px var(--nav-active-color)'
-                        : (remoteCur ? `inset 0 0 0 2px ${remoteCur.user.color}` : undefined),
+                      boxShadow: remoteCur ? `inset 0 0 0 2px ${remoteCur.user.color}` : undefined,
                       cursor: drawMode ? 'crosshair' : undefined,
                     }}
                     onMouseEnter={() => setHoveredCell({ ri, ci })}
@@ -2392,7 +2468,6 @@ export default function FlowView() {
                       onInput={(e) => handleInput(ri, ci, e)}
                       onPaste={(e) => handlePaste(ri, ci, e)}
                       onKeyDown={(e) => handleKeyDown(ri, ci, e)}
-                      onMouseDown={(e) => { if (drawMode) { e.preventDefault(); handleArrowCellClick(cellKey); } }}
                       className="flow-cell w-full outline-none bg-transparent leading-snug whitespace-pre-wrap break-words"
                       style={{
                         fontSize: effectiveFontSize + 'px',

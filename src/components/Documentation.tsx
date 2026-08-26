@@ -1164,10 +1164,11 @@ export default function Documentation() {
             re-fit on demand too.
           </P>
           <P>
-            <strong>Arrows are straight lines:</strong> an arrow linking an argument to its answer is
-            drawn edge-to-edge as a straight line. Same-column arrows (an answer that couldn't share
-            its target's row) run down the outside edge of the column so the line never cuts through
-            the arguments between the two endpoints.
+            <strong>Arrows are straight lines:</strong> always a single <Code>M x y L x y</Code>{' '}
+            segment, never a curve. A hand-drawn arrow uses the two points that were clicked. An
+            arrow Auto Flow created is still cell-anchored and drawn edge-to-edge, with same-column
+            arrows running down the outside edge of the column so the line never cuts through the
+            arguments between the two endpoints.
           </P>
           <P>
             <strong>Reorder tabs by dragging:</strong> sheet tabs can be dragged left/right to any
@@ -1182,13 +1183,16 @@ export default function Documentation() {
             history like typing does, so it is undoable with <Code>⌘Z</Code>.
           </P>
           <P>
-            <strong>Draw arrows:</strong> arrows link an argument to its answer across columns, like
-            the line you'd draw on a paper flow. Press <Code>⌘L</Code> inside the source cell to mark
-            it, arrow-key to the target cell, and press <Code>⌘L</Code> again to draw — or use the
-            curved-arrow toolbar button and click the source cell, then the target cell. The two are
-            interchangeable, so an arrow can be started with the keyboard and finished with a click.
-            Click the <Code>×</Code> on an arrow's midpoint to delete it; press <Code>Esc</Code> to
-            cancel. Arrows are saved per sheet.
+            <strong>Draw arrows:</strong> <Code>⌘L</Code> (or the toolbar button) arms the draw
+            layer; the next two clicks are the arrow's two ends, <em>anywhere</em> on the flow. There
+            is deliberately no snapping — no nearest-cell search, no rounding to a row, no column-edge
+            routing — because the point of a hand-drawn arrow is to land where the user pointed. No
+            cell needs to be selected first, a dashed rubber band previews the line between the two
+            clicks, and clicking the same spot twice cancels rather than storing a zero-length arrow.
+            Hover an arrow to fade it (so the cells underneath stay readable) and reveal an{' '}
+            <Code>×</Code> at its midpoint; click either to delete. <Code>Esc</Code> cancels, and a
+            tab switch cancels too — an endpoint is a position on <em>that</em> sheet. Arrows are
+            saved per sheet.
           </P>
           <P>
             <strong>Insert a cell between two others:</strong> hover a cell and a small <Code>+</Code>{' '}
