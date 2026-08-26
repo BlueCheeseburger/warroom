@@ -894,7 +894,7 @@ Warroom AI is an agentic AI assistant that lives in a resizable right-side panel
 ### Model selection
 - **Gemini 2.5 Flash Lite** — cheapest, fastest; auto-enables token saving
 - **Gemini 2.5 Flash** — default; best balance of cost and quality
-- **Gemini 3.5 Flash** — highest quality; best for complex analysis
+- **Gemini 3.7 Flash** — highest quality; best for complex analysis
 
 Agentic tasks (tool calls, sub-agent searches) always use Gemini 2.5 Flash regardless of the model selection above.
 
@@ -1058,7 +1058,7 @@ The left outline nav (`SettingsOutline` in `Settings.tsx`) has a live filter box
 | General — offline dictation model (Beta) | `dictationUseOffline` (bool) + `dictationOfflineModelReady` (bool, set after a successful download) in `app_settings` — main-process state, since the model itself lives and runs in `electron/offlineWhisper.ts`. See the Team Chat "Dictation" section above for the full mechanism. |
 | AI provider | Gemini (default) · OpenAI · Anthropic · Grok · **LM Studio** (local). Persisted as `apiProvider` in `app_settings`. |
 | Gemini API key | Stored encrypted. Powers card extraction, block suggestions, and Warroom AI. |
-| Gemini model | Flash Lite / Flash (default) / 3.5 Flash |
+| Gemini model | Flash Lite / Flash (default) / 3.7 Flash |
 | LM Studio | Server URL, model id, request options (JSON), and a tool-calling toggle. No API key — see "LM Studio" below. |
 | Token saving default | Auto-strips small body text from speech doc attachments to the Agent. |
 | OpenCaselist login | Same as Tabroom.com credentials. Required for opponent scouting and Open Ev. |

@@ -589,7 +589,7 @@ Star icon in the title bar.
 - **Rename a chat**: click its title in the panel header to edit it. Once you rename a chat yourself, the title is locked — it'll never be overwritten by the auto-title or by the AI (see below).
 - **Attach context**: type `@` in the message box → select case/block/flow/opponent/image. Or use `+` button for .docx or image files.
 - **Token saving**: strips body text from speech doc attachments to save cost. Toggle in attach menu or Settings.
-- **Models**: Flash Lite (cheapest), Flash (default), 3.5 Flash (best quality). Change in Settings → Gemini Model.
+- **Models**: Flash Lite (cheapest), Flash (default), 3.7 Flash (best quality). Change in Settings → Gemini Model.
 - **Evidence search**: AI searches Logos/Open Evidence automatically when asked. Spinner shows per-search. Hover over a running search + click ✕ to exclude it.
 - **Saved cards**: go to Cases → Agent Saves → Agent Inbox
 - **Voice input**: microphone button in the composer
@@ -719,7 +719,7 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Work past the length limit | Off by default. Controls what happens when something is too long for Warroom AI to read at once — see "When something is too long" below |
 | AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
 | Gemini API key | From aistudio.google.com. Required for all AI features. |
-| Gemini model | Flash Lite / Flash (default) / 3.5 Flash |
+| Gemini model | Flash Lite / Flash (default) / 3.7 Flash |
 | LM Studio | Server URL, model, and options — no API key needed. See "LM Studio" below. |
 | Token saving default | Auto-strips body text from speech doc attachments |
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |

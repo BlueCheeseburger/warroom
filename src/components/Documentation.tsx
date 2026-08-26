@@ -2103,7 +2103,7 @@ export default function Documentation() {
           <UL>
             <LI><strong>Gemini 2.5 Flash Lite</strong> — cheapest, fastest; auto-enables token saving</LI>
             <LI><strong>Gemini 2.5 Flash</strong> — default; best balance of cost and quality</LI>
-            <LI><strong>Gemini 3.5 Flash</strong> — highest quality; best for complex analysis</LI>
+            <LI><strong>Gemini 3.7 Flash</strong> — highest quality; best for complex analysis</LI>
           </UL>
           <P>
             Agentic tasks (tool calls, sub-agent searches) always use the Flash model regardless
@@ -2581,7 +2581,7 @@ export default function Documentation() {
               </div>
               <div>
                 <span className="font-semibold text-ink">Gemini model</span>
-                <span className="ml-2 text-ink/60">Flash Lite / Flash (default) / 3.5 Flash</span>
+                <span className="ml-2 text-ink/60">Flash Lite / Flash (default) / 3.7 Flash</span>
               </div>
               <div>
                 <span className="font-semibold text-ink">Token saving default</span>

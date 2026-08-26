@@ -26,7 +26,7 @@ function stripCellHtml(s: string): string {
 const GEMINI_MODEL_OPTIONS = [
   { value: 'flash-lite', label: '2.5 Flash Lite' },
   { value: 'flash',      label: '2.5 Flash' },
-  { value: 'flash-35',   label: '3.5 Flash' },
+  { value: 'flash-35',   label: '3.7 Flash' },
 ];
 const OPENAI_MODEL_OPTIONS = [
   { value: 'gpt-4.1-nano', label: '4.1 nano' },
@@ -1820,7 +1820,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
 
     const isFirst = history.length === 0;
     // 2.5 models: embed title tag inside the agent response (same call, no overhead).
-    // 3.5 Flash: fire a separate flash-lite title call in parallel with the main call.
+    // 3.7 Flash: fire a separate flash-lite title call in parallel with the main call.
     const useEmbeddedTitle = isFirst && geminiModel !== 'flash-35';
 
     // ── Build rich user parts (images, speech docs, attachments) ──────────────
@@ -1892,7 +1892,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
       ];
     }
 
-    // 3.5 Flash: kick off flash-lite title call in parallel with the main request,
+    // 3.7 Flash: kick off flash-lite title call in parallel with the main request,
     // using just the user message for context (no need to wait for model response).
     const parallelTitlePromise = (isFirst && geminiModel === 'flash-35')
       ? window.warroom.chat.generateGeminiTitle([

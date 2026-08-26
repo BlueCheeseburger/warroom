@@ -703,7 +703,7 @@ async function ocFetch(path: string, params: Record<string, string> = {}): Promi
 const GEMINI_MODEL_IDS: Record<string, string> = {
   'flash-lite':   'gemini-2.5-flash-lite',
   'flash':        'gemini-2.5-flash',
-  'flash-35':     'gemini-3.5-flash',
+  'flash-35':     'gemini-3.7-flash',
   'flash-latest': 'gemini-2.5-flash-latest',
 };
 
@@ -729,7 +729,7 @@ async function getGeminiModelId(): Promise<string> {
 //   complex analysis   → best          (when explicitly needed)
 
 const MODEL_TIER_IDS = {
-  gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.5-flash' },
+  gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.7-flash' },
   openai:    { lite: 'gpt-4.1-nano',          balanced: 'gpt-4.1-mini',      best: 'gpt-4.1' },
   anthropic: { lite: 'claude-3-5-haiku-20241022', balanced: 'claude-3-5-sonnet-20241022', best: 'claude-sonnet-4-6' },
   grok:      { lite: 'grok-3-mini',           balanced: 'grok-3-fast',       best: 'grok-3' },

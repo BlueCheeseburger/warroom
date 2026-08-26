@@ -59,7 +59,7 @@ const GEMINI_MODEL_OPTIONS = [
   },
   {
     value: 'flash-35',
-    label: 'Gemini 3.5 Flash',
+    label: 'Gemini 3.7 Flash',
     tooltip: 'Highest quality — Google\'s latest Flash model. Best for complex analysis and card evaluation.',
   },
 ];
@@ -127,7 +127,7 @@ const NOTIFY_OPTIONS: { key: NotifyKey; label: string; blurb: string }[] = [
 type ModelTier = 'lite' | 'balanced' | 'best';
 
 const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
-  gemini:    { lite: 'Gemini 2.5 Flash Lite', balanced: 'Gemini 2.5 Flash',      best: 'Gemini 3.5 Flash' },
+  gemini:    { lite: 'Gemini 2.5 Flash Lite', balanced: 'Gemini 2.5 Flash',      best: 'Gemini 3.7 Flash' },
   openai:    { lite: 'GPT-4.1 nano',          balanced: 'GPT-4.1 mini',          best: 'GPT-4.1' },
   anthropic: { lite: 'Claude Haiku 3.5',      balanced: 'Claude Sonnet 3.5',     best: 'Claude Sonnet 4.6' },
   grok:      { lite: 'Grok 3 mini',           balanced: 'Grok 3 fast',           best: 'Grok 3' },
