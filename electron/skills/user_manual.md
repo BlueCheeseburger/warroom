@@ -4,7 +4,7 @@
 Warroom is a desktop debate prep app for Policy, LD, and PF. All core data (cases, cards, opponents, tournaments) is stored locally — no account needed for prep features. Team chat and sharing use a cloud backend. Includes Warroom AI, an agentic AI assistant.
 
 ## Navigation
-Sidebar icons switch between views: Home, Cases/Library, Opponents, Tournaments, Flows, Speech doc, Chat, Find Cards (Logos), Open Evidence, Google Drive, Topics, Settings — everything is always reachable at once, there's no mode to switch. AI panel = star icon in title bar. Team chat = chat icon next to it.
+Sidebar icons switch between views: Home, Cases/Library, Flows, Speech doc, Chat, Find Cards (Logos), Open Evidence, Google Drive, Scouting & Tournaments, Topics, Settings — everything is always reachable at once, there's no mode to switch. AI panel = star icon in title bar. Team chat = chat icon next to it.
 
 When the sidebar is collapsed to icons only, **right-click Cases** for a new case (blank speech doc), or **right-click Flow** for a new flow — same shortcuts the expanded sidebar's **+** buttons give you.
 
@@ -103,9 +103,9 @@ By default, step 2's short cite for a source published this year uses month-day 
 ---
 
 ## Opponents
-Opponent profiles store scouting data.
+Opponent profiles store scouting data. Opponents live under the sidebar's **Scouting & Tournaments** tab (Teams sub-tab) — merged with Judges and Tournaments into one page since none of the three needed a whole nav item to itself.
 
-- **Create**: Opponents → "+ New opponent" → type team name and school
+- **Create**: Scouting & Tournaments → Teams → search by school/team name → click the ☆ on a result to save it
 - **Auto-scout**: click "Scout" on a profile → pulls OpenCaselist disclosures + Debate Land stats (requires OC login in Settings)
 - **AI Scout Report**: auto-generated from disclosure data — gives Aff/Neg argument summary
 - **Debate Land stats caching**: once matched, stats are saved and never re-searched automatically on later visits; if no team matches, that "no match" result is also remembered for 24 hours so reopening the profile doesn't re-search every time. Picked the wrong team? Click **Wrong team? Search again** next to the saved stats to reopen search without losing your current stats until you actually pick a new match — **Cancel**/**Keep current** backs out with no changes.
@@ -127,7 +127,7 @@ An opponent or judge's Notes section shows a row of pills at the top — **Priva
 - Type **@** in any note box to attach a speech doc, flow, case, opponent, or judge — the same picker as @mentions in Team Chat. Pick an item and it becomes a small clickable chip below the box (your "@search" text is removed, since the tag lives as a chip, not as text).
 - Click a chip to open what it points to. Click the **×** on a chip to remove it.
 - **Private notes**: the tag stays on your device only, pointing at your local copy — nothing is uploaded.
-- **Shared (team) notes**: the tag is uploaded to your team, so it's there next time a teammate opens that opponent/judge. Tagging an OpenCaselist-imported case is instant since it's already fetchable by link. If a tagged flow isn't in your app yet, opening the chip imports a copy for you. If a tagged opponent/judge isn't in your list yet, opening the chip takes you to Scouting so you can search for them.
+- **Shared (team) notes**: the tag is uploaded to your team, so it's there next time a teammate opens that opponent/judge. Tagging an OpenCaselist-imported case is instant since it's already fetchable by link. If a tagged flow isn't in your app yet, opening the chip imports a copy for you. If a tagged opponent/judge isn't in your list yet, opening the chip takes you to Scouting & Tournaments so you can search for them.
 - **Tagging a local speech doc**: if that exact file is already in your team's **Team Files**, it's reused automatically. Otherwise it's added to Team Files automatically too, no prompt — so it's browsable there as well, not just via this tag.
 - A tag with an amber border and a ⚠️ icon means it won't be reachable by teammates (a non-OpenCaselist case tag has no way to point at anything on their device) — this shows on your own copy of the tag, so you know before anyone hits a dead end.
 - Tags don't update live — like the shared notes themselves, a teammate sees your new tag the next time they open that opponent/judge, not instantly.
@@ -139,8 +139,10 @@ An opponent or judge's Notes section shows a row of pills at the top — **Priva
 ---
 
 ## Tournaments & Rounds
+Tournaments live under the sidebar's **Scouting & Tournaments** tab (Tournaments sub-tab), alongside Teams and Judges.
 
-- **Add tournament**: Tournaments → "+ New tournament"
+- **Find a tournament**: Scouting & Tournaments → Tournaments → search by name (pulls from Tabroom), or paste a Tabroom URL/ID, or fill in the fields manually
+- **Add tournament**: Scouting & Tournaments → Tournaments → "+ New tournament"
 - **Add round**: open tournament → "+ Add round"
 - **Round fields**: number, side (Aff/Neg), opponent, room, time, result (W/L/pending), judge, paradigm, notes
 - **Mission Brief**: click any round → pre-round prep screen with opponent disclosures, judge paradigm, AI block suggestions, notes editor, and a **Tagged items** card showing everything tagged on that opponent/judge's notes

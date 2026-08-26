@@ -55,7 +55,7 @@ Relationships use string ID references (e.g. `Block.cards` is an array of Card I
 
 ## Navigation
 
-Navigation is view-stack-free: one active `View` at a time, stored in Zustand. The sidebar provides top-level navigation to everything — Cases, Tournaments, Scouting, Cards, Google Drive, Flow, Speech doc, Chat, and Topics are all reachable at once; there's no separate mode to switch between. Views are rendered by a `Router` function in `App.tsx`. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews) are always mounted but hidden so they don't reload on navigation.
+Navigation is view-stack-free: one active `View` at a time, stored in Zustand. The sidebar provides top-level navigation to everything — Cases, Cards, Google Drive, Flow, Speech doc, Chat, Scouting & Tournaments, and Topics are all reachable at once; there's no separate mode to switch between. Scouting & Tournaments is one page (`OpponentSearch.tsx`) with three sub-tabs — Teams, Judges, Tournaments — merged from what used to be two separate sidebar sections/views (`opponents` and `tournaments`); the `tournaments` view kind still exists and still routes here (with the Tournaments sub-tab pre-selected) so external deep links and the AI mention picker didn't need to change. Views are rendered by a `Router` function in `App.tsx`. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews) are always mounted but hidden so they don't reload on navigation.
 
 ### Views
 - `home` — Dashboard with stats, live/upcoming tournament card, recent cases

@@ -313,8 +313,8 @@ export default function Documentation() {
           <H2>Navigation</H2>
           <P>
             Navigation is view-stack-free: one active <Code>View</Code> at a time, stored in Zustand.
-            The sidebar provides top-level navigation to everything — Cases, Tournaments, Scouting,
-            Cards, Google Drive, Flow, Speech doc, Chat, and Topics are all reachable at once; there's
+            The sidebar provides top-level navigation to everything — Cases, Cards, Google Drive, Flow,
+            Speech doc, Chat, Scouting &amp; Tournaments, and Topics are all reachable at once; there's
             no separate mode to switch between. Views are rendered by a <Code>Router</Code> function
             in <Code>App.tsx</Code>. Three "persistent" webviews (FindCards, OpenEv, AgentSearchViews)
             are always mounted but hidden so they don't reload on navigation.

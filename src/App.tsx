@@ -29,7 +29,6 @@ import OpponentSearch from './components/OpponentSearch';
 import OpponentProfile from './components/OpponentProfile';
 import JudgeProfile from './components/JudgeProfile';
 import MissionBrief from './components/MissionBrief';
-import TournamentList from './components/TournamentList';
 import TournamentView from './components/TournamentView';
 import SpeechDocViewer from './components/SpeechDocViewer';
 import CasesGrid from './components/CasesGrid';
@@ -790,7 +789,7 @@ function Router() {
       case 'judge':         regular = <JudgeProfile key={(view as any).judgeId} />; break;
       case 'judge-preview': regular = <JudgeProfile key={(view as any).personId} />; break;
       case 'round':       regular = <MissionBrief />; break;
-      case 'tournaments': regular = <TournamentList />; break;
+      case 'tournaments': regular = <OpponentSearch initialTab="tournaments" />; break;
       case 'tournament':  regular = <TournamentView />; break;
       case 'flow':        regular = <FlowView />; break;
       case 'gdrive':        regular = <GoogleDrivePanel />; break;

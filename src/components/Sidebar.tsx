@@ -423,8 +423,10 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
   // so an open speech doc lights Cases — not Cards, which is the card library.
   const isCases      = view.kind === 'case' || view.kind === 'block' || view.kind === 'cases-grid' || view.kind === 'speech-doc';
   const isLibrary    = view.kind === 'library' || view.kind === 'find-cards' || view.kind === 'google-scholar';
-  const isOpponents  = view.kind === 'opponents' || view.kind === 'opponent' || view.kind === 'judge';
-  const isTournament = view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
+  // Scouting & Tournaments — merged into one tab, so one active check covers
+  // both (teams/judges and tournaments/rounds).
+  const isScouting   = view.kind === 'opponents' || view.kind === 'opponent' || view.kind === 'judge'
+    || view.kind === 'tournaments' || view.kind === 'tournament' || view.kind === 'round';
   const isFlow       = view.kind === 'flow' || view.kind === 'flows-grid';
   const isDrive      = view.kind === 'gdrive';
   const isSettings   = view.kind === 'settings';
@@ -460,12 +462,6 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
         <CIcon label="Cards" active={isLibrary} onClick={() => setView({ kind: 'library' })}>
           <IcoLibrary />
         </CIcon>
-        <CIcon label="Scouting" active={isOpponents} onClick={() => setView({ kind: 'opponents' })}>
-          <IcoOpponents />
-        </CIcon>
-        <CIcon label="Tournaments" active={isTournament} onClick={() => setView({ kind: 'tournaments' })}>
-          <IcoTournament />
-        </CIcon>
 
         <CIcon label="Flow" active={isFlow} onClick={() => setView({ kind: 'flows-grid' })}
           onContextMenu={createFlow} contextLabel="new flow">
@@ -477,6 +473,12 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
             <IcoDrive />
           </CIcon>
         )}
+
+        {/* Scouting & Tournaments — lower-priority feature, kept above Topics
+            rather than up with the app-critical views. */}
+        <CIcon label="Scouting & Tournaments" active={isScouting} onClick={() => setView({ kind: 'opponents' })}>
+          <IcoOpponents />
+        </CIcon>
         <CIcon label="Topics" active={isTopics} onClick={() => setView({ kind: 'topics' })}>
           <IcoTopics />
         </CIcon>
@@ -601,50 +603,6 @@ function ExpandedNav({
         {/* Cases — nested folder tree; the section title opens the full grid */}
         <CasesSection view={view} setView={setView} db={db} />
 
-        {/* Tournament */}
-        <Section title="Tournament" icon={<IcoTournament />}>
-          <NavItem active={view.kind === 'tournaments'} onClick={() => setView({ kind: 'tournaments' })}>
-            All tournaments
-          </NavItem>
-          {tournaments.map((t: any) => (
-            <NavItem key={t.id}
-              active={view.kind === 'tournament' && (view as any).tournamentId === t.id}
-              onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
-              itemId={t.id} itemType="tournament" itemName={t.name}>
-              <span className="truncate">{t.name}</span>
-            </NavItem>
-          ))}
-        </Section>
-
-        {/* Scouting */}
-        <Section title="Scouting" icon={<IcoOpponents />}>
-          <NavItem active={view.kind === 'opponents'} onClick={() => setView({ kind: 'opponents' })}>
-            Search / all
-          </NavItem>
-          {opponents.slice(0, 5).map((o: any) => (
-            <NavItem key={o.id}
-              active={view.kind === 'opponent' && (view as any).opponentId === o.id}
-              onClick={() => setView({ kind: 'opponent', opponentId: o.id })}
-              itemId={o.id} itemType="opponent" itemName={o.teamName}>
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate">{o.teamName}</span>
-                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(59,130,246,0.12)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(59,130,246,0.2)' }}>Team</span>
-              </span>
-            </NavItem>
-          ))}
-          {judges.slice(0, 4).map((j: any) => (
-            <NavItem key={j.id}
-              active={view.kind === 'judge' && (view as any).judgeId === j.id}
-              onClick={() => setView({ kind: 'judge', judgeId: j.id })}
-              itemId={j.id} itemType="judge" itemName={j.name}>
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate">{j.name}</span>
-                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(168,85,247,0.12)', color: 'rgba(192,132,252,0.9)', border: '1px solid rgba(168,85,247,0.2)' }}>Judge</span>
-              </span>
-            </NavItem>
-          ))}
-        </Section>
-
         {/* Cards */}
         <Section title="Cards" icon={<IcoLibrary />}
           action={openCardCutter} actionLabel="+">
@@ -669,6 +627,48 @@ function ExpandedNav({
           createFlow={createFlow} deleteFlow={deleteFlow} renameFlow={renameFlow}
           importFlow={importFlow} importing={importing} setAutoFlowOpen={setAutoFlowOpen}
         />
+
+        {/* Scouting & Tournaments — merged (was two separate sections); kept
+            near the bottom, above Topics, since it's a lower-priority feature
+            than Cases/Cards/Flow. */}
+        <Section title="Scouting & Tournaments" icon={<IcoOpponents />}>
+          <NavItem active={view.kind === 'opponents'} onClick={() => setView({ kind: 'opponents' })}>
+            Search / all
+          </NavItem>
+          {opponents.slice(0, 4).map((o: any) => (
+            <NavItem key={o.id}
+              active={view.kind === 'opponent' && (view as any).opponentId === o.id}
+              onClick={() => setView({ kind: 'opponent', opponentId: o.id })}
+              itemId={o.id} itemType="opponent" itemName={o.teamName}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{o.teamName}</span>
+                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(59,130,246,0.12)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(59,130,246,0.2)' }}>Team</span>
+              </span>
+            </NavItem>
+          ))}
+          {judges.slice(0, 3).map((j: any) => (
+            <NavItem key={j.id}
+              active={view.kind === 'judge' && (view as any).judgeId === j.id}
+              onClick={() => setView({ kind: 'judge', judgeId: j.id })}
+              itemId={j.id} itemType="judge" itemName={j.name}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{j.name}</span>
+                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(168,85,247,0.12)', color: 'rgba(192,132,252,0.9)', border: '1px solid rgba(168,85,247,0.2)' }}>Judge</span>
+              </span>
+            </NavItem>
+          ))}
+          {tournaments.slice(0, 3).map((t: any) => (
+            <NavItem key={t.id}
+              active={view.kind === 'tournament' && (view as any).tournamentId === t.id}
+              onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
+              itemId={t.id} itemType="tournament" itemName={t.name}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{t.name}</span>
+                <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wide px-[3px] rounded" style={{ lineHeight: '13px', background: 'rgba(234,179,8,0.12)', color: 'rgba(250,204,21,0.9)', border: '1px solid rgba(234,179,8,0.2)' }}>Tournament</span>
+              </span>
+            </NavItem>
+          ))}
+        </Section>
 
         {/* NSDA Topics — at the bottom of the nav */}
         <Section title="Topics" icon={<IcoTopics />}>

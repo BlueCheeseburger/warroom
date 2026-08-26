@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/appStore';
-import { Opponent, Judge } from '../types';
-import { Dots } from './Spinner';
+import { Opponent, Judge, Tournament } from '../types';
+import { Dots, Spinner } from './Spinner';
+import DatePicker from './DatePicker';
 
 // Compute the current debate season year suffix (e.g. 25 for 2025-26).
 // Sep–Dec → current year; Jan–Aug → previous year.
@@ -584,12 +585,313 @@ function JudgesTab() {
   );
 }
 
+// ─── Tournaments tab ──────────────────────────────────────────────────────────
+
+interface TournamentHit {
+  id: string; name: string; start: string; end: string; location: string; circuit: string;
+}
+
+function parseTournId(input: string): string | null {
+  const trimmed = input.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  let normalized = trimmed;
+  if (/^tabroom\.com/i.test(normalized)) normalized = 'https://www.' + normalized;
+  else if (/^www\.tabroom\.com/i.test(normalized)) normalized = 'https://' + normalized;
+  try {
+    const url = new URL(normalized);
+    return url.searchParams.get('tourn_id') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultEventType(e: string): string {
+  if (e === 'pf') return 'PF';
+  if (e === 'ld') return 'LD';
+  return 'Policy';
+}
+
+function TournamentsTab() {
+  const { db, update, setView, event } = useApp();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<TournamentHit[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const tournaments = Object.values(db.tournaments).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  // Manual / paste-URL creation — for tournaments Tabroom's name search misses.
+  const [open, setOpen] = useState(false);
+  const [importInput, setImportInput] = useState('');
+  const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [importError, setImportError] = useState('');
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [location, setLocation] = useState('');
+  const [eventType, setEventType] = useState(() => defaultEventType(event));
+  const [tabroomId, setTabroomId] = useState('');
+
+  function resetForm() {
+    setOpen(false);
+    setImportInput(''); setImportStatus('idle'); setImportError('');
+    setName(''); setStartDate(''); setEndDate(''); setLocation('');
+    setEventType(defaultEventType(event)); setTabroomId('');
+  }
+
+  function savedFor(hit: TournamentHit): Tournament | undefined {
+    return Object.values(db.tournaments).find((t) => t.tabroom_id === hit.id);
+  }
+
+  async function search() {
+    if (!query.trim()) return;
+    setLoading(true); setError(''); setResults([]);
+    try {
+      const res = await window.warroom.tabroom.searchTournaments(query.trim());
+      if (!res.ok) { setError(res.error ?? 'Search failed'); return; }
+      const hits = res.results ?? [];
+      setResults(hits);
+      if (hits.length === 0) setError('No tournaments found. Try a shorter name, or paste a Tabroom link below.');
+    } catch (e: any) {
+      setError(`Unexpected error: ${e?.message ?? e}`);
+    } finally { setLoading(false); }
+  }
+
+  async function addFromSearch(hit: TournamentHit) {
+    const existing = savedFor(hit);
+    if (existing) { setView({ kind: 'tournament', tournamentId: existing.id }); return; }
+    setAdding(hit.id);
+    const id = crypto.randomUUID();
+    const t: Tournament = {
+      id,
+      name: hit.name,
+      date: hit.start,
+      start: hit.start,
+      rounds: [],
+      ...(hit.end ? { end: hit.end } : {}),
+      ...(hit.location ? { location: hit.location } : {}),
+      tabroom_id: hit.id,
+    };
+    await update((db) => ({ ...db, tournaments: { ...db.tournaments, [id]: t } }));
+    setAdding(null);
+    setView({ kind: 'tournament', tournamentId: id });
+  }
+
+  async function handleImport() {
+    const tid = parseTournId(importInput);
+    if (!tid) {
+      setImportStatus('error');
+      setImportError("That doesn't look like a valid Tabroom URL or ID — try something like 12345 or the full Tabroom URL");
+      return;
+    }
+    setImportStatus('loading');
+    setImportError('');
+    try {
+      const res = await window.warroom.tabroom.fetchTournament(tid);
+      if (!res.success || !res.tournament) {
+        setImportStatus('error');
+        setImportError('Could not fetch tournament data — fill in manually');
+        return;
+      }
+      const t = res.tournament;
+      const parseDate = (d: string | null) => d ? d.split(/[T ]/)[0] : '';
+      const parsedStart = parseDate(t.start);
+      if (parsedStart) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (new Date(parsedStart) < today) {
+          setImportStatus('error');
+          setImportError('This tournament has already passed — only upcoming tournaments can be imported');
+          return;
+        }
+      }
+      if (t.name) setName(t.name);
+      if (parsedStart) setStartDate(parsedStart);
+      const parsedEnd = parseDate(t.end);
+      if (parsedEnd) setEndDate(parsedEnd);
+      const loc = [t.city, t.state].filter(Boolean).join(', ');
+      if (loc) setLocation(loc);
+      setTabroomId(tid);
+      const events: any[] = t.events ?? [];
+      const hasPolicy = events.some((e: any) =>
+        /policy|cx/i.test(String(e.name ?? '')) || /policy|cx/i.test(String(e.type ?? ''))
+      );
+      if (hasPolicy) setEventType('Policy');
+      setImportStatus('success');
+    } catch {
+      setImportStatus('error');
+      setImportError('Could not fetch tournament data — fill in manually');
+    }
+  }
+
+  async function create() {
+    if (!name.trim() || !startDate) return;
+    const id = crypto.randomUUID();
+    const t: Tournament = {
+      id,
+      name: name.trim(),
+      date: startDate,
+      start: startDate,
+      rounds: [],
+      ...(endDate ? { end: endDate } : {}),
+      ...(location.trim() ? { location: location.trim() } : {}),
+      ...(eventType ? { event_type: eventType } : {}),
+      ...(tabroomId.trim() ? { tabroom_id: tabroomId.trim() } : {}),
+    };
+    await update((db) => ({ ...db, tournaments: { ...db.tournaments, [id]: t } }));
+    const newId = id;
+    resetForm();
+    setView({ kind: 'tournament', tournamentId: newId });
+  }
+
+  return (
+    <>
+      <div className="px-4 pt-3 pb-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="flex gap-2">
+          <input className="input flex-1" placeholder="Search tournament by name…"
+            value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search()} />
+          <button className="btn-primary" onClick={search} disabled={loading}>
+            {loading ? <Dots /> : 'Search'}
+          </button>
+        </div>
+        {error && (
+          <div className="mt-2 text-xs flex items-start gap-1.5 text-danger">
+            <span className="shrink-0 mt-0.5">⚠</span><span>{error}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto scroll-thin">
+        {results.length > 0 && (
+          <div className="p-4">
+            <div className="label mb-2">Results ({results.length})</div>
+            <div className="space-y-1">
+              {results.map((r) => {
+                const saved = !!savedFor(r);
+                return (
+                  <div key={r.id} className="glass-card rounded-sm flex items-center justify-between px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-ink truncate">{r.name}</div>
+                      <div className="text-xs truncate text-ink/45">
+                        {r.start ? new Date(r.start + 'T12:00:00').toLocaleDateString() : ''}
+                        {r.location ? ` · ${r.location}` : ''}
+                      </div>
+                    </div>
+                    <button className="btn text-xs shrink-0 ml-2" onClick={() => addFromSearch(r)} disabled={adding === r.id}>
+                      {adding === r.id ? <Dots /> : saved ? 'Open' : '+ Add'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="p-4">
+          <div className="label mb-2">Saved tournaments ({tournaments.length})</div>
+          {tournaments.length === 0 ? (
+            <div className="text-sm italic text-ink/35 mb-3">No tournaments yet.</div>
+          ) : (
+            <div className="space-y-1 mb-3">
+              {tournaments.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setView({ kind: 'tournament', tournamentId: t.id })}
+                  className="w-full text-left glass-card rounded-sm px-3 py-2 hover:border-ink/30 transition"
+                >
+                  <div className="text-sm font-medium text-ink truncate">{t.name}</div>
+                  <div className="flex gap-3 mt-0.5">
+                    <span className="text-xs text-ink/45">{t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString() : ''}</span>
+                    <span className="text-xs text-ink/35">{t.rounds.length} round{t.rounds.length !== 1 ? 's' : ''}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!open ? (
+            <button className="btn text-xs" onClick={() => setOpen(true)}>+ New tournament</button>
+          ) : (
+            <div className="glass-card rounded-sm p-3 space-y-2">
+              <div className="label">New tournament</div>
+
+              <div>
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1"
+                    placeholder="Paste Tabroom URL or tournament ID"
+                    value={importInput}
+                    onChange={(e) => { setImportInput(e.target.value); setImportStatus('idle'); setImportError(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleImport(); }}
+                  />
+                  <button
+                    className="btn text-xs shrink-0 flex items-center gap-1.5"
+                    onClick={handleImport}
+                    disabled={!importInput.trim() || importStatus === 'loading'}
+                  >
+                    {importStatus === 'loading' ? (
+                      <><Spinner className="w-3 h-3" />Fetching from Tabroom…</>
+                    ) : (
+                      'Import'
+                    )}
+                  </button>
+                </div>
+                {importStatus === 'success' && (
+                  <div className="text-xs mt-1" style={{ color: '#16a34a' }}>Imported ✓</div>
+                )}
+                {importStatus === 'error' && importError && (
+                  <div className="text-xs text-danger mt-1">{importError}</div>
+                )}
+                <div className="text-xs text-ink/40 mt-1">or fill in manually ↓</div>
+              </div>
+
+              <input
+                className="input w-full"
+                placeholder="Tournament name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <DatePicker value={startDate} onChange={setStartDate} placeholder="Start date" />
+              <DatePicker value={endDate} onChange={setEndDate} placeholder="End date (optional)" />
+              <input
+                className="input w-full"
+                placeholder="Location (e.g. Houston, TX)"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+              <select
+                className="input w-full"
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value)}
+              >
+                <option value="">Event type (optional)</option>
+                <option value="Policy">Policy / CX</option>
+                <option value="LD">Lincoln-Douglas</option>
+                <option value="PF">Public Forum</option>
+              </select>
+
+              <div className="flex gap-2">
+                <button className="btn-primary" onClick={create} disabled={!name.trim() || !startDate}>Create</button>
+                <button className="btn" onClick={resetForm}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Main container with tab switcher ────────────────────────────────────────
 
-type Tab = 'opponents' | 'judges';
+type Tab = 'opponents' | 'judges' | 'tournaments';
 
-export default function OpponentSearch() {
-  const [tab, setTab] = useState<Tab>('opponents');
+const TAB_LABELS: Record<Tab, string> = { opponents: 'Teams', judges: 'Judges', tournaments: 'Tournaments' };
+
+export default function OpponentSearch({ initialTab = 'opponents' }: { initialTab?: Tab }) {
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   return (
     <div className="flex flex-col h-full">
@@ -601,20 +903,20 @@ export default function OpponentSearch() {
           background: 'var(--bg-elevated)',
         }}
       >
-        <h1 className="text-lg font-semibold mb-3 text-ink">Scouting</h1>
+        <h1 className="text-lg font-semibold mb-3 text-ink">Scouting & Tournaments</h1>
         <div className="flex gap-1 p-0.5 rounded-md" style={{ background: 'var(--bg-sunken)', width: 'fit-content' }}>
-          {(['opponents', 'judges'] as Tab[]).map((t) => (
+          {(['opponents', 'judges', 'tournaments'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className="text-sm px-4 py-1 rounded transition font-medium capitalize"
+              className="text-sm px-4 py-1 rounded transition font-medium"
               style={{
                 background: tab === t ? 'var(--bg-elevated)' : 'transparent',
                 color: tab === t ? 'var(--ink-color)' : 'var(--label-color)',
                 boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
               }}
             >
-              {t}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -622,7 +924,7 @@ export default function OpponentSearch() {
 
       {/* Tab content — fills remaining height */}
       <div className="flex flex-col flex-1 min-h-0">
-        {tab === 'opponents' ? <OpponentsTab /> : <JudgesTab />}
+        {tab === 'opponents' ? <OpponentsTab /> : tab === 'judges' ? <JudgesTab /> : <TournamentsTab />}
       </div>
     </div>
   );
