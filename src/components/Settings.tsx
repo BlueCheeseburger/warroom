@@ -2873,7 +2873,8 @@ export default function Settings() {
               <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
                 When a doc, flow, or chat you attach is bigger than Warroom AI can read in one go: <strong>Off</strong>
                 (default) trims it down and asks first — only what fits is sent, the rest is skipped.
-                <strong> On</strong> sends all of it, using the method below instead of skipping anything.
+                <strong> On</strong> sends all of it instead — turning it on reveals a choice between two ways
+                to fit the extra in, sampling less of it or reading it in multiple passes.
               </p>
             </div>
             <button
