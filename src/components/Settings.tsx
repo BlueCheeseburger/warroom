@@ -284,19 +284,11 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: 'settings-general',         label: 'General' },
   { id: 'settings-chat',            label: 'Chat' },
   { id: 'settings-event',           label: 'Debate event' },
-  { id: 'settings-apikey',          label: 'AI API key' },
-  { id: 'settings-ai-behavior',     label: 'AI behavior' },
-  { id: 'settings-long-input',      label: 'Long inputs' },
-  { id: 'settings-opencaselist',    label: 'OpenCaselist & Tabroom' },
-  { id: 'settings-gdrive',          label: 'Google Drive' },
-  { id: 'settings-flow',            label: 'Flow' },
-  { id: 'settings-autoflow-instructions', label: 'Auto Flow instructions' },
-  { id: 'settings-autoflow-style',  label: 'Auto Flow style' },
-  { id: 'settings-storage',         label: 'Storage' },
-  { id: 'settings-updates',         label: 'Updates' },
-  { id: 'settings-documentation',   label: 'Documentation' },
-  { id: 'settings-usermanual',      label: 'User Manual' },
-  { id: 'settings-shortcuts',       label: 'Keyboard Shortcuts' },
+  { id: 'settings-ai',              label: 'AI' },
+  { id: 'settings-integrations',    label: 'Integrations' },
+  { id: 'settings-flow',            label: 'Flow & Auto Flow' },
+  { id: 'settings-storage',         label: 'Storage & updates' },
+  { id: 'settings-help',            label: 'Help' },
   { id: 'settings-importexport',    label: 'Import, Export & Reset' },
 ];
 
@@ -1543,7 +1535,7 @@ export default function Settings() {
       apply: () => applyEvent('hspolicy'),
     },
     {
-      section: 'AI API key',
+      section: 'AI',
       items: [
         { label: 'Active AI provider', current: apiProvider, def: 'gemini' },
         { label: 'Gemini model', current: geminiModel === 'custom' ? `custom: ${geminiCustomModelId}` : geminiModel, def: 'flash' },
@@ -1551,6 +1543,8 @@ export default function Settings() {
         { label: 'Anthropic model', current: anthropicModel === 'custom' ? `custom: ${anthropicCustomModelId}` : anthropicModel, def: 'claude-sonnet-5' },
         { label: 'Grok model', current: grokModel === 'custom' ? `custom: ${grokCustomModelId}` : grokModel, def: 'grok-4.1-fast' },
         { label: 'LM Studio connection', current: lmCustomized ? 'Customized' : 'Default', def: 'Default' },
+        { label: 'Token saving by default', current: fmtBool(tokenSavingDefault), def: 'Off' },
+        { label: 'Let Warroom AI rename chats', current: fmtBool(autoRenameChat), def: 'Off' },
       ],
       apply: () => {
         setApiProvider('gemini');
@@ -1563,25 +1557,19 @@ export default function Settings() {
         setLmOptions('');
         setLmTools(true);
         setLmPerCallModels('');
+        saveTokenSavingDefault(false);
+        saveAutoRenameChat(false);
       },
     },
     {
-      section: 'AI behavior',
-      items: [
-        { label: 'Token saving by default', current: fmtBool(tokenSavingDefault), def: 'Off' },
-        { label: 'Let Warroom AI rename chats', current: fmtBool(autoRenameChat), def: 'Off' },
-      ],
-      apply: () => { saveTokenSavingDefault(false); saveAutoRenameChat(false); },
-    },
-    {
-      section: 'Updates',
+      section: 'Storage & updates',
       items: [
         { label: 'Check for updates automatically', current: fmtBool(autoUpdateCheck), def: 'On' },
       ],
       apply: () => toggleAutoUpdateCheck(true),
     },
     {
-      section: 'Flow',
+      section: 'Flow & Auto Flow',
       items: [
         { label: 'Aff flow color', current: flowAffColor, def: '#2563eb' },
         { label: 'Neg flow color', current: flowNegColor, def: '#16a34a' },
@@ -1591,19 +1579,13 @@ export default function Settings() {
         { label: 'Default new-flow font size', current: `${flowPrefs.defaultFontSize}px`, def: `${FLOW_PREFS_DEFAULTS.defaultFontSize}px` },
         { label: 'Auto-fit columns', current: fmtBool(flowPrefs.autoFitColumns), def: fmtBool(FLOW_PREFS_DEFAULTS.autoFitColumns) },
         { label: 'AI tab summaries', current: fmtBool(flowPrefs.aiTabSummaries), def: fmtBool(FLOW_PREFS_DEFAULTS.aiTabSummaries) },
-      ],
-      apply: resetAllFlowSettings,
-    },
-    {
-      section: 'Auto Flow style',
-      items: [
         { label: 'Tag bold', current: fmtBool(autoFlowStyle.bold), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.bold) },
         { label: 'Tag italic', current: fmtBool(autoFlowStyle.italic), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.italic) },
         { label: 'Tag underline', current: fmtBool(autoFlowStyle.underline), def: fmtBool(AUTOFLOW_STYLE_DEFAULTS.underline) },
         { label: 'Tag preview color', current: autoFlowStyle.color ?? 'None', def: AUTOFLOW_STYLE_DEFAULTS.color ?? 'None' },
         { label: 'Tag preview size', current: `${autoFlowStyle.fontSize}px`, def: `${AUTOFLOW_STYLE_DEFAULTS.fontSize}px` },
       ],
-      apply: resetAutoFlowStyle,
+      apply: () => { resetAllFlowSettings(); resetAutoFlowStyle(); },
     },
     {
       section: 'Speech docs & cases',
@@ -2297,9 +2279,11 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* API key */}
-      <div id="settings-apikey" className="glass-card rounded-sm p-4 space-y-3 mb-4">
-        <div className="label mb-1">AI API key</div>
+      {/* AI — API key, model, and behavior all live under one section now;
+          they used to be three separate nav entries (API key / AI behavior /
+          Long inputs) even though they're all "how Warroom AI behaves". */}
+      <div id="settings-ai" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        <div className="label mb-1">AI</div>
 
         {/* Provider toggle — auto-switches on key entry, also manually selectable */}
         <div className="flex rounded-lg p-0.5 w-fit" style={{ background: 'var(--mode-toggle-bg)' }}>
@@ -2821,20 +2805,17 @@ export default function Settings() {
             </div>
           </div>
         )}
-      </div>
 
-      {/* Provider-independent AI behavior toggles — kept as their own nav
-          section (rather than bare unwrapped cards) so the settings search
-          can actually find them; an unwrapped card has no settings-* id for
-          document.getElementById to match against. */}
-      <div id="settings-ai-behavior">
-        {/* Token saving — provider-independent, so it lives outside every provider
-            block. It's about what Warroom SENDS (speech-doc body text), not about
-            which model receives it, and it was previously nested inside the Gemini
-            block where nobody on another provider could reach it. */}
-        {loaded && (
-          <div className="glass-card rounded-sm p-4 mb-4">
-            <div className="flex items-center justify-between">
+        {/* Behavior — provider-independent toggles, folded into the AI card
+            instead of their own nav section (they're small settings ABOUT the
+            AI, same topic as the API key/model above them). */}
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div className="label mb-2">Behavior</div>
+
+          {/* Token saving — provider-independent. It's about what Warroom SENDS
+              (speech-doc body text), not about which model receives it. */}
+          {loaded && (
+            <div className="flex items-center justify-between pt-2">
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Token saving by default</div>
                 <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
@@ -2855,14 +2836,12 @@ export default function Settings() {
                 />
               </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Auto-rename chats — off by default. Provider-independent, same reasoning
-            as token saving above: it's a behavior toggle, not tied to one provider. */}
-        {loaded && (
-          <div className="glass-card rounded-sm p-4 mb-4">
-            <div className="flex items-center justify-between">
+          {/* Auto-rename chats — off by default, same reasoning as token saving
+              above: it's a behavior toggle, not tied to one provider. */}
+          {loaded && (
+            <div className="flex items-center justify-between pt-3 mt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Let Warroom AI rename chats</div>
                 <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
@@ -2880,20 +2859,21 @@ export default function Settings() {
                 />
               </button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Long inputs — the three controls: one master switch, then which method. */}
-      {loaded && (
-        <div id="settings-long-input" className="glass-card rounded-sm p-4 mb-4">
+        {/* Long inputs — one master switch, then which method. Grouped here
+            because it's specifically about AI input handling, not a topic of
+            its own. */}
+        {loaded && (
+          <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
           <div className="flex items-center justify-between">
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Work past the length limit</div>
               <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
-                Warroom AI can only read so much at once. <strong>Off</strong> (default): anything over the
-                limit is trimmed and you're asked first — whatever fits is sent in full, the rest isn't sent
-                at all. <strong>On</strong>: it handles the extra using the method below instead of dropping it.
+                When a doc, flow, or chat you attach is bigger than Warroom AI can read in one go: <strong>Off</strong>
+                (default) trims it down and asks first — only what fits is sent, the rest is skipped.
+                <strong> On</strong> sends all of it, using the method below instead of skipping anything.
               </p>
             </div>
             <button
@@ -2972,9 +2952,12 @@ export default function Settings() {
           )}
         </div>
       )}
+      </div>
 
-      {/* OpenCaselist */}
-      <div id="settings-opencaselist" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+      {/* Integrations — OpenCaselist/Tabroom login and Google Drive, merged
+          into one card since both are "connect an outside account" and
+          neither needed a whole nav entry to itself. */}
+      <div id="settings-integrations" className="glass-card rounded-sm p-4 space-y-3 mb-4">
         <div>
           <div className="label mb-1">OpenCaselist / Tabroom login</div>
           <p className="text-xs mb-2 text-ink/50">
@@ -3023,11 +3006,8 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Google Drive */}
-      <div id="settings-gdrive" className="glass-card rounded-sm p-4 space-y-3 mb-4">
-        <div>
+        <div id="settings-gdrive" className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
           <div className="label mb-1">Google Drive</div>
           <p className="text-xs mb-3 text-ink/50">
             Connect Google Drive to browse Word docs and spreadsheets in-app.
@@ -3222,38 +3202,37 @@ export default function Settings() {
             Reset to defaults
           </button>
         </div>
-      </div>
 
-      {/* Auto Flow tag style */}
-      {/* Free-text instruction folded into the Auto Flow sorting prompt. */}
-      {loaded && (
-        <div id="settings-autoflow-instructions" className="glass-card rounded-sm p-4 mb-4">
-          <div className="label mb-1">Auto Flow instructions</div>
-          <p className="text-xs mb-2.5 text-ink/50">
-            One line, in your own words, added to what Warroom AI is told every time it sorts a doc
-            into a flow. Use it for how you want tabs organised or how new flows should be named.
-            Leave it blank for the defaults.
-          </p>
-          <input
-            className="input text-xs w-full"
-            placeholder="e.g. always give T its own tab, and name flows &quot;Opponent — Round N&quot;"
-            maxLength={300}
-            value={autoFlowInstructions}
-            title="Auto Flow instructions"
-            onChange={(e) => setAutoFlowInstructionsState(e.target.value)}
-            onBlur={(e) => saveAutoFlowInstructions(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          />
-          <p className="text-[11px] mt-2 text-ink/40 leading-relaxed">
-            Warroom AI follows this over its own defaults for naming and tab organisation, but it
-            can't be used to change what Auto Flow returns — every card is still sorted, and cards
-            are never dropped or invented on instruction.
-          </p>
-        </div>
-      )}
+        {/* Auto Flow instructions — free-text folded into the Auto Flow sorting
+            prompt. Merged into the Flow card since it's a Flow sub-feature,
+            not a topic of its own. */}
+        {loaded && (
+          <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+            <div className="label mb-1">Auto Flow instructions</div>
+            <p className="text-xs mb-2.5 text-ink/50">
+              One line, in your own words, added to what Warroom AI is told every time it sorts a doc
+              into a flow. Use it for how you want tabs organised or how new flows should be named.
+              Leave it blank for the defaults.
+            </p>
+            <input
+              className="input text-xs w-full"
+              placeholder="e.g. always give T its own tab, and name flows &quot;Opponent — Round N&quot;"
+              maxLength={300}
+              value={autoFlowInstructions}
+              title="Auto Flow instructions"
+              onChange={(e) => setAutoFlowInstructionsState(e.target.value)}
+              onBlur={(e) => saveAutoFlowInstructions(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            />
+            <p className="text-[11px] mt-2 text-ink/40 leading-relaxed">
+              Warroom AI follows this over its own defaults for naming and tab organisation, but it
+              can't be used to change what Auto Flow returns — every card is still sorted, and cards
+              are never dropped or invented on instruction.
+            </p>
+          </div>
+        )}
 
-      <div id="settings-autoflow-style" className="glass-card rounded-sm p-4 space-y-3 mb-4">
-        <div>
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
           <div className="label mb-1">Auto Flow tag style</div>
           <p className="text-xs mb-3 text-ink/50">
             How Auto Flow writes each card's tag into a flow cell when it sorts uploaded speech docs
@@ -3419,10 +3398,10 @@ export default function Settings() {
           Chat message content and shared attachments are end-to-end encrypted (AES-256-GCM) with a key
           derived from your team's invite code — Supabase only ever stores ciphertext.
         </p>
-      </div>
 
-      {/* Updates */}
-      <div id="settings-updates" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        {/* Updates — grouped with Storage because both are "housekeeping"
+            cards the user opens rarely, not a topic someone browses often. */}
+        <div className="pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
         <div className="label mb-1">Updates</div>
 
         <div className="flex items-center justify-between">
@@ -3478,51 +3457,56 @@ export default function Settings() {
             />
           </button>
         </div>
+        </div>
       </div>
 
-      {/* Documentation */}
-      <div id="settings-documentation" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
-        <div>
-          <div className="label mb-1">Documentation</div>
-          <p className="text-xs text-ink/50">Full reference for all features, data model, and architecture. Warroom is primarily built for policy debate but also supports PF and LD.</p>
-        </div>
-        <button
-          className="btn shrink-0"
-          onClick={() => setView({ kind: 'docs' })}
-        >
-          View docs
-        </button>
-      </div>
+      {/* Help — Documentation, User Manual, and Keyboard Shortcuts are each
+          just a blurb + one button, so they're rows in one card instead of
+          three near-identical cards. */}
+      <div id="settings-help" className="glass-card rounded-sm p-4 space-y-3 mb-4">
+        <div className="label mb-1">Help</div>
 
-      {/* User Manual */}
-      <div id="settings-usermanual" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
-        <div>
-          <div className="label mb-1">User Manual</div>
-          <p className="text-xs text-ink/50">Step-by-step guide to using every feature — navigation, cases, flows, the speech timer, AI tools, and more. Searchable with ⌘F.</p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Documentation</div>
+            <p className="text-xs text-ink/50">Full reference for all features, data model, and architecture. Warroom is primarily built for policy debate but also supports PF and LD.</p>
+          </div>
+          <button
+            className="btn shrink-0"
+            onClick={() => setView({ kind: 'docs' })}
+          >
+            View docs
+          </button>
         </div>
-        <button
-          className="btn shrink-0"
-          onClick={() => setView({ kind: 'user-manual' })}
-        >
-          Open manual
-        </button>
-      </div>
 
-      {/* Keyboard Shortcuts */}
-      <div id="settings-shortcuts" className="glass-card rounded-sm p-4 mb-4 flex items-center justify-between gap-4">
-        <div>
-          <div className="label mb-1">Keyboard Shortcuts</div>
-          <p className="text-xs text-ink/50">
-            The full list of shortcuts across the app — global search, flow editing, AI chat, and more.
-            Press <span className="font-mono">{window.warroom?.platform === 'darwin' ? '⌘' : 'Ctrl'}/</span> anytime to open it.
-          </p>
+        <div className="flex items-center justify-between gap-4 pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>User Manual</div>
+            <p className="text-xs text-ink/50">Step-by-step guide to using every feature — navigation, cases, flows, the speech timer, AI tools, and more. Searchable with ⌘F.</p>
+          </div>
+          <button
+            className="btn shrink-0"
+            onClick={() => setView({ kind: 'user-manual' })}
+          >
+            Open manual
+          </button>
         </div>
-        <button
-          className="btn shrink-0"
-          onClick={() => setShortcutsOpen(true)}
-        >
-          View shortcuts
-        </button>
+
+        <div className="flex items-center justify-between gap-4 pt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+          <div>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Keyboard Shortcuts</div>
+            <p className="text-xs text-ink/50">
+              The full list of shortcuts across the app — global search, flow editing, AI chat, and more.
+              Press <span className="font-mono">{window.warroom?.platform === 'darwin' ? '⌘' : 'Ctrl'}/</span> anytime to open it.
+            </p>
+          </div>
+          <button
+            className="btn shrink-0"
+            onClick={() => setShortcutsOpen(true)}
+          >
+            View shortcuts
+          </button>
+        </div>
       </div>
 
       {/* Import / Export Settings */}
