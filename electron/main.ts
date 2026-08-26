@@ -2909,23 +2909,36 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 // Modeled directly on real competitive Verbatim cards: highlight is scattered
 // across many short, non-contiguous words/phrases throughout the underline —
 // not concentrated into one or two big blocks — with essentially no word
-// truncation. Lay style keeps whole contiguous phrases for lay-judge legibility.
-const ABBREVIATION_STYLES: Record<'lay' | 'flow', string> = {
-  flow: `FLOW STYLE (default): highlight is scattered across MANY short, non-contiguous words and short phrases throughout the underlined text — like real competitive Verbatim cards, where nearly every substantive noun, verb, adjective, and proper noun that carries argumentative weight gets its own highlight, while purely grammatical connector words (a, the, of, to, in, on, at, that, which, and, or, is/are/was used as a plain copula) are skipped and left un-highlighted in between. A single long underlined sentence commonly has 5-10+ separate short highlight entries (often just 1-4 words each) — NOT one or two long contiguous blocks covering most of the sentence.
-Do NOT abbreviate or truncate any word — every highlight entry must be spelled out in full, exactly as it appears in the source. If an acronym already appears that way in the source (e.g. "NHI"), it's fine to highlight it as-is, but never invent your own shortened form of a word that isn't already written that way.
-Dense, scattered highlighting throughout the whole underlined passage is normal and expected for a well-cut card — do not hold back on highlighting for fear of highlighting "too much"; the skill is in WHICH words you skip (connectors, filler) not in using few highlights overall. Spread your entries realistically across all three tiers (see the tier definitions above) rather than marking everything tier 2 by default.
-Every highlight entry must still be an exact, unmodified, verbatim slice of the body text — copy it character-for-character.`,
-  lay: 'LAY STYLE: highlight whole words/phrases (e.g. all of "North Korea", all of "national health insurance") so the highlighted portion reads as a grammatical, complete phrase a lay judge can follow by eye. Do not fragment words into partial letters. Most lay-style cuts only need 1-3 entries total, all naturally essential — it is fine and normal for all of them to be tier 1.',
-};
-
-ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications, cutStyle }: {
-  body: string; intent: string; highlightColor: string; cite?: string; clarifications?: { question: string; answer: string }[]; cutStyle?: 'lay' | 'flow';
+// truncation. That style now lives in the prompt template itself; there is no
+// lay/flow switch (it produced two half-tuned styles instead of one good one).
+ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications, refineInstruction, previous }: {
+  body: string; intent: string; highlightColor: string; cite?: string;
+  clarifications?: { question: string; answer: string }[];
+  // Set when the user is asking Warroom AI to adjust a cut it already made
+  // (the "refine" box in the review step) — same task, same output schema, so
+  // it reuses this handler rather than a parallel prompt+parser that could
+  // drift out of sync with this one.
+  refineInstruction?: string;
+  previous?: { underline?: string[]; highlight?: { text: string; tier: 1 | 2 | 3 }[]; small?: string[] };
 }) => {
   const text = String(body ?? '').trim();
   if (!text) throw new Error('No card body text to cut.');
   const skill = (await readSkill('card_cutting')) ?? '';
   const clar = clarifications ?? [];
-  const style = cutStyle === 'lay' ? 'lay' : 'flow';
+
+  const refine = String(refineInstruction ?? '').trim();
+  const refinementNote = refine
+    ? `\nREFINEMENT PASS — you already cut this card once. Your previous emphasis was:\n` +
+      `${JSON.stringify({
+        underline: previous?.underline ?? [],
+        highlightTier1: (previous?.highlight ?? []).filter((h) => h.tier === 1).map((h) => h.text),
+        highlightTier2: (previous?.highlight ?? []).filter((h) => h.tier === 2).map((h) => h.text),
+        highlightTier3: (previous?.highlight ?? []).filter((h) => h.tier === 3).map((h) => h.text),
+        small: previous?.small ?? [],
+      })}\n` +
+      `The debater wants this changed: "${refine}"\n` +
+      `Apply that change and return a COMPLETE new emphasis set in the same format — not just the parts that changed. Keep everything they did not ask you to change. Do NOT ask a clarifying question on a refinement pass; make your best call.\n`
+    : '';
 
   const prompt = await renderPrompt('cutter_emphasize', {
     CARD_CUTTING_SKILL: skill,
@@ -2933,8 +2946,11 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     INTENT_NOTE: intent ? `"${intent}"` : '(not specified — infer the strongest argument)',
     BODY_TEXT: await capForPrompt(text, 40000, 'the card body'),
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
-    QUESTIONS_ASKED: String(clar.length),
-    ABBREVIATION_STYLE: ABBREVIATION_STYLES[style],
+    // A refinement is an explicit instruction, so the ambiguity escape hatch is
+    // closed off — claiming a question was already asked is the existing lever
+    // the prompt understands for "commit, don't ask".
+    QUESTIONS_ASKED: refine ? '1' : String(clar.length),
+    REFINEMENT_NOTE: refinementNote,
   });
 
   // No `|| {}` fallback. That turned an unparseable reply into a card titled
@@ -2972,12 +2988,33 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     ...arr(parsed.highlightTier2).map((text) => ({ text, tier: 2 as const })),
     ...arr(parsed.highlightTier3).map((text) => ({ text, tier: 3 as const })),
   ];
+  // Accept a legacy flat `highlight` array too (strings, or {text,tier} objects).
+  // The prompt is read fresh from disk on every call while THIS parser is
+  // compiled into the main process, so the two can drift apart across a rename
+  // — and when they did, every span silently vanished and the user got a card
+  // with underlining but no highlighting at all, with no error anywhere. This
+  // fallback plus the hard failure below make that class of drift impossible
+  // to ship silently again.
+  if (highlight.length === 0 && Array.isArray(parsed.highlight)) {
+    for (const item of parsed.highlight) {
+      if (typeof item === 'string' && item.trim()) highlight.push({ text: item.trim(), tier: 2 });
+      else if (item && typeof item === 'object' && typeof item.text === 'string' && item.text.trim()) {
+        highlight.push({ text: item.text.trim(), tier: [1, 2, 3].includes(item.tier) ? item.tier : 2 });
+      }
+    }
+  }
   let taglines = arr(parsed.taglines).map((t) => t.replace(/^#+\s*/, '').trim()).slice(0, 2);
   // Parsed fine but said nothing: no tagline AND nothing to underline is not a
   // cut card, it's an empty answer wearing one. Fail so the user can re-cut,
   // rather than handing them "Untitled card" with no emphasis.
   if (taglines.length === 0 && arr(parsed.underline).length === 0) {
     throw new Error('Warroom AI returned no tagline and nothing to underline for this card. Try cutting it again.');
+  }
+  // Same rule for highlighting: an unhighlighted card is a failed cut, not a
+  // stylistic choice. Silently returning one is how the schema drift above went
+  // unnoticed — the density control had nothing to filter and looked broken.
+  if (highlight.length === 0) {
+    throw new Error('Warroom AI returned no highlighting for this card. Try cutting it again.');
   }
   if (taglines.length === 0) taglines = ['Untitled card'];
   return {

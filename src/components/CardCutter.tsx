@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/appStore';
-import { Card, CutterSource, FontSize, HighlightColor, AIClarification, AIQuestion } from '../types';
+import { Card, CutterSource, HighlightColor, AIClarification, AIQuestion } from '../types';
 import AIQuestionPrompt from './AIQuestionPrompt';
 import { LoadingState } from './Spinner';
 import { humanizeGeminiError } from '../utils/geminiError';
 import { FormattedBody } from './CardBody';
 import {
-  CharAttr, buildAttrsFromSpans, runsFromAttrs, selectionOffsets, HighlightLevel,
-  HIGHLIGHT_SWATCH, HIGHLIGHT_CSS, HIGHLIGHT_RGB,
+  CharAttr, buildAttrsFromSpans, runsFromAttrs, HighlightLevel, HIGHLIGHT_SWATCH,
 } from '../utils/cardFormat';
-import { dimHighlightToHsl } from '../utils/docxViewerUtils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const CUT_CASE_ID = '__cut__';
@@ -18,7 +16,8 @@ const CUT_BLOCK_ID = '__cut_inbox__';
 type Step = 'pick' | 'reading' | 'select' | 'cutting' | 'edit';
 
 const COLORS: HighlightColor[] = ['yellow', 'cyan', 'green'];
-const FONT_SIZES: FontSize[] = [11, 8, 6, 3];
+
+type CutResult = { underline: string[]; highlight: { text: string; tier: HighlightLevel }[]; small: string[] };
 
 export default function CardCutter({ onClose }: { onClose: () => void }) {
   const { update, cardOutdatedYears } = useApp();
@@ -26,14 +25,6 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [source, setSource] = useState<CutterSource | null>(null);
-
-  // dark mode state — for highlight button swatch readability
-  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
-  useEffect(() => {
-    const obs = new MutationObserver(() => setIsDark(document.documentElement.classList.contains('dark')));
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -49,21 +40,23 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   // intent + color (step 3 = inside select step)
   const [intent, setIntent] = useState('');
   const [color, setColor] = useState<HighlightColor>('cyan');
-  const [cutStyle, setCutStyle] = useState<'lay' | 'flow'>('flow');
 
   // editor (step 4)
   const [editText, setEditText] = useState('');
   const [editAttrs, setEditAttrs] = useState<CharAttr[]>([]);
   // Raw AI result kept around (not just the baked-in editAttrs) so the highlight
   // density control below can re-filter and re-render instantly — no AI call.
-  const [cutResult, setCutResult] = useState<{ underline: string[]; highlight: { text: string; tier: HighlightLevel }[]; small: string[] } | null>(null);
-  const [highlightLevel, setHighlightLevel] = useState<HighlightLevel>(3);
+  const [cutResult, setCutResult] = useState<CutResult | null>(null);
+  const [highlightLevel, setHighlightLevel] = useState<HighlightLevel>(2);
   const [taglines, setTaglines] = useState<string[]>([]);
   const [chosenTag, setChosenTag] = useState('');
   const [cite, setCite] = useState('');
   const [year, setYear] = useState<number>(CURRENT_YEAR);
   const [saving, setSaving] = useState(false);
-  const editRef = useRef<HTMLDivElement>(null);
+  // Refine box — asks Warroom AI to adjust the cut it just made, replacing the
+  // old manual underline/highlight/font-size toolbar.
+  const [refineText, setRefineText] = useState('');
+  const [refining, setRefining] = useState(false);
 
   // manually-added images (file input)
   const [extraImages, setExtraImages] = useState<{ src: string; alt: string }[]>([]);
@@ -84,22 +77,59 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     setStep('cutting');
     setError('');
     try {
-      const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars, cutStyle });
+      const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars });
       if (res.question) { setPendingQuestion(res.question); return; }
       const result = { underline: res.underline, highlight: res.highlight, small: res.small };
-      const attrs = buildAttrsFromSpans(bodyText, result, color, 3);
       setEditText(bodyText);
-      setEditAttrs(attrs);
+      setEditAttrs(buildAttrsFromSpans(bodyText, result, color, 2));
       setCutResult(result);
-      setHighlightLevel(3);
+      setHighlightLevel(2);
       setTaglines(res.taglines || []);
       setChosenTag((res.taglines && res.taglines[0]) || '');
       setClarifications([]);
       setPendingCut(null);
+      setRefineText('');
       setStep('edit');
     } catch (e: any) {
       setError(humanizeGeminiError(e?.message) || e?.message || 'Could not cut the card.');
       setStep('select');
+    }
+  }
+
+  // Send the current cut back to Warroom AI with a plain-language instruction
+  // ("underline less", "highlight the statistics", "don't shrink the last
+  // paragraph"). Replaces the old manual formatting toolbar.
+  async function runRefine() {
+    const instruction = refineText.trim();
+    if (!instruction || !cutResult || refining) return;
+    setRefining(true);
+    setError('');
+    try {
+      const res = await window.warroom.ai.cutterEmphasize({
+        body: editText, intent, highlightColor: color, cite,
+        refineInstruction: instruction, previous: cutResult,
+      });
+      // A refinement is an explicit instruction, so the prompt is told not to
+      // ask a clarifying question — but if one comes back anyway, its emphasis
+      // arrays are all empty, and applying them would silently wipe every
+      // highlight and underline off the card. Keep the existing cut instead.
+      if (res.question) {
+        setError(`Warroom AI needs more detail to make that change: ${res.question.question}`);
+        return;
+      }
+      const result = { underline: res.underline, highlight: res.highlight, small: res.small };
+      setEditAttrs(buildAttrsFromSpans(editText, result, color, highlightLevel));
+      setCutResult(result);
+      if (res.taglines?.length) {
+        setTaglines(res.taglines);
+        // Only move the user off their chosen tag if it's gone from the new set.
+        if (!res.taglines.includes(chosenTag)) setChosenTag(res.taglines[0]);
+      }
+      setRefineText('');
+    } catch (e: any) {
+      setError(humanizeGeminiError(e?.message) || e?.message || 'Could not refine the card.');
+    } finally {
+      setRefining(false);
     }
   }
 
@@ -149,49 +179,34 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     });
   }
 
+  // Selecting nothing means "use the whole article" rather than blocking the
+  // cut — picking paragraphs is an optional narrowing step, not a required one.
   const selectedBody = useMemo(() => {
-    if (!source || !includedParas.size) return '';
-    return [...includedParas].sort((a, b) => a - b).map((i) => source.paragraphs[i]).filter(Boolean).join('\n\n');
+    if (!source) return '';
+    const idxs = includedParas.size
+      ? [...includedParas].sort((a, b) => a - b)
+      : source.paragraphs.map((_, i) => i);
+    return idxs.map((i) => source.paragraphs[i]).filter(Boolean).join('\n\n');
   }, [includedParas, source]);
-
-  // Skip step 2 entirely — select all paragraphs and let AI decide everything.
-  async function skipToAI() {
-    if (!source) return;
-    const allIdxs = new Set(source.paragraphs.map((_, i) => i));
-    setIncludedParas(allIdxs);
-    const fullBody = source.paragraphs.join('\n\n');
-    await runEmphasize(fullBody, '', []);
-  }
 
   async function cut() {
     if (!selectedBody.trim()) return;
     await runEmphasize(selectedBody, intent, []);
   }
 
-  // Re-filters the single AI response by tier and re-renders instantly —
-  // no AI call. Overwrites any manual highlight/underline tweaks made below,
-  // since it rebuilds attrs from scratch off the original result.
+  // Re-filters the single AI response by tier and re-renders instantly — no AI call.
   function applyHighlightLevel(level: HighlightLevel) {
     if (!cutResult) return;
     setHighlightLevel(level);
     setEditAttrs(buildAttrsFromSpans(editText, cutResult, color, level));
   }
 
-  function applyFormat(kind: 'underline' | 'highlight' | 'fontSize' | 'clear', fs?: FontSize) {
-    if (!editRef.current) return;
-    const off = selectionOffsets(editRef.current);
-    if (!off) return;
-    setEditAttrs((prev) => {
-      const next = prev.map((a) => ({ ...a }));
-      for (let i = off.start; i < off.end && i < next.length; i++) {
-        if (kind === 'underline') next[i].u = true;
-        else if (kind === 'highlight') { next[i].hl = color; next[i].u = true; next[i].fs = 11; }
-        else if (kind === 'fontSize') { next[i].fs = fs!; next[i].u = false; next[i].hl = null; }
-        else { next[i].u = false; next[i].hl = null; next[i].fs = 11; }
-      }
-      return next;
-    });
-    window.getSelection()?.removeAllRanges();
+  // Recolors the already-applied highlighting. Without this the edit-step
+  // swatches only affected future manual edits, so clicking one appeared to do
+  // nothing to the card actually on screen.
+  function changeColor(c: HighlightColor) {
+    setColor(c);
+    if (cutResult) setEditAttrs(buildAttrsFromSpans(editText, cutResult, c, highlightLevel));
   }
 
   function addImageFromFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -207,7 +222,9 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
 
   async function save() {
     const tag = (chosenTag || 'Untitled card').trim();
-    if (!editText.trim()) { onClose(); return; }
+    // Used to call onClose() here — clicking "Save to All Cards" silently threw
+    // the card away and shut the dialog, with nothing saved and nothing said.
+    if (!editText.trim()) { setError('There is no card body to save. Go back and cut the card again.'); return; }
     setSaving(true);
     const now = new Date().toISOString();
     const runs = runsFromAttrs(editText, editAttrs);
@@ -246,14 +263,6 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // Highlight background for the toolbar button — dimmed in dark mode to match FormattedBody readability
-  function hlButtonBg(c: HighlightColor): string {
-    if (!isDark) return HIGHLIGHT_CSS[c];
-    const [r, g, b] = HIGHLIGHT_RGB[c];
-    return dimHighlightToHsl(r, g, b, 30);
-  }
-
-
   // Combined image list for the edit step
   type EditImg = { key: string; src: string; alt: string; isSource: boolean; srcIdx: number; extraIdx: number };
   const editImages = useMemo<EditImg[]>(() => {
@@ -277,8 +286,14 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-thin p-5">
+          {/* Sticky: refine and save both fail from controls at the BOTTOM of
+              this scroll area, and a banner pinned to the top scrolled out of
+              sight — the action just looked like it did nothing. */}
           {error && (
-            <div className="mb-3 border border-danger/30 rounded-sm bg-danger/5 p-2.5 text-sm text-danger">{error}</div>
+            <div className="sticky top-0 z-10 mb-3 border border-danger/30 rounded-sm bg-danger/5 backdrop-blur p-2.5 text-sm text-danger flex items-start gap-2">
+              <span className="flex-1">{error}</span>
+              <button className="text-danger/60 hover:text-danger leading-none shrink-0" title="Dismiss" onClick={() => setError('')}>✕</button>
+            </div>
           )}
 
           {/* STEP: pick */}
@@ -312,8 +327,9 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
           {step === 'select' && source && (
             <div className="space-y-3">
               <div className="text-xs text-ink/50">
-                <span className="text-ink/70 font-medium">Click paragraphs to include them in the card.</span>{' '}
-                You must include the full paragraph — irrelevant parts can be shrunk to small text after cutting.
+                <span className="text-ink/70 font-medium">Optional: click paragraphs to narrow the card to just those.</span>{' '}
+                Leave everything unselected and Warroom AI cuts from the whole article. Paragraphs go in whole —
+                irrelevant parts get shrunk to small text rather than dropped.
               </div>
               {source.cite && (
                 <div className="text-[11px] text-ink/40 border border-line rounded-sm px-2 py-1.5">
@@ -387,28 +403,6 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                     />
                   ))}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-ink/55">Cut style:</span>
-                  <div className="inline-flex rounded-sm border border-line overflow-hidden">
-                    <button
-                      className="px-2.5 py-1 text-xs transition"
-                      style={cutStyle === 'flow' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
-                      onClick={() => setCutStyle('flow')}
-                      title="Abbreviate heavily — highlights only the letters/fragments a flower needs (e.g. 'No Ko' for North Korea). Sentences won't read grammatically."
-                    >
-                      Flow
-                    </button>
-                    <button
-                      className="px-2.5 py-1 text-xs transition border-l border-line"
-                      style={cutStyle === 'lay' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
-                      onClick={() => setCutStyle('lay')}
-                      title="Highlight whole words/phrases so the emphasis reads as a grammatical phrase for a lay judge."
-                    >
-                      Lay
-                    </button>
-                  </div>
-                  <span className="text-[11px] text-ink/35">{cutStyle === 'flow' ? 'Heavy abbreviation for competitive flowing' : 'Whole-word highlights, readable by eye'}</span>
-                </div>
               </div>
             </div>
           )}
@@ -459,57 +453,65 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
 
-              {/* Editor toolbar */}
+              {/* Card body + emphasis controls */}
               <div>
-                <label className="text-xs text-ink/55 font-medium">Card body <span className="text-ink/35 font-normal">— select text, then format. Words can't be changed (verbatim).</span></label>
-                <div className="flex items-center gap-1.5 my-1.5 flex-wrap">
-                  <button className="btn text-xs underline" onClick={() => applyFormat('underline')} title="Underline (read aloud)">Underline</button>
-                  <button className="btn text-xs" onClick={() => applyFormat('highlight')} title="Highlight (most important)">
-                    <span className="px-1 rounded-sm transition-colors" style={{ backgroundColor: hlButtonBg(color), color: isDark ? '#e8e8ea' : '#111' }}>Highlight</span>
-                  </button>
-                  {COLORS.map((c) => (
-                    <button key={c} onClick={() => setColor(c)}
-                      className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-ink' : 'border-transparent'}`}
-                      style={{ backgroundColor: HIGHLIGHT_SWATCH[c] }} title={c} />
-                  ))}
-                  <span className="mx-0.5 text-ink/20 select-none">|</span>
-                  {FONT_SIZES.map((fs) => (
-                    <button
-                      key={fs}
-                      className="btn text-[11px] tabular-nums px-1.5"
-                      onClick={() => applyFormat('fontSize', fs)}
-                      title={fs === 11 ? 'Normal text (11pt)' : `Shrink to ${fs}pt — not read aloud`}
-                    >
-                      {fs === 11 ? 'Normal' : `${fs}pt`}
-                    </button>
-                  ))}
-                  <span className="mx-0.5 text-ink/20 select-none">|</span>
-                  <button className="btn text-xs" onClick={() => applyFormat('clear')} title="Remove all formatting from selection">Clear</button>
-                </div>
-                {cutResult && (
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-xs text-ink/55">Highlight density:</span>
-                    <div className="inline-flex rounded-sm border border-line overflow-hidden">
-                      {([1, 2, 3] as HighlightLevel[]).map((lvl) => (
-                        <button
-                          key={lvl}
-                          className={`px-2.5 py-1 text-xs transition ${lvl !== 1 ? 'border-l border-line' : ''}`}
-                          style={highlightLevel === lvl ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
-                          onClick={() => applyHighlightLevel(lvl)}
-                          title={
-                            lvl === 1 ? 'Show only the most essential highlights (resets manual highlight/underline edits below)'
-                            : lvl === 2 ? 'Show standard highlighting (resets manual highlight/underline edits below)'
-                            : 'Show full, maximal highlighting (resets manual highlight/underline edits below)'
-                          }
-                        >
-                          {lvl === 1 ? 'Less' : lvl === 2 ? 'Medium' : 'More'}
-                        </button>
-                      ))}
-                    </div>
+                <label className="text-xs text-ink/55 font-medium">Card body <span className="text-ink/35 font-normal">— verbatim from the source; the words never change.</span></label>
+                <div className="flex items-center gap-2 my-1.5 flex-wrap">
+                  <span className="text-xs text-ink/55">Highlight density:</span>
+                  <div className="inline-flex rounded-sm border border-line overflow-hidden">
+                    {([1, 2, 3] as HighlightLevel[]).map((lvl) => (
+                      <button
+                        key={lvl}
+                        className={`px-2.5 py-1 text-xs transition ${lvl !== 1 ? 'border-l border-line' : ''}`}
+                        style={highlightLevel === lvl ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
+                        onClick={() => applyHighlightLevel(lvl)}
+                        disabled={!cutResult}
+                        title={
+                          lvl === 1 ? 'Only the most essential highlights'
+                          : lvl === 2 ? 'Standard highlighting'
+                          : 'Full, maximal highlighting'
+                        }
+                      >
+                        {lvl === 1 ? 'Less' : lvl === 2 ? 'Medium' : 'More'}
+                      </button>
+                    ))}
                   </div>
-                )}
-                <div ref={editRef} className="text-sm text-ink/80 rounded-sm border border-line p-3 max-h-[34vh] overflow-y-auto scroll-thin select-text">
+                  <span className="mx-0.5 text-ink/20 select-none">|</span>
+                  <span className="text-xs text-ink/55">Color:</span>
+                  {COLORS.map((c) => (
+                    <button key={c} onClick={() => changeColor(c)}
+                      className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-ink' : 'border-transparent'}`}
+                      style={{ backgroundColor: HIGHLIGHT_SWATCH[c] }} title={`Highlight in ${c}`} />
+                  ))}
+                </div>
+                <div className="text-sm text-ink/80 rounded-sm border border-line p-3 max-h-[34vh] overflow-y-auto scroll-thin select-text">
                   <FormattedBody runs={runsFromAttrs(editText, editAttrs)} />
+                </div>
+              </div>
+
+              {/* Refine with Warroom AI — replaces the old manual formatting
+                  toolbar; the AI re-cuts rather than the user hand-editing spans. */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-ink/55 font-medium">
+                  Change something? <span className="text-ink/35 font-normal">Tell Warroom AI what to fix.</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1 text-sm"
+                    placeholder="e.g. underline less, highlight the statistics, don't shrink the last paragraph"
+                    value={refineText}
+                    disabled={refining || !cutResult}
+                    onChange={(e) => setRefineText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') runRefine(); }}
+                  />
+                  <button
+                    className="ai-glow-ring btn-primary text-sm shrink-0"
+                    onClick={runRefine}
+                    disabled={refining || !refineText.trim() || !cutResult}
+                    title="Send this card back to Warroom AI with your instructions"
+                  >
+                    {refining ? 'Refining…' : 'Refine'}
+                  </button>
                 </div>
               </div>
 
@@ -553,11 +555,20 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
         <div className="px-5 py-3 border-t border-line flex items-center gap-2 shrink-0">
           {step === 'select' && (
             <>
-              <button className="ai-glow-ring btn-primary text-sm" disabled={!selectedBody.trim()} onClick={cut}>Cut card →</button>
-              <button className="btn text-sm" onClick={() => setIncludedParas(new Set())} disabled={!includedParas.size}>Clear</button>
-              <button className="ai-glow-ring btn text-sm ml-auto opacity-60 hover:opacity-100" onClick={skipToAI} title="Let Warroom AI pick everything — selects the full article and cuts with no guidance">
-                Skip — AI decides →
+              <button
+                className="ai-glow-ring btn-primary text-sm"
+                disabled={!selectedBody.trim()}
+                onClick={cut}
+                title={includedParas.size ? `Cut from the ${includedParas.size} selected paragraph${includedParas.size === 1 ? '' : 's'}` : 'Cut from the whole article'}
+              >
+                Cut card →
               </button>
+              <button className="btn text-sm" onClick={() => setIncludedParas(new Set())} disabled={!includedParas.size} title="Clear paragraph selection">Clear</button>
+              <span className="text-xs text-ink/40 ml-auto">
+                {includedParas.size
+                  ? `${includedParas.size} paragraph${includedParas.size === 1 ? '' : 's'} selected`
+                  : 'Nothing selected — the whole article will be used'}
+              </span>
             </>
           )}
           {step === 'edit' && (

@@ -320,7 +320,10 @@ declare global {
           highlightColor: HighlightColor;
           cite?: string;
           clarifications?: AIClarification[];
-          cutStyle?: 'lay' | 'flow';
+          // Set to ask Warroom AI to adjust a cut it already made, instead of
+          // cutting from scratch — `previous` carries the emphasis being revised.
+          refineInstruction?: string;
+          previous?: { underline: string[]; highlight: HighlightSpan[]; small: string[] };
         }) => Promise<CutterEmphasis>;
         readImageAsDataUrl: (filePath: string) => Promise<string>;
         suggestBlocks: (

@@ -154,38 +154,3 @@ export function runsFromAttrs(text: string, attrs: CharAttr[]): CardRun[] {
 export function runsToPlain(runs: CardRun[] | undefined): string {
   return (runs ?? []).map((r) => r.text).join('');
 }
-
-// Absolute character offsets of the current selection within `container`,
-// counting all text nodes (works regardless of how runs are split into spans).
-export function selectionOffsets(container: HTMLElement): { start: number; end: number } | null {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-  const range = sel.getRangeAt(0);
-  if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return null;
-
-  // Skip text inside <button> / [data-noselect] so their chars don't shift body offsets.
-  const makeWalker = () => document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      let p = (node as Text).parentElement;
-      while (p && p !== container) {
-        if (p.tagName === 'BUTTON' || p.dataset?.noselect != null) return NodeFilter.FILTER_REJECT;
-        p = p.parentElement;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-  const offsetOf = (node: Node, offset: number): number => {
-    let count = 0;
-    const walker = makeWalker();
-    let n: Node | null;
-    while ((n = walker.nextNode())) {
-      if (n === node) return count + offset;
-      count += (n.textContent ?? '').length;
-    }
-    return count;
-  };
-  const start = offsetOf(range.startContainer, range.startOffset);
-  const end = offsetOf(range.endContainer, range.endOffset);
-  if (start === end) return null;
-  return { start: Math.min(start, end), end: Math.max(start, end) };
-}
