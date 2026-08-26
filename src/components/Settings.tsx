@@ -2623,9 +2623,9 @@ export default function Settings() {
                     )}
                   </button>
                   <div
-                    className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
+                    className="pointer-events-none absolute left-0 right-0 top-full mt-1.5 z-50
                       opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                      w-56 rounded-sm px-3 py-2 text-xs leading-relaxed"
+                      rounded-sm px-3 py-2 text-xs leading-relaxed"
                     style={{
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-subtle)',
@@ -2678,9 +2678,9 @@ export default function Settings() {
                     )}
                   </button>
                   <div
-                    className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
+                    className="pointer-events-none absolute left-0 right-0 top-full mt-1.5 z-50
                       opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                      w-56 rounded-sm px-3 py-2 text-xs leading-relaxed"
+                      rounded-sm px-3 py-2 text-xs leading-relaxed"
                     style={{
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-subtle)',
@@ -2737,9 +2737,9 @@ export default function Settings() {
                     )}
                   </button>
                   <div
-                    className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
+                    className="pointer-events-none absolute left-0 right-0 top-full mt-1.5 z-50
                       opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                      w-56 rounded-sm px-3 py-2 text-xs leading-relaxed"
+                      rounded-sm px-3 py-2 text-xs leading-relaxed"
                     style={{
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-subtle)',
@@ -2792,9 +2792,9 @@ export default function Settings() {
                     )}
                   </button>
                   <div
-                    className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
+                    className="pointer-events-none absolute left-0 right-0 top-full mt-1.5 z-50
                       opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                      w-56 rounded-sm px-3 py-2 text-xs leading-relaxed"
+                      rounded-sm px-3 py-2 text-xs leading-relaxed"
                     style={{
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-subtle)',
