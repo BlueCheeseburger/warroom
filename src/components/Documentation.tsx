@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/22/26
+          Last updated: 8/25/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -650,8 +650,12 @@ export default function Documentation() {
             for text only. Then Warroom AI reads the source — pulling the cite, the real article body, and the images
             (alt-text aware, ads/logos filtered). You <strong>highlight the passages you want</strong> (selections stack;
             hover and ✕ to remove one), optionally add pictures from the dropdown, type what you're using the card for, and
-            pick a highlight color (<strong>yellow / cyan / neon green</strong>). Warroom AI then decides what to underline
-            (read aloud), highlight (most important), and shrink to small text (context), and proposes one or two taglines.
+            pick a highlight color (<strong>yellow / cyan / neon green</strong>) and a <strong>cut style</strong>:{' '}
+            <strong>Flow</strong> (default) abbreviates highlights heavily — just the letters/fragments a competitive flower
+            needs (e.g. only "No" and "Ko" in "North Korea"), so the highlighted text won't read as a grammatical sentence —
+            versus <strong>Lay</strong>, which highlights whole words/phrases so the emphasis is readable by eye for a lay
+            judge. Warroom AI then decides what to underline (read aloud), highlight (most important, per the chosen style),
+            and shrink to small text (context), and proposes one or two taglines.
             A mini editor lets you fix the emphasis — select text and hit Underline / Highlight / Small / Clear — without
             changing the words (the body stays verbatim). Saved cards land in the <Code>Cut Cards</Code> case and render with
             their formatting everywhere a card appears. Neon green highlight counts as “read aloud” across Warroom, alongside
@@ -1226,6 +1230,16 @@ export default function Documentation() {
             still empty — switching rebuilds the sheets for that layout, so once there's any content
             the toggle disappears rather than risk wiping tabs you've added, renamed, or filled. (The
             Policy/PF event toggle isn't shown at all — a flow's event is set when it's created.)
+          </P>
+          <P>
+            New policy flows use the <strong>Advantage</strong> layout by default. If you rename a tab
+            and start typing a stock issue — <em>Inherency</em>, <em>Harms</em>, <em>Solvency</em> —
+            a card offers to <strong>switch the whole flow</strong>, renaming the unused
+            "Adv 1/2/3" tabs for you. Three things it deliberately won't do: it never renames a tab
+            you named yourself, it never appears when there's nothing left to rename, and it keeps
+            whatever you actually typed on the tab you typed it into. Unlike the toggle above it's
+            safe mid-round — it only renames unused tabs, so nothing on the flow is rebuilt. Dismiss
+            it once and it stays quiet for that flow ("Solvency" is a normal advantage-flow tab too).
           </P>
           <P>
             <strong>Column colors:</strong> each column header has an always-visible <Code>▾</Code>{' '}
@@ -2127,6 +2141,18 @@ export default function Documentation() {
             When attaching a speech doc, "token saving" mode sends only underlined text, citations,
             and headings (not small body text) to reduce token usage. Auto-enabled for Flash Lite.
             Can be toggled globally in Settings or per-conversation.
+          </P>
+          <H3>Context-attach toast</H3>
+          <P>
+            If a speech doc, opponent profile, judge profile, or flow is open in the main view when
+            you're in the AI panel, a small inline banner above the composer offers to attach it —
+            "Attach all" if more than one speech doc is open (main pane + up to 2 compare panes;
+            opponent/judge/flow are always exactly one, since <Code>view</Code> is a single tagged
+            union). Dismissing or attaching remembers that combination (<Code>dismissedContextKey</Code>,
+            keyed by sorted <Code>type:id</Code> pairs) so it won't re-offer the same open item(s)
+            again — only a genuinely different combination re-triggers it. Uses the same data-fetching
+            as a manual <Code>@mention</Code> (<Code>attachContextItem</Code>), just skipping the
+            composer text insertion since there's no typed <Code>@</Code> to anchor to.
           </P>
           <H3>Quote-reply</H3>
           <P>

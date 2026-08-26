@@ -2890,13 +2890,22 @@ ipcMain.handle('ai:cutterReadSource', async (_e, filePath: string) => {
 // decide emphasis (underline = read aloud, highlight = most important, small =
 // kept-but-unread context) and propose 1–2 taglines. Emphasis is returned as EXACT
 // verbatim substrings so the renderer can apply it without altering the body text.
-ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications }: {
-  body: string; intent: string; highlightColor: string; cite?: string; clarifications?: { question: string; answer: string }[];
+// Flow style (default) abbreviates aggressively — a competitive flower jots
+// fragments, not words, so grammar is expected to break. Lay style keeps whole
+// words/phrases highlighted so a lay judge can read the emphasis by eye.
+const ABBREVIATION_STYLES: Record<'lay' | 'flow', string> = {
+  flow: 'FLOW STYLE (default): highlight ONLY the minimum letters/fragments a flower needs to jot the idea in real time — e.g. for "North Korea" highlight only "No" and "Ko"; for "national health insurance" highlight only the first letter of each word ("n", "h", "i"). Highlighted fragments do NOT need to form a grammatical phrase or a complete word — they are flow shorthand, not prose. Abbreviate aggressively: if a word\'s role is already clear from the surrounding highlighted fragments, don\'t highlight the rest of it.',
+  lay: 'LAY STYLE: highlight whole words/phrases (e.g. all of "North Korea", all of "national health insurance") so the highlighted portion reads as a grammatical, complete phrase a lay judge can follow by eye. Do not fragment words into partial letters.',
+};
+
+ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, cite, clarifications, cutStyle }: {
+  body: string; intent: string; highlightColor: string; cite?: string; clarifications?: { question: string; answer: string }[]; cutStyle?: 'lay' | 'flow';
 }) => {
   const text = String(body ?? '').trim();
   if (!text) throw new Error('No card body text to cut.');
   const skill = (await readSkill('card_cutting')) ?? '';
   const clar = clarifications ?? [];
+  const style = cutStyle === 'lay' ? 'lay' : 'flow';
 
   const prompt = await renderPrompt('cutter_emphasize', {
     CARD_CUTTING_SKILL: skill,
@@ -2905,6 +2914,7 @@ ipcMain.handle('ai:cutterEmphasize', async (_e, { body, intent, highlightColor, 
     BODY_TEXT: await capForPrompt(text, 40000, 'the card body'),
     CLARIFICATIONS_JSON: clar.length ? JSON.stringify(clar) : '(none yet)',
     QUESTIONS_ASKED: String(clar.length),
+    ABBREVIATION_STYLE: ABBREVIATION_STYLES[style],
   });
 
   // No `|| {}` fallback. That turned an unparseable reply into a card titled

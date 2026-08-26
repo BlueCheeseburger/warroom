@@ -320,6 +320,7 @@ declare global {
           highlightColor: HighlightColor;
           cite?: string;
           clarifications?: AIClarification[];
+          cutStyle?: 'lay' | 'flow';
         }) => Promise<CutterEmphasis>;
         readImageAsDataUrl: (filePath: string) => Promise<string>;
         suggestBlocks: (

@@ -49,6 +49,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
   // intent + color (step 3 = inside select step)
   const [intent, setIntent] = useState('');
   const [color, setColor] = useState<HighlightColor>('cyan');
+  const [cutStyle, setCutStyle] = useState<'lay' | 'flow'>('flow');
 
   // editor (step 4)
   const [editText, setEditText] = useState('');
@@ -79,7 +80,7 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
     setStep('cutting');
     setError('');
     try {
-      const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars });
+      const res = await window.warroom.ai.cutterEmphasize({ body: bodyText, intent: intentText, highlightColor: color, cite, clarifications: clars, cutStyle });
       if (res.question) { setPendingQuestion(res.question); return; }
       const attrs = buildAttrsFromSpans(bodyText, { underline: res.underline, highlight: res.highlight, small: res.small }, color);
       setEditText(bodyText);
@@ -369,6 +370,28 @@ export default function CardCutter({ onClose }: { onClose: () => void }) {
                       title={c}
                     />
                   ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-ink/55">Cut style:</span>
+                  <div className="inline-flex rounded-sm border border-line overflow-hidden">
+                    <button
+                      className="px-2.5 py-1 text-xs transition"
+                      style={cutStyle === 'flow' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
+                      onClick={() => setCutStyle('flow')}
+                      title="Abbreviate heavily — highlights only the letters/fragments a flower needs (e.g. 'No Ko' for North Korea). Sentences won't read grammatically."
+                    >
+                      Flow
+                    </button>
+                    <button
+                      className="px-2.5 py-1 text-xs transition border-l border-line"
+                      style={cutStyle === 'lay' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { color: 'var(--ink)', opacity: 0.55 }}
+                      onClick={() => setCutStyle('lay')}
+                      title="Highlight whole words/phrases so the emphasis reads as a grammatical phrase for a lay judge."
+                    >
+                      Lay
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-ink/35">{cutStyle === 'flow' ? 'Heavy abbreviation for competitive flowing' : 'Whole-word highlights, readable by eye'}</span>
                 </div>
               </div>
             </div>

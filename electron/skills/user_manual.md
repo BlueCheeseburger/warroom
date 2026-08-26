@@ -91,7 +91,7 @@ There's a **＋** button next to **Cards** in the sidebar (just like the one nex
 1. Click **＋** next to Cards and pick the saved `.html` page (or `.pdf`).
 2. **Warroom AI reads the source** — it pulls the cite (author, quals, date, title, URL), strips the page down to the real article body, and gathers the article's images (using alt text, ignoring ads/logos).
 3. **Choose the body.** Highlight the passages you want in the card and release — selections stack. Hover any selection and click **✕** to remove it. Open the **Pictures** dropdown to add any images (the ones Warroom AI thinks belong to the article are marked "suggested").
-4. **Tell Warroom AI the plan.** Type what you're using the card for and pick a **highlight color (yellow / cyan / neon green)**, then click **Cut card**.
+4. **Tell Warroom AI the plan.** Type what you're using the card for, pick a **highlight color (yellow / cyan / neon green)**, and pick a **cut style**: **Flow** (default) abbreviates highlights heavily — just the letters/fragments a competitive flower needs (e.g. only "No" and "Ko" in "North Korea") — so highlighted text won't read as a grammatical sentence. **Lay** highlights whole words/phrases instead, readable by eye for a lay judge. Then click **Cut card**.
 5. **Warroom AI cuts it** — it decides what to **underline** (read aloud), **highlight** (most important), and shrink to **small text** (kept for context, not read), and proposes **one or two taglines**. If it's genuinely unsure how to cut the card — usually because you left the plan blank and the passage supports more than one distinct argument — it'll ask you a quick clarifying question with a couple of options instead of guessing. Pick one (or type your own) and it finishes the cut. It only asks once.
 6. **Review & fix.** Pick a tagline or write your own, edit the cite/year, and use the mini editor to fix the emphasis: select text and hit **Underline / Highlight / Small / Clear**. You can't change the words (the body stays verbatim) — only the formatting.
 7. Click **Save card**. It lands in the **"Cut Cards"** case and shows up in the Cards view with its formatting intact.
@@ -266,6 +266,16 @@ The imported flow shows up in the sidebar named after the file — rename and ed
 
 ### Editing a flow
 The flow editor works like a paper flow, with some spreadsheet shortcuts on top.
+
+**New flows start as advantage flows.** Tabs come up as **Adv 1 / Adv 2 / Adv 3** plus four off-case slots, because nearly every modern policy aff is an advantage aff.
+
+**Reading a stock-issues aff instead?** Just start renaming a tab (double-click it) and type the stock issue — as soon as you've typed a few letters of **Inherency**, **Harms**, or **Solvency**, a card pops up offering to switch the whole flow. One click renames the unused Adv tabs for you, so you don't have to rename all three by hand.
+
+It's careful about it:
+- **It never renames a tab you named yourself** — only the untouched "Adv 1"-style defaults.
+- **It keeps what you typed where you typed it.** Type "Harms" into the first tab and Harms stays on the first tab; the others fill in around it.
+- **It's safe mid-round.** Unlike the Stock Issues/Advantage toggle in the toolbar (which rebuilds the flow and so disappears once you've written anything), this only renames empty default tabs — everything already on your flow stays put.
+- **Say no once and it stops asking** for that flow. "Solvency" is a perfectly normal advantage-flow tab, so a wrong guess costs you one click.
 
 **Format text in a cell.** While typing in a cell, select text and use the standard shortcuts (each also has a toolbar button):
 - **Bold** — ⌘B
@@ -588,6 +598,7 @@ Star icon in the title bar.
 - **Switch chats**: list icon in panel header
 - **Rename a chat**: click its title in the panel header to edit it. Once you rename a chat yourself, the title is locked — it'll never be overwritten by the auto-title or by the AI (see below).
 - **Attach context**: type `@` in the message box → select case/block/flow/opponent/image. Or use `+` button for .docx or image files.
+- **Context-attach suggestion**: if you have a speech doc, opponent, judge, or flow open when you're in the AI panel, a small banner above the composer offers to attach it for you — "Attach all" if multiple speech docs are open at once. Dismiss it and it won't ask again for that same item.
 - **Token saving**: strips body text from speech doc attachments to save cost. Toggle in attach menu or Settings.
 - **Models**: Flash Lite (cheapest), Flash (default), 3.7 Flash (best quality). Change in Settings → Gemini Model.
 - **Evidence search**: AI searches Logos/Open Evidence automatically when asked. Spinner shows per-search. Hover over a running search + click ✕ to exclude it.
@@ -751,7 +762,7 @@ One settings block covering everything about how flows work by default. None of 
 
 | Setting | Description |
 |---------|-------------|
-| Default layout for a new policy flow | Stock issues or Advantage |
+| Default layout for a new policy flow | Stock issues or Advantage (default **Advantage**) |
 | Default speech order for a new PF flow | Pro first or Con first |
 | Default zoom | 50–150% (default 100%), the zoom a brand-new flow opens at |
 | Default text size | 10–20px (default 13px), the cell text size a brand-new flow opens at |

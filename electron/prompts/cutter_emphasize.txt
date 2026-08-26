@@ -25,7 +25,7 @@ Each option must be a short, concrete framing (e.g. "Cut it as a uniqueness card
 Otherwise, return ONLY one JSON object (no markdown, no prose) with these fields:
 - "taglines": array of 1 OR 2 debate flow tags using em dashes (—) for structure. Maximum 10 words. Use CAPS selectively to stress the most important nouns/verbs — not every word, just the key ones that a debater would shout on a flow. Examples: "Iran attacks threaten deal — Hormuz CLOSURE INEVITABLE" or "Surveillance DETERS — detection forces restraint" or "INTERIM DEAL collapses — fighting spreads regionally". The style is mixed case with a few caps for emphasis, not shouting. Strong declarative claim (what the card PROVES), not a description. Offer 2 only if two genuinely distinct framings exist.
 - "underline": array of the EXACT verbatim substrings the debater should READ ALOUD (the "cut"). Copy them character-for-character from the body. This should be a meaningful, readable cut — not the entire body, not one fragment.
-- "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize.
+- "highlight": array of the EXACT verbatim substrings (the single most important words/phrases, normally a subset of the underlined text) to emphasize. {{ABBREVIATION_STYLE}}
 - "small": array of the EXACT verbatim substrings that should be KEPT for context but NOT read aloud (shrunk to small text). These must not overlap the underlined text.
 
 If clarifying Q&A is present above, use the user's answer to resolve the framing instead of asking again.
