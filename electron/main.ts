@@ -730,8 +730,8 @@ async function getGeminiModelId(): Promise<string> {
 
 const MODEL_TIER_IDS = {
   gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.7-flash' },
-  openai:    { lite: 'gpt-4.1-nano',          balanced: 'gpt-4.1-mini',      best: 'gpt-4.1' },
-  anthropic: { lite: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-5', best: 'claude-sonnet-4-6' },
+  openai:    { lite: 'gpt-5.6-luna',          balanced: 'gpt-5.6-terra',     best: 'gpt-5.6-sol' },
+  anthropic: { lite: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-5', best: 'claude-opus-5' },
   grok:      { lite: 'grok-4.1-fast',         balanced: 'grok-4.3',          best: 'grok-4.6' },
 } as const;
 
@@ -749,8 +749,8 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
     return 'balanced';
   }
   if (provider === 'openai') {
-    if (modelKey === 'gpt-4.1-nano') return 'lite';
-    if (modelKey === 'gpt-4.1')      return 'best';
+    if (modelKey === 'gpt-5.6-luna') return 'lite';
+    if (modelKey === 'gpt-5.6-sol')  return 'best';
     return 'balanced';
   }
   if (provider === 'grok') {
@@ -760,7 +760,7 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
   }
   // anthropic
   if (modelKey === 'claude-haiku-4-5-20251001') return 'lite';
-  if (modelKey === 'claude-sonnet-4-6')         return 'best';
+  if (modelKey === 'claude-opus-5')             return 'best';
   return 'balanced';
 }
 
@@ -827,7 +827,7 @@ async function getProviderForTask(
 
   const userModelKey: string =
     provider === 'gemini'    ? (s?.geminiModel    ?? 'flash')
-  : provider === 'openai'    ? (s?.openaiModel    ?? 'gpt-4.1-mini')
+  : provider === 'openai'    ? (s?.openaiModel    ?? 'gpt-5.6-terra')
   : provider === 'grok'      ? (s?.grokModel      ?? 'grok-4.1-fast')
   :                             (s?.anthropicModel ?? 'claude-sonnet-5');
 

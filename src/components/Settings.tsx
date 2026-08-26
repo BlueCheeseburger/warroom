@@ -66,21 +66,21 @@ const GEMINI_MODEL_OPTIONS = [
 
 const OPENAI_MODEL_OPTIONS = [
   {
-    value: 'gpt-4.1-nano',
-    label: 'GPT-4.1 nano',
+    value: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
     tooltip: 'Cheapest and fastest OpenAI model. Good for quick lookups and simple tasks.',
     default: false,
   },
   {
-    value: 'gpt-4.1-mini',
-    label: 'GPT-4.1 mini',
+    value: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
     tooltip: 'Best balance of speed, quality, and cost. Recommended for most users.',
     default: true,
   },
   {
-    value: 'gpt-4.1',
-    label: 'GPT-4.1',
-    tooltip: 'Most capable GPT-4.1 model. Best for complex analysis and card evaluation.',
+    value: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
+    tooltip: 'Most capable GPT-5.6 model. Best for complex analysis and card evaluation.',
     default: false,
   },
 ];
@@ -99,8 +99,8 @@ const ANTHROPIC_MODEL_OPTIONS = [
     default: true,
   },
   {
-    value: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
+    value: 'claude-opus-5',
+    label: 'Claude Opus 5',
     tooltip: 'Most powerful Claude model. Best for deep argument analysis and complex research.',
     default: false,
   },
@@ -128,8 +128,8 @@ type ModelTier = 'lite' | 'balanced' | 'best';
 
 const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
   gemini:    { lite: 'Gemini 2.5 Flash Lite', balanced: 'Gemini 2.5 Flash',      best: 'Gemini 3.7 Flash' },
-  openai:    { lite: 'GPT-4.1 nano',          balanced: 'GPT-4.1 mini',          best: 'GPT-4.1' },
-  anthropic: { lite: 'Claude Haiku 4.5',      balanced: 'Claude Sonnet 5',       best: 'Claude Sonnet 4.6' },
+  openai:    { lite: 'GPT-5.6 Luna',          balanced: 'GPT-5.6 Terra',          best: 'GPT-5.6 Sol' },
+  anthropic: { lite: 'Claude Haiku 4.5',      balanced: 'Claude Sonnet 5',       best: 'Claude Opus 5' },
   grok:      { lite: 'Grok 4.1 Fast',         balanced: 'Grok 4.3',              best: 'Grok 4.6' },
   // Local models have no cost tiers — the one loaded model runs every task.
   lmstudio:  { lite: 'your local model',      balanced: 'your local model',      best: 'your local model' },
@@ -186,8 +186,8 @@ function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
     return 'balanced';
   }
   if (provider === 'openai') {
-    if (modelKey === 'gpt-4.1-nano') return 'lite';
-    if (modelKey === 'gpt-4.1')      return 'best';
+    if (modelKey === 'gpt-5.6-luna') return 'lite';
+    if (modelKey === 'gpt-5.6-sol')  return 'best';
     return 'balanced';
   }
   if (provider === 'grok') {
@@ -197,7 +197,7 @@ function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
   }
   // anthropic
   if (modelKey === 'claude-haiku-4-5-20251001') return 'lite';
-  if (modelKey === 'claude-sonnet-4-6')         return 'best';
+  if (modelKey === 'claude-opus-5')             return 'best';
   return 'balanced';
 }
 
@@ -1000,7 +1000,7 @@ export default function Settings() {
     setDocOutlineLayout('space');
     setDocAdaptivePace(true);
   }
-  const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
+  const [openaiModel, setOpenaiModel] = useState('gpt-5.6-terra');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [openaiCustomModelId, setOpenaiCustomModelId] = useState('');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-5');
@@ -1547,7 +1547,7 @@ export default function Settings() {
       items: [
         { label: 'Active AI provider', current: apiProvider, def: 'gemini' },
         { label: 'Gemini model', current: geminiModel === 'custom' ? `custom: ${geminiCustomModelId}` : geminiModel, def: 'flash' },
-        { label: 'OpenAI model', current: openaiModel === 'custom' ? `custom: ${openaiCustomModelId}` : openaiModel, def: 'gpt-4.1-mini' },
+        { label: 'OpenAI model', current: openaiModel === 'custom' ? `custom: ${openaiCustomModelId}` : openaiModel, def: 'gpt-5.6-terra' },
         { label: 'Anthropic model', current: anthropicModel === 'custom' ? `custom: ${anthropicCustomModelId}` : anthropicModel, def: 'claude-sonnet-5' },
         { label: 'Grok model', current: grokModel === 'custom' ? `custom: ${grokCustomModelId}` : grokModel, def: 'grok-4.1-fast' },
         { label: 'LM Studio connection', current: lmCustomized ? 'Customized' : 'Default', def: 'Default' },
@@ -1555,7 +1555,7 @@ export default function Settings() {
       apply: () => {
         setApiProvider('gemini');
         saveGeminiModel('flash');
-        saveOpenaiModel('gpt-4.1-mini');
+        saveOpenaiModel('gpt-5.6-terra');
         saveAnthropicModel('claude-sonnet-5');
         saveGrokModel('grok-4.1-fast');
         setLmBaseUrl(LMSTUDIO_DEFAULT_BASE_URL);

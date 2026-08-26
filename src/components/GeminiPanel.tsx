@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useApp } from '../store/appStore';
 import MentionPicker from './MentionPicker';
 import { humanizeGeminiError } from '../utils/geminiError';
@@ -29,9 +29,9 @@ const GEMINI_MODEL_OPTIONS = [
   { value: 'flash-35',   label: '3.7 Flash' },
 ];
 const OPENAI_MODEL_OPTIONS = [
-  { value: 'gpt-4.1-nano', label: '4.1 nano' },
-  { value: 'gpt-4.1-mini', label: '4.1 mini' },
-  { value: 'gpt-4.1',      label: '4.1' },
+  { value: 'gpt-5.6-luna',  label: '5.6 Luna' },
+  { value: 'gpt-5.6-terra', label: '5.6 Terra' },
+  { value: 'gpt-5.6-sol',   label: '5.6 Sol' },
 ];
 const ANTHROPIC_MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
@@ -1481,10 +1481,14 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   onHistoryChange: (id: string, history: GeminiMsg[], firstMsg?: string) => void;
   titleLocked: boolean;
 }) {
-  const { update, agentSearchFns, db, setView, flowsIndex, cardOutdatedYears } = useApp();
+  const { update, agentSearchFns, db, setView, flowsIndex, cardOutdatedYears, view, extraDocPanes } = useApp();
   const [history, setHistory] = useState<GeminiMsg[]>(initialHistory);
   const [composerText, setComposerText] = useState(() => loadDraft(conversationId));
   const [pendingMentions, setPendingMentions] = useState<any[]>([]);
+  // Key of the last open-context combo the user dismissed (or attached) via the
+  // context-attach toast below — prevents re-showing the same combo repeatedly
+  // while it stays open. Resets naturally once the open item(s) change.
+  const [dismissedContextKey, setDismissedContextKey] = useState<string | null>(null);
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [showSlashPicker, setShowSlashPicker] = useState(false);
@@ -1521,7 +1525,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   // Leaving the chat mid-prompt declines rather than hanging.
   useEffect(() => () => { pendingSkillResolve.current?.(false); pendingSkillResolve.current = null; }, []);
   const [geminiModel, setGeminiModel] = useState('flash');
-  const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
+  const [openaiModel, setOpenaiModel] = useState('gpt-5.6-terra');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
   const [grokModel, setGrokModel] = useState('grok-4.1-fast');
   /** LM Studio's model is a free-text local id, shown read-only here — it's set in Settings. */
@@ -1730,6 +1734,57 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
       textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
   }
+
+  // Programmatic attach for the context-attach toast — same data-fetching as
+  // handleMentionSelect, but skips the @mention text insertion (there's no
+  // cursor/typed text to anchor to, and calling handleMentionSelect in a loop
+  // for multiple items would race on composerText's stale closure value).
+  async function attachContextItem(item: any) {
+    let data = item.data;
+    if (item.type === 'flow') {
+      try { data = await window.warroom?.storage.read(`flow_data_${item.id}`); } catch {}
+    } else if (item.type === 'speechdoc' && item.data?.filePath) {
+      try {
+        const res = await (window.warroom as any)?.speechdoc?.extract(item.data.filePath);
+        if (res?.ok) {
+          data = { filePath: item.data.filePath, full: res.data.full, tokenSaving: res.data.tokenSaving };
+        }
+      } catch {}
+    }
+    setPendingMentions((prev) => prev.find((p) => p.id === item.id) ? prev : [...prev, { ...item, data }]);
+  }
+
+  // Open-context detection for the attach toast — the app's `view` is a single
+  // tagged union (only one main view at a time), so speechdoc is the only kind
+  // that can have more than one item open at once (main pane + up to 2 compare
+  // panes); opponent/judge/flow are always exactly one when they match.
+  const openContextItems = useMemo(() => {
+    if (view.kind === 'speech-doc' && view.docPath) {
+      let recents: { path: string; name: string }[] = [];
+      try { recents = JSON.parse(localStorage.getItem('warroom-speech-doc-recents') ?? '[]'); } catch {}
+      const nameFor = (p: string) => recents.find((r) => r.path === p)?.name ?? p.split(/[\\/]/).pop() ?? p;
+      const paths = [view.docPath, ...extraDocPanes].filter((p): p is string => !!p);
+      return paths.map((p) => ({ type: 'speechdoc' as const, id: p, name: nameFor(p), data: { filePath: p } }));
+    }
+    if (view.kind === 'opponent') {
+      const o = db.opponents?.[view.opponentId];
+      return o ? [{ type: 'opponent' as const, id: o.id, name: o.teamName, data: { opponent: o } }] : [];
+    }
+    if (view.kind === 'judge') {
+      const j = db.judges?.[view.judgeId];
+      return j ? [{ type: 'judge' as const, id: j.id, name: j.name, data: { judge: j } }] : [];
+    }
+    if (view.kind === 'flow' && view.flowId) {
+      const f = flowsIndex.find((x) => x.id === view.flowId);
+      return f ? [{ type: 'flow' as const, id: f.id, name: f.name, data: null }] : [];
+    }
+    return [];
+  }, [view, db.opponents, db.judges, flowsIndex, extraDocPanes]);
+
+  const contextAttachKey = openContextItems.map((i) => `${i.type}:${i.id}`).sort().join(',');
+  const alreadyAttachedIds = new Set(pendingMentions.map((m) => m.id));
+  const contextItemsToOffer = openContextItems.filter((i) => !alreadyAttachedIds.has(i.id));
+  const showContextToast = contextItemsToOffer.length > 0 && contextAttachKey !== dismissedContextKey;
 
   async function compressImage(src: string): Promise<string> {
     return new Promise((resolve) => {
@@ -3273,7 +3328,36 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
 
       {/* Composer */}
       <div ref={composerRef} className="shrink-0 px-3 pt-2 pb-3 space-y-2"
-        style={{ borderTop: '1px solid var(--border-side)' }}>
+        style={{ borderTop: '1px solid var(--border-side)', position: 'relative' }}>
+        {/* Context-attach toast — floats just above the composer instead of taking
+            a flex slot, so it doesn't push the composer/chips down when it appears. */}
+        {showContextToast && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md"
+            style={{
+              position: 'absolute', left: 12, right: 12, bottom: '100%', marginBottom: 6,
+              background: 'var(--bg-card)', border: '1px solid var(--border-side)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.25)', zIndex: 10,
+            }}>
+            <span className="text-xs leading-none shrink-0">{TYPE_ICONS[contextItemsToOffer[0].type] ?? '📎'}</span>
+            <span className="flex-1 min-w-0 text-[11px] truncate" style={{ color: 'var(--ink)' }}>
+              {contextItemsToOffer.length === 1
+                ? <>Attach <strong>{contextItemsToOffer[0].name}</strong>?</>
+                : <>Attach {contextItemsToOffer.length} open speech docs?</>}
+            </span>
+            <button
+              onClick={() => { contextItemsToOffer.forEach(attachContextItem); setDismissedContextKey(contextAttachKey); }}
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0"
+              style={{ background: '#4285F4', color: 'white', border: 'none', cursor: 'pointer' }}
+            >
+              Attach{contextItemsToOffer.length > 1 ? ' all' : ''}
+            </button>
+            <button
+              onClick={() => setDismissedContextKey(contextAttachKey)}
+              title="Dismiss"
+              style={{ background: 'transparent', border: 'none', color: 'var(--nav-inactive-color)', cursor: 'pointer', flexShrink: 0, fontSize: 12, lineHeight: 1 }}
+            >×</button>
+          </div>
+        )}
         {/* Skill-write approval — see the pendingSkill declaration for why this gate exists. */}
         {pendingSkill && (
           <div className="px-2.5 py-2 rounded-lg space-y-2"
