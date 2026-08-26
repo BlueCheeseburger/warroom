@@ -1227,14 +1227,25 @@ async function callAI(prompt: string, taskTier: ModelTier | 'user', extraConfig?
 }
 
 // Gemini-specific call with Google Search grounding enabled. Used to look up
-// author credentials when they aren't in the article HTML itself. Falls back to
-// standard callAI if the user's provider isn't Gemini.
+// author credentials when they aren't in the article HTML itself. If the main
+// provider isn't Gemini, falls back to the Advanced auxiliary Gemini key
+// (Settings → AI → Advanced) if one is configured — that's the whole point of
+// that field, letting this Gemini-only capability work no matter the main
+// provider. Only falls back to a plain non-grounded call if no Gemini key
+// exists anywhere.
 async function callGeminiWithSearch(prompt: string): Promise<string> {
   const { provider, modelId, apiKey } = await getProviderForTask('balanced');
-  if (provider !== 'gemini') return callAI(prompt, 'balanced'); // non-Gemini: no search tool
-  const res = await fetchWithRetry(geminiGenerateUrl(modelId), {
+  let effectiveApiKey = apiKey;
+  let effectiveModelId = modelId;
+  if (provider !== 'gemini') {
+    const auxKey = await getSecure('gemini');
+    if (!auxKey) return callAI(prompt, 'balanced'); // no Gemini key anywhere: no search tool
+    effectiveApiKey = auxKey;
+    effectiveModelId = GEMINI_MODEL_IDS['flash'];
+  }
+  const res = await fetchWithRetry(geminiGenerateUrl(effectiveModelId), {
     method: 'POST',
-    headers: geminiHeaders(apiKey),
+    headers: geminiHeaders(effectiveApiKey),
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       tools: [{ google_search: {} }],
@@ -2465,15 +2476,20 @@ ipcMain.handle('dictation:transcribe', async (_e, audioBase64: string, mimeType:
       return sbOk(text);
     }
 
-    if (provider !== 'gemini') {
+    // Gemini path: either it's the main provider, or a Gemini key was added
+    // as the Advanced auxiliary key (Settings → AI → Advanced) specifically
+    // to unlock dictation/Search-grounding while some other provider stays
+    // primary — that key is stored under the same 'gemini' secure slot either
+    // way, so this lookup works for both cases without further branching.
+    const apiKey = await getSecure('gemini');
+    if (!apiKey) {
       return sbErr(
-        `Dictation isn't available on ${provider === 'anthropic' ? 'Anthropic' : provider === 'grok' ? 'Grok' : 'LM Studio'} — ` +
-        'switch to Gemini or OpenAI in Settings → AI, or turn on the offline dictation model (Settings → General, Beta) to transcribe with no cloud provider at all.'
+        provider === 'gemini'
+          ? 'No Gemini API key configured'
+          : `Dictation isn't available on ${provider === 'anthropic' ? 'Anthropic' : provider === 'grok' ? 'Grok' : 'LM Studio'} — ` +
+            'add a Gemini key in Settings → AI → Advanced to unlock dictation and Search grounding, switch to Gemini or OpenAI as your main provider, or turn on the offline dictation model (Settings → General, Beta) to transcribe with no cloud provider at all.'
       );
     }
-
-    const apiKey = await getSecure('gemini');
-    if (!apiKey) return sbErr('No Gemini API key configured');
     const body = {
       contents: [{
         parts: [

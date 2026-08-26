@@ -729,9 +729,10 @@ Gear icon at bottom of sidebar. A list of section jump-links runs down the left 
 | Auto Flow instructions | One line of your own instructions added to the Auto Flow sorting prompt — tab organisation, flow naming. Blank by default |
 | Work past the length limit | Off by default. Controls what happens when something is too long for Warroom AI to read at once — see "When something is too long" below |
 | AI provider | Gemini (default), OpenAI, Anthropic, Grok, or **LM Studio** (runs on your own computer — see below) |
-| Gemini API key | From aistudio.google.com. Required for all AI features. |
+| Gemini API key | From aistudio.google.com. Required for all AI features when Gemini is your main provider. |
 | Gemini model | Flash Lite / Flash (default) / 3.7 Flash |
 | LM Studio | Server URL, model, and options — no API key needed. See "LM Studio" below. |
+| Advanced → Gemini key | Only shown when your main provider isn't Gemini. Optional — unlocks the few things only Gemini can do (Google Search grounding for author credentials, dictation) without switching your main provider. Leave blank to skip them. |
 | Token saving default | Auto-strips body text from speech doc attachments |
 | OpenCaselist login | Your Tabroom.com email and password (same credentials) |
 | Google Drive | OAuth Client ID + Client Secret |

@@ -684,6 +684,14 @@ export default function Settings() {
   const [apiKeySaved, setApiKeySaved] = useState(false);
   // saved values per provider — used to show Edit vs Save and to restore when switching tabs
   const [savedKeys, setSavedKeys] = useState<Record<string, string>>({ gemini: '', openai: '', anthropic: '', grok: '' });
+  // Advanced (AI section) — auxiliary Gemini key, usable even when a different
+  // provider is the main one, for the handful of things only Gemini can do
+  // (Search grounding for author credentials, dictation). Shares the same
+  // 'gemini' secure slot as the main Gemini key — saving here just never
+  // touches apiProvider, unlike saveApiKey().
+  const [aiAdvancedOpen, setAiAdvancedOpen] = useState(false);
+  const [geminiAuxKey, setGeminiAuxKey] = useState('');
+  const [geminiAuxKeySaved, setGeminiAuxKeySaved] = useState(false);
   // ── LM Studio (local server — no API key) ──────────────────────────────────
   const [lmBaseUrl, setLmBaseUrl] = useState(LMSTUDIO_DEFAULT_BASE_URL);
   const [lmModel, setLmModel] = useState(LMSTUDIO_DEFAULT_MODEL);
@@ -708,6 +716,7 @@ export default function Settings() {
   // API key box has its own draft-vs-saved gap too (typed but not yet clicked
   // Save/Edit) — folded into the same "unsaved changes" concept below.
   const apiKeyDirty = apiProvider !== 'lmstudio' && apiKey !== (savedKeys[apiProvider] ?? '');
+  const geminiAuxKeyDirty = apiProvider !== 'gemini' && geminiAuxKey !== (savedKeys.gemini ?? '');
   /** Model ids fetched from the running server — null until the user asks for them. */
   const [lmFound, setLmFound] = useState<string[] | null>(null);
   // Separate from `lmFound` itself so re-collapsing doesn't throw away the last
@@ -1128,6 +1137,7 @@ export default function Settings() {
       const provider: AIProvider = (s as any)?.apiProvider ?? 'gemini';
       setApiProvider(provider);
       setApiKey(keys[provider] ?? '');
+      setGeminiAuxKey(keys.gemini ?? '');
       setLoaded(true);
     });
     (window.warroom as any)?.dictation?.offlineModelStatus?.().then((res: any) => {
@@ -1308,6 +1318,19 @@ export default function Settings() {
     window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiKeySaved: true } }));
   }
 
+  // Writes ONLY the shared 'gemini' secure slot — unlike saveApiKey(), never
+  // touches apiProvider, since the whole point is to add Gemini for a couple
+  // of side capabilities without switching the user's main provider. Allows
+  // saving an empty string too, so the field doubles as a way to remove it.
+  async function saveGeminiAuxKey() {
+    const val = geminiAuxKey.trim();
+    await window.warroom.secure.set('gemini', val);
+    setSavedKeys((prev) => ({ ...prev, gemini: val }));
+    setGeminiAuxKeySaved(true);
+    setTimeout(() => setGeminiAuxKeySaved(false), 2000);
+    window.dispatchEvent(new CustomEvent('warroom-settings-change', { detail: { apiKeySaved: true } }));
+  }
+
   // Both of these MERGE into existing app_settings rather than replacing it. They
   // used to write a fresh `{ event, geminiModel, tokenSavingDefault }` object, which
   // silently wiped every other key in the file — apiProvider, the per-provider model
@@ -1441,7 +1464,7 @@ export default function Settings() {
   // click/toggle them (theme, event, notifications, model picks…) — these two
   // are the only real "draft" inputs, since they need an explicit Save click.
   const unsavedRef = React.useRef(false);
-  unsavedRef.current = lmDirty || apiKeyDirty;
+  unsavedRef.current = lmDirty || apiKeyDirty || geminiAuxKeyDirty;
   const settingsViewRef = React.useRef(view);
   settingsViewRef.current = view;
   useEffect(() => {
@@ -2953,6 +2976,53 @@ export default function Settings() {
           )}
         </div>
       )}
+
+        {/* Advanced — a Gemini key here works alongside any other main
+            provider, purely to unlock the couple of things only Gemini can
+            do (Search grounding for author credentials, dictation). No model
+            or parameter choices, on purpose — just the key. Hidden when
+            Gemini is already the main provider, since its key above already
+            covers this. */}
+        {loaded && apiProvider !== 'gemini' && (
+          <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--border-side)' }}>
+            <button
+              onClick={() => setAiAdvancedOpen((v) => !v)}
+              className="flex items-center gap-1.5 text-xs font-medium transition"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)', opacity: 0.75 }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: aiAdvancedOpen ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }}>
+                <polyline points="4 2 8 6 4 10" />
+              </svg>
+              Advanced
+            </button>
+
+            {aiAdvancedOpen && (
+              <div className="mt-3">
+                <div className="label mb-1">Gemini key <span className="opacity-50 font-normal">(optional)</span></div>
+                <p className="text-xs mb-2 text-ink/50 leading-relaxed">
+                  A small number of features only Gemini can do — looking up an author's credentials via Google
+                  Search when they're missing from an article, and voice dictation. Add a Gemini key here to
+                  unlock those without switching your main provider. Leave blank to skip them; nothing else
+                  about your setup changes.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1 font-mono text-xs"
+                    type="password"
+                    placeholder="AIza…"
+                    value={geminiAuxKey}
+                    onChange={(e) => setGeminiAuxKey(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveGeminiAuxKey()}
+                  />
+                  <button className="btn-primary" onClick={saveGeminiAuxKey} title="Save this Gemini key for Search grounding and dictation only">
+                    {geminiAuxKeySaved ? 'Saved ✓' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Integrations — OpenCaselist/Tabroom login and Google Drive, merged

@@ -2612,6 +2612,10 @@ export default function Documentation() {
                 <span className="ml-2 text-ink/60">Server URL, model id, and Loaded models. An Advanced section (closed by default) holds request options (JSON), the tool-calling toggle, and a per-tier model override. No API key — see the LM Studio section.</span>
               </div>
               <div>
+                <span className="font-semibold text-ink">Advanced → Gemini key (auxiliary)</span>
+                <span className="ml-2 text-ink/60">Only shown when <Code>apiProvider</Code> isn't Gemini. Optional key stored under the same secure <Code>gemini</Code> slot as the main Gemini key, so <Code>callGeminiWithSearch</Code> (cite credential lookups) and <Code>dictation:transcribe</Code> can use it directly — independent of <Code>apiProvider</Code> — instead of requiring Gemini to be the main provider. Saving it never touches <Code>apiProvider</Code>.</span>
+              </div>
+              <div>
                 <span className="font-semibold text-ink">Gemini model</span>
                 <span className="ml-2 text-ink/60">Flash Lite / Flash (default) / 3.7 Flash</span>
               </div>
