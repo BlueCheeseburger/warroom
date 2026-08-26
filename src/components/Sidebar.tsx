@@ -1612,9 +1612,10 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
           {onTitleClick ? (
             <span
               role="button" tabIndex={0}
+              title={title}
               onClick={(e) => { e.stopPropagation(); onTitleClick(); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onTitleClick(); } }}
-              className="text-[9px] uppercase tracking-[0.2em] font-bold transition"
+              className="text-[9px] uppercase tracking-[0.2em] font-bold transition truncate min-w-0"
               style={{ color: 'var(--nav-section-color)' }}
               onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)')}
               onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-section-color)')}
@@ -1622,7 +1623,7 @@ function Section({ title, children, action, actionLabel, actionTitle, icon, defa
               {title}
             </span>
           ) : (
-            <span className="text-[9px] uppercase tracking-[0.2em] font-bold" style={{ color: 'var(--nav-section-color)' }}>
+            <span title={title} className="text-[9px] uppercase tracking-[0.2em] font-bold truncate min-w-0" style={{ color: 'var(--nav-section-color)' }}>
               {title}
             </span>
           )}
