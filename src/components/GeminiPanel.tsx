@@ -34,14 +34,14 @@ const OPENAI_MODEL_OPTIONS = [
   { value: 'gpt-4.1',      label: '4.1' },
 ];
 const ANTHROPIC_MODEL_OPTIONS = [
-  { value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
   { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6' },
   { value: 'claude-opus-4-8',           label: 'Opus 4.8' },
 ];
 const GROK_MODEL_OPTIONS = [
-  { value: 'grok-3-mini', label: 'Grok 3 mini' },
-  { value: 'grok-3',      label: 'Grok 3' },
-  { value: 'grok-3-fast', label: 'Grok 3 fast' },
+  { value: 'grok-4.1-fast', label: 'Grok 4.1 Fast' },
+  { value: 'grok-4.6',      label: 'Grok 4.6' },
+  { value: 'grok-4.3',      label: 'Grok 4.3' },
 ];
 type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
 function modelOptionsFor(provider: AIProvider) {
@@ -1523,7 +1523,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   const [geminiModel, setGeminiModel] = useState('flash');
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
-  const [grokModel, setGrokModel] = useState('grok-3-mini');
+  const [grokModel, setGrokModel] = useState('grok-4.1-fast');
   /** LM Studio's model is a free-text local id, shown read-only here — it's set in Settings. */
   const [lmModel, setLmModel] = useState('');
   const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');

@@ -731,8 +731,8 @@ async function getGeminiModelId(): Promise<string> {
 const MODEL_TIER_IDS = {
   gemini:    { lite: 'gemini-2.5-flash-lite', balanced: 'gemini-2.5-flash',  best: 'gemini-3.7-flash' },
   openai:    { lite: 'gpt-4.1-nano',          balanced: 'gpt-4.1-mini',      best: 'gpt-4.1' },
-  anthropic: { lite: 'claude-3-5-haiku-20241022', balanced: 'claude-3-5-sonnet-20241022', best: 'claude-sonnet-4-6' },
-  grok:      { lite: 'grok-3-mini',           balanced: 'grok-3-fast',       best: 'grok-3' },
+  anthropic: { lite: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-5', best: 'claude-sonnet-4-6' },
+  grok:      { lite: 'grok-4.1-fast',         balanced: 'grok-4.3',          best: 'grok-4.6' },
 } as const;
 
 type Provider = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'lmstudio';
@@ -754,12 +754,12 @@ function resolveUserTier(provider: Provider, modelKey: string): ModelTier {
     return 'balanced';
   }
   if (provider === 'grok') {
-    if (modelKey === 'grok-3-mini') return 'lite';
-    if (modelKey === 'grok-3')      return 'best';
+    if (modelKey === 'grok-4.1-fast') return 'lite';
+    if (modelKey === 'grok-4.6')      return 'best';
     return 'balanced';
   }
   // anthropic
-  if (modelKey === 'claude-3-5-haiku-20241022') return 'lite';
+  if (modelKey === 'claude-haiku-4-5-20251001') return 'lite';
   if (modelKey === 'claude-sonnet-4-6')         return 'best';
   return 'balanced';
 }
@@ -828,8 +828,8 @@ async function getProviderForTask(
   const userModelKey: string =
     provider === 'gemini'    ? (s?.geminiModel    ?? 'flash')
   : provider === 'openai'    ? (s?.openaiModel    ?? 'gpt-4.1-mini')
-  : provider === 'grok'      ? (s?.grokModel      ?? 'grok-3-mini')
-  :                             (s?.anthropicModel ?? 'claude-3-5-sonnet-20241022');
+  : provider === 'grok'      ? (s?.grokModel      ?? 'grok-4.1-fast')
+  :                             (s?.anthropicModel ?? 'claude-sonnet-5');
 
   const secureKey = provider === 'openai' ? 'openai_key' : provider === 'anthropic' ? 'anthropic_key' : provider === 'grok' ? 'grok_key' : 'gemini';
   const apiKey = (await getSecure(secureKey)) ?? '';

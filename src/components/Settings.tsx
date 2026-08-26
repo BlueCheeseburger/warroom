@@ -87,14 +87,14 @@ const OPENAI_MODEL_OPTIONS = [
 
 const ANTHROPIC_MODEL_OPTIONS = [
   {
-    value: 'claude-3-5-haiku-20241022',
-    label: 'Claude Haiku 3.5',
+    value: 'claude-haiku-4-5-20251001',
+    label: 'Claude Haiku 4.5',
     tooltip: 'Fastest and cheapest Claude model. Good for quick lookups and summaries.',
     default: false,
   },
   {
-    value: 'claude-3-5-sonnet-20241022',
-    label: 'Claude Sonnet 3.5',
+    value: 'claude-sonnet-5',
+    label: 'Claude Sonnet 5',
     tooltip: 'Best balance of speed, quality, and cost. Recommended for most users.',
     default: true,
   },
@@ -129,8 +129,8 @@ type ModelTier = 'lite' | 'balanced' | 'best';
 const TIER_LABELS: Record<AIProvider, { lite: string; balanced: string; best: string }> = {
   gemini:    { lite: 'Gemini 2.5 Flash Lite', balanced: 'Gemini 2.5 Flash',      best: 'Gemini 3.7 Flash' },
   openai:    { lite: 'GPT-4.1 nano',          balanced: 'GPT-4.1 mini',          best: 'GPT-4.1' },
-  anthropic: { lite: 'Claude Haiku 3.5',      balanced: 'Claude Sonnet 3.5',     best: 'Claude Sonnet 4.6' },
-  grok:      { lite: 'Grok 3 mini',           balanced: 'Grok 3 fast',           best: 'Grok 3' },
+  anthropic: { lite: 'Claude Haiku 4.5',      balanced: 'Claude Sonnet 5',       best: 'Claude Sonnet 4.6' },
+  grok:      { lite: 'Grok 4.1 Fast',         balanced: 'Grok 4.3',              best: 'Grok 4.6' },
   // Local models have no cost tiers — the one loaded model runs every task.
   lmstudio:  { lite: 'your local model',      balanced: 'your local model',      best: 'your local model' },
 };
@@ -191,12 +191,12 @@ function getModelTier(provider: AIProvider, modelKey: string): ModelTier {
     return 'balanced';
   }
   if (provider === 'grok') {
-    if (modelKey === 'grok-3-mini') return 'lite';
-    if (modelKey === 'grok-3')      return 'best';
+    if (modelKey === 'grok-4.1-fast') return 'lite';
+    if (modelKey === 'grok-4.6')      return 'best';
     return 'balanced';
   }
   // anthropic
-  if (modelKey === 'claude-3-5-haiku-20241022') return 'lite';
+  if (modelKey === 'claude-haiku-4-5-20251001') return 'lite';
   if (modelKey === 'claude-sonnet-4-6')         return 'best';
   return 'balanced';
 }
@@ -1003,10 +1003,10 @@ export default function Settings() {
   const [openaiModel, setOpenaiModel] = useState('gpt-4.1-mini');
   const [openaiModelSaved, setOpenaiModelSaved] = useState(false);
   const [openaiCustomModelId, setOpenaiCustomModelId] = useState('');
-  const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
+  const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-5');
   const [anthropicModelSaved, setAnthropicModelSaved] = useState(false);
   const [anthropicCustomModelId, setAnthropicCustomModelId] = useState('');
-  const [grokModel, setGrokModel] = useState('grok-3-mini');
+  const [grokModel, setGrokModel] = useState('grok-4.1-fast');
   const [grokModelSaved, setGrokModelSaved] = useState(false);
   const [grokCustomModelId, setGrokCustomModelId] = useState('');
   const [ocUser, setOcUser] = useState('');
@@ -1548,16 +1548,16 @@ export default function Settings() {
         { label: 'Active AI provider', current: apiProvider, def: 'gemini' },
         { label: 'Gemini model', current: geminiModel === 'custom' ? `custom: ${geminiCustomModelId}` : geminiModel, def: 'flash' },
         { label: 'OpenAI model', current: openaiModel === 'custom' ? `custom: ${openaiCustomModelId}` : openaiModel, def: 'gpt-4.1-mini' },
-        { label: 'Anthropic model', current: anthropicModel === 'custom' ? `custom: ${anthropicCustomModelId}` : anthropicModel, def: 'claude-3-5-sonnet-20241022' },
-        { label: 'Grok model', current: grokModel === 'custom' ? `custom: ${grokCustomModelId}` : grokModel, def: 'grok-3-mini' },
+        { label: 'Anthropic model', current: anthropicModel === 'custom' ? `custom: ${anthropicCustomModelId}` : anthropicModel, def: 'claude-sonnet-5' },
+        { label: 'Grok model', current: grokModel === 'custom' ? `custom: ${grokCustomModelId}` : grokModel, def: 'grok-4.1-fast' },
         { label: 'LM Studio connection', current: lmCustomized ? 'Customized' : 'Default', def: 'Default' },
       ],
       apply: () => {
         setApiProvider('gemini');
         saveGeminiModel('flash');
         saveOpenaiModel('gpt-4.1-mini');
-        saveAnthropicModel('claude-3-5-sonnet-20241022');
-        saveGrokModel('grok-3-mini');
+        saveAnthropicModel('claude-sonnet-5');
+        saveGrokModel('grok-4.1-fast');
         setLmBaseUrl(LMSTUDIO_DEFAULT_BASE_URL);
         setLmModel(LMSTUDIO_DEFAULT_MODEL);
         setLmOptions('');
@@ -2717,9 +2717,9 @@ export default function Settings() {
             </p>
             <div className="space-y-1.5">
               {[
-                { value: 'grok-3-mini', label: 'Grok 3 mini', tooltip: 'Fast and cost-efficient. Good for quick analysis.', default: true },
-                { value: 'grok-3',      label: 'Grok 3',      tooltip: 'Full flagship model. Best quality for complex reasoning.' },
-                { value: 'grok-3-fast', label: 'Grok 3 fast', tooltip: 'Fast version of Grok 3 with slightly reduced quality.' },
+                { value: 'grok-4.1-fast', label: 'Grok 4.1 Fast', tooltip: 'Fast and cost-efficient. Good for quick analysis.', default: true },
+                { value: 'grok-4.6',      label: 'Grok 4.6',      tooltip: 'Full flagship model. Best quality for complex reasoning.' },
+                { value: 'grok-4.3',      label: 'Grok 4.3',      tooltip: 'Balanced mid-tier model — strong quality at a lower cost than the flagship.' },
               ].map((o) => (
                 <div key={o.value} className="relative group">
                   <button
