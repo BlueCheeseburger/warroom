@@ -50,7 +50,13 @@ export function emptyAttrs(len: number): CharAttr[] {
 // This matters most for flow-style short letter fragments, which otherwise collide
 // with the same letters occurring inside unrelated words throughout the body.
 function isWordStart(text: string, idx: number): boolean {
-  return idx === 0 || !/[A-Za-z0-9']/.test(text[idx - 1]);
+  if (idx === 0) return true;
+  // If the match's own first character isn't a letter (e.g. it starts at an
+  // em dash or quote), there's no word being split — any boundary is fine.
+  // This matters for unspaced em dashes ("criterion—which"), which the
+  // card-cutting skill explicitly produces.
+  if (!/[A-Za-z0-9']/.test(text[idx])) return true;
+  return !/[A-Za-z0-9']/.test(text[idx - 1]);
 }
 
 // Find every range of `sub` within `text`. Exact match first, then a
