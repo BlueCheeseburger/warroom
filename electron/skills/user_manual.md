@@ -96,7 +96,7 @@ There's a **＋** button next to **Cards** in the sidebar (just like the one nex
 6. **Review & fix.** Pick a tagline or write your own, edit the cite/year, and use the mini editor to fix the emphasis: select text and hit **Underline / Highlight / Small / Clear**. You can't change the words (the body stays verbatim) — only the formatting. Use the **Highlight density** control (Less / Medium / More) to show only the most essential highlights or the full set Warroom AI found — it's instant and free (no extra AI call), but re-picking a density level resets any manual highlight/underline edits you made below it.
 7. Click **Save card**. It lands in the **"Cut Cards"** case and shows up in the Cards view with its formatting intact.
 
-Notes: HTML keeps images, PDF is text-only. Scanned/image-only PDFs have no selectable text to cut. Neon green highlight counts as "read aloud" everywhere in Warroom, alongside yellow and cyan. This needs a working AI key (Settings → API Keys).
+Notes: HTML keeps images, PDF is text-only. Scanned/image-only PDFs have no selectable text to cut. Neon green highlight counts as "read aloud" everywhere in Warroom, alongside yellow and cyan. This needs a working AI key (Settings → AI).
 
 By default, step 2's short cite for a source published this year uses month-day (`Guitierrez 7-31`) rather than the two-digit year — switch that to always use the year (`Guitierrez 26`) in Settings → General → **Current-year short cite**. Sources from a past year always use the two-digit year either way.
 
@@ -438,9 +438,9 @@ If the parser can place a card but can't tell which position it belongs to, it s
 
 The AI card-summary toggle only appears in Warroom AI mode, since it is itself an API call.
 
-**Your own instructions.** **Settings → Auto Flow instructions** is a single line, in your own words, added to what Warroom AI is told every time it sorts a doc. Use it for how you want tabs organised ("always give T its own tab", "keep all the K stuff together") or how new flows should be named ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on anything it covers, including the aff-name default above. It can't be used to change what Auto Flow returns — every card is still sorted, and cards are never dropped or invented on instruction. Leave it blank for the defaults.
+**Your own instructions.** **Settings → Flow & Auto Flow → Auto Flow instructions** is a single line, in your own words, added to what Warroom AI is told every time it sorts a doc. Use it for how you want tabs organised ("always give T its own tab", "keep all the K stuff together") or how new flows should be named ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on anything it covers, including the aff-name default above. It can't be used to change what Auto Flow returns — every card is still sorted, and cards are never dropped or invented on instruction. Leave it blank for the defaults.
 
-**Tag styling.** Go to **Settings → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
+**Tag styling.** Go to **Settings → Flow & Auto Flow → Auto Flow tag style** to set whether Auto Flow writes tags in bold, italic, and/or underline (the cite line is always plain). The live preview shows exactly how a tag will look.
 
 ---
 
@@ -553,7 +553,7 @@ Instead of a cloud API, Warroom can talk to **LM Studio** — a free app that ru
 **Setup**
 1. Install LM Studio from lmstudio.ai and download a model in it (Gemma 4 12B is the default Warroom expects).
 2. In LM Studio, load the model, then open the **Developer** tab and click **Start Server**. It listens on `http://localhost:1234` by default.
-3. In Warroom: **Settings → AI API key → LM Studio**.
+3. In Warroom: **Settings → AI → LM Studio**.
 4. Click **Loaded models** — Warroom asks your server what it has and lists it. Click the one you want.
 5. Click **Test connection**. You should see the model reply "ready" with how long it took.
 
@@ -678,7 +678,7 @@ Your 5 most recently opened chats show their last 50 messages instantly when you
 ---
 
 ## Google Drive
-- **Setup**: Settings → Google Drive → enter OAuth Client ID + Secret (create Desktop app credential in Google Cloud Console) → "Connect Drive"
+- **Setup**: Settings → Integrations → Google Drive → enter OAuth Client ID + Secret (create Desktop app credential in Google Cloud Console) → "Connect Drive"
 - **Browse**: Google Drive from sidebar
 - .docx → Speech Doc Viewer. .xlsx → Flows.
 
@@ -696,7 +696,7 @@ Topics screen (sidebar or Settings).
 
 ## When something is too long for Warroom AI
 
-Warroom AI can only read so much at once. What happens past that point is up to you — **Settings → Work past the length limit**.
+Warroom AI can only read so much at once. What happens past that point is up to you — **Settings → AI → Work past the length limit**.
 
 **Off (the default).** Anything over the limit is trimmed and you're asked before it's sent, with the exact numbers ("sending 60,000 of 412,000 characters of your flow"). Cancel and nothing is sent at all. Whatever does get sent is your real text in full — the rest simply isn't sent.
 

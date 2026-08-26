@@ -48,10 +48,10 @@ export function humanizeGeminiError(raw: string | undefined | null, provider?: A
     return `You've hit your ${info.name} usage limit. Wait a minute, then try again — or check your quota at ${info.quotaHost}.`;
 
   if (msg.includes('api_key_invalid') || msg.includes('invalid api key') || msg.includes('api key not valid'))
-    return `Your ${info.name} API key isn't working. Double-check it in Settings → API Keys.`;
+    return `Your ${info.name} API key isn't working. Double-check it in Settings → AI.`;
 
   if (msg.includes('permission_denied') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('401'))
-    return `${info.name} rejected the request — your API key may not have access to this model. Check Settings → API Keys.`;
+    return `${info.name} rejected the request — your API key may not have access to this model. Check Settings → AI.`;
 
   if (msg.includes('safety') || msg.includes('blocked') || msg.includes('harm'))
     return `${info.name} flagged that response for safety reasons. Try rephrasing or adjusting your question.`;
@@ -69,7 +69,7 @@ export function humanizeGeminiError(raw: string | undefined | null, provider?: A
     return `Couldn't reach ${info.name} — check your internet connection and try again.`;
 
   if (msg.includes('no_key') || msg.includes('api key'))
-    return `Add your ${info.name} API key in Settings → API Keys to use AI features.`;
+    return `Add your ${info.name} API key in Settings → AI to use AI features.`;
 
   if (msg.includes('model') && (msg.includes('not found') || msg.includes('deprecated') || msg.includes('unsupported')))
     return `The selected ${info.name} model isn't available. Try switching models in Settings.`;

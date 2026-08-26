@@ -150,7 +150,7 @@ function sheetsForVariant(event: 'policy' | 'pf', variant: PolicyVariant): strin
 }
 
 // Builds the cell HTML for one card's tag+cite, honoring the user's Auto Flow tag
-// style (Settings → Auto Flow tag style). Only bold/italic/underline are applied
+// style (Settings → Flow & Auto Flow → Auto Flow tag style). Only bold/italic/underline are applied
 // — color and fontSize are NOT, because a flow cell can't carry them (see the
 // comment in src/lib/autoFlowTagStyle.ts and src/lib/cellHtml.ts's
 // ALLOWED_STYLE_PROPS: no per-run color or font-size support in a cell, so

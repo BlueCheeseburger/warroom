@@ -1003,7 +1003,7 @@ function isTruncatedResponse(e: unknown): boolean {
  * not an internal field name.
  */
 /**
- * Settings → Warroom AI behavior → long inputs.
+ * Settings → AI → Long inputs.
  *
  * `allowed` off (the default) means "never go past the length limit": the input
  * is capped and the user is asked first. On, `method` picks HOW the extra is
@@ -2045,7 +2045,7 @@ async function classifyBatch(
     clar: { question: string; answer: string }[];
     /** Sheet names the flow already had PLUS any earlier batches proposed. */
     knownSheets: string[];
-    /** Settings → Auto Flow instructions. Empty string when the user set none. */
+    /** Settings → Flow & Auto Flow → Auto Flow instructions. Empty string when the user set none. */
     customInstructions: string;
     /** Batches after the first may not stop to ask a clarifying question. */
     allowQuestion: boolean;
@@ -3125,7 +3125,7 @@ ipcMain.handle('ai:analyzeRound', async (_e, params: {
     const looksTruncated = raw.trim().length > 0 && !/[}\]]\s*$/.test(raw.trim());
     throw new Error(
       looksTruncated
-        ? 'Warroom AI\'s response got cut off before it finished — this round may have too much on it. Try again, or turn on Settings → Work past the length limit so a big round can be read in pieces.'
+        ? 'Warroom AI\'s response got cut off before it finished — this round may have too much on it. Try again, or turn on Settings → AI → "Work past the length limit" so a big round can be read in pieces.'
         : 'Warroom AI did not return a usable analysis. Try again.'
     );
   }
@@ -3315,7 +3315,7 @@ ipcMain.handle('ai:parseRoundEmail', async (_e, { filePath, imageBase64, mimeTyp
       }
       const isNoKey = /NO_KEY|401|403|api.key/i.test(String(geminiErr.message));
       if (isNoKey) {
-        return { ok: false, error: 'Gemini API key not set. Add your key in Settings → API Keys.' };
+        return { ok: false, error: 'Gemini API key not set. Add your key in Settings → AI.' };
       }
       // Generic fallback: show OCR diagnostic if available
       if (ocrText.trim()) {

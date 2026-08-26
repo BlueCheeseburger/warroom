@@ -1,6 +1,6 @@
 // Handling input that's too big for one prompt.
 //
-// Three strategies, chosen by the user in Settings → Warroom AI behavior:
+// Three strategies, chosen by the user in Settings → AI → Long inputs:
 //
 //   'ask'    — don't go past the limit. Cap and ask first (capForPrompt).
 //              Whatever fits is sent in full; the rest is simply not sent.
@@ -256,7 +256,7 @@ export function overContextLimit(prompt: string, limit: number | null): string |
   return (
     `This is too big for Warroom AI to read at once — roughly ${tokens.toLocaleString()} tokens ` +
     `against this model's limit of ${limit.toLocaleString()}. Nothing was sent. ` +
-    `Remove some documents, or turn on Settings → Warroom AI behavior → "Work past the length limit" ` +
+    `Remove some documents, or turn on Settings → AI → "Work past the length limit" ` +
     `so it can be read in pieces.`
   );
 }

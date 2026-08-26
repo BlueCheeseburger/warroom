@@ -35,8 +35,8 @@ const OPENAI_MODEL_OPTIONS = [
 ];
 const ANTHROPIC_MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-  { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6' },
-  { value: 'claude-opus-4-8',           label: 'Opus 4.8' },
+  { value: 'claude-sonnet-5',           label: 'Sonnet 5' },
+  { value: 'claude-opus-5',             label: 'Opus 5' },
 ];
 const GROK_MODEL_OPTIONS = [
   { value: 'grok-4.1-fast', label: 'Grok 4.1 Fast' },
@@ -272,7 +272,41 @@ function ThinkingDots() {
 
 // ─── Context window indicator ─────────────────────────────────────────────────
 
-const GEMINI_CTX_TOKENS = 1_000_000; // Gemini 2.5 Flash context window
+// Real published input-token context windows, keyed by provider then model id
+// (matching GEMINI_MODEL_OPTIONS / OPENAI_MODEL_OPTIONS / etc above) — this is
+// only an estimate for the arc's percentage, not an enforced limit (the actual
+// preflight/truncation logic lives in electron/main.ts's resolveContextLimit,
+// which asks the provider directly where possible). Keep in sync with those
+// option lists whenever a new model is added.
+const CONTEXT_WINDOW_TOKENS: Partial<Record<AIProvider, Record<string, number>>> = {
+  gemini: {
+    'flash-lite': 1_000_000,
+    'flash':      1_000_000,
+    'flash-35':   1_000_000, // Gemini 3.7 Flash
+  },
+  openai: {
+    'gpt-5.6-luna':  1_000_000,
+    'gpt-5.6-terra': 1_000_000,
+    'gpt-5.6-sol':   1_000_000,
+  },
+  anthropic: {
+    'claude-haiku-4-5-20251001': 200_000,
+    'claude-sonnet-5':           1_000_000,
+    'claude-opus-5':             1_000_000,
+  },
+  grok: {
+    'grok-4.1-fast': 2_000_000,
+    'grok-4.3':      1_000_000,
+    'grok-4.6':        500_000,
+  },
+  // LM Studio's window depends on how the user loaded the local model — no
+  // fixed table applies, so callers fall back to a conservative default.
+};
+const DEFAULT_CTX_TOKENS = 128_000;
+
+function contextWindowFor(provider: AIProvider, model: string): number {
+  return CONTEXT_WINDOW_TOKENS[provider]?.[model] ?? DEFAULT_CTX_TOKENS;
+}
 
 function estimateTokens(history: GeminiMsg[]): number {
   return Math.round(
@@ -280,8 +314,8 @@ function estimateTokens(history: GeminiMsg[]): number {
   );
 }
 
-function ContextArc({ tokens }: { tokens: number }) {
-  const pct = Math.min(tokens / GEMINI_CTX_TOKENS, 1);
+function ContextArc({ tokens, ctxTokens }: { tokens: number; ctxTokens: number }) {
+  const pct = Math.min(tokens / ctxTokens, 1);
   const R = 8;
   const C = 2 * Math.PI * R;
   const dash = pct * C;
@@ -1120,18 +1154,32 @@ export default function GeminiPanel() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [apiProvider, setApiProvider] = useState<AIProvider>('gemini');
+  // Just enough model state to size the context-window indicator correctly —
+  // the full model-picker state lives in GeminiBody below.
+  const [ctxModelByProvider, setCtxModelByProvider] = useState<Partial<Record<AIProvider, string>>>({});
 
   useEffect(() => {
     window.warroom?.storage.read('app_settings').then((s: any) => {
       if (s?.apiProvider) setApiProvider(s.apiProvider);
+      setCtxModelByProvider({
+        gemini: s?.geminiModel, openai: s?.openaiModel,
+        anthropic: s?.anthropicModel, grok: s?.grokModel,
+      });
     }).catch(() => {});
     function onSettingsChange(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (detail?.apiProvider !== undefined) setApiProvider(detail.apiProvider);
+      const modelKey = { geminiModel: 'gemini', openaiModel: 'openai', anthropicModel: 'anthropic', grokModel: 'grok' } as const;
+      for (const [settingsKey, provider] of Object.entries(modelKey)) {
+        if (detail?.[settingsKey] !== undefined) {
+          setCtxModelByProvider((prev) => ({ ...prev, [provider]: detail[settingsKey] }));
+        }
+      }
     }
     window.addEventListener('warroom-settings-change', onSettingsChange);
     return () => window.removeEventListener('warroom-settings-change', onSettingsChange);
   }, []);
+  const ctxTokens = contextWindowFor(apiProvider, ctxModelByProvider[apiProvider] ?? '');
 
   const active = conversations.find((c) => c.id === activeId) ?? conversations[0];
 
@@ -1246,8 +1294,8 @@ export default function GeminiPanel() {
           </span>
         )}
         {/* Context window indicator — only shown above 50% */}
-        {estimateTokens(active.history) / GEMINI_CTX_TOKENS > 0.5 && (
-          <ContextArc tokens={estimateTokens(active.history)} />
+        {estimateTokens(active.history) / ctxTokens > 0.5 && (
+          <ContextArc tokens={estimateTokens(active.history)} ctxTokens={ctxTokens} />
         )}
         {/* New chat */}
         <PanelBtn title="New chat" onClick={createChat}>
@@ -1526,7 +1574,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
   useEffect(() => () => { pendingSkillResolve.current?.(false); pendingSkillResolve.current = null; }, []);
   const [geminiModel, setGeminiModel] = useState('flash');
   const [openaiModel, setOpenaiModel] = useState('gpt-5.6-terra');
-  const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-4-6');
+  const [anthropicModel, setAnthropicModel] = useState('claude-sonnet-5');
   const [grokModel, setGrokModel] = useState('grok-4.1-fast');
   /** LM Studio's model is a free-text local id, shown read-only here — it's set in Settings. */
   const [lmModel, setLmModel] = useState('');

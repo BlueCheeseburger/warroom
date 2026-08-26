@@ -1046,7 +1046,7 @@ export default function Documentation() {
           </P>
           <H3>Your own instructions</H3>
           <P>
-            <strong>Settings → Auto Flow instructions</strong> is one line of free text folded into
+            <strong>Settings → Flow & Auto Flow → Auto Flow instructions</strong> is one line of free text folded into
             the sorting prompt on every run — tab organisation ("always give T its own tab") or flow
             naming ("name flows Opponent — Round N"). It outranks Warroom AI's own defaults on
             anything it covers, including the aff-name default below. It deliberately cannot change
@@ -1432,7 +1432,7 @@ export default function Documentation() {
             card answers the same one — on the next row with an <strong>arrow drawn back</strong> to
             what it answers, so the connection stays visible. If a column runs out of room, that
             placement is skipped and surfaced in a summary rather than silently dropped. The tag is
-            wrapped in whatever emphasis is set in <strong>Settings → Auto Flow tag style</strong>{' '}
+            wrapped in whatever emphasis is set in <strong>Settings → Flow & Auto Flow → Auto Flow tag style</strong>{' '}
             (bold/italic/underline — the only emphasis a flow cell can carry, per{' '}
             <Code>src/lib/cellHtml.ts</Code>'s allowed tags); the shortened cite underneath is always
             plain text.
@@ -2008,7 +2008,7 @@ export default function Documentation() {
           <H2>LM Studio <Badge color="blue">local</Badge></H2>
           <P>
             A fifth AI provider alongside Gemini/OpenAI/Anthropic/Grok, selected in
-            Settings → AI API key → <strong>LM Studio</strong>. LM Studio runs models on the
+            Settings → AI → <strong>LM Studio</strong>. LM Studio runs models on the
             user's own machine and serves an OpenAI-compatible REST API on localhost with
             <strong> no authentication</strong>, which makes it structurally different from every
             hosted provider:
@@ -2497,7 +2497,7 @@ export default function Documentation() {
           </P>
           <H3>Setup flow</H3>
           <UL>
-            <LI>Enter OAuth Client ID and Client Secret in Settings → Google Drive</LI>
+            <LI>Enter OAuth Client ID and Client Secret in Settings → Integrations → Google Drive</LI>
             <LI>Click "Connect Drive" — the app opens a browser OAuth flow</LI>
             <LI>After authorization, tokens are stored encrypted via <Code>safeStorage</Code></LI>
           </UL>
@@ -2909,7 +2909,7 @@ export default function Documentation() {
           </P>
           <H3>When something is too long</H3>
           <P>
-            <strong>Settings → Work past the length limit</strong> decides what happens when input
+            <strong>Settings → AI → Work past the length limit</strong> decides what happens when input
             exceeds what Warroom AI can read at once. <strong>Off</strong> (default) trims and asks
             first. <strong>On</strong> picks between two methods, and the point of offering a choice
             is that neither is strictly better:
@@ -2983,7 +2983,7 @@ export default function Documentation() {
           <UL>
             <LI>When a new topic drops, a Warroom AI brief is automatically generated. It covers: resolution breakdown, Aff/Neg arguments, frameworks, core clash, research priorities, and pitfalls.</LI>
             <LI>The brief can be regenerated at any time from the Topics screen.</LI>
-            <LI>Requires an API key in Settings → API Keys.</LI>
+            <LI>Requires an API key in Settings → AI.</LI>
           </UL>
           <P>
             <PromptLink name="topic_brief" />
