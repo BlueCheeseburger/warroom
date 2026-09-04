@@ -40,6 +40,21 @@ const DISMISS_MS = 7000;
 
 let nextId = 1;
 
+// A one-line "what to do about it" for the handful of provider errors that have
+// a specific, user-side fix. Shown UNDER the verbatim provider message, never in
+// place of it (CLAUDE.md: the toast shows the exact error). Null for everything
+// else — most errors have nothing actionable to add.
+export function hintFor(message: string): string | null {
+  const m = message.toLowerCase();
+  if (m.includes('location is not supported') || (m.includes('failed_precondition') && m.includes('location')))
+    return "Decided by your network's IP, not where you are — a VPN or Cloudflare WARP being on is the usual cause, even in the US. Turn it off and try again.";
+  if (m.includes('api key not valid') || m.includes('api_key_invalid') || m === 'no_key' || m.includes('add your'))
+    return 'Check the API key in Settings → AI.';
+  if (m.includes('not found') && m.includes('model'))
+    return 'Pick a different model in Settings → AI.';
+  return null;
+}
+
 // First sentence / clause of a provider error, for the collapsed one-line view.
 // Gemini's quota errors run several hundred characters with URLs and metric
 // names; the useful part is almost always up front.
@@ -143,6 +158,7 @@ export default function AiErrorToast() {
     >
       {toasts.map((t) => {
         const isOpen = expanded === t.id;
+        const hint = t.kind === 'error' ? hintFor(t.message) : null;
         return (
           <div
             key={t.id}
@@ -165,14 +181,24 @@ export default function AiErrorToast() {
             <span
               onClick={() => setExpanded(isOpen ? null : t.id)}
               title={isOpen ? 'Show less' : t.kind === 'warning' ? 'Show what was cut' : 'Show the full error'}
-              style={{
-                flex: 1, cursor: 'pointer',
-                ...(isOpen
-                  ? { maxHeight: 180, overflowY: 'auto', wordBreak: 'break-word' as const }
-                  : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
-              }}
+              style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
             >
-              {isOpen ? t.message : shortMessage(t.message)}
+              <span
+                style={{
+                  display: 'block',
+                  ...(isOpen
+                    ? { maxHeight: 180, overflowY: 'auto', wordBreak: 'break-word' as const }
+                    : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
+                }}
+              >
+                {isOpen ? t.message : shortMessage(t.message)}
+              </span>
+              {/* The fix, when there is a specific one — under the exact error, never instead of it. */}
+              {hint && (
+                <span style={{ display: 'block', marginTop: 3, fontSize: 11, lineHeight: 1.35, opacity: 0.75, whiteSpace: 'normal' }}>
+                  {hint}
+                </span>
+              )}
             </span>
             {t.count > 1 && (
               <span

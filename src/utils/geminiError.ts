@@ -50,6 +50,13 @@ export function humanizeGeminiError(raw: string | undefined | null, provider?: A
   if (msg.includes('api_key_invalid') || msg.includes('invalid api key') || msg.includes('api key not valid'))
     return `Your ${info.name} API key isn't working. Double-check it in Settings → AI.`;
 
+  // Gemini's "400 FAILED_PRECONDITION: User location is not supported for the
+  // API use". Google decides this from the IP the request arrives from, not
+  // from where the user is — so it fires for a VPN or Cloudflare WARP egress
+  // (a Cloudflare datacenter address) even from California.
+  if (msg.includes('location is not supported') || (msg.includes('failed_precondition') && msg.includes('location')))
+    return `${info.name} refused the request based on where it thinks you're connecting from. That's decided by your network's IP, not where you are — a VPN or Cloudflare WARP being on is the usual cause, even inside the US. Turn it off and try again.`;
+
   if (msg.includes('permission_denied') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('401'))
     return `${info.name} rejected the request — your API key may not have access to this model. Check Settings → AI.`;
 
