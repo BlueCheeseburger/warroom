@@ -81,7 +81,7 @@ export const GROUPS: Group[] = [
       { keys: ['Tab', '⇧Tab'], label: 'Move to the next / previous column' },
       { keys: ['Enter'], label: 'Move down a row' },
       { keys: ['⇧Enter'], label: 'New line within a cell' },
-      { keys: ['←', '→'], label: 'Move the cursor through the text' },
+      { keys: ['←', '→'], label: 'Move the cursor through the text — or to the previous / next column once it is at the start / end of the cell' },
       { keys: ['↑', '↓'], label: 'Move a line within the cell — or to the cell above / below when there is no line left' },
       { id: 'flow-move-row', keys: [`${MOD}↑`, `${MOD}↓`], label: "Move this cell's content up / down a row" },
       { id: 'flow-sheet-switch', keys: [`${MOD}1`, '…', `${MOD}8`], label: 'Jump to sheet 1–8 (' + MOD + '9 jumps to the last sheet)' },

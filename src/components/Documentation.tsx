@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 8/26/26
+          Last updated: 9/3/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1132,9 +1132,37 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Keyboard navigation:</strong> <Code>←</Code> / <Code>→</Code> move the cursor
-            through the text, like anywhere else. <Code>↑</Code> / <Code>↓</Code> move a line within
+            through the text, and step to the previous / next column only once the caret is already at
+            the very start / end of the cell (<Code>caretAtTextEdge</Code> measures the text between the
+            cell boundary and the caret). <Code>↑</Code> / <Code>↓</Code> move a line within
             the cell, and jump to the cell above / below only once there is no line left to go to.{' '}
-            <Code>Tab</Code> and <Code>Enter</Code> move to the next column / row.
+            <Code>Tab</Code> and <Code>Enter</Code> move to the next column / row. Shift+arrow
+            (selecting) is never intercepted. <Code>focusCell</Code> focuses with{' '}
+            <Code>preventScroll</Code> and then scrolls the container itself, so a cell reached by
+            keyboard never lands under the sticky column header or a pixel past the bottom edge.
+          </P>
+          <P>
+            <strong>Toolbar emphasis state:</strong> the B / I / U / S / H buttons light up while the
+            caret sits in text that has that emphasis. Read from{' '}
+            <Code>document.queryCommandState</Code> (the same state <Code>execCommand</Code> toggles)
+            on <Code>selectionchange</Code>, input, and each shortcut, and only re-rendered on a change.
+          </P>
+          <P>
+            <strong>Reliability notes (9/3/26):</strong> the always-current state snapshot
+            (<Code>snap</Code>) is synced in a <Code>useLayoutEffect</Code> declared before every other
+            layout effect, so a recompute fired by a tab switch reads the new tab — as a plain effect it
+            ran a beat late and the previous tab's arrows were drawn over the new one until something
+            else triggered a recompute. On load, the edit buffer is seeded from the <em>restored</em> tab,
+            not sheet 0 (a flow reopened on tab 3 used to render tab 0's cells under tab 3's label and
+            file every edit onto tab 0). Cell keys edited since the last save are tracked
+            (<Code>dirtyKeys</Code>) and carried across an external-edit reload, laid over the
+            freshly-read sheet, so a card sent to the flow from a speech doc can no longer drop the
+            keystrokes typed in the last 600ms. <Code>normalizeSheets</Code> heals every sheet list at
+            read time (ids, <Code>cells</Code>, <Code>arrows</Code>, and a fresh copy of{' '}
+            <Code>cells</Code> so the buffer never aliases React state). In the main process,{' '}
+            <Code>writeJson</Code> serializes writes to the same key and <Code>storage:read</Code>{' '}
+            waits for a pending write to that key, so an older payload can never win the rename race and
+            a reload can never read the file from before the write it was reacting to.
           </P>
           <P>
             <strong>Pasting:</strong> text pasted from Word or Google Docs is cleaned before it lands
@@ -1196,9 +1224,17 @@ export default function Documentation() {
             cell needs to be selected first, a dashed rubber band previews the line between the two
             clicks, and clicking the same spot twice cancels rather than storing a zero-length arrow.
             Hover an arrow to fade it (so the cells underneath stay readable) and reveal an{' '}
-            <Code>×</Code> at its midpoint; click either to delete. <Code>Esc</Code> cancels, and a
+            <Code>×</Code> at its midpoint; only the <Code>×</Code> deletes. A click on the line itself
+            goes <em>through</em> to the cell underneath (<Code>clickThroughArrow</Code>:{' '}
+            <Code>elementsFromPoint</Code> + <Code>caretRangeFromPoint</Code>), so an arrow lying across
+            a cell never blocks editing it — clicking the line used to delete it, which threw arrows
+            away on the way to the cell under them. <Code>Esc</Code> cancels, and a
             tab switch cancels too — an endpoint is a position on <em>that</em> sheet. Arrows are
-            saved per sheet.
+            saved per sheet. While armed, the status ("click where it should start / end") is a pill
+            floating over the top of the grid, not a banner row — a banner pushed the whole flow down
+            on ⌘L and back up on the second click. <Code>⌘L</Code> is handled by exactly one listener
+            (the window one, toggling against a ref); it used to also be handled by the focused cell,
+            and the two toggles cancelled each other out, so ⌘L did nothing while typing.
           </P>
           <P>
             <strong>Insert a cell between two others:</strong> hover a cell and a small <Code>+</Code>{' '}

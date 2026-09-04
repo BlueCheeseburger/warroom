@@ -151,6 +151,24 @@ function makeSheets(event: 'policy' | 'pf', variant: PolicyVariant): SheetData[]
   return names.map((name) => ({ id: crypto.randomUUID(), name, cells: {} }));
 }
 
+// Heal a sheet list at READ time (see CLAUDE.md, "Fixing a bad write must also
+// heal what's already saved"): every sheet gets an id, a `cells` object and an
+// `arrows` array, and `cells` is a fresh copy so the live edit buffer can never
+// alias an object that also sits inside React state / an undo snapshot. A sheet
+// written without `cells` (older Auto Flow runs, an external writer) used to
+// crash the tab tooltip and Find with "Object.entries(undefined)".
+function normalizeSheets(list: SheetData[] | undefined | null): SheetData[] {
+  return (list ?? [])
+    .filter((sh) => sh && typeof sh === 'object')
+    .map((sh) => ({
+      ...sh,
+      id: typeof sh.id === 'string' && sh.id ? sh.id : crypto.randomUUID(),
+      name: typeof sh.name === 'string' ? sh.name : 'Sheet',
+      cells: { ...(sh.cells && typeof sh.cells === 'object' ? sh.cells : {}) },
+      arrows: Array.isArray(sh.arrows) ? sh.arrows : [],
+    }));
+}
+
 export function makeDefaultData(event: 'policy' | 'pf', variant: PolicyVariant, pfOrder: PFOrder): StoredFlowData {
   const cols = event === 'policy' ? POLICY_COLS : (pfOrder === 'pro-first' ? PF_PRO_FIRST_COLS : PF_CON_FIRST_COLS);
   return {
@@ -203,8 +221,9 @@ export default function FlowView() {
   // endpoint is a position on THIS sheet — the same fraction of the content box
   // on another tab lands next to a completely different argument — so a draw
   // started here and finished after a tab switch would put the arrow somewhere
-  // the user never pointed at.
-  useEffect(() => { cancelDrawMode(); }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the user never pointed at. The hover state goes too: it names an arrow on
+  // the sheet we just left.
+  useEffect(() => { cancelDrawMode(); setHoveredArrow(null); }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [customColumns, setCustomColumns] = useState<string[] | null>(null);
   const [columnColors, setColumnColors] = useState<(string | null)[]>([]);
@@ -229,6 +248,13 @@ export default function FlowView() {
 
   // Arrow draw mode
   const [drawMode, setDrawMode] = useState(false);
+  // Mirror for the window keydown handler, which must toggle against the value
+  // that is true NOW rather than the one its closure was built with. ⌘L used to
+  // be handled twice — once by the focused cell, once by the window listener —
+  // and the second copy toggled off what the first had just switched on.
+  const drawModeRef = useRef(false);
+  // Which emphasis is on at the caret, for lighting up the toolbar buttons.
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, strike: false, highlight: false });
   // Free-form draw: the first clicked point (fractions of the content box) and
   // where the cursor is now, for the rubber-band preview.
   const [drawStart, setDrawStart] = useState<{ fx: number; fy: number } | null>(null);
@@ -278,6 +304,15 @@ export default function FlowView() {
   // teleported between tabs" bug. Flushing by sheet id instead makes a mismatch
   // impossible to write: if the id isn't found, the buffer is simply not flushed.
   const cellsOwnerId = useRef<string | null>(null);
+  // Cell keys edited since the last persist(). When an external writer (Warroom
+  // AI, "send to flow" from a speech doc, Auto Flow) rewrites this flow's
+  // storage and asks for a reload, these are the only keystrokes that exist
+  // nowhere but in `cellsRef` — so they are carried across the reload and laid
+  // over the freshly-read sheet instead of being thrown away with the buffer.
+  const dirtyKeys = useRef<Set<string>>(new Set());
+  // Set by onExternalEdit so the load effect knows this reload should keep the
+  // dirty buffer (a flow SWITCH must not — the buffer belongs to another flow).
+  const reloadKeepsBuffer = useRef(false);
   // Tab-summary backoff — see noteSummaryFailure. `summaryDisabled` kills the
   // feature for the session on a quota/auth failure; `summaryCooldown` backs off
   // one sheet at a time for anything else.
@@ -314,9 +349,17 @@ export default function FlowView() {
     setCanRedo(histIdx.current < history.current.length - 1);
   }
 
-  // Always-current snapshot for use in async/event callbacks
+  // Always-current snapshot for use in async/event callbacks.
+  //
+  // A LAYOUT effect, deliberately: it is declared before every other layout
+  // effect in this component, so anything that reads `snap.current` during the
+  // commit (recomputeArrows, scroll restore) sees the state that was just
+  // rendered. As a plain useEffect it ran a beat later, and recomputeArrows —
+  // fired by the tab switch — still read the OLD sheet's arrows and drew them
+  // over the new tab's cells, where they sat until something else happened to
+  // trigger a recompute. That was "arrows follow me between tabs".
   const snap = useRef({ sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: 'policy' as 'policy' | 'pf' });
-  useEffect(() => { snap.current = { sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: flowEvent }; });
+  useLayoutEffect(() => { snap.current = { sheets, columnWidths, customColumns, columnColors, fontSize, zoom, variant, pfOrder, activeSheetIdx, event: flowEvent }; });
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -359,7 +402,17 @@ export default function FlowView() {
     // async read below overwrote them) — one flow's arguments briefly showing
     // up in another.
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-    cellsRef.current = {}; cellsOwnerId.current = null;
+    // An external-edit reload keeps the keystrokes that only exist in the
+    // buffer (see dirtyKeys); a flow switch drops the buffer outright — it
+    // belongs to the flow we're leaving.
+    const keep = reloadKeepsBuffer.current && cellsOwnerId.current && dirtyKeys.current.size
+      ? {
+          owner: cellsOwnerId.current,
+          cells: Object.fromEntries([...dirtyKeys.current].map((k) => [k, cellsRef.current[k] ?? ''])),
+        }
+      : null;
+    reloadKeepsBuffer.current = false;
+    cellsRef.current = {}; cellsOwnerId.current = null; dirtyKeys.current.clear();
     setStockIssueDismissed(false);
     window.warroom?.storage.read(`flow_data_${flowId}`).then((data: StoredFlowData | null) => {
       // If live sync already took over, don't let this (possibly stale) local
@@ -373,9 +426,20 @@ export default function FlowView() {
         const custCols = data.customColumns ?? null;
         const colCount = (custCols ?? cols).length;
 
+        let loadedSheets = normalizeSheets(data.sheets);
+        // Lay the unsaved keystrokes back over the sheet they were typed on.
+        // Only the keys that were actually edited — the external writer's own
+        // changes to every other cell come through untouched.
+        let merged = false;
+        if (keep && loadedSheets.some((sh) => sh.id === keep.owner)) {
+          loadedSheets = loadedSheets.map((sh) =>
+            sh.id === keep.owner ? { ...sh, cells: { ...sh.cells, ...keep.cells } } : sh);
+          merged = true;
+        }
+
         setVariant(v);
         setPfOrder(pfo);
-        setSheets(data.sheets);
+        setSheets(loadedSheets);
         setColumnWidths(
           data.columnWidths?.length === colCount
             ? data.columnWidths
@@ -387,13 +451,20 @@ export default function FlowView() {
         );
         setFontSize(data.fontSize ?? DEFAULT_FONT_SIZE);
         setZoom(data.zoom ?? 100);
-        cellsRef.current = data.sheets[0]?.cells ?? {}; cellsOwnerId.current = data.sheets[0]?.id ?? null;
         // Restore which tab was open (session restore) — falls back to 0 for
         // flows saved before this field existed, same as a fresh load.
         const savedTab = data.activeSheetIdx;
-        setActiveSheetIdx(
-          typeof savedTab === 'number' && savedTab >= 0 && savedTab < data.sheets.length ? savedTab : 0
-        );
+        const idx = typeof savedTab === 'number' && savedTab >= 0 && savedTab < loadedSheets.length ? savedTab : 0;
+        // The edit buffer must point at the tab that is actually on screen.
+        // It used to be seeded from sheet 0 regardless of the restored tab, so a
+        // flow reopened on tab 3 rendered tab 0's arguments under tab 3's label
+        // and filed every edit onto tab 0 — which read as content vanishing from
+        // one tab and turning up on another.
+        cellsRef.current = { ...(loadedSheets[idx]?.cells ?? {}) }; cellsOwnerId.current = loadedSheets[idx]?.id ?? null;
+        setActiveSheetIdx(idx);
+        // The merged keystrokes are only in memory until the next save — write
+        // them now so a crash or a second external edit can't drop them again.
+        if (merged) requestAnimationFrame(() => persist());
       } else {
         const rawEv = flowMeta?.event ?? event;
         const ev: 'policy' | 'pf' = rawEv === 'pf' ? 'pf' : 'policy';
@@ -463,7 +534,9 @@ export default function FlowView() {
       if (detail?.flowId !== flowId) return;
       // Drop any pending local save so it can't clobber the freshly-written data,
       // then force a clean reload from storage (re-mounts cells via reloadNonce).
+      // The reload keeps whatever was typed since the last save — see dirtyKeys.
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      reloadKeepsBuffer.current = true;
       setReloadNonce((n) => n + 1);
     }
     function onLivePatch(e: Event) {
@@ -471,7 +544,7 @@ export default function FlowView() {
         { flowId?: string; sheets?: SheetData[]; activeSheetIdx?: number } | undefined;
       if (!detail || detail.flowId !== flowId || !detail.sheets?.length) return;
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      const next = detail.sheets;
+      const next = normalizeSheets(detail.sheets);
       const idx = typeof detail.activeSheetIdx === 'number'
         ? Math.max(0, Math.min(detail.activeSheetIdx, next.length - 1))
         : snap.current.activeSheetIdx;
@@ -481,6 +554,8 @@ export default function FlowView() {
       // content during a replay, so adopting its cells wholesale is correct.
       cellsRef.current = { ...(next[idx]?.cells ?? {}) };
       cellsOwnerId.current = next[idx]?.id ?? null;
+      dirtyKeys.current.clear();
+      snap.current = { ...snap.current, sheets: next, activeSheetIdx: idx };
       setCellNonce((n) => n + 1);
     }
     window.addEventListener('warroom-flow-updated', onExternalEdit as EventListener);
@@ -506,14 +581,17 @@ export default function FlowView() {
     function onKey(e: KeyboardEvent) {
       if (!flowId) return;
       if (e.key === 'Escape') {
-        if (drawMode) { cancelDrawMode(); }
+        if (drawModeRef.current) { cancelDrawMode(); }
         else if (findOpen) closeFind();
         return;
       }
-      // ⌘L also works from outside a cell — the tool doesn't need a selection.
+      // ⌘L — the ONE handler for it, whether the caret is in a cell or not.
+      // The per-cell keydown deliberately doesn't handle it: both used to fire
+      // on the same keypress, and the pair cancelled out. Toggles against the
+      // ref, not the closure, for the same reason.
       if (matchesShortcut(e, 'flow-link')) {
         e.preventDefault();
-        if (drawMode) cancelDrawMode(); else startDrawMode();
+        if (drawModeRef.current) cancelDrawMode(); else startDrawMode();
         return;
       }
       if (matchesShortcut(e, 'find-page')) {
@@ -559,6 +637,8 @@ export default function FlowView() {
     if (!flowId) return;
     const s = snap.current;
     const flushedSheets = flushInto(s.sheets);
+    // Everything in the buffer is in this payload — nothing is "unsaved" now.
+    dirtyKeys.current.clear();
     const payload = {
       event: flowMeta?.event ?? event,
       variant: s.variant,
@@ -700,7 +780,7 @@ export default function FlowView() {
       const colCount = (data.customColumns ?? cols).length;
       setVariant(data.variant);
       setPfOrder(data.pfOrder);
-      setSheets(data.sheets as any);
+      setSheets(normalizeSheets(data.sheets as any));
       setColumnWidths(data.columnWidths?.length === colCount ? data.columnWidths : (data.customColumns ?? cols).map(() => DEFAULT_COL_WIDTH));
       setCustomColumns(data.customColumns);
       setColumnColors(data.columnColors?.length === colCount ? data.columnColors : (data.customColumns ?? cols).map(() => null));
@@ -891,6 +971,7 @@ export default function FlowView() {
       updateFlowMeta({ event: s.event });
     }
     cellsRef.current = { ...(s.sheets[idx]?.cells ?? {}) }; cellsOwnerId.current = s.sheets[idx]?.id ?? null;
+    dirtyKeys.current.clear();
     snap.current = { ...snap.current, sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, activeSheetIdx: idx, variant: s.variant, pfOrder: s.pfOrder };
     persist({ sheets: s.sheets, columnColors: s.columnColors, customColumns: s.customColumns, columnWidths: s.columnWidths, variant: s.variant, pfOrder: s.pfOrder, event: s.event });
     setCellNonce((n) => n + 1);
@@ -933,13 +1014,21 @@ export default function FlowView() {
     snap.current = { ...snap.current, sheets: updated };
   }
 
+  // Every path that changes a cell's HTML goes through here: buffer it, mark it
+  // unsaved, mirror it to live teammates, and arm the debounced save.
+  function noteCellEdit(key: string, html: string) {
+    cellsRef.current[key] = html;
+    dirtyKeys.current.add(key);
+    pushLiveCell(key, html);
+    scheduleSave();
+  }
+
   function handleInput(ri: number, ci: number, e: React.FormEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     const key = `${ri}-${ci}`;
-    cellsRef.current[key] = el.innerHTML;
     clearAiCell(key);
-    pushLiveCell(key, el.innerHTML);
-    scheduleSave();
+    noteCellEdit(key, el.innerHTML);
+    refreshFormatState();
   }
 
   // Word and Google Docs put fully-styled HTML on the clipboard — font family,
@@ -957,10 +1046,7 @@ export default function FlowView() {
     const insert = cleanPastedHtml(html, text);
     if (!insert) return;
     document.execCommand('insertHTML', false, insert);
-    const key = `${ri}-${ci}`;
-    cellsRef.current[key] = el.innerHTML;
-    pushLiveCell(key, el.innerHTML);
-    scheduleSave();
+    noteCellEdit(`${ri}-${ci}`, el.innerHTML);
   }
 
   // Apply rich-text emphasis to the focused cell (toolbar buttons).
@@ -973,10 +1059,45 @@ export default function FlowView() {
     el.focus();
     if (cmd === 'highlight') toggleHighlight();
     else document.execCommand(cmd);
-    cellsRef.current[key] = el.innerHTML;
-    pushLiveCell(key, el.innerHTML);
-    scheduleSave();
+    noteCellEdit(key, el.innerHTML);
+    refreshFormatState();
   }
+
+  // What emphasis is on at the caret right now — drives the toolbar's B/I/U/S/H
+  // active state. Read from the browser's own editing state (the same thing
+  // execCommand toggles), so it's right whether the emphasis came from the
+  // button, the shortcut, or a paste. Cheap, and only re-renders on a change.
+  function refreshFormatState() {
+    const key = focusedCell.current;
+    const el = key ? cellEls.current[key] : null;
+    if (!el || document.activeElement !== el) {
+      setFmt((f) => (f.bold || f.italic || f.underline || f.strike || f.highlight)
+        ? { bold: false, italic: false, underline: false, strike: false, highlight: false } : f);
+      return;
+    }
+    let next: typeof fmt;
+    try {
+      const back = (document.queryCommandValue('backColor') || '').replace(/\s/g, '').toLowerCase();
+      next = {
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strike: document.queryCommandState('strikeThrough'),
+        highlight: back === HILITE_RGB || back === HILITE,
+      };
+    } catch { return; }
+    setFmt((f) => (f.bold === next.bold && f.italic === next.italic && f.underline === next.underline
+      && f.strike === next.strike && f.highlight === next.highlight) ? f : next);
+  }
+
+  // The caret moves without any key we handle (mouse click, shift-arrow, ⌘A),
+  // so the toolbar state follows the document's own selection events.
+  useEffect(() => {
+    let raf = 0;
+    const onSel = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(refreshFormatState); };
+    document.addEventListener('selectionchange', onSel);
+    return () => { document.removeEventListener('selectionchange', onSel); cancelAnimationFrame(raf); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Highlight is a background-color span rather than an execCommand flag, so it
   // has no built-in toggle — read the caret's current background and clear it if
@@ -1013,18 +1134,48 @@ export default function FlowView() {
     return Math.abs(cur.top - target.top) < Math.max(4, cur.height * 0.5);
   }
 
-  // Focus a cell and place the caret at its start or end.
+  // Is the (collapsed) caret at the very start / end of the cell's text? Used
+  // for ← / → : inside the text they move the caret, at the edge they move to
+  // the neighbouring column. Measured by the text between the cell's boundary
+  // and the caret, so it's right across bold/italic spans and line breaks.
+  function caretAtTextEdge(el: HTMLDivElement, edge: 'start' | 'end'): boolean {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    if (!el.contains(r.startContainer)) return false;
+    const probe = document.createRange();
+    probe.selectNodeContents(el);
+    if (edge === 'start') probe.setEnd(r.startContainer, r.startOffset);
+    else probe.setStart(r.endContainer, r.endOffset);
+    return probe.toString().length === 0;
+  }
+
+  // Focus a cell and place the caret at its start or end, then make sure the
+  // cell is actually visible: `focus()`'s own scroll-into-view doesn't know
+  // about the sticky column header, so moving up a row could land the caret
+  // under it, and moving down could leave it a pixel past the bottom edge.
+  const HEADER_H = 36;
   function focusCell(key: string, place: 'start' | 'end' = 'end') {
     const el = cellEls.current[key];
     if (!el) return;
-    el.focus();
+    el.focus({ preventScroll: true });
     const sel = window.getSelection();
-    if (!sel) return;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(place === 'start');
-    sel.removeAllRanges();
-    sel.addRange(range);
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(place === 'start');
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    const c = containerRef.current;
+    if (!c) return;
+    const cr = c.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const pad = 8;
+    if (r.top < cr.top + HEADER_H + pad) c.scrollTop -= (cr.top + HEADER_H + pad) - r.top;
+    else if (r.bottom > cr.bottom - pad) c.scrollTop += r.bottom - (cr.bottom - pad);
+    if (r.left < cr.left + pad) c.scrollLeft -= (cr.left + pad) - r.left;
+    else if (r.right > cr.right - pad) c.scrollLeft += r.right - (cr.right - pad);
   }
 
   function handleKeyDown(ri: number, ci: number, e: React.KeyboardEvent<HTMLDivElement>) {
@@ -1036,29 +1187,27 @@ export default function FlowView() {
       e.preventDefault();
       const cmd = matchesShortcut(e, 'flow-bold') ? 'bold' : matchesShortcut(e, 'flow-italic') ? 'italic' : 'underline';
       document.execCommand(cmd);
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
+      noteCellEdit(`${ri}-${ci}`, el.innerHTML);
+      refreshFormatState();
       return;
     }
     if (matchesShortcut(e, 'flow-strike')) {
       e.preventDefault();
       document.execCommand('strikeThrough');
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
+      noteCellEdit(`${ri}-${ci}`, el.innerHTML);
+      refreshFormatState();
       return;
     }
     if (matchesShortcut(e, 'flow-highlight')) {
       e.preventDefault();
       toggleHighlight();
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
+      noteCellEdit(`${ri}-${ci}`, el.innerHTML);
+      refreshFormatState();
       return;
     }
-    // Arrow — ⌘L arms the draw layer; the arrow's two ends are the next two
-    // clicks, anywhere on the flow. It is deliberately NOT anchored to the cell
-    // the cursor happens to be in.
-    if (matchesShortcut(e, 'flow-link')) {
-      e.preventDefault();
-      startDrawMode();
-      return;
-    }
+    // ⌘L (draw an arrow) is NOT handled here — the window listener owns it,
+    // and it fires for a keypress inside a cell too. Handling it in both places
+    // made the two toggles cancel each other out.
     // Move this cell's content up/down a row (swaps with its neighbour). Not
     // individually rebindable — it's a pair (up + down), not one combo — but
     // still respects the disable toggle.
@@ -1082,17 +1231,24 @@ export default function FlowView() {
     } else if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
       document.execCommand('insertLineBreak');
-      cellsRef.current[`${ri}-${ci}`] = el.innerHTML; pushLiveCell(`${ri}-${ci}`, el.innerHTML); scheduleSave();
+      noteCellEdit(`${ri}-${ci}`, el.innerHTML);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (ri < NUM_ROWS - 1) focusCell(`${ri + 1}-${ci}`, 'start');
     // Up / Down move a line within the cell, and only leave it once there is no
-    // line left to go to. Left / Right are never intercepted — they always just
-    // move the caret through the text (Tab moves between columns).
+    // line left to go to. Left / Right move the caret through the text, and
+    // only step to the neighbouring column once the caret is already at the
+    // very start / end of the cell — so the flow walks like a spreadsheet
+    // without ever eating a caret move inside a cell. Shift+arrow (selecting)
+    // is always left to the browser.
     } else if (e.key === 'ArrowUp') {
-      if (ri > 0 && caretOnEdgeLine(el, 'first')) { e.preventDefault(); focusCell(`${ri - 1}-${ci}`); }
+      if (!e.shiftKey && ri > 0 && caretOnEdgeLine(el, 'first')) { e.preventDefault(); focusCell(`${ri - 1}-${ci}`); }
     } else if (e.key === 'ArrowDown') {
-      if (ri < NUM_ROWS - 1 && caretOnEdgeLine(el, 'last')) { e.preventDefault(); focusCell(`${ri + 1}-${ci}`, 'start'); }
+      if (!e.shiftKey && ri < NUM_ROWS - 1 && caretOnEdgeLine(el, 'last')) { e.preventDefault(); focusCell(`${ri + 1}-${ci}`, 'start'); }
+    } else if (e.key === 'ArrowLeft') {
+      if (!e.shiftKey && ci > 0 && caretAtTextEdge(el, 'start')) { e.preventDefault(); focusCell(`${ri}-${ci - 1}`, 'end'); }
+    } else if (e.key === 'ArrowRight') {
+      if (!e.shiftKey && ci < columns.length - 1 && caretAtTextEdge(el, 'end')) { e.preventDefault(); focusCell(`${ri}-${ci + 1}`, 'start'); }
     }
   }
 
@@ -1112,17 +1268,20 @@ export default function FlowView() {
     const targetEl = cellEls.current[targetKey];
     if (el) el.innerHTML = cellToHtml(b);
     if (targetEl) targetEl.innerHTML = cellToHtml(a);
+    dirtyKeys.current.add(key); dirtyKeys.current.add(targetKey);
     pushLiveCell(key, cellToHtml(b));
     pushLiveCell(targetKey, cellToHtml(a));
-    // Swap the AI-ring membership so it follows the moved content.
-    const sh = snap.current.sheets[snap.current.activeSheetIdx];
+    // Swap the AI-ring membership so it follows the moved content. By owner
+    // id, like every other write into the sheets array (see flowCellFlush.ts).
+    const owner = cellsOwnerId.current;
+    const sh = snap.current.sheets.find((x) => x.id === owner);
     const ai = sh?.aiCells ?? [];
     const keyAi = ai.includes(key), targetAi = ai.includes(targetKey);
     if (keyAi !== targetAi) {
       const next = ai.filter((k) => k !== key && k !== targetKey);
       if (keyAi) next.push(targetKey);
       if (targetAi) next.push(key);
-      const updated = snap.current.sheets.map((x, i) => i === snap.current.activeSheetIdx ? { ...x, aiCells: next } : x);
+      const updated = snap.current.sheets.map((x) => x.id === owner ? { ...x, aiCells: next } : x);
       setSheets(updated);
       snap.current = { ...snap.current, sheets: updated };
     }
@@ -1151,9 +1310,13 @@ export default function FlowView() {
       if (c === ci && r >= insertAt && r < NUM_ROWS - 1) return `${r + 1}-${c}`;
       return key;
     };
+    // By owner id, not index — an index that hasn't caught up with a tab switch
+    // would write this tab's shifted cells onto a different tab.
     const s = snap.current;
-    const updated = s.sheets.map((sh, i) =>
-      i === s.activeSheetIdx
+    const owner = cellsOwnerId.current;
+    if (!owner || !s.sheets.some((sh) => sh.id === owner)) return;
+    const updated = s.sheets.map((sh) =>
+      sh.id === owner
         ? {
             ...sh, cells: { ...cells },
             arrows: (sh.arrows ?? []).map((a) => bumpArrow(a, bump)),
@@ -1279,14 +1442,34 @@ export default function FlowView() {
   /** ⌘L / the toolbar button. Arms the draw layer; the next two clicks are the
    *  arrow's two ends, wherever they land. */
   function startDrawMode() {
+    drawModeRef.current = true;
     setDrawMode(true);
     setDrawStart(null);
     setDrawCursor(null);
   }
   function cancelDrawMode() {
+    drawModeRef.current = false;
     setDrawMode(false);
     setDrawStart(null);
     setDrawCursor(null);
+  }
+
+  /**
+   * A click on an arrow's body. It does NOT delete the arrow — the × at the
+   * midpoint does that (clicking the line to delete it meant any click near a
+   * line, on the way to the cell under it, threw the arrow away). Instead the
+   * click is handed through to whatever cell is underneath, caret and all, so
+   * an arrow lying across a cell never blocks editing that cell.
+   */
+  function clickThroughArrow(e: React.MouseEvent) {
+    const under = document.elementsFromPoint(e.clientX, e.clientY)
+      .find((n) => n instanceof HTMLDivElement && n.classList.contains('flow-cell')) as HTMLDivElement | undefined;
+    if (!under) return;
+    under.focus({ preventScroll: true });
+    const doc = document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null };
+    const range = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+    const sel = window.getSelection();
+    if (range && sel && under.contains(range.startContainer)) { sel.removeAllRanges(); sel.addRange(range); }
   }
 
   /**
@@ -1487,7 +1670,11 @@ export default function FlowView() {
       cellsRef.current = saved[idx]?.cells ?? {};
     }
     cellsOwnerId.current = targetId ?? null;
+    dirtyKeys.current.clear(); // the buffer we just flushed is about to be persisted below
     setActiveSheetIdx(idx);
+    // Same hand-update the other sheet ops do, so anything that runs before the
+    // commit (a pending save timer, an arrow recompute) sees the new tab.
+    snap.current = { ...snap.current, sheets: saved, activeSheetIdx: idx };
     setCellNonce((n) => n + 1);
     persist({ sheets: saved });
   }
@@ -1649,9 +1836,18 @@ export default function FlowView() {
    */
   function noteSummaryFailure(sheetId: string, message?: string) {
     const m = String(message ?? '').toLowerCase();
-    if (m.includes('429') || m.includes('resource_exhausted') || m.includes('quota')
-      || m.includes('rate limit') || m.includes('api key') || m.includes('permission')
-      || m.includes('401') || m.includes('403') || m.includes('no_key')) {
+    // Anything the provider REJECTED (as opposed to failed to answer) will be
+    // rejected again on the next hover: a bad key, no quota, a region Gemini
+    // won't serve ("User location is not supported" — a 400 FAILED_PRECONDITION),
+    // a model that doesn't exist, a prompt over the context limit. One of those
+    // used to only back off the one tab for 10 minutes, so every OTHER tab the
+    // user hovered mid-round fired the same doomed call and the same toast.
+    if (/\b(400|401|403|404|429)\b/.test(m)
+      || m.includes('resource_exhausted') || m.includes('quota') || m.includes('rate limit')
+      || m.includes('api key') || m.includes('permission') || m.includes('no_key')
+      || m.includes('failed_precondition') || m.includes('invalid_argument') || m.includes('unauthenticated')
+      || m.includes('location') || m.includes('not supported') || m.includes('not found')
+      || m.includes('context') || m.includes('too large') || m.includes('rejected the request')) {
       summaryDisabled.current = true;
       return;
     }
@@ -1998,19 +2194,21 @@ export default function FlowView() {
         <div className="flex-1" />
 
         {/* Emphasis */}
-        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('bold'); }} title="Bold (⌘B)">
+        {/* Emphasis — each lights up while the caret sits in text that has it,
+            so what the next keystroke will look like is readable at a glance. */}
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('bold'); }} title="Bold (⌘B)" active={fmt.bold}>
           <span style={{ fontWeight: 800, fontSize: 13 }}>B</span>
         </ToolBtn>
-        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('italic'); }} title="Italic (⌘I)">
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('italic'); }} title="Italic (⌘I)" active={fmt.italic}>
           <span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif', fontSize: 13 }}>I</span>
         </ToolBtn>
-        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('underline'); }} title="Underline (⌘U)">
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('underline'); }} title="Underline (⌘U)" active={fmt.underline}>
           <span style={{ textDecoration: 'underline', fontSize: 13 }}>U</span>
         </ToolBtn>
-        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('strikeThrough'); }} title="Strikethrough (⌘⇧X)">
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('strikeThrough'); }} title="Strikethrough (⌘⇧X)" active={fmt.strike}>
           <span style={{ textDecoration: 'line-through', fontSize: 13 }}>S</span>
         </ToolBtn>
-        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('highlight'); }} title="Highlight (⌘⇧H)">
+        <ToolBtn onMouseDown={(e) => { e.preventDefault(); applyFormat('highlight'); }} title="Highlight (⌘⇧H)" active={fmt.highlight}>
           <span style={{ fontSize: 13, background: HILITE, color: '#1a1a1a', padding: '0 3px', borderRadius: 2 }}>H</span>
         </ToolBtn>
 
@@ -2152,18 +2350,6 @@ export default function FlowView() {
         </div>
       )}
 
-      {/* Draw-mode banner */}
-      {drawMode && (
-        <div
-          className="flex items-center gap-2 px-3 py-1 flex-shrink-0 text-xs"
-          style={{ background: 'var(--nav-active-bg)', color: 'var(--nav-active-color)', borderBottom: '1px solid var(--border-subtle)' }}
-        >
-          <IcoArrow />
-          {drawStart ? 'Now click where it should end — Esc to cancel' : 'Click anywhere to start the arrow — it snaps to nothing'}
-          <button className="ml-auto btn px-2 py-0.5 text-xs" onClick={cancelDrawMode}>Cancel</button>
-        </div>
-      )}
-
       {/* Share panel */}
       {shareOpen && flowId && (
         <SharePanel
@@ -2209,6 +2395,24 @@ export default function FlowView() {
       )}
 
       {/* ── Grid ── */}
+      {/* The wrapper exists so the draw-mode pill can float OVER the grid. It
+          used to be a banner row above the grid, which pushed the whole flow
+          down the moment ⌘L was pressed and back up on the second click —
+          the flow jumping twice per arrow. */}
+      <div className="relative flex-1 min-h-0 flex flex-col">
+      {drawMode && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 text-xs rounded-full shadow-lg glass-elevated pointer-events-auto"
+          style={{ top: 8, zIndex: 30, color: 'var(--nav-active-color)', border: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }}
+        >
+          <IcoArrow />
+          {drawStart ? 'Now click where it should end' : 'Click where the arrow should start'}
+          <span style={{ opacity: 0.6 }}>· Esc to cancel</span>
+          <FlowTooltip text="Cancel (Esc)">
+            <button className="btn px-1.5 py-0 text-[11px] leading-5" onMouseDown={(e) => e.preventDefault()} onClick={cancelDrawMode}>✕</button>
+          </FlowTooltip>
+        </div>
+      )}
       <div
         ref={containerRef}
         className="flex-1 overflow-auto scroll-thin"
@@ -2238,26 +2442,29 @@ export default function FlowView() {
                       markerEnd="url(#wr-arrowhead)" opacity={hov ? 0.35 : 0.85}
                       style={{ pointerEvents: 'none', transition: 'opacity 0.12s' }}
                     />
-                    {/* Wide invisible hit area for hover/click */}
+                    {/* Invisible hit area for the hover fade. A click here goes
+                        THROUGH to the cell underneath (see clickThroughArrow);
+                        only the × deletes. */}
                     <path
-                      d={g.d} fill="none" stroke="transparent" strokeWidth={16}
-                      style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                      d={g.d} fill="none" stroke="transparent" strokeWidth={12}
+                      style={{ pointerEvents: 'stroke', cursor: 'text' }}
                       onMouseEnter={() => setHoveredArrow(g.id)}
                       onMouseLeave={() => setHoveredArrow((cur) => (cur === g.id ? null : cur))}
-                      onClick={() => deleteArrow(g.id)}
-                    >
-                      <title>Click to delete this arrow</title>
-                    </path>
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={clickThroughArrow}
+                    />
                     {/* Delete affordance — only while hovering the arrow */}
                     {hov && (
                       <g
                         style={{ pointerEvents: 'all', cursor: 'pointer' }}
                         onMouseEnter={() => setHoveredArrow(g.id)}
                         onMouseLeave={() => setHoveredArrow((cur) => (cur === g.id ? null : cur))}
-                        onClick={() => deleteArrow(g.id)}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => { e.stopPropagation(); deleteArrow(g.id); }}
                       >
-                        <circle cx={g.mx} cy={g.my} r={8} fill="var(--bg-elevated)" stroke="var(--nav-active-color)" strokeWidth={1.2} />
-                        <text x={g.mx} y={g.my + 3.5} textAnchor="middle" fontSize={11} fill="var(--nav-active-color)">×</text>
+                        <title>Remove arrow</title>
+                        <circle cx={g.mx} cy={g.my} r={9} fill="var(--bg-elevated)" stroke="var(--nav-active-color)" strokeWidth={1.2} />
+                        <text x={g.mx} y={g.my + 3.5} textAnchor="middle" fontSize={11} fill="var(--nav-active-color)" style={{ pointerEvents: 'none' }}>×</text>
                       </g>
                     )}
                   </g>
@@ -2552,6 +2759,7 @@ export default function FlowView() {
           ))}
         </div>
       </div>
+      </div>
 
       {/* ── Sheet tabs ── */}
       {/* ── "That looks like a stock issue" ── */}
@@ -2683,12 +2891,14 @@ function IcoFind() {
   );
 }
 function IcoArrow() {
-  // A source node connected by a curve to an arrowhead — reads as "link two cells".
+  // A dot joined by a STRAIGHT diagonal to an arrowhead — the glyph draws what
+  // the tool draws. (It used to be a curve, which is what made people expect a
+  // curved line.)
   return (
     <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="4.5" cy="5" r="1.7" fill="currentColor" stroke="none" />
-      <path d="M5 6.3C7 11 9.8 13.2 14 13.7" />
-      <path d="M10.8 12.2L14.4 13.8L12.7 10.2" />
+      <circle cx="4.5" cy="4.5" r="1.7" fill="currentColor" stroke="none" />
+      <path d="M6 6L15 15" />
+      <path d="M10.5 15.2H15.2V10.5" />
     </svg>
   );
 }

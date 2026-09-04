@@ -298,7 +298,7 @@ Paragraph breaks from the doc become a single line break, so a tag and its cite 
 If you have cells you pasted *before* this was fixed, they'll fix themselves the next time you open that flow — no need to retype them.
 
 **Move around with the keyboard.**
-1. **← / →** move your cursor through the text, exactly like anywhere else.
+1. **← / →** move your cursor through the text, exactly like anywhere else — and once the cursor is already at the very start or end of the cell, one more press steps to the column on that side, so you can walk across a row without reaching for Tab.
 2. **↑ / ↓** move up or down a line inside the cell. When there's no line left to move to, they jump to the cell above or below — so in a one-line cell they just move between cells.
 3. Press **Tab** or **Enter** to jump to the next column or row.
 3. Press **⌘↑** or **⌘↓** (Ctrl on Windows) to shift the argument in the current cell up or down a row — it swaps places with the cell above/below and your cursor follows it, so you can keep nudging an argument into the right spot. This is undoable with ⌘Z.
@@ -328,7 +328,11 @@ That's it. The two points are wherever you click, full stop: it doesn't jump to 
 
 You don't need a cell selected first, and ⌘L works from anywhere in the flow. Clicking the same spot twice cancels instead of leaving a zero-length arrow.
 
-To remove an arrow, hover it — it fades so you can read what's underneath, and an **×** appears at its midpoint. Click either the × or the line itself to delete it. Press **Esc** any time to cancel drawing.
+To remove an arrow, hover it — it fades so you can read what's underneath, and an **×** appears at its midpoint. Click the **×** to delete it. Clicking the line itself does *not* delete it — the click goes straight through to the cell underneath and puts your cursor there, so an arrow lying across an argument never gets in the way of editing it. Press **Esc** any time to cancel drawing.
+
+While you're drawing, a small pill at the top of the flow tells you which click comes next. It floats over the flow rather than pushing it down, so nothing on the sheet moves when you press ⌘L. ⌘L works whether or not your cursor is in a cell.
+
+**The B / I / U / S / H buttons light up** while your cursor is in text that has that emphasis, so you can see at a glance what the next thing you type will look like.
 
 Arrows are saved with the sheet, so they're there when you reopen the flow, and they stay put when you zoom or resize columns.
 
@@ -816,13 +820,13 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **⌘B / ⌘I / ⌘U / ⌘⇧X / ⌘⇧H**: bold / italic / underline / strikethrough / highlight in a cell
 - **⌘F**: find across all sheets in the flow
 - **⌘Z / ⌘⇧Z**: undo / redo
-- **← / →**: move the cursor through the text
+- **← / →**: move the cursor through the text — or to the previous / next column once it's at the very start / end of the cell
 - **↑ / ↓**: move a line within the cell — or to the cell above / below when there's no line left
 - **Tab / Enter**: move to next column / row
 - **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
 - **⌘1 – ⌘8**: jump to that sheet; **⌘9** jumps to the last sheet
 - **⌘T**: new sheet
-- **⌘L**: draw an arrow — press it in the source cell, then again in the target cell
+- **⌘L**: draw an arrow — then click its start and end anywhere on the flow (works whether or not you're in a cell)
 - **Esc**: cancel arrow-draw mode or close find
 
 ### Customizing shortcuts

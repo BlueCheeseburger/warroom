@@ -29,7 +29,8 @@ function QuickChatBar() {
     if (!enabled || pins.length === 0) return;
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      if (target && /^(input|textarea)$/i.test(target.tagName)) return;
+      // Typing goes untouched — a flow cell is a contentEditable, not an input.
+      if (target && (/^(input|textarea)$/i.test(target.tagName) || target.isContentEditable)) return;
       for (const pin of pins) {
         if (!pin.shortcutId) continue;
         const binding = readQuickChatBinding(pin.shortcutId);

@@ -438,11 +438,24 @@ async function readJson(name: string) {
   catch (e: any) { if (e.code === 'ENOENT') return null; throw e; }
 }
 
-async function writeJson(name: string, data: unknown) {
-  await ensureDir();
-  const p = safePath(name), tmp = `${p}.${Date.now()}${Math.floor(Math.random() * 1e6)}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  await fs.rename(tmp, p);
+// Writes to the same file are serialized, in call order. Two `storage:write`s
+// for one key can be in flight at once (the flow editor persists on a tab
+// switch and again from its save timer moments later); each one is an
+// atomic write-then-rename, but with nothing ordering them the OLDER payload
+// could finish its rename last and win — and a read issued right after the
+// newer write would still see the old data.
+const writeChains = new Map<string, Promise<void>>();
+function writeJson(name: string, data: unknown): Promise<void> {
+  const prev = writeChains.get(name) ?? Promise.resolve();
+  const run = prev.catch(() => undefined).then(async () => {
+    await ensureDir();
+    const p = safePath(name), tmp = `${p}.${Date.now()}${Math.floor(Math.random() * 1e6)}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.rename(tmp, p);
+  });
+  writeChains.set(name, run);
+  run.finally(() => { if (writeChains.get(name) === run) writeChains.delete(name); }).catch(() => undefined);
+  return run;
 }
 
 async function getSecure(key: string): Promise<string | null> {
@@ -953,10 +966,30 @@ async function withDelayedRetry<T>(fn: () => Promise<T>, delaysMs: number[] = [8
       return await fn();
     } catch (e) {
       lastErr = e;
+      // A rejection is not an outage. Waiting 100s and asking again with the
+      // same key, the same unsupported region, or the same over-long prompt
+      // gets the same answer — it just delays the toast until the user has
+      // long forgotten what triggered it, which is how the flow's tab-hover
+      // summary turned into "random popups" mid-round.
+      if (isPermanentAiError(e)) throw e;
       if (attempt < delaysMs.length) await sleep(delaysMs[attempt]);
     }
   }
   throw lastErr;
+}
+
+/**
+ * True for errors a retry cannot fix: the provider REJECTED the request (4xx
+ * other than 429 — bad key, forbidden, model not found, unsupported region, bad
+ * argument), there was no key to send, the prompt is over the context limit,
+ * or the answer was cut off (`truncatedResponseError`). Matched against the
+ * `*HttpError` message formats — "Gemini [400 FAILED_PRECONDITION]: …",
+ * "OpenAI [401 invalid_request_error]: …", "(HTTP 403)".
+ */
+function isPermanentAiError(e: unknown): boolean {
+  const m = String((e as any)?.message ?? e ?? '');
+  if (m === 'NO_KEY' || isTruncatedResponse(e)) return true;
+  return /\[(400|401|403|404)\b|\(HTTP (400|401|403|404)\)|FAILED_PRECONDITION|INVALID_ARGUMENT|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|invalid_api_key|authentication_error|permission_error|not_found_error|context window|context limit|too large/i.test(m);
 }
 
 /**
@@ -1817,7 +1850,14 @@ app.on('web-contents-created', (_event, contents) => {
 
 // ─── IPC ──────────────────────────────────────────────────────────────────────
 
-ipcMain.handle('storage:read', async (_e, name: string) => readJson(name));
+// A read waits for any write to the same key that was requested before it, so
+// "write, then reload from storage" (the flow editor's external-edit path)
+// can never read the file from before the write.
+ipcMain.handle('storage:read', async (_e, name: string) => {
+  const pending = writeChains.get(name);
+  if (pending) await pending.catch(() => undefined);
+  return readJson(name);
+});
 ipcMain.handle('storage:write', async (_e, name: string, data: unknown) => { await writeJson(name, data); return true; });
 
 // Windows: live-update the caption-button overlay so it follows the app theme.
