@@ -200,10 +200,15 @@ function useDarkMode() {
 
 function colBg(color: string, isDark: boolean, isHeader: boolean): string {
   const { r, g, b } = hexToRgb(color);
-  if (isDark) {
-    return `rgba(${r},${g},${b},${isHeader ? 0.34 : 0.12})`;
-  }
-  return `rgba(${r},${g},${b},${isHeader ? 0.30 : 0.12})`;
+  const pct = isDark ? 34 : 30;
+  // The column header is STICKY, so the grid scrolls underneath it. A tint with
+  // an alpha channel let that text show through the header — taglines sliding
+  // behind the speech name, which is unreadable and looks broken. Mix the same
+  // tint against the grid's own background instead: identical color, no alpha,
+  // nothing bleeds through. (Data cells keep the alpha — nothing scrolls under
+  // them, and it lets the arrow overlay read against any column color.)
+  if (isHeader) return `color-mix(in srgb, rgb(${r},${g},${b}) ${pct}%, var(--bg-main))`;
+  return `rgba(${r},${g},${b},0.12)`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -2898,6 +2903,10 @@ export default function FlowView() {
               position: 'sticky',
               top: 0,
               zIndex: 20,
+              // Backstop under the header cells: their widths are fractional at
+              // most zoom levels, so a hairline seam between two of them would
+              // otherwise be a window onto the scrolling content behind.
+              background: 'var(--bg-main)',
               borderBottom: '2px solid var(--border-med)',
             }}
           >
