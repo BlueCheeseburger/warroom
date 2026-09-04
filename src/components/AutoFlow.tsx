@@ -163,8 +163,14 @@ function buildCellHtml(tag: string, cite: string, summary?: string): string {
   let t = escapeHtml(useSummary ? summary!.trim() : tag);
   if (style.underline) t = `<u>${t}</u>`;
   if (style.italic) t = `<i>${t}</i>`;
-  if (style.bold) t = `<b>${t}</b>`;
-  return useSummary ? t : `${t}<br>${escapeHtml(cite)}`;
+  // Cells are bold by DEFAULT now (see `.flow-cell` in index.css), so bold is
+  // the absence of markup and un-bold is what has to be stated. Writing <b>
+  // here would be a no-op; writing nothing when the user asked for a plain tag
+  // would silently give them a bold one.
+  if (!style.bold) t = `<span style="font-weight: normal">${t}</span>`;
+  // The cite is never bold — it's the line that has to read as subordinate to
+  // the tag above it, and with a bold baseline it no longer does so for free.
+  return useSummary ? t : `${t}<br><span style="font-weight: normal">${escapeHtml(cite)}</span>`;
 }
 
 // The stages of a run, shown as a checklist while it works so the wait is

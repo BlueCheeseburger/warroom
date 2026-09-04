@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 9/3/26
+          Last updated: 9/4/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1140,6 +1140,57 @@ export default function Documentation() {
             (selecting) is never intercepted. <Code>focusCell</Code> focuses with{' '}
             <Code>preventScroll</Code> and then scrolls the container itself, so a cell reached by
             keyboard never lands under the sticky column header or a pixel past the bottom edge.
+          </P>
+          <P>
+            <strong>Cells are bold by default</strong> (<Code>.flow-cell {'{'} font-weight: 700 {'}'}</Code>).
+            A tagline is the normal case on a flow, so bold is the <em>absence</em> of markup and un-bold
+            is the marked state, written as an explicit <Code>font-weight: normal</Code>. In-cell{' '}
+            <Code>⌘B</Code> runs through <Code>toggleBold()</Code>, which brackets the command with{' '}
+            <Code>styleWithCSS</Code> so the browser emits that inline style rather than trying to strip a{' '}
+            <Code>&lt;b&gt;</Code> that was never there. Nothing is stored per cell, so existing flows pick
+            it up on next render. Auto Flow now writes its cite line un-bolded so tag-over-cite contrast
+            survives; the xlsx export flattens to text and is unaffected.
+          </P>
+          <P>
+            <strong>Multi-cell selection</strong> (<Code>src/lib/flowSelection.ts</Code>, 44 assertions).{' '}
+            <Code>⌘</Code>-click toggles a cell into a group, shift-click takes a range. A selection is
+            always <strong>within one column</strong> — a column is a speech, and <Code>⌘←</Code> on a
+            group spanning columns has no honest answer. Selected cells go{' '}
+            <Code>contentEditable={'{false}'}</Code>, so a stray caret can't make the next keystroke edit
+            one cell instead of moving the group; the window keydown handler takes <Code>⌘</Code>-arrows,
+            Delete and the emphasis shortcuts before the single-cell paths whenever a selection exists.{' '}
+            <Code>planMove</Code> preserves the group's internal spacing and refuses a move that would run
+            off the grid, while <Code>planDrop</Code> clamps (a wandering pointer should stop at the edge,
+            not fail). Moves <strong>overwrite</strong> the destination rather than pushing occupied cells
+            aside, so a move only ever changes rows the user can see.
+          </P>
+          <P>
+            <strong>Dragging a selection:</strong> mouse-down on a selected cell arms a drag ref (not
+            state — it survives the tab switch mid-drag), with a 4px threshold separating a drag from a
+            plain click. Window-level listeners drive it, since the pointer leaves the origin cell at
+            once, and <Code>elementsFromPoint</Code> hit-tests the <Code>data-ri</Code>/<Code>data-ci</Code>{' '}
+            attributes on each cell. Holding over a tab (<Code>data-sheet-idx</Code>) for 450ms opens it
+            with the cells still in hand; a cross-sheet drop writes the payload into the new sheet and
+            clears the origin keys on the old one in a single <Code>setSheets</Code>.
+          </P>
+          <P>
+            <strong>Moving cells drops their arrows</strong> (<Code>dropArrowsTouching</Code>). Any
+            cell-anchored arrow with an end among a move's sources or destinations is deleted rather than
+            re-anchored: once either end has moved, the line would point at whatever now sits there — a
+            claim the debater never made. Free arrows are anchored to the sheet, so they're untouched.
+            Every selection mutation routes through <Code>writeCells</Code>, the single place that applies
+            this rule and the live-sync push.
+          </P>
+          <P>
+            <strong>Whole-cell emphasis</strong> (<Code>cellHasEmphasis</Code> / <Code>setCellEmphasis</Code>,
+            40 assertions). With a selection there is no caret, so emphasis is applied by rewriting HTML
+            instead of via <Code>execCommand</Code>. Reading walks up from each text node and takes the
+            nearest ancestor that says anything, so a cell counts as bold only if <em>every</em> text node
+            is. Writing strips all markers for that one emphasis, then wraps once only if the wanted state
+            differs from the baseline — so toggling twice returns the original markup instead of an
+            accumulating pile of spans. Underline and strike share <Code>text-decoration</Code>, and the
+            strip is per-emphasis so removing one leaves the other intact. Toggle direction is decided once
+            for the whole group, so one press can't half-format a selection.
           </P>
           <P>
             <strong>Toolbar emphasis state:</strong> the B / I / U / S / H buttons light up while the

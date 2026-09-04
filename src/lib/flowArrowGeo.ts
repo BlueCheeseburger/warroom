@@ -61,6 +61,22 @@ export function straightPath(x1: number, y1: number, x2: number, y2: number): st
  * (nonexistent) cell keys would be meaningless and stamping `from`/`to` onto it
  * would turn it into a cell arrow pointing at cells the user never chose.
  */
+/**
+ * Drop every CELL arrow with an end in `keys` — the cells a move or a delete is
+ * about to change out from under it.
+ *
+ * An arrow means "this argument answers that one". Once either end has moved to
+ * a different row or column, or been overwritten, the line no longer says
+ * anything true: re-anchoring it would silently point at whatever now happens to
+ * sit there, which is worse than losing it. Free (hand-drawn) arrows are
+ * anchored to the sheet, not to a cell, so they are never touched here.
+ */
+export function dropArrowsTouching<T extends FlowArrowLike>(arrows: T[], keys: Set<string>): T[] {
+  if (keys.size === 0) return arrows;
+  return (arrows ?? []).filter((a) =>
+    !isCellArrow(a) || (!keys.has(a.from as string) && !keys.has(a.to as string)));
+}
+
 export function bumpArrow<T extends FlowArrowLike>(a: T, bump: (key: string) => string): T {
   if (!isCellArrow(a)) return a;
   return { ...a, from: bump(a.from as string), to: bump(a.to as string) };

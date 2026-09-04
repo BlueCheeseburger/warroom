@@ -188,6 +188,161 @@ export function cleanPastedHtml(html: string, text: string): string {
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br>') : '';
 }
 
+// ── Whole-cell emphasis (multi-cell selection) ───────────────────────────────
+//
+// The toolbar's B/I/U/S/H normally act on the caret's selection via
+// `execCommand`, which needs the cell focused. With several cells selected
+// there is no caret and no focus, so emphasis is applied by rewriting each
+// cell's HTML instead. Pure, so scripts/test-cell-emphasis.ts can exercise it.
+//
+// BOLD IS THE BASELINE. Flow cells render bold by default (see `.flow-cell` in
+// index.css) — a tagline is the normal case and typing shouldn't need a
+// keystroke to look like one. So "not bold" is the marked state, carried by an
+// explicit `font-weight: normal`, and every other emphasis works the usual way
+// round. `BASE_ON` is what the cell looks like with no markup at all.
+
+export type Emphasis = 'bold' | 'italic' | 'underline' | 'strikeThrough' | 'highlight';
+
+const BASE_ON: Record<Emphasis, boolean> = {
+  bold: true, italic: false, underline: false, strikeThrough: false, highlight: false,
+};
+
+// Tags that turn an emphasis ON, and the style property that carries it either way.
+const EMPHASIS_TAGS: Record<Emphasis, Set<string>> = {
+  bold: new Set(['B', 'STRONG']),
+  italic: new Set(['I', 'EM']),
+  underline: new Set(['U']),
+  strikeThrough: new Set(['S', 'STRIKE', 'DEL']),
+  highlight: new Set(),
+};
+const EMPHASIS_PROPS: Record<Emphasis, string[]> = {
+  bold: ['font-weight'],
+  italic: ['font-style'],
+  underline: ['text-decoration', 'text-decoration-line'],
+  strikeThrough: ['text-decoration', 'text-decoration-line'],
+  highlight: ['background-color'],
+};
+
+// Does this declaration value turn the emphasis on? (null = says nothing.)
+function valueSaysOn(e: Emphasis, prop: string, raw: string): boolean | null {
+  const v = raw.trim().toLowerCase();
+  if (!v) return null;
+  if (e === 'bold') return v === 'bolder' || v === 'bold' || (/^\d+$/.test(v) ? Number(v) >= 600 : false) ? true : (v === 'normal' || v === 'lighter' || /^\d+$/.test(v) ? false : null);
+  if (e === 'italic') return v === 'italic' || v === 'oblique' ? true : (v === 'normal' ? false : null);
+  if (e === 'underline') return v.includes('underline') ? true : (v === 'none' ? false : null);
+  if (e === 'strikeThrough') return v.includes('line-through') ? true : (v === 'none' ? false : null);
+  // highlight: any real color is on; transparent/none is off.
+  if (prop !== 'background-color') return null;
+  return v === 'transparent' || v === 'none' || v === 'initial' ? false : true;
+}
+
+function styleDecls(el: Element): [string, string][] {
+  return (el.getAttribute('style') || '').split(';')
+    .map((d) => d.trim()).filter(Boolean)
+    .map((d) => { const i = d.indexOf(':'); return [d.slice(0, i).trim().toLowerCase(), d.slice(i + 1).trim()] as [string, string]; })
+    .filter(([p]) => p);
+}
+
+// What this one element says about `e`: on, off, or nothing.
+function elementSays(el: Element, e: Emphasis): boolean | null {
+  let out: boolean | null = null;
+  for (const [prop, val] of styleDecls(el)) {
+    if (!EMPHASIS_PROPS[e].includes(prop)) continue;
+    const says = valueSaysOn(e, prop, val);
+    if (says !== null) out = says;
+  }
+  if (out !== null) return out;              // an explicit style beats the tag
+  return EMPHASIS_TAGS[e].has(el.tagName) ? true : null;
+}
+
+// Walk up from a text node: the nearest ancestor that says anything wins.
+function effectiveAt(node: Node, root: Element, e: Emphasis): boolean {
+  let cur: Node | null = node.parentNode;
+  while (cur && cur !== root.parentNode) {
+    if (cur.nodeType === 1) {
+      const says = elementSays(cur as Element, e);
+      if (says !== null) return says;
+    }
+    cur = cur.parentNode;
+  }
+  return BASE_ON[e];
+}
+
+function textNodesOf(root: Element): Text[] {
+  const out: Text[] = [];
+  const walk = (n: Node) => {
+    n.childNodes.forEach((c) => {
+      if (c.nodeType === 3) { if ((c.textContent || '').trim()) out.push(c as Text); }
+      else if (c.nodeType === 1) walk(c);
+    });
+  };
+  walk(root);
+  return out;
+}
+
+function parseBody(html: string): HTMLElement {
+  return new DOMParser().parseFromString(`<div id="wr-root">${html || ''}</div>`, 'text/html')
+    .getElementById('wr-root') as HTMLElement;
+}
+
+/**
+ * Does every bit of text in this cell carry `e`? A cell with no text at all
+ * reports the baseline, so an empty selection still toggles predictably.
+ */
+export function cellHasEmphasis(html: string, e: Emphasis): boolean {
+  const root = parseBody(html);
+  const texts = textNodesOf(root);
+  if (texts.length === 0) return BASE_ON[e];
+  return texts.every((t) => effectiveAt(t, root, e));
+}
+
+// Remove every marker for `e` in the subtree — the ON tags, and the style
+// declarations either way — so the cell falls back to the baseline before a
+// single wrapper re-states it. Without this, toggling twice would leave nested
+// contradictory markup ("<b><span style=font-weight:normal>").
+function stripEmphasis(root: Element, e: Emphasis): void {
+  root.querySelectorAll('*').forEach((el) => {
+    const decls = styleDecls(el).filter(([p]) => !EMPHASIS_PROPS[e].includes(p));
+    if (decls.length) el.setAttribute('style', decls.map(([p, v]) => `${p}: ${v}`).join('; '));
+    else el.removeAttribute('style');
+  });
+  // Unwrap the emphasis tags themselves (deepest first, so nesting unwinds).
+  const tags = [...EMPHASIS_TAGS[e]];
+  if (tags.length) {
+    const doomed = [...root.querySelectorAll(tags.join(','))].reverse();
+    doomed.forEach((el) => { while (el.firstChild) el.parentNode!.insertBefore(el.firstChild, el); el.remove(); });
+  }
+  // A <span> left with no attributes is pure noise now.
+  [...root.querySelectorAll('span')].reverse().forEach((el) => {
+    if (el.attributes.length === 0) { while (el.firstChild) el.parentNode!.insertBefore(el.firstChild, el); el.remove(); }
+  });
+}
+
+const WRAPPER: Record<Emphasis, { on: string; off: string }> = {
+  bold:          { on: '<b>',  off: '<span style="font-weight: normal">' },
+  italic:        { on: '<i>',  off: '<span style="font-style: normal">' },
+  underline:     { on: '<u>',  off: '<span style="text-decoration: none">' },
+  strikeThrough: { on: '<s>',  off: '<span style="text-decoration: none">' },
+  highlight:     { on: `<span style="background-color: ${HILITE}">`, off: '<span style="background-color: transparent">' },
+};
+
+/**
+ * Turn `e` on or off across a WHOLE cell. Strips existing markers for that one
+ * emphasis, then wraps the cell once if the wanted state differs from the
+ * baseline — so bold-on and italic-off both come back as clean, unwrapped
+ * markup rather than an accumulating pile of spans. Other emphasis is untouched.
+ */
+export function setCellEmphasis(html: string, e: Emphasis, on: boolean): string {
+  const root = parseBody(html);
+  if (textNodesOf(root).length === 0) return html; // nothing to format
+  stripEmphasis(root, e);
+  const inner = sanitizeCellHtml(root.innerHTML);
+  if (on === BASE_ON[e]) return inner;
+  const open = on ? WRAPPER[e].on : WRAPPER[e].off;
+  const close = `</${open.slice(1).split(/[\s>]/)[0]}>`;
+  return sanitizeCellHtml(`${open}${inner}${close}`);
+}
+
 // Every range in `el` matching `q` (already lowercased). Emphasis splits a cell's
 // text across nodes — "preventable <u>death</u>" is two of them — so searching
 // each text node on its own would miss any hit that straddles a tag, which is

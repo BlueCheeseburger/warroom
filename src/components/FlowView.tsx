@@ -9,13 +9,20 @@ import {
   seedDoc, docToData, cellText, setYText, metaMap, sheetsArr, sheetCells, findSheet,
   u8ToB64, LOCAL_ORIGIN, REMOTE_ORIGIN, FlowDocData,
 } from '../lib/flowDoc';
-import { HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn } from '../lib/cellHtml';
+import {
+  HILITE, HILITE_RGB, cellToHtml, htmlToText, cleanPastedHtml, sanitizeCellHtml, matchRangesIn,
+  cellHasEmphasis, setCellEmphasis, Emphasis,
+} from '../lib/cellHtml';
+import {
+  CellSelection, toggleCell, rangeTo, planMove, planDrop, applyMove, applyPaste,
+  clearCells, selectionKeys, isSelected as selHas, cellKey as selCellKey,
+} from '../lib/flowSelection';
 import { flushCellsIntoSheets } from '../lib/flowCellFlush';
 import { flowDataToXlsxBase64 } from '../utils/flowImport';
 import { teamKeyFor, encryptText } from '../lib/chatCrypto';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
 import { planStockIssueConversion, StockIssuePlan } from '../lib/stockIssueSuggest';
-import { isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow } from '../lib/flowArrowGeo';
+import { isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow, dropArrowsTouching } from '../lib/flowArrowGeo';
 import TaggedInIndicator from './TaggedInIndicator';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
@@ -223,7 +230,9 @@ export default function FlowView() {
   // started here and finished after a tab switch would put the arrow somewhere
   // the user never pointed at. The hover state goes too: it names an arrow on
   // the sheet we just left.
-  useEffect(() => { cancelDrawMode(); setHoveredArrow(null); }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The selection goes too — its rows name cells on the sheet we just left.
+  // (A cross-tab drag re-creates it at the drop, after this has run.)
+  useEffect(() => { cancelDrawMode(); setHoveredArrow(null); clearSelection(); }, [activeSheetIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [customColumns, setCustomColumns] = useState<string[] | null>(null);
   const [columnColors, setColumnColors] = useState<(string | null)[]>([]);
@@ -255,6 +264,39 @@ export default function FlowView() {
   const drawModeRef = useRef(false);
   // Which emphasis is on at the caret, for lighting up the toolbar buttons.
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, strike: false, highlight: false });
+
+  // ── Multi-cell selection ──────────────────────────────────────────────────
+  // ⌘-click builds a group of cells within ONE column (see lib/flowSelection.ts
+  // for why one column). The group can then be moved with ⌘-arrows or dragged,
+  // formatted as a unit, or cleared.
+  const [selection, setSelection] = useState<CellSelection | null>(null);
+  const selectionRef = useRef<CellSelection | null>(null);
+  useLayoutEffect(() => { selectionRef.current = selection; });
+  // Where a shift-click range starts from.
+  const selAnchor = useRef<{ row: number; col: number } | null>(null);
+  // The toolbar describes the selection while there is one, so it has to be
+  // recomputed when the group changes — no caret moves, so `selectionchange`
+  // never fires for this.
+  useEffect(() => { refreshFormatState(); }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A drag in progress (or about to be — `moved` flips once the pointer has
+  // travelled far enough that this is a drag and not a click).
+  const drag = useRef<{
+    originSheetId: string; col: number; rows: number[]; grabRow: number;
+    payload: string[]; startX: number; startY: number; moved: boolean;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const [dropAt, setDropAt] = useState<CellSelection | null>(null);
+  const [dropTab, setDropTab] = useState<number | null>(null);
+  // Hovering a tab mid-drag opens it after a beat, so a group can be carried to
+  // another sheet without letting go.
+  const tabHover = useRef<{ idx: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  function clearSelection() {
+    setSelection(null);
+    selectionRef.current = null;
+    selAnchor.current = null;
+  }
   // Free-form draw: the first clicked point (fractions of the content box) and
   // where the cursor is now, for the rubber-band preview.
   const [drawStart, setDrawStart] = useState<{ fx: number; fy: number } | null>(null);
@@ -581,9 +623,38 @@ export default function FlowView() {
     function onKey(e: KeyboardEvent) {
       if (!flowId) return;
       if (e.key === 'Escape') {
-        if (drawModeRef.current) { cancelDrawMode(); }
+        if (drawModeRef.current) cancelDrawMode();
+        else if (selectionRef.current) clearSelection();
         else if (findOpen) closeFind();
         return;
+      }
+      // ── With a group of cells selected, the group is what the keyboard acts
+      // on. These run before the single-cell equivalents below, and before the
+      // per-cell handler ever sees the key (⌘-click never focuses a cell).
+      if (selectionRef.current) {
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod && !e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          // The up/down pair is the same gesture as the single-cell ⌘↑/⌘↓, so it
+          // honours that shortcut's disable toggle. Left/right is its own thing
+          // (it has no single-cell equivalent) and isn't covered by it.
+          const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+          if (vertical && isShortcutDisabled('flow-move-row')) return;
+          e.preventDefault();
+          moveSelection(
+            e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0,
+            e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0,
+          );
+          return;
+        }
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+          e.preventDefault(); clearSelectedCells(); return;
+        }
+        for (const [id, cmd] of [
+          ['flow-bold', 'bold'], ['flow-italic', 'italic'], ['flow-underline', 'underline'],
+          ['flow-strike', 'strikeThrough'], ['flow-highlight', 'highlight'],
+        ] as const) {
+          if (matchesShortcut(e, id)) { e.preventDefault(); applyFormatToSelection(cmd); return; }
+        }
       }
       // ⌘L — the ONE handler for it, whether the caret is in a cell or not.
       // The per-cell keydown deliberately doesn't handle it: both used to fire
@@ -1053,14 +1124,28 @@ export default function FlowView() {
   // Buttons call this from onMouseDown(preventDefault) so the cell keeps focus
   // and its selection, letting execCommand act on the selected text.
   function applyFormat(cmd: 'bold' | 'italic' | 'underline' | 'strikeThrough' | 'highlight') {
+    // A group selection takes precedence: it's the thing the user is pointing at,
+    // and none of its cells is focused.
+    if (applyFormatToSelection(cmd)) return;
     const key = focusedCell.current;
     const el = key ? cellEls.current[key] : null;
     if (!key || !el) return;
     el.focus();
     if (cmd === 'highlight') toggleHighlight();
+    else if (cmd === 'bold') toggleBold();
     else document.execCommand(cmd);
     noteCellEdit(key, el.innerHTML);
     refreshFormatState();
+  }
+
+  // Cells are bold by default, so ⌘B usually turns bold OFF — and "off" has to
+  // be written down. With styleWithCSS on, Chromium emits an inline
+  // `font-weight: normal` (which the cell sanitizer allows) rather than trying
+  // to strip a <b> that was never there. Both directions round-trip.
+  function toggleBold() {
+    document.execCommand('styleWithCSS', false, 'true');
+    document.execCommand('bold');
+    document.execCommand('styleWithCSS', false, 'false');
   }
 
   // What emphasis is on at the caret right now — drives the toolbar's B/I/U/S/H
@@ -1068,6 +1153,19 @@ export default function FlowView() {
   // execCommand toggles), so it's right whether the emphasis came from the
   // button, the shortcut, or a paste. Cheap, and only re-renders on a change.
   function refreshFormatState() {
+    // With a group selected the buttons describe the GROUP, not a caret.
+    const sel = selectionRef.current;
+    if (sel) {
+      const keys = selectionKeys(sel).filter((k) => htmlToText(cellToHtml(cellsRef.current[k] ?? '')).trim());
+      const all = (e: Emphasis) => keys.length > 0 && keys.every((k) => cellHasEmphasis(cellToHtml(cellsRef.current[k] ?? ''), e));
+      const next = {
+        bold: all('bold'), italic: all('italic'), underline: all('underline'),
+        strike: all('strikeThrough'), highlight: all('highlight'),
+      };
+      setFmt((f) => (f.bold === next.bold && f.italic === next.italic && f.underline === next.underline
+        && f.strike === next.strike && f.highlight === next.highlight) ? f : next);
+      return;
+    }
     const key = focusedCell.current;
     const el = key ? cellEls.current[key] : null;
     if (!el || document.activeElement !== el) {
@@ -1186,7 +1284,7 @@ export default function FlowView() {
     if (matchesShortcut(e, 'flow-bold') || matchesShortcut(e, 'flow-italic') || matchesShortcut(e, 'flow-underline')) {
       e.preventDefault();
       const cmd = matchesShortcut(e, 'flow-bold') ? 'bold' : matchesShortcut(e, 'flow-italic') ? 'italic' : 'underline';
-      document.execCommand(cmd);
+      if (cmd === 'bold') toggleBold(); else document.execCommand(cmd);
       noteCellEdit(`${ri}-${ci}`, el.innerHTML);
       refreshFormatState();
       return;
@@ -1250,6 +1348,263 @@ export default function FlowView() {
     } else if (e.key === 'ArrowRight') {
       if (!e.shiftKey && ci < columns.length - 1 && caretAtTextEdge(el, 'end')) { e.preventDefault(); focusCell(`${ri}-${ci + 1}`, 'start'); }
     }
+  }
+
+  // ── Multi-cell selection: move, clear, format ─────────────────────────────
+
+  /**
+   * Write a new cell map for the ACTIVE sheet and drop any arrow whose ends the
+   * change disturbed (rule: a moved or overwritten cell invalidates its arrows —
+   * re-anchoring would point the line at whatever now sits there instead).
+   * Everything that mutates a selection goes through here so the arrow rule and
+   * the live-sync push can't be forgotten at one call site.
+   */
+  function writeCells(cells: Record<string, string>, touched: Set<string>) {
+    const owner = cellsOwnerId.current;
+    if (!owner) return;
+    const prev = cellsRef.current;
+    cellsRef.current = cells;
+    touched.forEach((k) => {
+      dirtyKeys.current.add(k);
+      const el = cellEls.current[k];
+      if (el) { el.innerHTML = cellToHtml(cells[k] ?? ''); el.dataset.init = '1'; }
+      if (prev[k] !== cells[k]) pushLiveCell(k, cellToHtml(cells[k] ?? ''));
+    });
+    const updated = snap.current.sheets.map((sh) =>
+      sh.id === owner
+        ? { ...sh, cells: { ...cells }, arrows: dropArrowsTouching(sh.arrows ?? [], touched) }
+        : sh);
+    setSheets(updated);
+    snap.current = { ...snap.current, sheets: updated };
+    persist({ sheets: updated });
+    recordHistory();
+    requestAnimationFrame(recomputeArrows);
+  }
+
+  /** ⌘↑ / ⌘↓ / ⌘← / ⌘→ with a selection: move the whole group. */
+  function moveSelection(dRow: number, dCol: number) {
+    const sel = selectionRef.current;
+    const plan = planMove(sel, dRow, dCol, NUM_ROWS, columns.length);
+    if (!plan) return;
+    writeCells(applyMove(cellsRef.current, plan), plan.touched);
+    setSelection(plan.next);
+    selectionRef.current = plan.next;
+    selAnchor.current = { row: plan.next.rows[0], col: plan.next.col };
+  }
+
+  /** Delete / Backspace with a selection: empty every selected cell. */
+  function clearSelectedCells() {
+    const sel = selectionRef.current;
+    const keys = selectionKeys(sel);
+    if (!keys.length) return;
+    writeCells(clearCells(cellsRef.current, keys), new Set(keys));
+  }
+
+  const EMPHASIS_OF: Record<'bold' | 'italic' | 'underline' | 'strikeThrough' | 'highlight', Emphasis> = {
+    bold: 'bold', italic: 'italic', underline: 'underline', strikeThrough: 'strikeThrough', highlight: 'highlight',
+  };
+
+  /**
+   * B / I / U / S / H across a whole selection. There is no caret in any of
+   * those cells, so this rewrites their HTML instead of using execCommand.
+   * Toggle direction is decided once for the group — if every cell with text
+   * already has the emphasis it comes off, otherwise it goes on all of them —
+   * so one press can't leave a selection half formatted.
+   */
+  function applyFormatToSelection(cmd: keyof typeof EMPHASIS_OF): boolean {
+    const sel = selectionRef.current;
+    const keys = selectionKeys(sel);
+    if (!keys.length) return false;
+    const e = EMPHASIS_OF[cmd];
+    const withText = keys.filter((k) => htmlToText(cellToHtml(cellsRef.current[k] ?? '')).trim());
+    if (!withText.length) return true; // nothing to format, but the selection still owned the keypress
+    const on = !withText.every((k) => cellHasEmphasis(cellToHtml(cellsRef.current[k] ?? ''), e));
+    const next = { ...cellsRef.current };
+    withText.forEach((k) => { next[k] = setCellEmphasis(cellToHtml(next[k] ?? ''), e, on); });
+    // Formatting doesn't move anything, so no arrow is invalidated — pass an
+    // empty touched-set to writeCells' arrow rule and repaint by hand.
+    const owner = cellsOwnerId.current;
+    cellsRef.current = next;
+    withText.forEach((k) => {
+      dirtyKeys.current.add(k);
+      const el = cellEls.current[k];
+      if (el) { el.innerHTML = cellToHtml(next[k] ?? ''); el.dataset.init = '1'; }
+      pushLiveCell(k, cellToHtml(next[k] ?? ''));
+    });
+    const updated = snap.current.sheets.map((sh) => sh.id === owner ? { ...sh, cells: { ...next } } : sh);
+    setSheets(updated);
+    snap.current = { ...snap.current, sheets: updated };
+    persist({ sheets: updated });
+    recordHistory();
+    return true;
+  }
+
+  // ── Dragging a selection ──────────────────────────────────────────────────
+
+  /** The cell under the pointer, if any (used for the drop target). */
+  function cellAtPoint(x: number, y: number): { ri: number; ci: number } | null {
+    const el = document.elementsFromPoint(x, y)
+      .find((n) => n instanceof HTMLElement && n.dataset.ri !== undefined) as HTMLElement | undefined;
+    if (!el) return null;
+    return { ri: Number(el.dataset.ri), ci: Number(el.dataset.ci) };
+  }
+
+  function startDragCandidate(ri: number, ci: number, e: React.MouseEvent) {
+    const sel = selectionRef.current;
+    if (!sel || !selHas(sel, ri, ci)) return;
+    drag.current = {
+      originSheetId: cellsOwnerId.current ?? '',
+      col: sel.col, rows: [...sel.rows], grabRow: ri,
+      payload: sel.rows.map((r) => cellsRef.current[selCellKey(r, sel.col)] ?? ''),
+      startX: e.clientX, startY: e.clientY, moved: false,
+    };
+  }
+
+  function endDrag() {
+    if (tabHover.current) { clearTimeout(tabHover.current.timer); tabHover.current = null; }
+    drag.current = null;
+    setDragging(false);
+    setDragPos(null);
+    setDropAt(null);
+    setDropTab(null);
+  }
+
+  /** Drop the carried cells onto (row, col) of whatever sheet is open now. */
+  function commitDrop(targetRow: number, targetCol: number) {
+    const d = drag.current;
+    if (!d) return;
+    const sameSheet = d.originSheetId === cellsOwnerId.current;
+
+    if (sameSheet) {
+      const plan = planDrop({ col: d.col, rows: d.rows }, d.grabRow, targetRow, targetCol, NUM_ROWS, columns.length);
+      if (!plan) return;
+      writeCells(applyMove(cellsRef.current, plan), plan.touched);
+      setSelection(plan.next);
+      selectionRef.current = plan.next;
+      return;
+    }
+
+    // Landed on a different tab. Two sheets change: the cells arrive here, and
+    // they leave the sheet they came from. Both sheets lose the arrows that
+    // pointed at the cells involved.
+    const shift = Math.max(-d.rows[0], Math.min(targetRow - d.grabRow, NUM_ROWS - 1 - d.rows[d.rows.length - 1]));
+    const rows = d.rows.map((r) => r + shift);
+    const keys = rows.map((r) => selCellKey(r, targetCol));
+    const gone = new Set(d.rows.map((r) => selCellKey(r, d.col)));
+
+    const owner = cellsOwnerId.current;
+    const landed = applyPaste(cellsRef.current, keys, d.payload);
+    cellsRef.current = landed;
+    keys.forEach((k) => {
+      dirtyKeys.current.add(k);
+      const el = cellEls.current[k];
+      if (el) { el.innerHTML = cellToHtml(landed[k] ?? ''); el.dataset.init = '1'; }
+      pushLiveCell(k, cellToHtml(landed[k] ?? ''));
+    });
+
+    const updated = snap.current.sheets.map((sh) => {
+      if (sh.id === owner) {
+        return { ...sh, cells: { ...landed }, arrows: dropArrowsTouching(sh.arrows ?? [], new Set(keys)) };
+      }
+      if (sh.id === d.originSheetId) {
+        return { ...sh, cells: clearCells(sh.cells ?? {}, [...gone]), arrows: dropArrowsTouching(sh.arrows ?? [], gone) };
+      }
+      return sh;
+    });
+    setSheets(updated);
+    snap.current = { ...snap.current, sheets: updated };
+    persist({ sheets: updated });
+    recordHistory();
+    requestAnimationFrame(recomputeArrows);
+    const next = { col: targetCol, rows };
+    setSelection(next);
+    selectionRef.current = next;
+  }
+
+  // Pointer handling for a drag lives on the window: the pointer leaves the
+  // cell it started in immediately, and can end up over a tab or off the grid.
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const d = drag.current;
+      if (!d) return;
+      if (!d.moved) {
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 4) return;
+        d.moved = true;
+        setDragging(true);
+        window.getSelection()?.removeAllRanges();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+      }
+      setDragPos({ x: e.clientX, y: e.clientY });
+
+      // Over a sheet tab? Hold there and it opens, drag still in hand.
+      const tabEl = document.elementsFromPoint(e.clientX, e.clientY)
+        .find((n) => n instanceof HTMLElement && n.dataset.sheetIdx !== undefined) as HTMLElement | undefined;
+      const idx = tabEl ? Number(tabEl.dataset.sheetIdx) : null;
+      if (idx !== null && idx !== snap.current.activeSheetIdx) {
+        setDropTab(idx);
+        setDropAt(null);
+        if (tabHover.current?.idx !== idx) {
+          if (tabHover.current) clearTimeout(tabHover.current.timer);
+          tabHover.current = { idx, timer: setTimeout(() => { tabHover.current = null; switchSheet(idx); }, 450) };
+        }
+        return;
+      }
+      if (tabHover.current) { clearTimeout(tabHover.current.timer); tabHover.current = null; }
+      setDropTab(null);
+
+      const at = cellAtPoint(e.clientX, e.clientY);
+      if (!at) { setDropAt(null); return; }
+      const shift = Math.max(-d.rows[0], Math.min(at.ri - d.grabRow, NUM_ROWS - 1 - d.rows[d.rows.length - 1]));
+      setDropAt({ col: at.ci, rows: d.rows.map((r) => r + shift) });
+    }
+    function onUp(e: MouseEvent) {
+      const d = drag.current;
+      if (!d) return;
+      if (!d.moved) {
+        // A plain click on a selected cell, not a drag: let it go back to
+        // ordinary editing rather than leaving the group stuck to the cursor.
+        const at = cellAtPoint(e.clientX, e.clientY);
+        endDrag();
+        clearSelection();
+        if (at) focusCell(selCellKey(at.ri, at.ci));
+        return;
+      }
+      const at = cellAtPoint(e.clientX, e.clientY);
+      if (at) commitDrop(at.ri, at.ci);
+      endDrag();
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [columns.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Mouse-down on a cell: build/extend a selection, or start dragging one. */
+  function handleCellMouseDown(ri: number, ci: number, e: React.MouseEvent) {
+    if (drawMode) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && !e.shiftKey) {
+      e.preventDefault(); // no caret, no focus — this is a selection gesture
+      const next = toggleCell(selectionRef.current, ri, ci);
+      setSelection(next);
+      selectionRef.current = next;
+      selAnchor.current = next ? { row: ri, col: ci } : null;
+      return;
+    }
+    if (e.shiftKey && selAnchor.current && selAnchor.current.col === ci) {
+      e.preventDefault();
+      const next = rangeTo(selAnchor.current.row, ri, ci);
+      setSelection(next);
+      selectionRef.current = next;
+      return;
+    }
+    if (selHas(selectionRef.current, ri, ci)) {
+      // Grabbing the group. Suppressing the default also stops the browser's own
+      // text-drag from starting inside the contentEditable.
+      e.preventDefault();
+      startDragCandidate(ri, ci, e);
+      return;
+    }
+    if (selectionRef.current) clearSelection();
   }
 
   // ── Cell move ─────────────────────────────────────────────────────────────
@@ -2640,17 +2995,25 @@ export default function FlowView() {
                 const cellKey = `${ri}-${ci}`;
                 const isHovered = hoveredCell?.ri === ri && hoveredCell?.ci === ci;
                 const remoteCur = remoteCursorMap.get(cellKey);
+                const picked = selHas(selection, ri, ci);
+                const isDropTarget = selHas(dropAt, ri, ci);
                 return (
                   <div
                     key={ci}
-                    className="relative"
+                    // data-ri/ci make the cell findable by hit-test during a drag
+                    // (elementsFromPoint), which is how the drop target and the
+                    // click-through-an-arrow path both locate a cell.
+                    data-ri={ri}
+                    data-ci={ci}
+                    className={`relative${picked ? ' flow-cell-selected' : ''}${isDropTarget ? ' flow-cell-drop' : ''}`}
                     style={{
                       background: colBg(colColor(ci), dark, false),
                       borderRight: ci < columns.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                       borderBottom: '1px solid var(--border-subtle)',
                       boxShadow: remoteCur ? `inset 0 0 0 2px ${remoteCur.user.color}` : undefined,
-                      cursor: drawMode ? 'crosshair' : undefined,
+                      cursor: drawMode ? 'crosshair' : (picked ? 'grab' : undefined),
                     }}
+                    onMouseDown={(e) => handleCellMouseDown(ri, ci, e)}
                     onMouseEnter={() => setHoveredCell({ ri, ci })}
                     onMouseLeave={() => setHoveredCell(null)}
                   >
@@ -2668,7 +3031,11 @@ export default function FlowView() {
                         cellEls.current[cellKey] = el;
                         if (el && el.dataset.init !== '1') { el.innerHTML = cellToHtml(cellsRef.current[cellKey] ?? ''); el.dataset.init = '1'; }
                       }}
-                      contentEditable={!drawMode}
+                      // Not editable while this cell is part of a group: the group
+                      // is being pointed at as a unit, and a stray caret in one of
+                      // its cells would make the next keystroke edit that cell
+                      // instead of moving the group.
+                      contentEditable={!drawMode && !picked}
                       suppressContentEditableWarning
                       onFocus={() => { focusedCell.current = cellKey; syncRef.current?.setActiveCell(cellKey); }}
                       onBlur={(e) => { if (liveRef.current) { pushLiveCell(cellKey, e.currentTarget.innerHTML); syncRef.current?.setActiveCell(null); } }}
@@ -2761,6 +3128,21 @@ export default function FlowView() {
       </div>
       </div>
 
+      {/* Ghost following the cursor while a group of cells is being dragged.
+          Pointer-events off so the hit-test underneath still finds cells/tabs. */}
+      {dragging && dragPos && drag.current && (
+        <div
+          className="fixed rounded-md px-2 py-1 text-[11px] font-semibold shadow-xl glass-elevated"
+          style={{
+            left: dragPos.x + 12, top: dragPos.y + 12, zIndex: 9999, pointerEvents: 'none',
+            color: 'var(--nav-active-color)', border: '1px solid var(--border-subtle)',
+          }}
+        >
+          {drag.current.rows.length} cell{drag.current.rows.length === 1 ? '' : 's'}
+          {dropTab !== null && ' · hold to open this tab'}
+        </div>
+      )}
+
       {/* ── Sheet tabs ── */}
       {/* ── "That looks like a stock issue" ── */}
       {stockIssuePlan && (
@@ -2814,6 +3196,8 @@ export default function FlowView() {
           {sheets.map((sheet, idx) => (
             <SheetTab
               key={sheet.id}
+              idx={idx}
+              dropTarget={dropTab === idx}
               name={sheet.name}
               active={idx === activeSheetIdx}
               renaming={renamingSheet === idx}
@@ -3066,10 +3450,16 @@ function DropBtn({ children, onClick, danger }: { children: React.ReactNode; onC
 }
 
 function SheetTab({
+  idx, dropTarget,
   name, active, renaming, renameValue, onRenameChange, onCommitRename, onCancelRename,
   onClick, onDoubleClick, onDelete, getSummary, onEnsureSummary,
   dragging, dropBefore, onDragStart, onDragOverTab, onDropTab, onDragEnd,
 }: {
+  /** Position in the tab strip — published as `data-sheet-idx` so a cell drag
+   *  can hit-test the strip and open this tab without letting go. */
+  idx: number;
+  /** A dragged group of cells is hovering here, about to open this tab. */
+  dropTarget?: boolean;
   name: string; active: boolean; renaming: boolean;
   renameValue: string; onRenameChange: (v: string) => void;
   onCommitRename: () => void; onCancelRename: () => void;
@@ -3098,7 +3488,8 @@ function SheetTab({
   }, [hovered, getSummary]);
   return (
     <div
-      className="flex items-center shrink-0 relative"
+      data-sheet-idx={idx}
+      className={`flex items-center shrink-0 relative${dropTarget ? ' flow-tab-drop' : ''}`}
       // Not draggable while inline-renaming, so text selection in the input works.
       draggable={!renaming}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(); }}

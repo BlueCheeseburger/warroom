@@ -799,6 +799,32 @@ html.dark .docx-viewer-wrap:not(.docx-force-light) * {
   box-shadow: -3px 0 0 rgba(66, 133, 244, 0.6) !important;
 }
 
+/* Flow cells are BOLD BY DEFAULT. On a flow the normal case is a tagline, and
+   it shouldn't take a keystroke to make one look like a tagline. "Not bold" is
+   therefore the marked state, written as an explicit font-weight: normal (see
+   setCellEmphasis in src/lib/cellHtml.ts) — which is also what ⌘B emits, since
+   the cell's own emphasis toggles run with styleWithCSS on. Existing flows pick
+   this up too: nothing is stored per cell, it's the baseline the cell renders at. */
+.flow-cell {
+  font-weight: 700;
+}
+
+/* Cells selected with ⌘-click, ready to be moved or formatted as a group. */
+.flow-cell-selected {
+  background: rgba(66, 133, 244, 0.16);
+  box-shadow: inset 0 0 0 1.5px var(--nav-active-color);
+}
+/* Where a dragged group would land if dropped now. */
+.flow-cell-drop {
+  box-shadow: inset 0 0 0 2px var(--nav-active-color);
+  background: rgba(66, 133, 244, 0.10);
+}
+/* A tab the cursor is holding a dragged group over, about to open. */
+.flow-tab-drop {
+  box-shadow: inset 0 2px 0 0 var(--nav-active-color);
+  background: var(--nav-active-bg);
+}
+
 /* Flow cells: highlighted runs keep dark ink so amber stays readable in dark mode. */
 .flow-cell span[style*="background-color"] {
   color: #1a1a1a !important;

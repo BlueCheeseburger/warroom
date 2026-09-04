@@ -8,7 +8,7 @@
 // Run:  npx tsx scripts/test-flow-arrow-geo.ts
 
 import {
-  isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow,
+  isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow, dropArrowsTouching,
 } from '../src/lib/flowArrowGeo';
 
 let pass = 0, fail = 0;
@@ -67,6 +67,28 @@ console.log('\n[4] Inserting a row moves cell arrows only');
     (movedFree as any).from === undefined && (movedFree as any).to === undefined);
   check('its coordinates are unchanged',
     movedFree.fx1 === 0.1 && movedFree.fy2 === 0.9);
+}
+
+console.log('\n[5] Moving cells drops the arrows that pointed at them');
+{
+  // An arrow means "this argument answers that one". Once either end has moved
+  // or been overwritten, re-anchoring it would point the line at whatever now
+  // happens to sit there — a claim the debater never made.
+  const arrows = [
+    { id: 'a', from: '3-1', to: '3-2' },
+    { id: 'b', from: '9-1', to: '9-2' },
+    { id: 'c', from: '5-0', to: '3-1' }, // points INTO a moved cell
+    free,
+  ];
+  const kept = dropArrowsTouching(arrows, new Set(['3-1', '4-1']));
+  check('an arrow leaving a moved cell is dropped', !kept.some((a) => a.id === 'a'));
+  check('an arrow arriving at a moved cell is dropped too', !kept.some((a) => a.id === 'c'));
+  check('an untouched arrow survives', kept.some((a) => a.id === 'b'));
+  check('a free arrow is never dropped — it is anchored to the sheet, not a cell',
+    kept.some((a) => a.id === 'f'));
+  check('nothing touched means nothing changes', dropArrowsTouching(arrows, new Set()) === arrows);
+  check('the input array is not mutated', arrows.length === 4);
+  check('an empty arrow list stays empty', dropArrowsTouching([], new Set(['1-1'])).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

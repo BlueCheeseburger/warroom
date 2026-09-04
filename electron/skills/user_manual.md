@@ -297,6 +297,30 @@ Paragraph breaks from the doc become a single line break, so a tag and its cite 
 
 If you have cells you pasted *before* this was fixed, they'll fix themselves the next time you open that flow — no need to retype them.
 
+**Cells are bold by default.** On a flow the normal thing to write is a tagline, so you don't have to press anything to make one look like one — just type. **⌘B** turns bold *off* for what you type next (that's what you want for a cite under a tag). Auto Flow still writes its cites un-bolded, so tag-over-cite still reads the way it always did. This applies to flows you already have — it's how cells are drawn, not something stored per cell.
+
+**Select several cells at once.**
+- **⌘-click** (Ctrl on Windows) a cell to pick it up, and ⌘-click more to add them. ⌘-click a picked cell again to drop it.
+- **Shift-click** grabs everything between the last cell you picked and the one you click.
+- Selected cells get a blue outline. **Esc**, or a plain click anywhere, clears the selection.
+
+Selections stay **within one column**, on purpose: a column is a speech, and "move these left" only means something if every cell you're moving came from the same one.
+
+**Do things to the whole selection.**
+- **⌘↑ / ⌘↓** move the whole group up or down its column, keeping the gaps between the cells exactly as they were.
+- **⌘← / ⌘→** move it to the column on that side, same rows — the quick way to slide a block of arguments into the speech that answers them.
+- **B / I / U / S / H** (buttons or shortcuts) format every selected cell at once. If any cell in the group is missing that emphasis, it goes on all of them; if they all have it, it comes off all of them — so one press never leaves a selection half-formatted.
+- **Delete** or **Backspace** empties every selected cell.
+- All of it is one **⌘Z** away.
+
+**Drag a selection where you want it.** Grab any selected cell and drag — a little "3 cells" tag follows your cursor, and the rows it would land on light up. Let go to drop it there.
+
+**Drag to another tab.** While you're dragging, hold the cursor over a tab at the bottom for a moment and that tab opens, with the cells still in hand. Then drop them wherever you want on it. The cells leave the tab they came from.
+
+**Dropping overwrites.** Whatever was in the cells you land on is replaced. Nothing gets pushed around behind your back, so a move only ever changes the rows you can see — and ⌘Z puts it all back if you land in the wrong place.
+
+**Moving cells deletes their arrows.** If an arrow started or ended at a cell you moved (or at one you dropped on top of), the arrow goes. An arrow means "this answers that", and once one end has moved it would be pointing at whatever happens to be sitting there now — a claim you never made. Hand-drawn arrows are pinned to the sheet rather than to a cell, so they're never affected.
+
 **Move around with the keyboard.**
 1. **← / →** move your cursor through the text, exactly like anywhere else — and once the cursor is already at the very start or end of the cell, one more press steps to the column on that side, so you can walk across a row without reaching for Tab.
 2. **↑ / ↓** move up or down a line inside the cell. When there's no line left to move to, they jump to the cell above or below — so in a one-line cell they just move between cells.
@@ -823,7 +847,10 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **← / →**: move the cursor through the text — or to the previous / next column once it's at the very start / end of the cell
 - **↑ / ↓**: move a line within the cell — or to the cell above / below when there's no line left
 - **Tab / Enter**: move to next column / row
-- **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows)
+- **⌘-click / Shift-click**: select several cells in one column (Esc clears)
+- **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows) — with cells selected, moves the whole group
+- **⌘← / ⌘→**: move a selected group to the column on that side
+- **Delete**: empty every selected cell
 - **⌘1 – ⌘8**: jump to that sheet; **⌘9** jumps to the last sheet
 - **⌘T**: new sheet
 - **⌘L**: draw an arrow — then click its start and end anywhere on the flow (works whether or not you're in a cell)
