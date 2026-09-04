@@ -317,7 +317,13 @@ Selections stay **within one column**, on purpose: a column is a speech, and "mo
 
 **Drag to another tab.** While you're dragging, hold the cursor over a tab at the bottom for a moment and that tab opens, with the cells still in hand. Then drop them wherever you want on it. The cells leave the tab they came from.
 
-**Dropping overwrites.** Whatever was in the cells you land on is replaced. Nothing gets pushed around behind your back, so a move only ever changes the rows you can see — and ⌘Z puts it all back if you land in the wrong place.
+**Moving inserts — it never writes over anything.** Cells go *into* the rows you move them to, and whatever was already there slides down to the next free row, the way inserting a line into a list works. If several filled rows are stacked under the spot you drop on, that whole run shifts down one and settles into the first gap beneath it; anything past that gap doesn't move at all. Nothing is ever destroyed by a move, and ⌘Z puts it back if you land in the wrong place.
+
+This is true of every way of moving cells: ⌘-arrows on a single cell, ⌘-arrows on a selection, dragging, and dragging to another tab.
+
+One consequence worth knowing: because a move pushes rather than trades places, **you can't move a cell past the one next to it** by nudging. ⌘↓ on a cell with something right below it shoves that cell along ahead of it — the two never change order. To reorder two arguments, drag one of them where you want it.
+
+If the column below is completely full with no gap anywhere, a downward move does nothing rather than shoving the bottom argument off the sheet. Nudging *up* still works in that case, since it moves into the gap it just made.
 
 **Moving cells deletes their arrows.** If an arrow started or ended at a cell you moved (or at one you dropped on top of), the arrow goes. An arrow means "this answers that", and once one end has moved it would be pointing at whatever happens to be sitting there now — a claim you never made. Hand-drawn arrows are pinned to the sheet rather than to a cell, so they're never affected.
 
@@ -848,7 +854,7 @@ Press **⌘/** (Mac) or **Ctrl+/** (Windows) anytime to open the full shortcuts 
 - **↑ / ↓**: move a line within the cell — or to the cell above / below when there's no line left
 - **Tab / Enter**: move to next column / row
 - **⌘-click / Shift-click**: select several cells in one column (Esc clears)
-- **⌘↑ / ⌘↓**: shift an argument up / down a row (swaps with its neighbour, cursor follows) — with cells selected, moves the whole group
+- **⌘↑ / ⌘↓**: shift an argument up / down a row (inserts; the neighbour slides along) — with cells selected, moves the whole group
 - **⌘← / ⌘→**: move a selected group to the column on that side
 - **Delete**: empty every selected cell
 - **⌘1 – ⌘8**: jump to that sheet; **⌘9** jumps to the last sheet

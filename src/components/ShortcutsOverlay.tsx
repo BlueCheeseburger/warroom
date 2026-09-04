@@ -84,7 +84,7 @@ export const GROUPS: Group[] = [
       { keys: ['←', '→'], label: 'Move the cursor through the text — or to the previous / next column once it is at the start / end of the cell' },
       { keys: ['↑', '↓'], label: 'Move a line within the cell — or to the cell above / below when there is no line left' },
       { keys: [`${MOD}Click`, '⇧Click'], label: 'Select several cells in one column — then move, format or delete them together (Esc clears)' },
-      { id: 'flow-move-row', keys: [`${MOD}↑`, `${MOD}↓`], label: "Move this cell's content up / down a row — or the whole selection" },
+      { id: 'flow-move-row', keys: [`${MOD}↑`, `${MOD}↓`], label: "Move this cell's content up / down a row, sliding what's there along — or the whole selection" },
       { keys: [`${MOD}←`, `${MOD}→`], label: 'Move the selected cells to the column on that side' },
       { keys: ['Delete'], label: 'Empty every selected cell' },
       { id: 'flow-sheet-switch', keys: [`${MOD}1`, '…', `${MOD}8`], label: 'Jump to sheet 1–8 (' + MOD + '9 jumps to the last sheet)' },

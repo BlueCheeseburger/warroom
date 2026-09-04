@@ -6,9 +6,11 @@
 // speech, or over in the speech that answers it. A rectangle spanning columns
 // has no honest answer for what ⌘← should do to it.
 //
-// Moving OVERWRITES what it lands on. The alternative (pushing occupied cells
-// out of the way) silently rewrites rows the user never selected, which on a
-// flow means arguments quietly sliding away from the line they were answering.
+// Moving INSERTS. Cells go into the destination rows and whatever was already
+// there slides down to the next free row, the way inserting a line into a list
+// works — a move never destroys an argument. The cost is that a move can't step
+// *past* occupied cells: nudging down shoves the neighbour along ahead of it
+// rather than trading places with it.
 //
 // Everything here is pure so scripts/test-flow-selection.ts can exercise it
 // without React or a DOM. FlowView.tsx owns the pointer/keyboard handling.
@@ -109,27 +111,92 @@ export function planDrop(
   return planMove(sel, targetRow - grabRow, targetCol - sel.col, numRows, numCols, { clamp: true });
 }
 
-/**
- * Apply a plan to a cell map. Destinations take the moved content outright;
- * sources are emptied unless they are also destinations (a one-row nudge
- * overlaps itself). An empty source clears its destination rather than leaving
- * whatever was there — moving a blank cell onto text still means "this is blank
- * now", and leaving the old text behind would look like the move failed.
- */
-export function applyMove(cells: Record<string, string>, plan: MovePlan): Record<string, string> {
-  const next = { ...cells };
-  const payload = plan.from.map((k) => cells[k] ?? '');
-  const dest = new Set(plan.to);
-  plan.from.forEach((k) => { if (!dest.has(k)) delete next[k]; });
-  plan.to.forEach((k, i) => { if (payload[i]) next[k] = payload[i]; else delete next[k]; });
-  return next;
+export interface InsertResult {
+  cells: Record<string, string>;
+  /** Cells the insert pushed out of the way: old key → new key. Their arrows
+   *  follow them (the argument didn't change, only its row). */
+  shifted: Map<string, string>;
 }
 
-/** Drop a payload onto another sheet (a cross-tab drag). Overwrites, same rule. */
-export function applyPaste(cells: Record<string, string>, keys: string[], payload: string[]): Record<string, string> {
+/**
+ * Put `payload` into `rows` of `col`, sliding whatever is already there down to
+ * the next free row.
+ *
+ * The slide cascades: dropping onto a run of three filled rows pushes the whole
+ * run down one, into the first gap under it. Only that run moves — content
+ * further down, past a gap, stays exactly where it is, which is what makes this
+ * feel like inserting a line rather than shunting the whole column.
+ *
+ * Returns null if there is no free row left below to absorb the displaced
+ * content. Refusing is the only honest answer there: the alternative is pushing
+ * an argument off the bottom of the sheet, and losing evidence to a keystroke is
+ * not a trade anyone would take.
+ *
+ * A blank cell in the payload inserts nothing and pushes nothing — moving an
+ * empty cell shouldn't disturb the column it lands in.
+ */
+export function insertCells(
+  cells: Record<string, string>,
+  col: number,
+  rows: number[],
+  payload: string[],
+  numRows: number,
+): InsertResult | null {
   const next = { ...cells };
-  keys.forEach((k, i) => { if (payload[i]) next[k] = payload[i]; else delete next[k]; });
-  return next;
+  // Work on the destination column as slots that remember where they started,
+  // so a cell pushed twice (once per inserted row) is still tracked back to its
+  // original position for the arrow remap.
+  const slots = new Map<number, { html: string; from: number | null }>();
+  for (let r = 0; r < numRows; r++) {
+    const v = next[cellKey(r, col)];
+    if (v) slots.set(r, { html: v, from: r });
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!payload[i]) continue;
+    if (slots.has(row)) {
+      let free = row;
+      while (free < numRows && slots.has(free)) free++;
+      if (free >= numRows) return null;               // nowhere to put the displaced content
+      for (let r = free; r > row; r--) slots.set(r, slots.get(r - 1)!);
+      slots.delete(row);
+    }
+    slots.set(row, { html: payload[i], from: null });
+  }
+
+  for (let r = 0; r < numRows; r++) delete next[cellKey(r, col)];
+  const shifted = new Map<string, string>();
+  slots.forEach((slot, r) => {
+    next[cellKey(r, col)] = slot.html;
+    if (slot.from !== null && slot.from !== r) shifted.set(cellKey(slot.from, col), cellKey(r, col));
+  });
+  return { cells: next, shifted };
+}
+
+/**
+ * Apply a plan: lift the selection out, then insert it at the destination.
+ *
+ * Lifting first is what makes a same-column nudge work — the rows the selection
+ * vacates are free by the time the insert looks for room, so moving a block down
+ * one doesn't push against itself.
+ */
+export function applyMove(cells: Record<string, string>, plan: MovePlan, numRows: number): InsertResult | null {
+  const payload = plan.from.map((k) => cells[k] ?? '');
+  const lifted = { ...cells };
+  plan.from.forEach((k) => { delete lifted[k]; });
+  return insertCells(lifted, plan.next.col, plan.next.rows, payload, numRows);
+}
+
+/** Drop a payload onto another sheet (a cross-tab drag) — same insert rule. */
+export function applyPaste(
+  cells: Record<string, string>,
+  col: number,
+  rows: number[],
+  payload: string[],
+  numRows: number,
+): InsertResult | null {
+  return insertCells(cells, col, rows, payload, numRows);
 }
 
 /** Empty every selected cell (Delete with a selection). */

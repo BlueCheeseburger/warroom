@@ -1359,21 +1359,39 @@ export default function FlowView() {
    * Everything that mutates a selection goes through here so the arrow rule and
    * the live-sync push can't be forgotten at one call site.
    */
-  function writeCells(cells: Record<string, string>, touched: Set<string>) {
+  function writeCells(
+    cells: Record<string, string>,
+    opts: { remap?: Map<string, string>; dropArrows?: Set<string> } = {},
+  ) {
     const owner = cellsOwnerId.current;
     if (!owner) return;
     const prev = cellsRef.current;
+    // Diff the whole map rather than trusting a caller-supplied key list. An
+    // insert cascades — it can shift cells the caller never named — and a
+    // repaint that misses one leaves stale text on screen until the next
+    // remount, which reads as content duplicating itself.
+    const touched = new Set([...Object.keys(prev), ...Object.keys(cells)]
+      .filter((k) => (prev[k] ?? '') !== (cells[k] ?? '')));
     cellsRef.current = cells;
     touched.forEach((k) => {
       dirtyKeys.current.add(k);
       const el = cellEls.current[k];
       if (el) { el.innerHTML = cellToHtml(cells[k] ?? ''); el.dataset.init = '1'; }
-      if (prev[k] !== cells[k]) pushLiveCell(k, cellToHtml(cells[k] ?? ''));
+      pushLiveCell(k, cellToHtml(cells[k] ?? ''));
     });
-    const updated = snap.current.sheets.map((sh) =>
-      sh.id === owner
-        ? { ...sh, cells: { ...cells }, arrows: dropArrowsTouching(sh.arrows ?? [], touched) }
-        : sh);
+    const remap = opts.remap;
+    const updated = snap.current.sheets.map((sh) => {
+      if (sh.id !== owner) return sh;
+      // Order matters. Bump FIRST, so an arrow on a cell the insert pushed down
+      // follows it — that argument didn't change, only its row. Then drop the
+      // arrows anchored to the moved selection itself, which no longer describe
+      // anything true (per the rule: a moved cell's arrows go).
+      let arrows = sh.arrows ?? [];
+      if (remap?.size) arrows = arrows.map((a) => bumpArrow(a, (k) => remap.get(k) ?? k));
+      if (opts.dropArrows?.size) arrows = dropArrowsTouching(arrows, opts.dropArrows);
+      const aiCells = remap?.size ? sh.aiCells?.map((k) => remap.get(k) ?? k) : sh.aiCells;
+      return { ...sh, cells: { ...cells }, arrows, aiCells };
+    });
     setSheets(updated);
     snap.current = { ...snap.current, sheets: updated };
     persist({ sheets: updated });
@@ -1381,12 +1399,22 @@ export default function FlowView() {
     requestAnimationFrame(recomputeArrows);
   }
 
-  /** ⌘↑ / ⌘↓ / ⌘← / ⌘→ with a selection: move the whole group. */
+  /**
+   * ⌘↑ / ⌘↓ / ⌘← / ⌘→ with a selection: move the whole group, inserting it at
+   * the destination and sliding whatever was there down. Refused outright if
+   * the column has no room left to absorb the displaced cells — better a
+   * keystroke that does nothing than one that pushes an argument off the sheet.
+   */
   function moveSelection(dRow: number, dCol: number) {
     const sel = selectionRef.current;
     const plan = planMove(sel, dRow, dCol, NUM_ROWS, columns.length);
     if (!plan) return;
-    writeCells(applyMove(cellsRef.current, plan), plan.touched);
+    const res = applyMove(cellsRef.current, plan, NUM_ROWS);
+    if (!res) return;
+    // The moved cells keep their arrows' fate: dropped. Displaced cells keep
+    // theirs: remapped. `shifted` never names a destination row, since the
+    // insert frees each target before writing to it.
+    writeCells(res.cells, { remap: res.shifted, dropArrows: plan.touched });
     setSelection(plan.next);
     selectionRef.current = plan.next;
     selAnchor.current = { row: plan.next.rows[0], col: plan.next.col };
@@ -1397,7 +1425,7 @@ export default function FlowView() {
     const sel = selectionRef.current;
     const keys = selectionKeys(sel);
     if (!keys.length) return;
-    writeCells(clearCells(cellsRef.current, keys), new Set(keys));
+    writeCells(clearCells(cellsRef.current, keys), { dropArrows: new Set(keys) });
   }
 
   const EMPHASIS_OF: Record<'bold' | 'italic' | 'underline' | 'strikeThrough' | 'highlight', Emphasis> = {
@@ -1478,7 +1506,9 @@ export default function FlowView() {
     if (sameSheet) {
       const plan = planDrop({ col: d.col, rows: d.rows }, d.grabRow, targetRow, targetCol, NUM_ROWS, columns.length);
       if (!plan) return;
-      writeCells(applyMove(cellsRef.current, plan), plan.touched);
+      const res = applyMove(cellsRef.current, plan, NUM_ROWS);
+      if (!res) return; // no room below to absorb what's already there
+      writeCells(res.cells, { remap: res.shifted, dropArrows: plan.touched });
       setSelection(plan.next);
       selectionRef.current = plan.next;
       return;
@@ -1489,24 +1519,39 @@ export default function FlowView() {
     // pointed at the cells involved.
     const shift = Math.max(-d.rows[0], Math.min(targetRow - d.grabRow, NUM_ROWS - 1 - d.rows[d.rows.length - 1]));
     const rows = d.rows.map((r) => r + shift);
-    const keys = rows.map((r) => selCellKey(r, targetCol));
     const gone = new Set(d.rows.map((r) => selCellKey(r, d.col)));
 
+    // Insert into THIS sheet, sliding its existing cells down, exactly as a
+    // same-sheet move does.
+    const res = applyPaste(cellsRef.current, targetCol, rows, d.payload, NUM_ROWS);
+    if (!res) return;
     const owner = cellsOwnerId.current;
-    const landed = applyPaste(cellsRef.current, keys, d.payload);
-    cellsRef.current = landed;
-    keys.forEach((k) => {
+    const prev = cellsRef.current;
+    const touched = new Set([...Object.keys(prev), ...Object.keys(res.cells)]
+      .filter((k) => (prev[k] ?? '') !== (res.cells[k] ?? '')));
+    cellsRef.current = res.cells;
+    touched.forEach((k) => {
       dirtyKeys.current.add(k);
       const el = cellEls.current[k];
-      if (el) { el.innerHTML = cellToHtml(landed[k] ?? ''); el.dataset.init = '1'; }
-      pushLiveCell(k, cellToHtml(landed[k] ?? ''));
+      if (el) { el.innerHTML = cellToHtml(res.cells[k] ?? ''); el.dataset.init = '1'; }
+      pushLiveCell(k, cellToHtml(res.cells[k] ?? ''));
     });
 
     const updated = snap.current.sheets.map((sh) => {
       if (sh.id === owner) {
-        return { ...sh, cells: { ...landed }, arrows: dropArrowsTouching(sh.arrows ?? [], new Set(keys)) };
+        // Nothing to drop here — the arriving cells brought no arrows with them.
+        // The cells they pushed down keep theirs, remapped to the new rows.
+        const arrows = res.shifted.size
+          ? (sh.arrows ?? []).map((a) => bumpArrow(a, (k) => res.shifted.get(k) ?? k))
+          : sh.arrows ?? [];
+        const aiCells = res.shifted.size ? sh.aiCells?.map((k) => res.shifted.get(k) ?? k) : sh.aiCells;
+        return { ...sh, cells: { ...res.cells }, arrows, aiCells };
       }
       if (sh.id === d.originSheetId) {
+        // The cells left this sheet, so their arrows here no longer point at
+        // anything. A hole is left behind rather than closing the gap up —
+        // the rows below didn't move, and pulling them up would rewrite rows
+        // the user never touched.
         return { ...sh, cells: clearCells(sh.cells ?? {}, [...gone]), arrows: dropArrowsTouching(sh.arrows ?? [], gone) };
       }
       return sh;
@@ -1609,38 +1654,22 @@ export default function FlowView() {
 
   // ── Cell move ─────────────────────────────────────────────────────────────
 
+  /**
+   * ⌘↑ / ⌘↓ on a single cell (and the hover arrows). Same insert rule as a
+   * group move: the cell goes into the next row and anything already there
+   * slides down.
+   *
+   * This used to SWAP with the neighbour, which let you walk an argument past
+   * the ones around it by holding ⌘↓. Inserting can't do that — the neighbour
+   * is pushed along ahead of the cell instead of trading places with it — but
+   * one rule for every kind of move beats two rules that disagree.
+   */
   function moveCell(ri: number, ci: number, dir: 'up' | 'down') {
-    const targetRi = dir === 'up' ? ri - 1 : ri + 1;
-    if (targetRi < 0 || targetRi >= NUM_ROWS) return;
-    const key = `${ri}-${ci}`;
-    const targetKey = `${targetRi}-${ci}`;
-    const a = cellsRef.current[key] ?? '';
-    const b = cellsRef.current[targetKey] ?? '';
-    cellsRef.current[key] = b;
-    cellsRef.current[targetKey] = a;
-    // Update DOM without re-render
-    const el = cellEls.current[key];
-    const targetEl = cellEls.current[targetKey];
-    if (el) el.innerHTML = cellToHtml(b);
-    if (targetEl) targetEl.innerHTML = cellToHtml(a);
-    dirtyKeys.current.add(key); dirtyKeys.current.add(targetKey);
-    pushLiveCell(key, cellToHtml(b));
-    pushLiveCell(targetKey, cellToHtml(a));
-    // Swap the AI-ring membership so it follows the moved content. By owner
-    // id, like every other write into the sheets array (see flowCellFlush.ts).
-    const owner = cellsOwnerId.current;
-    const sh = snap.current.sheets.find((x) => x.id === owner);
-    const ai = sh?.aiCells ?? [];
-    const keyAi = ai.includes(key), targetAi = ai.includes(targetKey);
-    if (keyAi !== targetAi) {
-      const next = ai.filter((k) => k !== key && k !== targetKey);
-      if (keyAi) next.push(targetKey);
-      if (targetAi) next.push(key);
-      const updated = snap.current.sheets.map((x) => x.id === owner ? { ...x, aiCells: next } : x);
-      setSheets(updated);
-      snap.current = { ...snap.current, sheets: updated };
-    }
-    scheduleSave();
+    const plan = planMove({ col: ci, rows: [ri] }, dir === 'up' ? -1 : 1, 0, NUM_ROWS, columns.length);
+    if (!plan) return;
+    const res = applyMove(cellsRef.current, plan, NUM_ROWS);
+    if (!res) return;
+    writeCells(res.cells, { remap: res.shifted, dropArrows: plan.touched });
   }
 
   // Insert a blank cell between rows `afterRi` and `afterRi+1` in a single column,

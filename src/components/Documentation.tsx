@@ -1161,8 +1161,21 @@ export default function Documentation() {
             Delete and the emphasis shortcuts before the single-cell paths whenever a selection exists.{' '}
             <Code>planMove</Code> preserves the group's internal spacing and refuses a move that would run
             off the grid, while <Code>planDrop</Code> clamps (a wandering pointer should stop at the edge,
-            not fail). Moves <strong>overwrite</strong> the destination rather than pushing occupied cells
-            aside, so a move only ever changes rows the user can see.
+            not fail).
+          </P>
+          <P>
+            <strong>Moves insert; they never overwrite.</strong> <Code>insertCells</Code> is the one
+            implementation behind every move path — single-cell <Code>⌘↑</Code>/<Code>⌘↓</Code>{' '}
+            (<Code>moveCell</Code>, which used to swap with its neighbour), group <Code>⌘</Code>-arrows,
+            and both same-sheet and cross-sheet drops. It models the destination column as slots that
+            remember the row they started on, pushes the contiguous run at the target down into the first
+            gap beneath it (content past that gap is untouched), and returns a <Code>shifted</Code> map of
+            old key → new key. <Code>applyMove</Code> lifts the selection out <em>before</em> inserting, so
+            a same-column nudge uses the rows it vacates as its own headroom. It returns <Code>null</Code>{' '}
+            when no free row remains below to absorb the displaced content, and every caller no-ops —
+            shoving an argument off the bottom of the sheet to satisfy a keystroke isn't a trade worth
+            making. The accepted consequence: a move can't step <em>past</em> occupied cells, so nudging is
+            no longer a way to reorder two adjacent arguments — dragging is.
           </P>
           <P>
             <strong>Dragging a selection:</strong> mouse-down on a selected cell arms a drag ref (not
@@ -1174,12 +1187,16 @@ export default function Documentation() {
             clears the origin keys on the old one in a single <Code>setSheets</Code>.
           </P>
           <P>
-            <strong>Moving cells drops their arrows</strong> (<Code>dropArrowsTouching</Code>). Any
-            cell-anchored arrow with an end among a move's sources or destinations is deleted rather than
-            re-anchored: once either end has moved, the line would point at whatever now sits there — a
-            claim the debater never made. Free arrows are anchored to the sheet, so they're untouched.
-            Every selection mutation routes through <Code>writeCells</Code>, the single place that applies
-            this rule and the live-sync push.
+            <strong>Arrows:</strong> a cell the insert pushed down keeps its arrows (same argument, new
+            row) and a cell the user moved loses them. <Code>writeCells</Code> applies both, in a
+            load-bearing order — <Code>bumpArrow</Code> through the insert's <Code>shifted</Code> map
+            first, then <Code>dropArrowsTouching</Code> the moved selection's own source/destination keys.
+            Bumping first is safe because <Code>shifted</Code> can never name a destination row: the insert
+            frees each target before writing to it. <Code>aiCells</Code> is remapped the same way, and free
+            arrows are anchored to the sheet so neither rule touches them. <Code>writeCells</Code> also
+            diffs the whole cell map to decide what to repaint rather than trusting a caller's key list —
+            an insert cascades into cells the caller never named, and a missed repaint reads as content
+            duplicating itself.
           </P>
           <P>
             <strong>Whole-cell emphasis</strong> (<Code>cellHasEmphasis</Code> / <Code>setCellEmphasis</Code>,
