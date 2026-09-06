@@ -207,7 +207,7 @@ export default function Documentation() {
           {activeSectionLabel}
         </p>
         <p className="text-xs mb-1" style={{ color: 'var(--nav-inactive-color)' }}>
-          Last updated: 9/4/26
+          Last updated: 9/5/26
         </p>
         <p className="text-xs mb-8" style={{ color: 'var(--placeholder)' }}>
           Press <Code>⌘F</Code> / <Code>Ctrl F</Code> to search this page.
@@ -1313,14 +1313,35 @@ export default function Documentation() {
           </P>
           <P>
             <strong>Tab previews:</strong> long tab names truncate with an ellipsis instead of
-            overflowing. Hover a tab at the bottom and a tooltip shows its full name plus a summary
-            of the argument as a whole on that sheet — a real Warroom-AI-written sentence (marked
-            with a ✨), not a list of what's on the tab. The first time you hover a tab with content
-            on it, Warroom AI generates that sentence on the spot (you'll briefly see "Warroom AI is
-            summarizing this tab…"); it's then cached and reused on every later hover until you
-            actually change something on that sheet, so most hovers don't cost a call at all. Auto
-            Flow's opt-in AI card-summary option can also seed this for free at write time, folded
-            from the per-card summaries it already generated.
+            overflowing. Hover a tab at the bottom and a tooltip shows its full name plus a preview of
+            what's on it. On tabs <strong>Auto Flow built</strong>, that leads with a real
+            Warroom-AI-written sentence (marked with a ✨) describing the position as a whole, not a
+            list of what's on the tab. Warroom AI writes it on the first hover (you'll briefly see
+            "Warroom AI is summarizing this tab…"), then it's cached, so most hovers cost nothing.
+            Auto Flow's opt-in AI card-summary option can also seed it for free at write time.
+          </P>
+          <P>
+            <strong>Only Auto Flow's tabs are summarized</strong> (<Code>wasAutoFlowed</Code> in{' '}
+            <Code>src/lib/flowTabSummary.ts</Code>). A tab the debater typed is already in their own
+            words, so describing it back to them is an API call per tab hovered that buys nothing —
+            those show the free local tag preview instead. Auto Flow stamps{' '}
+            <Code>SheetData.autoFlowRole</Code> on every sheet it writes; the field's presence is the
+            test, so <Code>null</Code> (wrote here, couldn't classify) still counts, and a legacy
+            clause catches pre-<Code>autoFlowRole</Code> sheets via <Code>aiCells</Code>, which only
+            Auto Flow ever sets. Display is gated on the same check, so a stale summary on a
+            hand-typed tab stops showing rather than sitting there with nothing to regenerate it.
+          </P>
+          <P>
+            <strong>The summary reads one column, not the whole sheet</strong>{' '}
+            (<Code>summaryColumnFor</Code>): the speech that <em>introduced</em> the position — the
+            1AC for an advantage tab, the 1NC for an off-case one. A tab also holds every answer to
+            that position, and feeding those in summarized the argument's whole history rather than
+            the argument. Columns resolve by name so a renamed or reordered flow still works, falling
+            back to position; PF takes the first and second "Case" column, which lands on the right
+            side under either order because those arrays are ordered by speech. The cache signature
+            covers only the entries actually sent, so flowing answers into a later speech doesn't
+            invalidate a summary they couldn't have changed — otherwise a tab being actively worked
+            in would re-spend a call per hover for the identical sentence.
           </P>
           <P>
             <strong>Find (<Code>⌘F</Code>):</strong> a find bar searches across all tabs in the flow.

@@ -368,7 +368,13 @@ Arrows are saved with the sheet, so they're there when you reopen the flow, and 
 
 **Insert a cell between two others.** Hover the line between two stacked cells in the same column and a tiny **+** appears on it. Click it to slot a blank cell in there — everything below shifts down one row in that column, so you can drop in an argument you missed without re-typing the ones under it. It's undoable with ⌘Z.
 
-**Peek at a tab's contents.** Long tab names are shortened with an ellipsis so they never overflow. Hover a tab at the bottom and a tooltip shows its **full name** plus a ✨ **AI-written sentence** summarizing the argument as a whole on that sheet — not a list of what's on it, but the actual position, the way you'd describe it to a teammate. The first time you hover a tab with content on it, Warroom AI writes that sentence on the spot (you'll see "Warroom AI is summarizing this tab…" while it works); after that it's cached, so hovering the same tab again is instant — it only regenerates once you actually change something on that sheet.
+**Peek at a tab's contents.** Long tab names are shortened with an ellipsis so they never overflow. Hover a tab at the bottom and a tooltip shows its **full name** plus a preview of what's on it.
+
+On tabs **Auto Flow built**, that preview leads with a ✨ **AI-written sentence** summarizing the position — not a list of what's on the tab, but the argument itself, the way you'd describe it to a teammate. The first time you hover one, Warroom AI writes that sentence on the spot (you'll see "Warroom AI is summarizing this tab…" while it works); after that it's cached, so hovering again is instant.
+
+**Tabs you flowed yourself never get an AI summary.** You wrote them, in your own words — having Warroom AI describe your own tab back to you costs an API call and tells you nothing. Those tabs show the free local preview instead: the first line of your top few cells. Nothing is disabled and nothing is missing; there's just no ✨ line.
+
+**The summary only reads the speech that introduced the position** — the **1AC** on an advantage tab, the **1NC** on an off-case tab. A tab also holds every answer to that position, and feeding all of it in produced a summary of the argument's whole history rather than of the argument. A useful consequence: flowing answers into later columns doesn't invalidate the cached summary, so a tab you're actively working in doesn't quietly re-spend a call every time you type in it. The summary only regenerates when you change the introducing speech itself.
 
 **Find across the whole flow.** Press **⌘F** (Ctrl+F) to open the find bar — it searches **across all tabs** at once. Press **Enter** for the next match, **Shift+Enter** for the previous, and **Esc** to close. Stepping onto a match that lives on another tab switches you to that tab.
 
@@ -812,7 +818,7 @@ One settings block covering everything about how flows work by default. None of 
 | Setting | Description |
 |---------|-------------|
 | Auto-fit columns to window | On by default. Columns continuously stretch/shrink to fill the window as you resize it, collapse the sidebar, or open the AI chat panel. Turn it off if you'd rather set zoom yourself and have it stay put. |
-| AI tab summaries on hover | On by default. Hovering a tab asks Warroom AI for a one-sentence summary of the argument on that sheet — cached after the first time, so it doesn't cost another call until the sheet's content changes. Turn it off and tabs only ever show the free local tag preview; Warroom AI is never called from a hover. |
+| AI tab summaries on hover | On by default, and only ever applies to tabs **Auto Flow built** — a tab you flowed yourself is already in your own words, so it never asks. Hovering an Auto Flow tab asks Warroom AI for a one-sentence summary of the position, reading only the speech that introduced it (1AC for an advantage, 1NC for an off-case). Cached after the first time, so it doesn't cost another call until that speech's content changes. Turn it off and tabs only ever show the free local tag preview; Warroom AI is never called from a hover. |
 
 One **Reset to defaults** at the bottom resets all of it — colors included.
 

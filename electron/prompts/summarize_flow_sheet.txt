@@ -5,9 +5,11 @@ what this sheet is arguing without opening it.
 Debate event: {{EVENT}}
 Sheet/tab name: {{SHEET_NAME}}
 
-The tags and cites written on this sheet, top to bottom as they appear on the
-flow (later entries may be answers to earlier ones — read the whole set as one
-position, not isolated lines):
+The tags and cites from the speech that INTRODUCED this position — the 1AC for
+an advantage, the 1NC for an off-case position — top to bottom as they appear
+on the flow. Answers from later speeches are deliberately not included, so read
+these as one position being read for the first time, not as isolated lines and
+not as a back-and-forth:
 {{ENTRIES}}
 
 Write ONE sentence, at most 22 words, describing the ARGUMENT AS A WHOLE on

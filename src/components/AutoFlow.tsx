@@ -11,6 +11,7 @@ import { readAutoFlowTagStyle } from '../lib/autoFlowTagStyle';
 import { pruneUnnamedEmptySheets } from '../lib/flowSheetNaming';
 import { parseAutoFlow, sheetAliasKey } from '../lib/autoFlowParse';
 import { findColumnIndex, firstEmptyRow, inferEventFromPockets, inferVariantFromHats } from '../lib/autoFlowPlacement';
+import { summaryColumnFor } from '../lib/flowTabSummary';
 import {
   StoredFlowData, SheetData, PolicyVariant, PFOrder,
   POLICY_COLS, PF_PRO_FIRST_COLS, PF_CON_FIRST_COLS,
@@ -661,7 +662,10 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       // AI-summarized cards' text, grouped by the sheet they landed on — folded
       // into that sheet's `aiSummary` once writing is done, for the tab hover
       // tooltip. Reuses the summaries already generated above; no extra AI call.
-      const summariesBySheet = new Map<number, string[]>();
+      // The COLUMN is kept with each one so the fold can keep only the speech
+      // that introduced the position, matching what a hover-generated summary
+      // reads (see lib/flowTabSummary.ts).
+      const summariesBySheet = new Map<number, { ci: number; text: string }[]>();
       // Every cell write, in the order it happened. A new flow replays this into
       // an empty copy of the finished layout so the user watches the flow fill
       // in; an existing flow ignores it and takes the finished sheets directly.
@@ -689,6 +693,14 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
       };
       const writeCard = (sheetIdx: number, ri: number, ci: number, p: Placement) => {
         const cellKey = `${ri}-${ci}`;
+        // Stamp the tab as Auto Flow's work. Its presence is what makes the tab
+        // eligible for an AI hover summary at all, and its value picks which
+        // speech column that summary reads. First non-null role wins — a tab is
+        // one position, so a later card disagreeing is noise, not a reclassify.
+        const sh = sheets[sheetIdx];
+        if (sh.autoFlowRole === undefined || (sh.autoFlowRole === null && p.sheetRole)) {
+          sh.autoFlowRole = p.sheetRole ?? null;
+        }
         // Recorded in placement order so a live run can replay the same writes,
         // one at a time, into an initially-empty copy of these sheets.
         writeLog.push({ sheetIdx, cellKey, html: buildCellHtml(p.tag, p.cite, p.summary) });
@@ -698,7 +710,7 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
           ai.push(cellKey);
           sheets[sheetIdx].aiCells = ai;
           const list = summariesBySheet.get(sheetIdx) ?? [];
-          list.push(p.summary.trim());
+          list.push({ ci, text: p.summary.trim() });
           summariesBySheet.set(sheetIdx, list);
         }
         placedByTag.set(normTag(p.tag), { sheetIdx, ri, ci });
@@ -812,8 +824,19 @@ export default function AutoFlow({ onClose }: { onClose: () => void }) {
 
       // Fold each sheet's AI card summaries into a short tab-hover blurb — reuses
       // text already generated above, no extra AI call. Joins up to 3, truncated.
+      //
+      // Only the cards in the speech that INTRODUCED the position count: the
+      // 1AC for an advantage, the 1NC for an off-case. A tab also holds the
+      // answers to that position, and folding those in described the argument's
+      // whole history rather than the argument. Same rule the hover-generated
+      // summary follows, so the two can't disagree about what a tab is.
       for (const [sheetIdx, list] of summariesBySheet) {
-        const joined = list.slice(0, 3).join(' · ');
+        const col = summaryColumnFor(sheets[sheetIdx].autoFlowRole, columns, data.event);
+        const kept = list.filter((s) => col === null || s.ci === col);
+        // An unclassified tab, or one whose introducing speech had no summarized
+        // card, gets no blurb rather than a misleading one built from answers.
+        if (kept.length === 0) continue;
+        const joined = kept.slice(0, 3).map((s) => s.text).join(' · ');
         sheets[sheetIdx].aiSummary = joined.length > 160 ? joined.slice(0, 159) + '…' : joined;
       }
 

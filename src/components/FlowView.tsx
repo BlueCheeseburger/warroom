@@ -22,6 +22,9 @@ import { flowDataToXlsxBase64 } from '../utils/flowImport';
 import { teamKeyFor, encryptText } from '../lib/chatCrypto';
 import { readFlowPrefs, FLOW_PREFS_CHANGED_EVENT } from '../lib/flowPrefs';
 import { planStockIssueConversion, StockIssuePlan } from '../lib/stockIssueSuggest';
+import {
+  wasAutoFlowed, summaryColumnFor, summaryEntries, summarySignature, SheetRole,
+} from '../lib/flowTabSummary';
 import { isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow, dropArrowsTouching } from '../lib/flowArrowGeo';
 import TaggedInIndicator from './TaggedInIndicator';
 
@@ -87,6 +90,11 @@ export interface SheetData {
   // cell still knows to drop itself from this set once the user edits it (see
   // clearAiCell) — the content is theirs from that point on.
   aiCells?: string[];
+  // Auto Flow's classification of this tab, stamped on every sheet it writes.
+  // Its PRESENCE is what makes a tab eligible for an AI hover summary at all
+  // (a hand-typed tab is already in the debater's own words), and its VALUE
+  // picks which speech column that summary reads. See lib/flowTabSummary.ts.
+  autoFlowRole?: SheetRole | null;
   // A one-sentence AI summary of the argument as a WHOLE on this tab, shown in
   // the tab's hover tooltip. Two ways this gets set: (1) folded for free from
   // Auto Flow's opt-in per-card summaries at write time (no extra API call —
@@ -95,9 +103,11 @@ export interface SheetData {
   // hovered after `aiSummarySource` goes stale. Either way this is a genuine
   // Warroom AI call — the tooltip marks it with ✨.
   aiSummary?: string;
-  // Content signature `aiSummary` was generated from (see sheetContentSignature
-  // below) — compared against the sheet's current content to decide whether
-  // the cached summary is still valid or needs regenerating.
+  // Signature of the entries `aiSummary` was generated from (see
+  // summarySignature in lib/flowTabSummary.ts) — compared against the sheet's
+  // current content to decide whether the cached summary is still valid.
+  // Covers only the ONE column the summary reads, so answers typed into a later
+  // speech don't invalidate a summary they couldn't have changed.
   aiSummarySource?: string;
 }
 
@@ -2130,20 +2140,6 @@ export default function FlowView() {
     recordHistory();
   }
 
-  // Cheap signature of a sheet's content — NOT a real hash, just enough to
-  // detect "the argument text changed since the AI summary was written" so a
-  // cached `aiSummary` can be reused instead of re-generated on every hover.
-  function sheetContentSignature(cells: Record<string, string>): string {
-    const parts = Object.entries(cells)
-      .map(([key, html]) => `${key}:${htmlToText(String(html ?? '')).trim()}`)
-      .filter((s) => !s.endsWith(':'))
-      .sort();
-    let hash = 0;
-    const joined = parts.join('|');
-    for (let i = 0; i < joined.length; i++) hash = (hash * 31 + joined.charCodeAt(i)) | 0;
-    return `${parts.length}:${hash}`;
-  }
-
   // Sheet ids currently generating a fresh AI tab summary — drives the
   // "Warroom AI is summarizing…" line in the tooltip below and prevents two
   // overlapping hovers from firing the same request twice.
@@ -2171,6 +2167,10 @@ export default function FlowView() {
     const cur = snap.current;
     const sheet = cur.sheets[idx];
     if (!sheet) return;
+    // Only tabs Auto Flow built. A tab the debater typed themselves is already
+    // in their own words — summarizing it back to them is an API call that buys
+    // nothing, and on a hand-built flow that's one call per tab hovered.
+    if (!wasAutoFlowed(sheet)) return;
     // Give up for the rest of the session once the quota/API is clearly unhappy,
     // and back off per-sheet after a failure. Without this, a FAILED summary
     // never caches a signature, so every single hover started a brand-new
@@ -2181,21 +2181,21 @@ export default function FlowView() {
     if (Date.now() < until) return;
 
     const cells = sheet.id === cellsOwnerId.current ? cellsRef.current : sheet.cells;
-    const sig = sheetContentSignature(cells);
-    if (sig.startsWith('0:')) return; // nothing written on this tab yet
+    // Read only the speech that INTRODUCED the position — the 1AC for an
+    // advantage, the 1NC for an off-case. A tab also holds every answer to that
+    // position, and feeding those in summarized the argument's whole history
+    // instead of the argument.
+    const col = summaryColumnFor(sheet.autoFlowRole, columns, flowEvent);
+    const entries = summaryEntries(cells, col, htmlToText);
+    if (entries.length === 0) return; // nothing in that column to summarize
+    // Signed over the entries actually sent, so answers typed into a later
+    // column don't invalidate a summary they can't change.
+    const sig = summarySignature(entries);
     if (sheet.aiSummary && sheet.aiSummarySource === sig) return; // already fresh
     if (generatingSummary.has(sheet.id)) return; // already in flight
 
     setGeneratingSummary((g) => new Set(g).add(sheet.id));
     try {
-      const entries = Object.entries(cells)
-        .map(([key, html]) => {
-          const [r, c] = key.split('-').map(Number);
-          return { r, c, text: htmlToText(String(html ?? '')).trim() };
-        })
-        .filter((e) => e.text)
-        .sort((a, b) => a.c - b.c || a.r - b.r)
-        .map((e) => e.text);
       const res = await (window.warroom as any).ai.summarizeFlowSheet({ sheetName: sheet.name, event: flowEvent, entries });
       if (res?.ok && typeof res.summary === 'string' && res.summary.trim()) {
         const updated = snap.current.sheets.map((sh) =>
@@ -2263,8 +2263,15 @@ export default function FlowView() {
       })
       .filter((e) => e.text)
       .sort((a, b) => a.c - b.c || a.r - b.r);
-    const generating = generatingSummary.has(sheet.id);
-    const aiLine = generating ? '✨ Warroom AI is summarizing this tab…' : (sheet.aiSummary?.trim() ? `✨ ${sheet.aiSummary.trim()}` : '');
+    // The AI line only ever belongs to an auto-flowed tab. Gating the DISPLAY
+    // too (not just generation) is what clears a stale summary off a hand-typed
+    // tab that got one before this rule existed — otherwise it would sit there
+    // forever, since nothing would ever regenerate it.
+    const eligible = wasAutoFlowed(sheet);
+    const generating = eligible && generatingSummary.has(sheet.id);
+    const aiLine = generating
+      ? '✨ Warroom AI is summarizing this tab…'
+      : (eligible && sheet.aiSummary?.trim() ? `✨ ${sheet.aiSummary.trim()}` : '');
     if (entries.length === 0) return aiLine || 'Empty';
     const seen = new Set<string>();
     const tags: string[] = [];
