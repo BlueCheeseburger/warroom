@@ -3,6 +3,7 @@ import { useApp } from '../store/appStore';
 import { Round, Tournament } from '../types';
 import { GeminiIcon } from './GeminiPanel';
 import { useMenuA11y } from '../hooks/useMenuA11y';
+import Tooltip from './Tooltip';
 
 type TournStatus = 'live' | 'upcoming' | 'past';
 
@@ -315,47 +316,6 @@ function onGeminiLeave(e: React.MouseEvent<HTMLElement>) {
   el.style.boxShadow = '';
 }
 
-// ─── Tooltip ─────────────────────────────────────────────────────────────────
-
-function Tooltip({ text, children, up = false }: {
-  text: string; children: React.ReactNode; up?: boolean;
-}) {
-  const [show, setShow] = useState(false);
-  return (
-    <span
-      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <span
-          style={{
-            position: 'absolute',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            ...(up ? { bottom: 'calc(100% + 7px)' } : { top: 'calc(100% + 7px)' }),
-            zIndex: 9999,
-            whiteSpace: 'nowrap',
-            borderRadius: 8,
-            padding: '5px 10px',
-            fontSize: 11,
-            pointerEvents: 'none',
-            background: 'color-mix(in srgb, var(--bg-popover, var(--bg-sidebar)) 88%, transparent)',
-            backdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
-            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
-            border: '1px solid var(--border-subtle)',
-            color: 'var(--ink)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          }}
-        >
-          {text}
-        </span>
-      )}
-    </span>
-  );
-}
-
 // ─── Floating context menu ────────────────────────────────────────────────────
 
 interface FloatingMenuItem { label: string; danger?: boolean; onClick: () => void; }
@@ -392,7 +352,7 @@ function FloatingMenu({ x, y, items, onClose }: {
           key={item.label}
           onClick={(e) => { e.stopPropagation(); item.onClick(); onClose(); }}
           className="w-full text-left px-3 py-1.5 transition"
-          style={{ color: item.danger ? 'var(--danger, #ef4444)' : 'var(--nav-active-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+          style={{ color: item.danger ? 'var(--danger)' : 'var(--nav-active-color)', background: 'transparent', border: 'none', cursor: 'pointer' }}
           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--nav-hover-bg)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
@@ -1023,7 +983,7 @@ function GeminiConvRow({ conv, onOpen, onRename, onDelete }: {
           <button
             onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
             className="w-full text-left px-3 py-1.5 transition"
-            style={{ color: 'var(--danger, #ef4444)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            style={{ color: 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--nav-hover-bg)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >

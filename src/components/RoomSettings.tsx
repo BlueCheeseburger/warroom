@@ -163,7 +163,7 @@ export default function RoomSettings({ onClose }: Props) {
                         <span className="ml-1 text-[10px] font-normal" style={{ color: 'var(--nav-inactive-color)' }}>(you)</span>
                       )}
                       {m.user_id === currentTeam?.owner_id && (
-                        <span className="ml-1 text-[10px] font-normal" style={{ color: '#0077ed' }}>owner</span>
+                        <span className="ml-1 text-[10px] font-normal" style={{ color: 'var(--accent)' }}>owner</span>
                       )}
                     </div>
                     <div className="text-[10px] capitalize mt-0.5" style={{ color: 'var(--nav-inactive-color)' }}>{m.role}</div>

@@ -438,7 +438,7 @@ function JudgeResultRow({ r, savedJudge, onStar, onUnsave }: {
               record.length === 0
                 ? <div className="text-xs text-ink/35 italic">No judging record found.</div>
                 : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto scroll-thin">
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>

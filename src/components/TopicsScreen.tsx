@@ -129,7 +129,7 @@ export default function TopicsScreen() {
   ];
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto" style={{ background: 'var(--bg-main)' }}>
+    <div className="flex flex-col h-full overflow-y-auto scroll-thin" style={{ background: 'var(--bg-main)' }}>
       {/* Header */}
       <div className="px-6 pt-6 pb-4 border-b" style={{ borderColor: 'var(--border-side)' }}>
         <div className="flex items-center justify-between mb-4">

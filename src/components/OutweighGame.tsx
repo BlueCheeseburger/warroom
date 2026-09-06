@@ -276,7 +276,7 @@ export default function OutweighGame() {
               </button>
             </div>
             {topicError && (
-              <div style={{ marginTop: 16, fontSize: 12, color: 'var(--danger-color, #c0392b)', maxWidth: 420, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+              <div style={{ marginTop: 16, fontSize: 12, color: 'var(--danger-color)', maxWidth: 420, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
                 {topicError}
               </div>
             )}
@@ -293,7 +293,7 @@ export default function OutweighGame() {
 
         {phase === 'error' && (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
-            <div style={{ fontSize: 13, color: 'var(--danger-color, #c0392b)', marginBottom: 16, lineHeight: 1.6 }}>{error}</div>
+            <div style={{ fontSize: 13, color: 'var(--danger-color)', marginBottom: 16, lineHeight: 1.6 }}>{error}</div>
             <button onClick={() => setPhase('setup')} className="btn-primary" style={{ fontSize: 13, padding: '8px 18px' }}>Try again</button>
           </div>
         )}

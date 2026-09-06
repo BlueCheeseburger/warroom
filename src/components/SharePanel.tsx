@@ -524,7 +524,7 @@ export default function SharePanel({ type, id, name, getData, items, onClose, on
                       </button>
                     </div>
                     {emailError && (
-                      <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{emailError}</p>
+                      <p className="text-[10px] mt-1" style={{ color: 'var(--danger)' }}>{emailError}</p>
                     )}
                   </div>
                 </div>

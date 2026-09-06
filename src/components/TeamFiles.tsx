@@ -272,7 +272,7 @@ export default function TeamFiles() {
             onCancel={cancelOversized}
           />
         )}
-        {error && <p className="text-xs pb-1" style={{ color: '#ef4444' }}>{error}</p>}
+        {error && <p className="text-xs pb-1" style={{ color: 'var(--danger)' }}>{error}</p>}
         {loading ? (
           <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
         ) : files.length === 0 ? (
@@ -328,7 +328,7 @@ export default function TeamFiles() {
                       cursor: isHovered ? 'pointer' : 'default',
                       opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none',
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
                   >
                     <TrashIcon />

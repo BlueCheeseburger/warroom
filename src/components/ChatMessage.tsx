@@ -39,9 +39,9 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
         <button
           onClick={() => onQuoteClick(message.reply_to_id!)}
           className="max-w-[85%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
-          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)', cursor: 'pointer' }}
         >
-          <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>{message.reply_to_sender_name}</span>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--accent)' }}>{message.reply_to_sender_name}</span>
           <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{message.reply_to_content}</span>
         </button>
       )}
@@ -50,7 +50,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
       <div
         className="w-fit max-w-[85%] px-2.5 py-1.5 rounded-xl text-[13px] leading-snug"
         style={isSelf
-          ? { background: '#0077ed', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
+          ? { background: 'var(--accent)', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
           : { background: 'var(--bg-card)', color: 'var(--ink)', border: '1px solid var(--border-side)', overflowWrap: 'break-word', wordBreak: 'break-word' }}
       >
         <MessageText content={message.content} />
@@ -159,7 +159,7 @@ export default function ChatMessage({ message, isSelf, onEdit, onDelete, onReply
                 cursor: hovered ? 'pointer' : 'default',
                 opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
             ><TrashIcon /></button>
           </>

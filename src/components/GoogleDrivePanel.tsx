@@ -114,7 +114,7 @@ function SpreadsheetViewer({ base64 }: { base64: string }) {
     return XLSX.utils.sheet_to_json(wb.Sheets[sheets[safeIdx]], { header: 1, defval: '' }) as any[][];
   }, [wb, safeIdx]);
 
-  if (err) return <div className="p-8 text-sm" style={{ color: 'var(--danger, #ef4444)' }}>Error: {err}</div>;
+  if (err) return <div className="p-8 text-sm" style={{ color: 'var(--danger)' }}>Error: {err}</div>;
   if (!sheets.length) return <div className="p-8 text-sm" style={{ color: 'var(--placeholder)' }}>Empty spreadsheet</div>;
 
   // Spread (Math.max(...arr)) overflows the call stack on very large sheets — reduce instead.
@@ -124,7 +124,7 @@ function SpreadsheetViewer({ base64 }: { base64: string }) {
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-main)' }}>
       {/* Sheet tabs */}
       {sheets.length > 1 && (
-        <div className="flex gap-1 px-4 pt-3 pb-0 overflow-x-auto">
+        <div className="flex gap-1 px-4 pt-3 pb-0 overflow-x-auto scroll-thin">
           {sheets.map((s, i) => (
             <button key={s} onClick={() => setActiveSheet(i)}
               className="px-3 py-1.5 text-xs rounded-t-lg font-medium transition shrink-0"
@@ -140,7 +140,7 @@ function SpreadsheetViewer({ base64 }: { base64: string }) {
         </div>
       )}
       {/* Table */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto scroll-thin p-4">
         <table className="text-xs border-collapse" style={{ borderColor: 'var(--border-subtle)' }}>
           <tbody>
             {rows.map((row, ri) => (
@@ -216,10 +216,10 @@ function WordViewer({ base64 }: { base64: string }) {
     if (containerRef.current) applyHighlightReadability(containerRef.current, highlightReadability);
   }, [highlightReadability]);
 
-  if (err) return <div className="p-8 text-sm" style={{ color: 'var(--danger, #ef4444)' }}>Error rendering document: {err}</div>;
+  if (err) return <div className="p-8 text-sm" style={{ color: 'var(--danger)' }}>Error rendering document: {err}</div>;
 
   return (
-    <div className="flex-1 overflow-auto px-8 py-6" style={{ background: 'var(--bg-main)' }}>
+    <div className="flex-1 overflow-auto scroll-thin px-8 py-6" style={{ background: 'var(--bg-main)' }}>
       <div ref={containerRef}
         className="docx-container mx-auto"
         style={{ maxWidth: 780, background: 'white', borderRadius: 6, padding: '32px 48px', boxShadow: '0 1px 6px rgba(0,0,0,0.10)', minHeight: 400 }}
@@ -278,7 +278,7 @@ function FileViewer({ file, onBack }: { file: DriveFile; onBack: () => void }) {
       )}
       {err && (
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-sm text-center" style={{ color: 'var(--danger, #ef4444)' }}>
+          <div className="text-sm text-center" style={{ color: 'var(--danger)' }}>
             <div className="font-medium mb-1">Failed to load file</div>
             <div className="opacity-70">{err}</div>
           </div>
@@ -394,7 +394,7 @@ function FileList({
       {/* File list */}
       <div className="flex-1 overflow-y-auto scroll-thin">
         {error && (
-          <div className="m-3 px-3 py-2 rounded-lg text-xs" style={{ color: 'var(--danger, #ef4444)', background: 'rgba(239,68,68,0.08)' }}>
+          <div className="m-3 px-3 py-2 rounded-lg text-xs" style={{ color: 'var(--danger)', background: 'rgba(239,68,68,0.08)' }}>
             {error}
           </div>
         )}
@@ -578,7 +578,7 @@ export default function GoogleDrivePanel() {
           </p>
         </div>
         {connectErr && (
-          <div className="text-xs text-center px-4 py-2 rounded-lg" style={{ color: 'var(--danger, #ef4444)', background: 'rgba(239,68,68,0.08)' }}>
+          <div className="text-xs text-center px-4 py-2 rounded-lg" style={{ color: 'var(--danger)', background: 'rgba(239,68,68,0.08)' }}>
             {connectErr}
           </div>
         )}
@@ -608,7 +608,7 @@ export default function GoogleDrivePanel() {
           onClick={disconnect}
           className="text-xs transition px-2 py-1 rounded"
           style={{ color: 'var(--nav-inactive-color)', background: 'none', border: 'none', cursor: 'pointer' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger, #ef4444)'; }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}>
           Disconnect
         </button>

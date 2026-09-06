@@ -27,6 +27,7 @@ import {
 } from '../lib/flowTabSummary';
 import { isFreeArrow, isCellArrow, toFraction, fromFraction, straightPath, bumpArrow, dropArrowsTouching } from '../lib/flowArrowGeo';
 import TaggedInIndicator from './TaggedInIndicator';
+import Tooltip from './Tooltip';
 
 // Highlight-registry names for find hits (see the ::highlight() rules in index.css).
 const FIND_HL = 'flow-find';
@@ -2552,14 +2553,14 @@ export default function FlowView() {
             className="input text-sm font-semibold w-40"
           />
         ) : (
-          <FlowTooltip text="Double-click to rename">
+          <Tooltip text="Double-click to rename">
             <button
               className="text-sm font-semibold text-ink hover:opacity-70 transition-opacity truncate max-w-[140px]"
               onDoubleClick={() => { setRenamingFlow(true); setRenameValue(flowMeta?.name ?? 'Untitled Flow'); }}
             >
               {flowMeta?.name ?? 'Untitled Flow'}
             </button>
-          </FlowTooltip>
+          </Tooltip>
         )}
 
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
@@ -2619,7 +2620,7 @@ export default function FlowView() {
 
         {/* Zoom */}
         <ToolBtn onClick={() => changeZoom(zoom - 10)} title="Zoom out"><span style={{ fontSize: 15 }}>−</span></ToolBtn>
-        <FlowTooltip text="Fit to window">
+        <Tooltip text="Fit to window">
           <button
             className="text-xs w-9 text-center tabular-nums transition hover:opacity-70 shrink-0"
             style={{ color: 'var(--label-color)' }}
@@ -2627,7 +2628,7 @@ export default function FlowView() {
           >
             {zoom}%
           </button>
-        </FlowTooltip>
+        </Tooltip>
         <ToolBtn onClick={() => changeZoom(zoom + 10)} title="Zoom in"><span style={{ fontSize: 14 }}>+</span></ToolBtn>
         <ToolBtn onClick={fitZoom} title="Fit to window"><IcoFit /></ToolBtn>
 
@@ -2694,13 +2695,13 @@ export default function FlowView() {
                 >{c.user.name[0]?.toUpperCase()}</span>
               ))}
             </div>
-            <FlowTooltip text="Leave live session">
+            <Tooltip text="Leave live session">
               <button
                 onClick={stopLiveCollab}
                 className="text-[10px] leading-none ml-0.5 opacity-70 hover:opacity-100"
                 style={{ color: 'var(--nav-active-color)' }}
               >✕</button>
-            </FlowTooltip>
+            </Tooltip>
           </div>
           );
         })()}
@@ -2710,7 +2711,7 @@ export default function FlowView() {
         <div className="relative shrink-0">
           <ToolBtn onClick={() => setShareOpen(true)} title="Share / Collaborate"><ShareIcon /></ToolBtn>
           {flowMeta?.shared && (
-            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: '#0077ed' }} />
+            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: 'var(--accent)' }} />
           )}
         </div>
 
@@ -2804,9 +2805,9 @@ export default function FlowView() {
           <IcoArrow />
           {drawStart ? 'Now click where it should end' : 'Click where the arrow should start'}
           <span style={{ opacity: 0.6 }}>· Esc to cancel</span>
-          <FlowTooltip text="Cancel (Esc)">
+          <Tooltip text="Cancel (Esc)">
             <button className="btn px-1.5 py-0 text-[11px] leading-5" onMouseDown={(e) => e.preventDefault()} onClick={cancelDrawMode}>✕</button>
-          </FlowTooltip>
+          </Tooltip>
         </div>
       )}
       <div
@@ -2943,7 +2944,7 @@ export default function FlowView() {
                       style={{ color: 'var(--nav-active-color)' }}
                     />
                   ) : (
-                    <FlowTooltip text="Double-click to rename">
+                    <Tooltip text="Double-click to rename">
                       <span
                         className="text-xs font-bold truncate px-5"
                         style={{ color: 'var(--nav-active-color)', cursor: 'default' }}
@@ -2951,13 +2952,13 @@ export default function FlowView() {
                       >
                         {col}
                       </span>
-                    </FlowTooltip>
+                    </Tooltip>
                   )}
 
                   {/* Column menu trigger — always visible for discoverability.
-                      Kept on native `title` (not FlowTooltip): this button is
+                      Kept on native `title` (not Tooltip): this button is
                       itself `position: absolute` against the column header cell,
-                      and FlowTooltip's wrapper span would introduce a *closer*
+                      and Tooltip's wrapper span would introduce a *closer*
                       positioned ancestor, silently repositioning it. */}
                   <button
                     data-col-menu
@@ -3105,7 +3106,7 @@ export default function FlowView() {
                         style={{ top: 2, right: 2, gap: 1, zIndex: 5, pointerEvents: 'auto' }}
                       >
                         {ri > 0 && (
-                          <FlowTooltip text="Move up (⌘↑)" up>
+                          <Tooltip text="Move up (⌘↑)" up>
                             <button
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => moveCell(ri, ci, 'up')}
@@ -3116,10 +3117,10 @@ export default function FlowView() {
                                 color: 'var(--label-color)', cursor: 'pointer',
                               }}
                             >▲</button>
-                          </FlowTooltip>
+                          </Tooltip>
                         )}
                         {ri < NUM_ROWS - 1 && (
-                          <FlowTooltip text="Move down (⌘↓)">
+                          <Tooltip text="Move down (⌘↓)">
                             <button
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => moveCell(ri, ci, 'down')}
@@ -3130,7 +3131,7 @@ export default function FlowView() {
                                 color: 'var(--label-color)', cursor: 'pointer',
                               }}
                             >▼</button>
-                          </FlowTooltip>
+                          </Tooltip>
                         )}
                       </div>
                     )}
@@ -3148,7 +3149,7 @@ export default function FlowView() {
                             className="absolute left-1/2"
                             style={{ top: '50%', transform: 'translate(-50%, -50%)' }}
                           >
-                            <FlowTooltip text="Insert row below">
+                            <Tooltip text="Insert row below">
                               <button
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => insertRowBetween(ri, ci)}
@@ -3159,7 +3160,7 @@ export default function FlowView() {
                                   color: 'var(--nav-active-color)', cursor: 'pointer',
                                 }}
                               >+</button>
-                            </FlowTooltip>
+                            </Tooltip>
                           </div>
                         )}
                       </div>
@@ -3208,22 +3209,22 @@ export default function FlowView() {
             already on the flow stay as they are.
           </div>
           <div className="flex items-center gap-1.5">
-            <FlowTooltip text="Rename the tabs">
+            <Tooltip text="Rename the tabs">
               <button
                 className="btn-primary text-[11px] px-2 py-0.5"
                 onClick={() => applyStockIssuePlan(stockIssuePlan)}
               >
                 Switch
               </button>
-            </FlowTooltip>
-            <FlowTooltip text="Keep the advantage layout">
+            </Tooltip>
+            <Tooltip text="Keep the advantage layout">
               <button
                 className="btn text-[11px] px-2 py-0.5"
                 onClick={() => setStockIssueDismissed(true)}
               >
                 No thanks
               </button>
-            </FlowTooltip>
+            </Tooltip>
           </div>
         </div>
       )}
@@ -3270,7 +3271,7 @@ export default function FlowView() {
 
         {/* Add sheet — RIGHT side */}
         <div className="w-px h-4 shrink-0" style={{ background: 'var(--border-subtle)' }} />
-        <FlowTooltip text="Add sheet (⌘T)">
+        <Tooltip text="Add sheet (⌘T)">
           <button
             className="flex items-center justify-center w-8 h-8 shrink-0 text-lg font-light transition"
             style={{ color: 'var(--label-color)' }}
@@ -3278,7 +3279,7 @@ export default function FlowView() {
             onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--nav-active-color)')}
             onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--label-color)')}
           >+</button>
-        </FlowTooltip>
+        </Tooltip>
       </div>
     </div>
   );
@@ -3358,87 +3359,13 @@ function IcoAnalyze() {
   );
 }
 
-// Styled hover tooltip, matching the app's own bubble (see Home.tsx's Tooltip) —
-// native `title` attributes technically work in Electron, but render as a slow,
-// easy-to-miss OS tooltip that's inconsistent with how tooltips look everywhere
-// else in Warroom. Every flow-editor button routes through this now, either via
-// ToolBtn below or by wrapping directly. A short show-delay keeps a dense toolbar
-// from flashing a tooltip for every icon the cursor passes over.
-function FlowTooltip({ text, children, up = false, disabled, wide = false, className }: {
-  text?: string; children: React.ReactNode; up?: boolean; disabled?: boolean;
-  // `wide`: for multi-line content (e.g. a tab's content summary) — wider box,
-  // left-aligned, and preserves the `\n`s in `text` as separate lines instead of
-  // wrapping everything into one narrow column.
-  wide?: boolean;
-  // Extra classes for the wrapper span — e.g. `flex-1 min-w-0` so a truncating
-  // child (a long tab name) can actually shrink instead of overflowing.
-  className?: string;
-}) {
-  const [show, setShow] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  if (!text || disabled) return <>{children}</>;
-  function onEnter() {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setShow(true), 350);
-  }
-  function onLeave() {
-    if (timer.current) clearTimeout(timer.current);
-    setShow(false);
-  }
-  return (
-    <span
-      className={className}
-      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-    >
-      {children}
-      {show && (
-        <span
-          style={{
-            position: 'absolute',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            ...(up ? { bottom: 'calc(100% + 7px)' } : { top: 'calc(100% + 7px)' }),
-            zIndex: 9999,
-            // width: 'max-content' is load-bearing: without it, an absolutely
-            // positioned span with only `left` set shrink-to-fits against the
-            // ANCHOR's width (often a 26px icon button), not its own text — so
-            // a short label like "Draw arrow (⌘L)" would wrap one word per
-            // line instead of sizing to itself. maxWidth is just a sane ceiling
-            // in case a tooltip is ever accidentally long — it wraps wide, not
-            // narrow-and-tall.
-            width: 'max-content',
-            maxWidth: wide ? 360 : 220,
-            whiteSpace: wide ? 'pre-line' : 'normal',
-            textAlign: wide ? 'left' : 'center',
-            lineHeight: wide ? 1.5 : undefined,
-            borderRadius: 8,
-            padding: '5px 10px',
-            fontSize: 11,
-            pointerEvents: 'none',
-            background: 'color-mix(in srgb, var(--bg-popover, var(--bg-sidebar)) 88%, transparent)',
-            backdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
-            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(var(--glass-saturate))',
-            border: '1px solid var(--border-subtle)',
-            color: 'var(--ink)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          }}
-        >
-          {text}
-        </span>
-      )}
-    </span>
-  );
-}
-
 // Shared compact toolbar icon button with a consistent hover background.
 function ToolBtn({ children, onClick, onMouseDown, title, active, disabled, className }: {
   children: React.ReactNode; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
   title?: string; active?: boolean; disabled?: boolean; className?: string;
 }) {
   return (
-    <FlowTooltip text={title} disabled={disabled}>
+    <Tooltip text={title} disabled={disabled}>
       <button
         onClick={onClick}
         onMouseDown={onMouseDown}
@@ -3456,7 +3383,7 @@ function ToolBtn({ children, onClick, onMouseDown, title, active, disabled, clas
       >
         {children}
       </button>
-    </FlowTooltip>
+    </Tooltip>
   );
 }
 
@@ -3484,7 +3411,7 @@ function DropBtn({ children, onClick, danger }: { children: React.ReactNode; onC
   return (
     <button
       className="w-full text-left px-3 py-1.5 text-xs transition"
-      style={{ color: danger ? 'var(--danger, #ef4444)' : 'var(--nav-active-color)' }}
+      style={{ color: danger ? 'var(--danger)' : 'var(--nav-active-color)' }}
       onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)')}
       onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
       onClick={onClick}
@@ -3576,7 +3503,7 @@ function SheetTab({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <FlowTooltip text={summary ? `${name}\n${summary}` : name} up wide className="flex-1 min-w-0">
+        <Tooltip text={summary ? `${name}\n${summary}` : name} up wide className="flex-1 min-w-0">
           <button
             className="w-full text-left truncate text-xs font-medium px-3"
             style={{ color: active ? 'var(--nav-active-color)' : 'var(--nav-inactive-color)' }}
@@ -3585,10 +3512,10 @@ function SheetTab({
           >
             {name}
           </button>
-        </FlowTooltip>
+        </Tooltip>
       )}
       {onDelete && !renaming && (
-        <FlowTooltip text="Delete sheet">
+        <Tooltip text="Delete sheet">
           <button
             className="shrink-0 mr-1.5 w-4 h-4 flex items-center justify-center rounded text-xs transition"
             style={{
@@ -3601,7 +3528,7 @@ function SheetTab({
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = (hovered || active) ? '0.5' : '0')}
           >×</button>
-        </FlowTooltip>
+        </Tooltip>
       )}
     </div>
   );

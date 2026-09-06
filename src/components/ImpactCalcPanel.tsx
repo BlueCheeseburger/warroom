@@ -226,7 +226,7 @@ export default function ImpactCalcPanel() {
       </button>
 
       {error && (
-        <div style={{ marginTop: 10, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--danger-color, #c0392b)', lineHeight: 1.5 }}>
+        <div style={{ marginTop: 10, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--danger-color)', lineHeight: 1.5 }}>
           {error}
         </div>
       )}

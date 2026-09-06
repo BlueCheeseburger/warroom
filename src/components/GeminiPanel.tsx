@@ -679,7 +679,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
     </svg>
   );
 
-  const xIcon = (color = '#ef4444') => (
+  const xIcon = (color = 'var(--danger)') => (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
     </svg>
@@ -836,13 +836,13 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
               <div
                 className="flex items-center gap-1 py-0.5"
                 style={{
-                  color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
+                  color: step.status === 'error' ? 'var(--danger)' : 'var(--nav-inactive-color)',
                   opacity: step.status === 'error' ? 0.7 : 1,
                   cursor: (step.args || step.result) ? 'pointer' : undefined,
                 }}
                 onClick={() => (step.args || step.result) && setDetailStepId((v) => v === step.id ? null : step.id)}
               >
-                {bookIcon(step.status === 'error' ? '#ef4444' : '#4285F4')}
+                {bookIcon(step.status === 'error' ? 'var(--danger)' : '#4285F4')}
                 <span style={{ fontSize: 10 }}>{step.label}</span>
               </div>
               <StepDetail step={step} />
@@ -856,7 +856,7 @@ function AgentStepsBlock({ steps, streaming, onCancelStep }: {
           <div
             className="flex items-center gap-1.5 py-0.5"
             style={{
-              color: step.status === 'error' ? '#ef4444' : 'var(--nav-inactive-color)',
+              color: step.status === 'error' ? 'var(--danger)' : 'var(--nav-inactive-color)',
               opacity: step.status === 'error' ? 0.7 : 1,
               cursor: (step.args || step.result) ? 'pointer' : undefined,
             }}
@@ -1051,7 +1051,7 @@ function SlashCommandPicker({
         style={{ color: 'var(--nav-inactive-color)' }}>
         Skills
       </div>
-      <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
+      <div className="overflow-y-auto scroll-thin" style={{ maxHeight: 260 }}>
         {filtered.map((s) => {
           const meta = SKILL_META[s.name];
           return (
@@ -3190,9 +3190,9 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
               <button
                 onClick={() => scrollToMessage(m.replyTo!.id)}
                 className="max-w-[90%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)', cursor: 'pointer' }}
               >
-                <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>
+                <span className="text-[9px] font-semibold" style={{ color: 'var(--accent)' }}>
                   {m.replyTo.role === 'user' ? 'You' : 'Warroom AI'}
                 </span>
                 <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{m.replyTo.text}</span>
@@ -3211,9 +3211,9 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
             <div
               className="max-w-[90%] px-3 py-2 rounded-xl text-sm leading-relaxed"
               style={m.role === 'user'
-                ? { background: '#0077ed', color: '#fff', whiteSpace: 'pre-wrap' }
+                ? { background: 'var(--accent)', color: '#fff', whiteSpace: 'pre-wrap' }
                 : m.error
-                  ? { background: 'var(--bg-card)', color: '#ef4444', border: '1px solid var(--border-side)' }
+                  ? { background: 'var(--bg-card)', color: 'var(--danger)', border: '1px solid var(--border-side)' }
                   : { background: 'var(--bg-card)', color: 'var(--ink)', border: '1px solid var(--border-side)' }}
             >
               {m.streaming && !m.text
@@ -3419,15 +3419,15 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
             <div className="text-[10px]" style={{ color: 'var(--nav-inactive-color)' }}>
               Warroom AI will remember this in future chats until you delete it.
             </div>
-            <pre className="text-[10px] px-2 py-1.5 rounded max-h-32 overflow-auto whitespace-pre-wrap"
-              style={{ background: 'var(--bg-app)', border: '1px solid var(--border-subtle)', color: 'var(--ink)' }}>
+            <pre className="text-[10px] px-2 py-1.5 rounded max-h-32 overflow-auto scroll-thin whitespace-pre-wrap"
+              style={{ background: 'var(--bg-nest)', border: '1px solid var(--border-subtle)', color: 'var(--ink)' }}>
               {pendingSkill.content.slice(0, 1200)}
               {pendingSkill.content.length > 1200 ? '\n…' : ''}
             </pre>
             <div className="flex items-center gap-2">
               <button
                 className="text-[11px] px-3 py-1 rounded-lg"
-                style={{ background: '#0077ed', border: '1px solid #0077ed', color: '#fff' }}
+                style={{ background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff' }}
                 onClick={() => resolvePendingSkill(true)}
                 title="Save skill"
               >
@@ -3445,12 +3445,12 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
           </div>
         )}
         {replyingTo && (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0077ed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
             </svg>
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>
+              <div className="text-[10px] font-semibold" style={{ color: 'var(--accent)' }}>
                 Replying to {replyingTo.role === 'user' ? 'yourself' : 'Warroom AI'}
               </div>
               <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.text}</div>
@@ -3513,7 +3513,7 @@ function GeminiBody({ conversationId, initialHistory, onHistoryChange, titleLock
             ))}
           </div>
         )}
-        {error && <p className="text-xs" style={{ color: '#ef4444' }}>{linkifyText(error, 'err')}</p>}
+        {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{linkifyText(error, 'err')}</p>}
         <div className="relative">
           {showMentionPicker && (
             <MentionPicker query={mentionQuery} onSelect={handleMentionSelect}

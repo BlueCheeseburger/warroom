@@ -5223,7 +5223,7 @@ function DocPaneViewer({
               className="fixed z-50 rounded-lg shadow-lg py-1 text-[13px]"
               style={{
                 left: cardMenu.x, top: cardMenu.y,
-                background: 'var(--panel-bg, #1f1f1f)', border: '1px solid var(--panel-border, rgba(255,255,255,0.1))',
+                background: 'var(--bg-popover)', border: '1px solid var(--border-subtle)',
                 minWidth: 140,
               }}
               onMouseDown={(e) => e.stopPropagation()}

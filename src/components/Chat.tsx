@@ -922,10 +922,10 @@ function ChatBody() {
           />
         )}
         {replyingTo && (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)' }}>
             <ReplyIcon />
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>Replying to {replyingTo.senderName}</div>
+              <div className="text-[10px] font-semibold" style={{ color: 'var(--accent)' }}>Replying to {replyingTo.senderName}</div>
               <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.content}</div>
             </div>
             <button onClick={() => setReplyingTo(null)} title="Cancel reply"
@@ -1153,7 +1153,7 @@ function AllChatsList({ onOpenTeam, onOpenDM }: { onOpenTeam: () => void; onOpen
                 </button>
               </div>
               {emailError && (
-                <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{emailError}</p>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--danger)' }}>{emailError}</p>
               )}
               {/* Email-looked-up people */}
               {emailResults.map((r) => (
@@ -1496,10 +1496,10 @@ function DMBody({ channel }: { channel: DMChannel }) {
       {/* Composer */}
       <div className="shrink-0 px-3 pt-2 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--border-side)' }}>
         {replyingTo && (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed' }}>
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)' }}>
             <ReplyIcon />
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-semibold" style={{ color: '#0077ed' }}>Replying to {replyingTo.senderName}</div>
+              <div className="text-[10px] font-semibold" style={{ color: 'var(--accent)' }}>Replying to {replyingTo.senderName}</div>
               <div className="text-[11px] truncate" style={{ color: 'var(--nav-inactive-color)' }}>{replyingTo.content}</div>
             </div>
             <button onClick={() => setReplyingTo(null)} title="Cancel reply"
@@ -1620,9 +1620,9 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
         <button
           onClick={() => onQuoteClick(m.reply_to_id!)}
           className="max-w-[85%] flex flex-col items-start text-left px-2 py-1 rounded-md transition"
-          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid #0077ed', cursor: 'pointer' }}
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)', borderLeft: '3px solid var(--accent)', cursor: 'pointer' }}
         >
-          <span className="text-[9px] font-semibold" style={{ color: '#0077ed' }}>{m.reply_to_sender_name}</span>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--accent)' }}>{m.reply_to_sender_name}</span>
           <span className="text-[10px] truncate w-full" style={{ color: 'var(--nav-inactive-color)' }}>{m.reply_to_content}</span>
         </button>
       )}
@@ -1630,7 +1630,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
       {/* Bubble */}
       <div className="w-fit max-w-[85%] px-2.5 py-1.5 rounded-xl text-[13px] leading-snug"
         style={isSelf
-          ? { background: '#0077ed', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
+          ? { background: 'var(--accent)', color: '#ffffff', overflowWrap: 'break-word', wordBreak: 'break-word' }
           : { background: 'var(--bg-card)', color: 'var(--ink)', border: '1px solid var(--border-side)', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
         {linkifyText(m.content, m.id)}
       </div>
@@ -1676,7 +1676,7 @@ function DMMessageBubble({ message: m, isSelf, onEdit, onDelete, onReply, onQuot
                 cursor: hovered ? 'pointer' : 'default',
                 opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
             ><DMTrashIcon /></button>
           </>

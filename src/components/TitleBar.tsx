@@ -382,8 +382,8 @@ function SpeechTimer() {
   const overtime = display === 0;
   const urgent = display <= timerWarningSecs && display > 0;
   const timeColor = overtime
-    ? '#ef4444'
-    : urgent ? '#f59e0b'
+    ? 'var(--danger)'
+    : urgent ? 'var(--warn)'
     : running ? 'var(--nav-active-color)'
     : 'var(--titlebar-label)';
 

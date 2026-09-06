@@ -252,7 +252,7 @@ export default function ImpactLibrary() {
             </div>
 
             {loading && <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--nav-inactive-color)', fontSize: 13 }}>Loading…</div>}
-            {error && <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', color: 'var(--danger-color, #c0392b)', fontSize: 12 }}>{error}</div>}
+            {error && <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
             {!loading && !error && visible.length === 0 && (
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--nav-inactive-color)', fontSize: 13, lineHeight: 1.6 }}>
                 {entries.length === 0 ? <>The library is empty. Be the first — hit <strong>+ Contribute</strong>.</> : 'Nothing matches these filters.'}
@@ -365,7 +365,7 @@ function EntryCard({ entry, isMine, onVote, onSave, onDelete }: {
           {expanded ? 'Less' : 'Details'}
         </button>
         {isMine && (
-          <button onClick={() => onDelete(entry)} title="Delete" style={{ ...pillBtn, color: 'var(--danger-color, #c0392b)', borderColor: 'transparent' }}>✕</button>
+          <button onClick={() => onDelete(entry)} title="Delete" style={{ ...pillBtn, color: 'var(--danger-color)', borderColor: 'transparent' }}>✕</button>
         )}
       </div>
 
@@ -516,7 +516,7 @@ function Contribute({ db, entries, onDone }: { db: DB; entries: ImpactLibraryEnt
   return (
     <div>
       <ContribSteps step={step} />
-      {err && <div style={{ margin: '0 0 14px', padding: '10px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', color: 'var(--danger-color, #c0392b)', fontSize: 12 }}>{err}</div>}
+      {err && <div style={{ margin: '0 0 14px', padding: '10px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.25)', color: 'var(--danger-color)', fontSize: 12 }}>{err}</div>}
 
       {step === 'source' && (
         <div>

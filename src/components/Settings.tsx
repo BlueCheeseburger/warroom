@@ -541,13 +541,13 @@ function GDriveSettings() {
             <span className="text-xs font-medium" style={{ color: '#0f9d58' }}>Connected ✓</span>
             <button className="text-xs transition"
               style={{ color: 'var(--nav-inactive-color)', background: 'none', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger, #ef4444)'; }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
               onClick={disconnect}>Disconnect</button>
           </>
         )}
       </div>
-      {connectErr && <p className="text-xs" style={{ color: 'var(--danger, #ef4444)' }}>{connectErr}</p>}
+      {connectErr && <p className="text-xs" style={{ color: 'var(--danger)' }}>{connectErr}</p>}
     </div>
   );
 }
@@ -2111,7 +2111,7 @@ export default function Settings() {
                 disabled={offlineUninstalling}
                 className="text-[11px] shrink-0 transition"
                 style={{ background: 'transparent', border: 'none', cursor: offlineUninstalling ? 'default' : 'pointer', color: 'var(--nav-inactive-color)', textDecoration: 'underline', textUnderlineOffset: 2 }}
-                onMouseEnter={(e) => { if (!offlineUninstalling) (e.currentTarget as HTMLElement).style.color = 'var(--danger, #e5484d)'; }}
+                onMouseEnter={(e) => { if (!offlineUninstalling) (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--nav-inactive-color)'; }}
               >
                 {offlineUninstalling ? 'Removing…' : 'Uninstall'}
@@ -2119,7 +2119,7 @@ export default function Settings() {
             </div>
           )}
           {offlineDownloadError && (
-            <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger, #e5484d)' }}>{offlineDownloadError}</p>
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger)' }}>{offlineDownloadError}</p>
           )}
         </div>
 
@@ -2170,7 +2170,7 @@ export default function Settings() {
               </p>
               <button
                 className="btn text-xs px-3 py-1.5 shrink-0"
-                style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
+                style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
                 onClick={async () => {
                   try {
                     await signOut();
@@ -2516,7 +2516,7 @@ export default function Settings() {
                       onChange={(e) => setLmOptions(e.target.value)}
                     />
                     {lmOptionsError && (
-                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmOptionsError}</p>
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger)' }}>{lmOptionsError}</p>
                     )}
                   </div>
 
@@ -2568,7 +2568,7 @@ export default function Settings() {
                       onChange={(e) => setLmPerCallModels(e.target.value)}
                     />
                     {lmPerCallModelsError && (
-                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger, #e5484d)' }}>{lmPerCallModelsError}</p>
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--danger)' }}>{lmPerCallModelsError}</p>
                     )}
                   </div>
                 </div>
@@ -2597,7 +2597,7 @@ export default function Settings() {
                 style={{
                   background: 'var(--bg-input)',
                   border: '1px solid var(--border-side)',
-                  color: lmMsg.kind === 'ok' ? 'var(--ink)' : 'var(--danger, #e5484d)',
+                  color: lmMsg.kind === 'ok' ? 'var(--ink)' : 'var(--danger)',
                 }}>
                 {lmMsg.text}
               </p>
@@ -3597,10 +3597,10 @@ export default function Settings() {
           </button>
         </div>
         {settingsExportStatus === 'error' && (
-          <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{settingsExportMsg}</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{settingsExportMsg}</p>
         )}
         {settingsImportStatus === 'error' && (
-          <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{settingsImportMsg}</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{settingsImportMsg}</p>
         )}
         {settingsImportStatus === 'done' && (
           <p className="text-xs mt-2" style={{ color: 'var(--nav-inactive-color)' }}>{settingsImportMsg}</p>
@@ -3615,7 +3615,7 @@ export default function Settings() {
           <button
             type="button"
             className="btn text-xs px-3 py-1.5"
-            style={{ color: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)' }}
+            style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
             onClick={() => setShowResetConfirm(true)}
           >
             Reset settings to default…
@@ -3643,10 +3643,10 @@ export default function Settings() {
             </button>
           </div>
           {dataExportStage === 'error' && (
-            <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{dataExportMsg}</p>
+            <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{dataExportMsg}</p>
           )}
           {dataImportStage === 'error' && (
-            <p className="text-xs mt-2" style={{ color: 'var(--danger, #ef4444)' }}>{dataImportMsg}</p>
+            <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{dataImportMsg}</p>
           )}
           {dataImportStage === 'done' && !missingDocs && (
             <div className="flex items-center gap-2 mt-2">
@@ -3685,7 +3685,7 @@ export default function Settings() {
                 downloaded offline dictation model are never affected.
               </p>
             </div>
-            <div className="p-5 py-3 overflow-y-auto" style={{ flex: 1 }}>
+            <div className="p-5 py-3 overflow-y-auto scroll-thin" style={{ flex: 1 }}>
               {changedResetGroups.map((g) => (
                 <div key={g.section} className="mb-3.5 last:mb-0">
                   <div className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--label-color)' }}>
@@ -3697,7 +3697,7 @@ export default function Settings() {
                         <span style={{ color: 'var(--nav-inactive-color)' }}>·</span>
                         <span>
                           {item.label}:{' '}
-                          <span style={{ color: 'var(--danger, #b3261e)' }}>{item.current}</span>
+                          <span style={{ color: 'var(--danger)' }}>{item.current}</span>
                           {' → '}
                           <span style={{ color: 'var(--nav-active-color)' }}>{item.def}</span>
                         </span>
@@ -3714,7 +3714,7 @@ export default function Settings() {
               <button
                 type="button"
                 className="btn text-xs px-3 py-1.5"
-                style={{ background: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)', color: '#fff' }}
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' }}
                 onClick={resetAllSettings}
                 disabled={changedResetGroups.length === 0}
               >
@@ -3745,7 +3745,7 @@ export default function Settings() {
             <div className="p-5 py-3">
               <ExportSummaryList summary={dataExportSummary} />
               {dataExportSummary.chatHistoryBytes > CHAT_HISTORY_WARN_BYTES && (
-                <p className="text-xs mt-3 leading-relaxed" style={{ color: 'var(--danger, #b3261e)' }}>
+                <p className="text-xs mt-3 leading-relaxed" style={{ color: 'var(--danger)' }}>
                   Your Warroom AI chat history alone is {(dataExportSummary.chatHistoryBytes / 1_000_000).toFixed(1)} MB — this will be a large file.
                 </p>
               )}
@@ -3778,7 +3778,7 @@ export default function Settings() {
           >
             <div className="p-5 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-side)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>Replace everything with this backup?</h2>
-              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--danger, #b3261e)' }}>
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--danger)' }}>
                 This replaces everything currently in the app — cases, flows, opponents, judges,
                 tournaments, folders, and Warroom AI chat history. Can't be undone.
               </p>
@@ -3793,7 +3793,7 @@ export default function Settings() {
               <button
                 type="button"
                 className="btn text-xs px-3 py-1.5"
-                style={{ background: 'var(--danger, #b3261e)', borderColor: 'var(--danger, #b3261e)', color: '#fff' }}
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' }}
                 onClick={confirmDataImport}
               >
                 Replace everything
@@ -3816,7 +3816,7 @@ export default function Settings() {
                 (or skip for now; they'll just show as missing until relinked).
               </p>
             </div>
-            <div className="p-5 py-3 overflow-y-auto space-y-1.5" style={{ flex: 1 }}>
+            <div className="p-5 py-3 overflow-y-auto scroll-thin space-y-1.5" style={{ flex: 1 }}>
               {missingDocs.map((d) => (
                 <div key={d.path} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}>
                   <div className="min-w-0">

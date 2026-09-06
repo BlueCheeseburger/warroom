@@ -174,7 +174,7 @@ export default function MentionPicker({ query, onSelect, onClose, types }: Props
 
   return (
     <div
-      className="absolute bottom-full left-0 right-0 mb-1 rounded-md shadow-lg overflow-hidden z-50 max-h-72 overflow-y-auto"
+      className="absolute bottom-full left-0 right-0 mb-1 rounded-md shadow-lg overflow-hidden z-50 max-h-72 overflow-y-auto scroll-thin"
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-side)' }}
     >
       {shownMembers.length > 0 && (

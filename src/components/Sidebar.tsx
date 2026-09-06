@@ -441,7 +441,7 @@ function CollapsedNav({ view, setView, flowsIndex, createFlow, toggleCollapsed, 
         </CIcon>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2 flex flex-col items-center gap-0.5">
+      <nav className="flex-1 overflow-y-auto sidebar-scroll py-2 flex flex-col items-center gap-0.5">
         <CIcon label="Search (⌘K)" active={false} onClick={() => setSearchOpen(true)}>
           <IcoSearch />
         </CIcon>
@@ -922,7 +922,7 @@ function FolderRow({ folder, depth, open, active, dropping, onToggle, onNavigate
             <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
               title="Delete folder"
               className="w-full text-left px-3 py-1.5 transition"
-              style={{ color: 'var(--danger, #ef4444)' }}
+              style={{ color: 'var(--danger)' }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
               Delete folder
@@ -1185,12 +1185,12 @@ function CasesSection({ view, setView, db }: {
           } : undefined}
           moveOptions={moveOptionsFor(item)}
         >
-          <span className="truncate" style={isMissing ? { color: 'var(--danger, #ef4444)' } : undefined}>{item.name}</span>
+          <span className="truncate" style={isMissing ? { color: 'var(--danger)' } : undefined}>{item.name}</span>
           {isMissing && (
             <span
               title="File not found on this computer — click to locate it"
               className="shrink-0"
-              style={{ color: 'var(--danger, #ef4444)', fontSize: 11, lineHeight: 1 }}
+              style={{ color: 'var(--danger)', fontSize: 11, lineHeight: 1 }}
             >
               ⚠
             </span>
@@ -1409,7 +1409,7 @@ function FlowsSection({ view, setView, flowsIndex, createFlow, deleteFlow, renam
         >
           <span className="truncate flex-1">{f.name}</span>
           {(f as any).shared && (
-            <span title="Shared" className="shrink-0 ml-1 opacity-60 inline-flex" style={{ color: '#0077ed' }}>
+            <span title="Shared" className="shrink-0 ml-1 opacity-60 inline-flex" style={{ color: 'var(--accent)' }}>
               <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M12 10a2 2 0 0 0-1.6.8L5.9 8.4A2 2 0 0 0 6 8a2 2 0 0 0-.1-.4l4.5-2.3A2 2 0 1 0 9.9 3.4L5.4 5.7A2 2 0 1 0 5.4 10.3l4.5 2.3A2 2 0 1 0 12 10z"/>
               </svg>
@@ -1880,7 +1880,7 @@ function NavItem({
             Rename
           </button>
           <button onClick={handleDelete} className="w-full text-left px-3 py-1.5 transition"
-            style={{ color: 'var(--danger, #ef4444)' }}
+            style={{ color: 'var(--danger)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'}
             onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
             Delete

@@ -166,7 +166,7 @@ export default function AiErrorToast() {
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border-med)',
               // Amber for "ran, but on partial input"; red for an outright failure.
-              borderLeft: `2px solid ${t.kind === 'warning' ? 'rgb(var(--warn-rgb))' : 'var(--danger, #e5484d)'}`,
+              borderLeft: `2px solid ${t.kind === 'warning' ? 'rgb(var(--warn-rgb))' : 'var(--danger)'}`,
               borderRadius: 8,
               padding: '6px 8px 6px 10px',
               maxWidth: isOpen ? 420 : 340,

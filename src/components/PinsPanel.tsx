@@ -87,7 +87,7 @@ export default function PinsPanel({ teamId, dmChannelId, onJumpTo }: { teamId?: 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-2">
-        {error && <p className="text-xs pb-1" style={{ color: '#ef4444' }}>{error}</p>}
+        {error && <p className="text-xs pb-1" style={{ color: 'var(--danger)' }}>{error}</p>}
         {loading ? (
           <div className="text-xs text-center pt-6" style={{ color: 'var(--nav-inactive-color)' }}>Loading…</div>
         ) : pins.length === 0 ? (

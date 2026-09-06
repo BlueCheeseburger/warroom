@@ -116,6 +116,35 @@ A command-palette search (`SearchPalette.tsx`) opens on **⌘K / Ctrl K** or via
 
 ---
 
+## Design System (colour tokens, focus, tooltips, scrollbars)
+
+**Six themes, one token set.** Three directions (Calm Native / Paper / Editorial) × light + dark, selected by `data-direction` + the `dark` class on `<html>` (see the header comment in `index.css`). Every colour a component renders **must** come from a token, because the same hex cannot be right in six themes. Grep for `#` in a `style={{ ... }}` before adding one.
+
+**Semantic tokens** — `--accent` (per-theme, six distinct values), `--danger` / `--danger-color`, `--warn`, `--pos`/`--emerald`, `--neg`/`--rose`, plus the `--bg-*` / `--border-*` / `--shadow-*` families.
+
+`--danger-rgb` and `--warn-rgb` are stated **twice**: light values on `:root`, dark values on `html.dark`. One colour genuinely cannot serve both modes as text — measured against every theme's `--bg-main` (WCAG AA wants 4.5:1):
+
+| token | light value | light ratios | dark value | dark ratios |
+|---|---|---|---|---|
+| `--danger` | `#b3261e` | 5.7 / 5.8 / 6.3 | `#f87171` | 6.2 / 5.9 / 7.0 |
+| `--warn` | `#96560a` | 5.0 / 5.1 / 5.5 | `#f59e0b` | 7.9 / 7.5 / 9.0 |
+
+Before this split, `--danger` scored **2.5–3.0:1 on the dark themes** and `--warn` **2.9–3.2:1 on the light ones** — each legible in one mode only, which is exactly why so much of the app hardcoded its own red/amber rather than using the token. Only `html.dark` re-states them; paper-dark and editorial-dark define neither, so they inherit from it (verified by reading resolved values in all six themes, not by reasoning about the cascade).
+
+**What may stay a literal hex**: *categorical* palettes, where the point is that the colours differ from each other rather than matching the theme — `PRESENCE_COLORS` and `COLOR_SWATCHES` (FlowView), the entity-type colours in `ChatMessage.tsx` (flow/case/block/speechdoc/opponent/tournament), impact-severity scales, difficulty badges, the record-red on `SendDictateButton`, and Google brand blue `#4285f4` in Drive UI. Everything else is a bug: `#0077ed` was hardcoded as "the accent" in 25 places across 8 files and was therefore wrong in five of the six themes.
+
+**Never write a fallback for a token that exists.** `var(--danger, #ef4444)` is dead code — `--danger` is defined in every theme, so the fallback can never resolve, and it silently documents the wrong colour. There were 38 of these.
+
+**`var()` in SVG presentation attributes works** (`fill="var(--accent)"`, `stroke="var(--border-med)"`) and is used throughout — presentation attributes are parsed as CSS values. No need for a `currentColor` dance.
+
+**Focus.** One ring for the whole app: `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }`. There was none before, so keyboard users got Chromium's default ring — off-palette, inconsistent, and near-invisible on the dark themes. `:focus-visible` (not `:focus`) keeps it off mouse clicks. Text fields and `[contenteditable]` opt out: `.input:focus` already answers with an accent border plus `--shadow-focus`, and flow cells have their own selection styling.
+
+**Tooltips.** `src/components/Tooltip.tsx` is the only implementation — `text`, `up`, `wide`, `disabled`, `className`, `delay` (350ms default). There used to be two copies of it (Home's `Tooltip`, FlowView's `FlowTooltip`) that had drifted apart on delay, `width: max-content`, and multi-line support, so the same control behaved differently depending on the view. Everything else in the app still uses the native `title` attribute, which renders the OS tooltip — a different shape, delay, and colour. **Prefer this component for any control in a toolbar or persistent chrome**; `title` is acceptable only where a styled bubble would be clipped by a positioned ancestor (see the column-menu button in FlowView).
+
+**Scrollbars.** Every scroll container takes `scroll-thin` (6px, `--scrollbar-thumb`), or `sidebar-scroll` (4px) in the sidebar, or `scroll-none` to hide the bar entirely. A bare `overflow-*` class renders the platform default scrollbar, which is visibly fatter and a different colour from the rest of the app.
+
+---
+
 ## Keyboard Shortcuts (⌘/)
 **⌘/ / Ctrl+/** opens `ShortcutsOverlay.tsx` — the full, organized shortcuts list for the app, also reachable from Settings → Keyboard Shortcuts. Purely client-side: a static `GROUPS` array (title + `{ id?, keys, label }[]`), no IPC, `⌘`/`Ctrl` labels picked off `window.warroom.platform`. State is `useApp`'s `shortcutsOpen`/`setShortcutsOpen`, mirroring the search palette's `searchOpen` exactly (same backdrop + card styling, Esc-to-close, mounted unconditionally in `App.tsx` since the component self-guards on `shortcutsOpen`). The global `⌘K`/`⌘/` listener lives in `App.tsx` alongside the search-palette one.
 

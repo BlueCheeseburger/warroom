@@ -24,7 +24,7 @@ export default function OversizedFilePopup({ fileName, sizeBytes, allowSummarize
         <p className="text-xs mb-3 leading-relaxed" style={{ color: 'var(--nav-inactive-color)' }}>
           It'll still send, but only the file name will be visible until it's summarized.
         </p>
-        {error && <p className="text-xs mb-2" style={{ color: '#ef4444' }}>{error}</p>}
+        {error && <p className="text-xs mb-2" style={{ color: 'var(--danger)' }}>{error}</p>}
         <div className="flex flex-col gap-1.5">
           {allowSummarize && (
             <button

@@ -132,7 +132,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Pick a date
                   style={{
                     width: 32, height: 32, borderRadius: 8,
                     background: isSelected ? 'var(--item-selected-bg)' : isToday ? 'rgba(0,119,237,0.1)' : 'transparent',
-                    color: isSelected ? 'var(--item-selected-text)' : isToday ? '#0077ed' : 'rgb(var(--ink-rgb))',
+                    color: isSelected ? 'var(--item-selected-text)' : isToday ? 'var(--accent)' : 'rgb(var(--ink-rgb))',
                     fontWeight: isSelected || isToday ? 600 : 400,
                   }}
                   onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)'; }}
@@ -154,7 +154,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Pick a date
                 select(t.getDate());
               }}
               className="text-xs font-semibold"
-              style={{ color: '#0077ed' }}
+              style={{ color: 'var(--accent)' }}
             >Today</button>
           </div>
         </div>

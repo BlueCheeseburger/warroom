@@ -828,7 +828,7 @@ function ItemTile({
       <div className="mt-2 px-0.5">
         <div
           className="text-xs font-medium truncate flex items-center gap-1"
-          style={{ color: isMissing ? 'var(--danger, #ef4444)' : 'rgb(var(--ink-rgb))' }}
+          style={{ color: isMissing ? 'var(--danger)' : 'rgb(var(--ink-rgb))' }}
           title={isMissing ? `File not found on this computer — click to locate it` : item.name}
         >
           {isMissing && <span style={{ fontSize: 11, lineHeight: 1 }}>⚠</span>}

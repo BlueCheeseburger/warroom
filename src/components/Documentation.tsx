@@ -96,6 +96,7 @@ const TOC_SECTIONS = [
   { id: 'navigation',  label: 'Navigation' },
   { id: 'undo-toasts', label: 'Undo toasts' },
   { id: 'global-search', label: 'Global search (⌘K)' },
+  { id: 'design-system', label: 'Design system' },
   { id: 'shortcuts',   label: 'Keyboard shortcuts (⌘/)' },
   { id: 'cases',       label: 'Cases & blocks' },
   { id: 'cases-grid',  label: 'Cases grid & folders' },
@@ -413,6 +414,65 @@ export default function Documentation() {
           <P>
             Press <Code>⌘F</Code> / <Code>Ctrl F</Code> on the Documentation and User Manual pages to find
             text on the page — Enter / Shift+Enter jump between matches, Esc closes.
+          </P>
+        </section>
+
+        {/* ── Design system ──────────────────────────────────────────── */}
+        <section id="doc-design-system">
+          <H2>Design system</H2>
+          <P>
+            <strong>Six themes, one token set.</strong> Three directions (Calm Native / Paper /
+            Editorial) × light and dark, selected by <Code>data-direction</Code> plus the{' '}
+            <Code>dark</Code> class on <Code>&lt;html&gt;</Code>. Every colour a component renders must
+            come from a token — the same hex cannot be right in six themes. The semantic ones are{' '}
+            <Code>--accent</Code> (six distinct values), <Code>--danger</Code>, <Code>--warn</Code>,{' '}
+            <Code>--pos</Code>/<Code>--neg</Code>, plus the <Code>--bg-*</Code>, <Code>--border-*</Code>{' '}
+            and <Code>--shadow-*</Code> families.
+          </P>
+          <P>
+            <strong><Code>--danger</Code> and <Code>--warn</Code> are stated twice</strong> — light
+            values on <Code>:root</Code>, dark values on <Code>html.dark</Code> — because one colour
+            cannot serve both modes as text. Measured against every theme's <Code>--bg-main</Code>{' '}
+            (WCAG AA wants 4.5:1), the light red scores 5.7–6.3 and the dark red 5.9–7.0; before the
+            split, <Code>--danger</Code> scored just <strong>2.5–3.0:1 on the dark themes</strong> and{' '}
+            <Code>--warn</Code> <strong>2.9–3.2:1 on the light ones</strong>. Each was legible in one
+            mode only, which is precisely why so much of the app hardcoded its own red and amber
+            instead of using the tokens. Only <Code>html.dark</Code> re-states them; paper-dark and
+            editorial-dark inherit from it.
+          </P>
+          <P>
+            <strong>Literal hex is allowed only for categorical palettes</strong> — where the point is
+            that the colours differ from <em>each other</em> rather than matching the theme: presence
+            cursors and column swatches in the flow, the entity-type colours in chat mentions,
+            impact-severity scales, the record-red on the dictation button, and Google brand blue in
+            Drive UI. Everything else is a bug: <Code>#0077ed</Code> was hardcoded as "the accent" in
+            25 places across 8 files, and was therefore wrong in five of the six themes. Equally,
+            never write a fallback for a token that exists — <Code>var(--danger, #ef4444)</Code> is
+            dead code that silently documents the wrong colour (there were 38 of those).
+          </P>
+          <P>
+            <strong>Focus:</strong> one ring for the whole app,{' '}
+            <Code>:focus-visible {'{'} outline: 2px solid var(--accent) {'}'}</Code> with a 2px offset.
+            There was none before, so keyboard users got Chromium's default ring — off-palette and
+            near-invisible on the dark themes. <Code>:focus-visible</Code> rather than{' '}
+            <Code>:focus</Code> keeps it off mouse clicks. Text fields and <Code>[contenteditable]</Code>{' '}
+            opt out, since <Code>.input:focus</Code> already answers with an accent border and flow
+            cells have their own selection styling.
+          </P>
+          <P>
+            <strong>Tooltips:</strong> <Code>src/components/Tooltip.tsx</Code> is the only
+            implementation (<Code>text</Code>, <Code>up</Code>, <Code>wide</Code>,{' '}
+            <Code>disabled</Code>, <Code>className</Code>, <Code>delay</Code>). There were two copies
+            that had drifted apart on delay, sizing and multi-line support, so the same control
+            behaved differently depending on the view. Prefer it for any control in a toolbar or
+            persistent chrome; the native <Code>title</Code> attribute renders the OS tooltip, which
+            is a different shape, delay and colour.
+          </P>
+          <P>
+            <strong>Scrollbars:</strong> every scroll container takes <Code>scroll-thin</Code> (6px),{' '}
+            <Code>sidebar-scroll</Code> (4px), or <Code>scroll-none</Code> to hide it. A bare{' '}
+            <Code>overflow-*</Code> renders the platform default, visibly fatter and a different
+            colour from the rest of the app.
           </P>
         </section>
 

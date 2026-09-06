@@ -710,7 +710,7 @@ function MenuRow({ label, danger, onClick }: { label: string; danger?: boolean; 
       title={label}
       onClick={onClick}
       className="w-full text-left px-3 py-1.5 transition truncate block"
-      style={{ color: danger ? 'var(--danger, #ef4444)' : 'var(--nav-active-color)' }}
+      style={{ color: danger ? 'var(--danger)' : 'var(--nav-active-color)' }}
       onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'var(--nav-hover-bg)')}
       onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
     >

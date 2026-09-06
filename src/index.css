@@ -65,7 +65,14 @@
   --ink-rgb:    27 29 36;
   --panel-rgb:  237 239 243;
   --line-rgb:   30 40 70;
-  --warn-rgb:   201 122 10;
+  /* Semantic status colours. These are the LIGHT-mode values; html.dark
+   * re-states both, because one colour cannot serve both modes as text.
+   * Measured against every theme's --bg-main (WCAG AA needs 4.5:1 for text):
+   *   light --danger #b3261e → 5.7 / 5.8 / 6.3
+   *   light --warn   #96560a → 5.0 / 5.1 / 5.5   (was #c97a0a at 2.9 — failing)
+   * The old amber was only ever legible in dark mode, which is why so much of
+   * the app hardcoded its own red/amber instead of using these. */
+  --warn-rgb:   150 86 10;
   --danger-rgb: 179 38 30;
 
   /* ── Convenience aliases ──────────────────────────────────────────────────
@@ -86,6 +93,9 @@
   --ink-faint:    rgb(var(--ink-rgb) / 0.42); /* tracks --placeholder */
   --danger:       rgb(var(--danger-rgb));
   --danger-color: rgb(var(--danger-rgb));
+  /* --warn-rgb had no rgb() convenience form, so every amber in the app was
+   * hardcoded (#d97706 and #f59e0b, two different ambers for one meaning). */
+  --warn:         rgb(var(--warn-rgb));
   --accent-color: var(--accent);
   --bg-popover:   var(--bg-elevated);
   --bg-hover:     var(--nav-hover-bg);
@@ -170,6 +180,17 @@ html.dark {
   --ink-rgb:    238 240 246;
   --panel-rgb:  26 28 33;
   --line-rgb:   180 195 235;
+
+  /* Status colours, lightened for a dark ground. The light-mode red scored
+   * 2.5–3.0:1 on the three dark backgrounds — unreadable, and the reason error
+   * text all over the app was hardcoded to a lighter red instead of using the
+   * token. Measured against default / paper / editorial dark --bg-main:
+   *   --danger #f87171 → 6.2 / 5.9 / 7.0
+   *   --warn   #f59e0b → 7.9 / 7.5 / 9.0
+   * This block also covers paper-dark and editorial-dark: neither of their
+   * blocks re-states these, so they inherit from here. */
+  --danger-rgb: 248 113 113;
+  --warn-rgb:   245 158 11;
 
   --bg-main:     #1a1c21;
   --bg-sidebar:  #131519;
@@ -709,6 +730,30 @@ html.reduce-motion *::after {
 .item-selected {
   background: var(--item-selected-bg);
   color: var(--item-selected-text);
+}
+
+/* ── Keyboard focus ──────────────────────────────────────────────────────── */
+/*
+ * One focus ring for the whole app, in the current theme's accent.
+ *
+ * There was none before, so every keyboard user got Chromium's own default ring
+ * — a colour from outside the palette, on only some elements, and invisible
+ * against the dark themes. `:focus-visible` (not `:focus`) is what keeps it off
+ * mouse clicks, so a clicked button doesn't keep a ring hanging on it.
+ *
+ * Text fields opt out: `.input:focus` / `.glass-input:focus` already answer with
+ * an accent border plus `--shadow-focus`, and stacking an outline on top of that
+ * reads as a double border. Flow cells opt out too — a ring around a
+ * contenteditable fights the caret and the cell's own selection styling.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.input:focus-visible,
+.glass-input:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
 }
 
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */

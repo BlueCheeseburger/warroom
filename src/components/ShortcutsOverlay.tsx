@@ -112,10 +112,10 @@ function Kbd({ children, disabled, clickable, onClick, title }: {
       title={title}
       className="relative text-xs font-mono px-1.5 py-0.5 rounded transition"
       style={{
-        background: disabled ? 'color-mix(in srgb, var(--neg, #ef4444) 16%, var(--bg-input))' : 'var(--bg-input)',
-        border: `1px solid ${disabled ? 'var(--neg, #ef4444)' : 'var(--border-med)'}`,
+        background: disabled ? 'color-mix(in srgb, var(--neg) 16%, var(--bg-input))' : 'var(--bg-input)',
+        border: `1px solid ${disabled ? 'var(--neg)' : 'var(--border-med)'}`,
         boxShadow: disabled ? 'none' : 'inset 0 -1.5px 0 var(--border-med)',
-        color: disabled ? 'var(--neg, #ef4444)' : 'var(--ink)',
+        color: disabled ? 'var(--neg)' : 'var(--ink)',
         cursor: clickable ? 'pointer' : 'default',
         userSelect: 'none',
         overflow: 'hidden',

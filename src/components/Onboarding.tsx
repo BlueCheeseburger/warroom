@@ -157,7 +157,7 @@ export default function Onboarding({ onDone }: Props) {
                 <div
                   key={i}
                   className="h-1 rounded-full flex-1 transition-all duration-300"
-                  style={{ background: i < stepIndex ? 'var(--item-selected-bg)' : i === stepIndex ? '#0077ed' : 'var(--border-med)' }}
+                  style={{ background: i < stepIndex ? 'var(--item-selected-bg)' : i === stepIndex ? 'var(--accent)' : 'var(--border-med)' }}
                 />
               ))}
             </div>

@@ -170,7 +170,7 @@ export default function TeamSetup({ onDone }: Props) {
 
   if (step === 'forgot') {
     return (
-      <div className="flex flex-col p-4 gap-3 overflow-y-auto">
+      <div className="flex flex-col p-4 gap-3 overflow-y-auto scroll-thin">
         <div className="label mb-1">Reset password</div>
 
         {resetStage === 'email' && (
@@ -229,7 +229,7 @@ export default function TeamSetup({ onDone }: Props) {
 
   if (step === 'auth') {
     return (
-      <div className="flex flex-col p-4 gap-3 overflow-y-auto">
+      <div className="flex flex-col p-4 gap-3 overflow-y-auto scroll-thin">
         <div className="label mb-1">{authMode === 'login' ? 'Sign in to chat' : 'Create account'}</div>
         {authMode === 'signup' && (
           <input className="input w-full" placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -258,7 +258,7 @@ export default function TeamSetup({ onDone }: Props) {
   }
 
   return (
-    <div className="flex flex-col p-4 gap-3 overflow-y-auto">
+    <div className="flex flex-col p-4 gap-3 overflow-y-auto scroll-thin">
       <div className="label mb-1">Set up your team</div>
       <div className="flex rounded-lg p-0.5 gap-1" style={{ background: 'var(--mode-toggle-bg)' }}>
         {(['create', 'join'] as const).map((m) => (
