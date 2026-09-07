@@ -50,7 +50,7 @@ After saving the config, quit and reopen Claude. The Warroom tools will appear i
 |---|---|
 | `get_warroom_context` | Your debate event + current NSDA topic + tournament/round history. Call this first in any debate conversation. |
 | `get_skill` | Load a knowledge file: `cx_debate`, `pf_debate`, `ld_debate`, `card_cutting`, `user_manual`, `documentation` |
-| `search_warroom` | Search across cases, opponents, judges, tournaments, and current topics in one query |
+| `search_warroom` | Search across cases (docs imported from an opponent's OpenCaselist disclosure), opponents, judges, tournaments, and current topics in one query |
 | `cross_ex_questions_prompt` | Rules for writing cross-examination questions (with model answers), like the in-app Cross-Ex Practice panel. Doesn't take a doc — returns the rules for Claude to apply to a speech doc already in the conversation. |
 | `cross_ex_trap_drill_prompt` | Rules for a cross-ex trap drill, like the in-app "Harder questions" feature. Same shape as above — apply to a doc already in the conversation. |
 | `score_card_credibility_prompt` | Rubric for scoring evidence card credibility, like the in-app Card Credibility panel. Apply to cards already in the conversation. |
@@ -103,3 +103,8 @@ If your data is somewhere else, pass `WARROOM_DATA_DIR` in the config:
 ## How it works
 
 The server reads the same `db.json`, `topics.json`, and `app_settings` files that the Warroom Electron app writes to. Changes you make in the app (adding rounds, updating opponent notes, saving a case) are immediately visible to Claude — there's no sync step. The server never writes back to those files.
+
+## What it can't see
+
+- **Your speech-doc files.** A "case" in `db.json` is a doc imported from an opponent's OpenCaselist disclosure — it's not a path into a file on your own disk. Docs you've personally opened/imported into Warroom are tracked in the app's browser `localStorage`, not in `db.json`, and this server (a standalone Node process, not the Electron app) has no way to read that — same reason it can't see flows or AI chat history either. Use the in-app search (⌘K) for those.
+- **Team Files.** Anything shared with your team over chat is stored in Supabase, end-to-end encrypted with a key derived from your team's invite code. This server has no Supabase client and no way to get that key, so it can't reach shared files at all.
